@@ -8,8 +8,8 @@
 - [x] Architecture document
 - [ ] Pixel-art style guide + asset pipeline
 - [ ] Skill schema v0 (strict)
-- [ ] Basic repo structure (packages/)
-- [ ] Grok Build instructions / AGENTS.md / skills for working on Kit
+- [x] Basic repo structure (packages/)
+- [x] Grok Build instructions / AGENTS.md / skills for working on Kit
 
 ## Phase 1 — Local Skills Engine
 - Skill parser + strict validator

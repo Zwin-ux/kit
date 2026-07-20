@@ -1,0 +1,32 @@
+{
+  "name": "@kit-skills/cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Command-line entry points for Kit",
+  "type": "module",
+  "bin": {
+    "kit": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node -e \"console.log('@kit-skills/cli: no tests yet')\"",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@kit-skills/core": "workspace:*",
+    "@kit-skills/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

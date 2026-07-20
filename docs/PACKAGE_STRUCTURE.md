@@ -49,6 +49,18 @@ kit/
 - Library sync
 - Run on Railway
 
+## Package Names
+
+| Folder | npm name |
+|--------|----------|
+| `packages/shared` | `@kit-skills/shared` |
+| `packages/core` | `@kit-skills/core` |
+| `packages/cli` | `@kit-skills/cli` |
+| `packages/tui` | `@kit-skills/tui` |
+| `apps/registry-api` | `@kit-skills/registry-api` |
+
+Use pnpm workspaces. Install from the repo root with `pnpm install`.
+
 ## Rules
 - Do not put TUI code in the core package.
 - Do not put business logic in the TUI package.
