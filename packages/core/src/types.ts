@@ -1,6 +1,6 @@
 /**
  * Skill schema v0 types.
- * See docs/SKILL_SCHEMA.md.
+ * See docs/dev/SKILL_SCHEMA.md.
  */
 
 /** Agents that Kit recognizes in compatibility lists. */

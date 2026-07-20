@@ -49,7 +49,7 @@ kit pack install essentials
 kit pack apply essentials --dir .
 ```
 
-See also [STARTER_PACKS.md](./STARTER_PACKS.md) and [HARNESS_PATHS.md](./HARNESS_PATHS.md).
+See also [../packs.md](../packs.md) and [HARNESS_PATHS.md](./HARNESS_PATHS.md).
 
 ```sh
 kit paths

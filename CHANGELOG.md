@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Public surface
+- Product README only (install → packs → TUI → commands)
+- Engineering docs moved under `docs/dev/`
+- User pack guide: `docs/packs.md`
+
 ## 0.1.0 — Alpha (GitHub v1)
 
 First public alpha of **Kit**: portable agent skills, seven starter packs, pixel TUI.

@@ -1,10 +1,9 @@
-# Starter Packs
+# Starter packs
 
-## Goal
-Give a project a strong set of skills in one step.
-A pack is a curated list of validated skills for a project type.
+A pack is a curated set of skills for a project type.
+Install one pack and your agents get a coherent toolkit on day one.
 
-## v1 ship set (7 packs)
+## The seven packs
 
 | Pack | Depends on | Best for |
 |------|------------|----------|

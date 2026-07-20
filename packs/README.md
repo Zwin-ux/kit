@@ -1,24 +1,22 @@
-# Starter Packs (v1)
+# Starter packs
 
-Seven official kits. Stack packs **extend** `essentials` so dependency skills always install.
+Seven official kits. Stack packs **extend** `essentials` so base skills always install.
 
-| Key | Pack | Use for | Silhouette |
-|-----|------|---------|------------|
-| 1 | `essentials` | Any project (default) | Kit mark |
-| 2 | `web-app` | Apps and sites | Browser |
-| 3 | `library` | Packages / SDKs | Book |
-| 4 | `cli-tool` | Developer CLIs | Prompt |
-| 5 | `api-service` | HTTP / backends | Nodes |
-| 6 | `full-stack` | UI + API products | Layers |
-| 7 | `data-ml` | Data / ML work | Chart |
+| Key | Pack | Best for |
+|-----|------|----------|
+| 1 | `essentials` | Any project (default) |
+| 2 | `web-app` | Apps and sites |
+| 3 | `library` | Packages / SDKs |
+| 4 | `cli-tool` | Developer CLIs |
+| 5 | `api-service` | HTTP backends |
+| 6 | `full-stack` | UI + API products |
+| 7 | `data-ml` | Data / ML work |
 
-Icons (pure black 16×16) live in `assets/pixel/packs/` and render in the TUI pack picker.
-
-See [docs/STARTER_PACKS.md](../docs/STARTER_PACKS.md).
+Guide: [docs/packs.md](../docs/packs.md)
 
 ```sh
-kit pack list
-kit pack install essentials
-kit pack apply web-app --dir .
-kit recommend --dir .
+pnpm kit -- pack list
+pnpm kit -- pack install essentials
+pnpm kit -- pack apply web-app --dir .
+pnpm kit -- recommend --dir .
 ```

@@ -32,9 +32,9 @@ Offline-first local engine.
 4. Durable catalog
 
 ## Key Documents
-- README.md, ROADMAP.md, ARCHITECTURE.md, CHANGELOG.md
-- docs/SKILL_SCHEMA.md, STARTER_PACKS.md, TUI_SCREENS.md, HARNESS_PATHS.md
-- assets/pixel/README.md, assets/pixel/packs/README.md
+- Public: `README.md`, `CHANGELOG.md`, `docs/packs.md`
+- Engineering (this folder): `ROADMAP.md`, `ARCHITECTURE.md`, `SKILL_SCHEMA.md`, `TUI_SCREENS.md`, `HARNESS_PATHS.md`
+- Art: `assets/pixel/README.md`, `PIXEL_ART.md`
 
 ## Visual Rules (Non-Negotiable)
 - Pure black silhouette only for TUI assets

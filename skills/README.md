@@ -3,7 +3,7 @@
 Shared skills used by starter packs and direct installs.
 
 Each skill is a folder with `SKILL.md`.  
-See [docs/SKILL_SCHEMA.md](../docs/SKILL_SCHEMA.md).
+Schema details for contributors: [docs/dev/SKILL_SCHEMA.md](../docs/dev/SKILL_SCHEMA.md).
 
 ## Catalog (v1)
 

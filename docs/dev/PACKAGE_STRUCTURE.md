@@ -15,14 +15,16 @@ kit/
 ├── apps/
 │   └── registry-api/         # Railway backend service
 ├── docs/
+│   ├── packs.md              # User-facing pack guide
+│   ├── assets/               # README / marketing images
+│   └── dev/                  # Engineering notes (not for end users)
 ├── skills/                   # Shared skill catalog
 ├── packs/                    # Starter packs (PACK.md + skill lists)
 ├── assets/
 │   └── pixel/                # Pixel art files
-├── AGENTS.md
-├── README.md
-├── ARCHITECTURE.md
-└── ROADMAP.md
+├── README.md                 # Public product surface
+├── CONTRIBUTING.md
+└── CHANGELOG.md
 ```
 
 ## Package Responsibilities
