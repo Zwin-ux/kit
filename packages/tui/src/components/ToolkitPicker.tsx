@@ -4,12 +4,13 @@ import type { PackListItem } from "@mzwin/kit-core";
 import type { ToolkitRecommendation } from "@mzwin/kit-core";
 import { PackIcon } from "../mascot/PackIcon.js";
 import { useLayoutScale } from "../mascot/useLayoutScale.js";
-import { SelectPulse } from "../motion/index.js";
+import { SelectPulse, type SelectDirection } from "../motion/index.js";
 
 export interface ToolkitPickerProps {
   packs: PackListItem[];
   selectedIndex: number;
   selectTick?: number;
+  selectDirection?: SelectDirection;
   recommended?: ToolkitRecommendation[];
   filter?: string;
   appliedNames?: Set<string>;
@@ -25,6 +26,7 @@ export function ToolkitPicker({
   packs,
   selectedIndex,
   selectTick = 0,
+  selectDirection = "none",
   recommended = [],
   filter,
   appliedNames,
@@ -79,7 +81,11 @@ export function ToolkitPicker({
         return (
           <Box key={pack.name} flexDirection="column">
             <Text wrap="truncate">
-              <SelectPulse selected={selected} tick={selectTick} />{" "}
+              <SelectPulse
+                selected={selected}
+                tick={selectTick}
+                direction={selectDirection}
+              />
               <PackIcon packName={pack.name} size="mini" animate />{" "}
               <Text bold={selected}>{pack.title}</Text>
               <Text dimColor>

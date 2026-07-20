@@ -44,4 +44,6 @@ export {
   LAYOUT_CAPS,
 } from "./mascot/layoutScale.js";
 export type { LayoutScale, LayoutMode } from "./mascot/layoutScale.js";
+export { padSlotLines } from "./mascot/MascotPlayer.js";
+export type { SelectDirection } from "./motion/SelectPulse.js";
 export { Spinner } from "./motion/Spinner.js";

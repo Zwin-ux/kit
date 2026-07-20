@@ -20,7 +20,11 @@ import {
   SuccessLine,
 } from "../components/Motion.js";
 import { ToolkitPicker } from "../components/ToolkitPicker.js";
-import { ActionFlash, BlinkCursor } from "../motion/index.js";
+import {
+  ActionFlash,
+  BlinkCursor,
+  type SelectDirection,
+} from "../motion/index.js";
 
 export interface HomeProps {
   frames: PixelFrame[];
@@ -30,6 +34,7 @@ export interface HomeProps {
   applied: AppliedPackRecord[];
   selectedPackIndex: number;
   selectTick: number;
+  selectDirection?: SelectDirection;
   recommended: ToolkitRecommendation[];
   skillRecs: SkillRecommendation[];
   topPick: string | null;
@@ -66,6 +71,7 @@ export function Home({
   applied,
   selectedPackIndex,
   selectTick,
+  selectDirection = "none",
   recommended,
   skillRecs,
   topPick,
@@ -156,6 +162,7 @@ export function Home({
                 packs={packs}
                 selectedIndex={selectedPackIndex}
                 selectTick={selectTick}
+                selectDirection={selectDirection}
                 recommended={recommended}
                 appliedNames={appliedNames}
               />

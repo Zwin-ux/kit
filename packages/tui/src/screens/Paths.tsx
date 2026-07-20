@@ -12,7 +12,11 @@ import { harnessToStatusIcon } from "../mascot/statusIcons.js";
 import { Footer, Header } from "../components/Chrome.js";
 import { ScreenShell } from "../components/ScreenShell.js";
 import { ErrorLine, Pulse, Spinner, SuccessLine } from "../components/Motion.js";
-import { ActionFlash, SelectPulse } from "../motion/index.js";
+import {
+  ActionFlash,
+  SelectPulse,
+  type SelectDirection,
+} from "../motion/index.js";
 
 const LINKABLE: HarnessId[] = ["claude-code", "codex", "grok-build"];
 
@@ -24,6 +28,7 @@ export interface PathsProps {
   linking?: boolean;
   selectedHarnessIndex: number;
   selectTick: number;
+  selectDirection?: SelectDirection;
   scope: PathScope;
   targetRoot?: string;
   confirmWrite?: boolean;
@@ -45,6 +50,7 @@ export function Paths({
   linking,
   selectedHarnessIndex,
   selectTick,
+  selectDirection = "none",
   scope,
   targetRoot,
   confirmWrite,
@@ -97,7 +103,8 @@ export function Paths({
                   <SelectPulse
                     selected={index === selectedHarnessIndex}
                     tick={selectTick}
-                  />{" "}
+                    direction={selectDirection}
+                  />
                   <StatusIcon id={harnessToStatusIcon(id)} size="mini" />{" "}
                   <Text bold={index === selectedHarnessIndex}>{id}</Text>
                   <Text dimColor>

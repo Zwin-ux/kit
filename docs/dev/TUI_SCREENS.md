@@ -86,25 +86,26 @@ Mascot frames:
 - Missing PNGs → built-in placeholders per variant
 - ~140–180 ms/frame; `KIT_REDUCED_MOTION=1` freezes frame 0
 
-### Scale hierarchy (hard caps)
+### Fixed mascot slot (no layout thrash)
 
-Art is chrome; the menu is the product. Full-screen grows **content**, not logos.
+Animation may change **pixels only**. Rail width/height and line count never change on frame tick.
 
 ```
-glyph (1 cell) < pack detail (≤4 rows) < mascot rail (≤10 rows) << content
+glyph (2-col cursor) < pack detail (≤4, often off) < fixed rail << content
 ```
 
-| Mode / size | Fox rail | Pack detail | Content |
-|-------------|----------|-------------|---------|
-| narrow | 8×8 single `█` | off (glyph only) | dense, truncate |
-| normal 80×24 | **8×8** single | off until `rows ≥ 28` | standard |
-| tall (`rows ≥ 32`) | up to 10×10 single | 4×4 if `rows ≥ 28` | more list items |
-| wide maximized | same art caps | same | more list items |
+| Mode | Rail slot (cols × rows) | Pack detail | Notes |
+|------|-------------------------|-------------|-------|
+| narrow | 10 × 9 | off | short terminals |
+| normal 80×24 | **12 × 10** | off until `rows ≥ 28` | default product |
+| tall (`rows ≥ 32`) | **14 × 12** | ≤4 | more air for fox |
+| wide | same as tall/normal art | same | more `listMaxItems` |
 
-- Rail **never** double-wide `██` (that bloated full-screen).
-- Splash: single-cell hero ≤12 — no billboard.
-- Full-screen grows **content** (`listMaxItems`), not logos.
-- `layoutScaleFromTerminal` + `ScreenShell` enforce this; screens must not invent sizes.
+- `MascotPlayer` always emits `padSlotLines` → exactly `railRows` lines of length `railCols`.
+- `ActionFlash` always reserves 1 line (never `null`).
+- ↑↓: fixed-width cursor (`↑ `/`↓ `/`› `) so list text never jiggles.
+- Rail frame delay ≥ 210ms (calmer full-screen paint).
+- `KIT_REDUCED_MOTION=1` freezes mascot + cursor pulse.
 
 ### kit-idle (+ variants) in the TUI
 

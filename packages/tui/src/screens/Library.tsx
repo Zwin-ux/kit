@@ -7,12 +7,18 @@ import { levelToStatusIcon } from "../mascot/statusIcons.js";
 import { Footer, Header } from "../components/Chrome.js";
 import { ScreenShell } from "../components/ScreenShell.js";
 import { ErrorLine, Pulse, SuccessLine } from "../components/Motion.js";
-import { ActionFlash, SelectPulse, StaggerLines } from "../motion/index.js";
+import {
+  ActionFlash,
+  SelectPulse,
+  StaggerLines,
+  type SelectDirection,
+} from "../motion/index.js";
 
 export interface LibraryProps {
   skills: InstalledSkill[];
   selectedIndex: number;
   selectTick: number;
+  selectDirection?: SelectDirection;
   frames: PixelFrame[];
   mascotVariant?: MascotVariant;
   confirmRemove: boolean;
@@ -28,6 +34,7 @@ export function Library({
   skills,
   selectedIndex,
   selectTick,
+  selectDirection = "none",
   frames,
   mascotVariant = "idle",
   confirmRemove,
@@ -71,7 +78,8 @@ export function Library({
                   <SelectPulse
                     selected={index === selectedIndex}
                     tick={selectTick}
-                  />{" "}
+                    direction={selectDirection}
+                  />
                   <StatusIcon id="skill" size="mini" dimColor />{" "}
                   <Text bold={index === selectedIndex}>{skill.name}</Text>
                   <Text dimColor>@{skill.version}</Text>

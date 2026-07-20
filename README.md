@@ -3,12 +3,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/kit-idle.gif" alt="Kit idle" width="160" />
+  <img src="docs/assets/kit-idle.gif" alt="Kit" width="140" />
 </p>
 
 <p align="center">
-  <strong>One library. Many agents.</strong><br />
-  Install skills once. Use them in Claude Code, Codex, and Grok.
+  <strong>One skill library. Claude, Codex, and Grok.</strong><br />
+  Install once. Link everywhere. Clean the mess when agents pile up.
 </p>
 
 <p align="center">
@@ -18,56 +18,74 @@
 
 ---
 
-<p align="center">
-  <img src="docs/assets/ad-install.png" alt="Install Kit" width="640" />
-</p>
+## Install
 
 ```bash
 npm i -g @mzwin/kit
 kit --version
 ```
 
+Node 20+. Command name: `kit`.
+
 ```bash
-kit                       # status + next step
-kit ready --write         # set up this project
-kit unify --write --link  # clean agent skill folders into one library
+kit                  # status + next command
+kit ready --write    # pack → install → apply → link → doctor
+kit unify --write --link
+kit tui              # keyboard console + calm side mascot
 ```
 
 ---
 
 <p align="center">
-  <img src="docs/assets/demo-unify.gif" alt="kit unify — filter noise, keep keepers" width="640" />
-</p>
-
-<p align="center"><sub>Scan agent folders. Drop noise. Keep what earns a place.</sub></p>
-
-<p align="center">
-  <img src="docs/assets/ad-unify.png" alt="Unify still" width="480" />
+  <img src="docs/assets/ad-install.png" alt="Install" width="640" />
 </p>
 
 ---
 
-<p align="center">
-  <img src="docs/assets/demo-ready.gif" alt="kit ready — one-shot setup" width="640" />
-</p>
-
-<p align="center"><sub>Recommend · install · apply · link · doctor. One command.</sub></p>
+## Clean agent skill folders
 
 <p align="center">
-  <img src="docs/assets/ad-ready.png" alt="Ready still" width="480" />
+  <img src="docs/assets/demo-unify.gif" alt="kit unify" width="640" />
 </p>
+
+<p align="center"><sub>Scan · filter noise · keep what earns a place.</sub></p>
+
+```bash
+kit unify
+kit unify --write
+kit unify --write --link
+```
 
 ---
 
+## One-shot project setup
+
 <p align="center">
-  <img src="docs/assets/demo-link.gif" alt="kit link — library to agents" width="640" />
+  <img src="docs/assets/demo-ready.gif" alt="kit ready" width="640" />
+</p>
+
+<p align="center"><sub>Recommend · install · apply · link · doctor.</sub></p>
+
+```bash
+kit ready
+kit ready --write
+kit ready --write --unify
+```
+
+---
+
+## Link the library to agents
+
+<p align="center">
+  <img src="docs/assets/demo-link.gif" alt="kit link" width="640" />
 </p>
 
 <p align="center"><sub>Library → Claude · Codex · Grok.</sub></p>
 
-<p align="center">
-  <img src="docs/assets/ad-link.png" alt="Link still" width="480" />
-</p>
+```bash
+kit link --to all --write
+kit import --from claude-code --write
+```
 
 ---
 
@@ -77,18 +95,17 @@ kit unify --write --link  # clean agent skill folders into one library
   <img src="docs/assets/packs-strip.png" alt="Starter packs" width="720" />
 </p>
 
-A pack is a set of skills for one project type.  
-Most packs include **essentials**, then add extra skills.
+A pack is a skill set for one project type. Most extend **essentials**.
 
-| Pack | Use when | Extra skills (beyond essentials) |
-|------|----------|-----------------------------------|
-| **essentials** | Any project. Install this first. | — |
-| **web-app** | Sites and UI apps | ship-checklist, a11y-pass, pr-ready |
+| Pack | Use when | Extra skills |
+|------|----------|--------------|
+| **essentials** | Any project. Start here. | — |
+| **web-app** | Sites and UI | ship-checklist, a11y-pass, pr-ready |
 | **library** | Packages and SDKs | api-docs, changelog, pr-ready |
-| **cli-tool** | Command-line tools | cli-help, pr-ready |
-| **api-service** | HTTP APIs and backends | api-docs, ship-checklist, pr-ready |
-| **full-stack** | UI + API products | ship-checklist, a11y-pass, api-docs, pr-ready |
-| **data-ml** | Data and ML work | data-check, write-tests, pr-ready |
+| **cli-tool** | CLIs | cli-help, pr-ready |
+| **api-service** | HTTP APIs | api-docs, ship-checklist, pr-ready |
+| **full-stack** | UI + API | ship-checklist, a11y-pass, api-docs, pr-ready |
+| **data-ml** | Data / ML | data-check, write-tests, pr-ready |
 
 ```bash
 kit pack list
@@ -100,58 +117,58 @@ kit pack apply essentials --dir .
 
 ## Skills
 
-Each skill is a short instruction file. Agents load it when the task matches.
+Short instruction files. Agents load them when the task matches.
 
-| Skill | What it does |
-|-------|----------------|
-| **add-readme** | Write a clear project README |
-| **project-setup** | Set a clean project baseline for agents and humans |
-| **workspace-setup** | Set monorepo and multi-package layout |
-| **code-review** | Review a change for correctness, risk, and clarity |
-| **write-tests** | Add tests for important behavior |
-| **fix-bug** | Find root cause and fix a bug without extra refactors |
-| **pr-ready** | Write PR summary, test plan, and risk notes |
-| **ship-checklist** | Run a pre-ship checklist for an app release |
-| **a11y-pass** | Improve basic accessibility for UI and web flows |
-| **api-docs** | Document a library or service API with examples |
-| **changelog** | Write a clear changelog entry |
-| **cli-help** | Improve CLI help text, usage, and flags |
-| **data-check** | Review data scripts and notebooks for clarity and reuse |
+| Skill | Does |
+|-------|------|
+| **add-readme** | Project README |
+| **project-setup** | Clean baseline for agents and humans |
+| **workspace-setup** | Monorepo / multi-package layout |
+| **code-review** | Correctness, risk, clarity |
+| **write-tests** | Tests for important behavior |
+| **fix-bug** | Root cause + fix without drive-by refactors |
+| **pr-ready** | PR summary, test plan, risk |
+| **ship-checklist** | Pre-ship checklist |
+| **a11y-pass** | Basic UI accessibility |
+| **api-docs** | API docs with examples |
+| **changelog** | Changelog entry |
+| **cli-help** | Help text, usage, flags |
+| **data-check** | Data scripts / notebooks |
 
 ```bash
 kit list
 kit pack show essentials
 ```
 
-Full pack notes: [docs/packs.md](docs/packs.md)
+More: [docs/packs.md](docs/packs.md)
 
 ---
 
-<p align="center">
-  <img src="docs/assets/ad-commands.png" alt="Main commands" width="640" />
-</p>
+## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `kit` | Show library status and a next command |
-| `kit ready --write` | Recommend pack, install, apply, link agents, run doctor |
-| `kit unify --write` | Scan Claude/Codex/Grok skills, keep good ones, drop noise |
-| `kit unify --write --link` | Same, then link skills into this project |
-| `kit recommend --dir .` | Suggest a pack from project files |
-| `kit pack apply <name> --dir .` | Copy pack skills into a project |
-| `kit link --to all --write` | Link library skills to Claude, Codex, and Grok |
-| `kit import --from claude-code --write` | Copy skills from one agent into Kit |
-| `kit doctor` | Check install health |
-| `kit tui` | Open the pixel terminal UI |
+| `kit` | Status + next step |
+| `kit ready --write` | Make this repo agent-ready |
+| `kit unify --write` | Clean Claude/Codex/Grok skill dumps |
+| `kit unify --write --link` | Clean + link into the project |
+| `kit recommend --dir .` | Suggest a pack |
+| `kit pack apply <name> --dir .` | Apply pack skills |
+| `kit link --to all --write` | Link library to agents |
+| `kit import --from claude-code --write` | Import from one agent |
+| `kit doctor` | Install health |
+| `kit tui` | Terminal UI |
 
 ---
 
 ## How it works
 
-1. Skills live in a local library (`~/.kit`).
-2. Packs install groups of skills into that library.
-3. `link` makes those skills available to each agent.
-4. `unify` imports and cleans skills that already exist in agent folders.
+1. Skills live in `~/.kit`.
+2. Packs install groups into that library.
+3. `link` exposes them to each agent.
+4. `unify` imports and cleans skills already in agent folders.
+
+**TUI:** fixed side rail for the mascot (animation does not resize the menu). ↑↓ shows direction. `KIT_REDUCED_MOTION=1` freezes motion.
 
 Agents: **Claude Code** · **Codex** · **Grok Build**.
 
@@ -164,12 +181,15 @@ git clone https://github.com/Zwin-ux/kit.git
 cd kit
 pnpm install && pnpm build
 pnpm kit -- doctor
+pnpm kit -- tui
 ```
+
+Run builds and local `kit` from the **repo root** (`agent-sandbox/projects/kit`), not your home folder.
 
 ---
 
 <p align="center">
-  <img src="docs/assets/kit-success.gif" alt="Kit ready" width="200" />
+  <img src="docs/assets/kit-success.gif" alt="ready" width="180" />
 </p>
 
 <p align="center">

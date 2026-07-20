@@ -3,7 +3,6 @@ import { Box, Text } from "ink";
 import { motionEnabled } from "../motion/motionEnabled.js";
 import {
   renderFrameLines,
-  renderedCellWidth,
   type RenderFrameOptions,
 } from "./renderBitmap.js";
 import {
@@ -12,15 +11,15 @@ import {
   type PixelFrame,
 } from "./types.js";
 import { useLayoutScale } from "./useLayoutScale.js";
-import type { LayoutScale } from "./layoutScale.js";
+import { LAYOUT_CAPS, type LayoutScale } from "./layoutScale.js";
 
 export interface MascotPlayerProps {
   frames: PixelFrame[];
   playing?: boolean;
   delayMs?: number;
   /**
-   * compact / auto = side rail (single █, hard-capped)
-   * hero / full = splash only (still capped)
+   * compact / auto = fixed rail slot
+   * hero / full = splash (still fixed line count)
    */
   size?: "full" | "compact" | "hero" | "auto";
   caption?: string;
@@ -31,8 +30,26 @@ export interface MascotPlayerProps {
 }
 
 /**
- * Live terminal playback of the Kit mascot.
- * Rail never uses double-wide cells. Canvas letterboxed so frames don't jump.
+ * Pad/truncate to exactly `rows` lines of length `cols` (spaces).
+ * Stable React tree → no layout thrash while animating.
+ */
+export function padSlotLines(
+  lines: string[],
+  cols: number,
+  rows: number,
+): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < rows; i++) {
+    const raw = lines[i] ?? "";
+    const clipped = raw.length > cols ? raw.slice(0, cols) : raw;
+    out.push(clipped.padEnd(cols, " "));
+  }
+  return out;
+}
+
+/**
+ * Live mascot in a **fixed** terminal slot.
+ * Only characters inside change — never width/height/node count.
  */
 export function MascotPlayer({
   frames,
@@ -50,7 +67,21 @@ export function MascotPlayer({
   const [index, setIndex] = useState(0);
   const frameCount = frames.length;
   const enabled = motionEnabled();
-  const effectiveDelay = delayMs ?? frameDelayForVariant(variant);
+  const isHero = size === "full" || size === "hero";
+
+  const slotCols = isHero
+    ? Math.min(scale.splashFit.width, LAYOUT_CAPS.splashFitMax)
+    : scale.railCols;
+  const slotRows = isHero
+    ? Math.min(scale.splashFit.height, LAYOUT_CAPS.splashFitMax)
+    : scale.railRows;
+
+  const effectiveDelay =
+    delayMs ??
+    (isHero
+      ? frameDelayForVariant(variant)
+      : Math.max(frameDelayForVariant(variant), LAYOUT_CAPS.railFrameDelayMs));
+
   const shouldPlay = playing && enabled && frameCount > 1;
 
   useEffect(() => {
@@ -66,14 +97,12 @@ export function MascotPlayer({
   }, [variant, frameCount]);
 
   const frame = frames[enabled ? index : 0] ?? frames[0];
-  const isHero = size === "full" || size === "hero";
 
   const renderOpts: RenderFrameOptions = useMemo(() => {
     if (isHero) {
-      const double = scale.splashCell === "double";
       return {
-        cell: double ? "██" : "█",
-        empty: double ? "  " : " ",
+        cell: "█",
+        empty: " ",
         tight: true,
         pad: 0,
         fit: {
@@ -82,7 +111,6 @@ export function MascotPlayer({
         },
       };
     }
-    // Rail: always single-width, capped fit from layout scale
     return {
       cell: "█",
       empty: " ",
@@ -95,52 +123,53 @@ export function MascotPlayer({
     };
   }, [isHero, scale]);
 
+  // Always exactly slotRows lines × slotCols chars
   const lines = useMemo(() => {
-    if (!frame) return [] as string[];
-    return renderFrameLines(frame, renderOpts);
-  }, [frame, renderOpts]);
-
-  const width = useMemo(() => {
-    if (!frame) return 0;
-    return renderedCellWidth(frame, renderOpts);
-  }, [frame, renderOpts]);
-
-  const height = lines.length;
-  // Never exceed reserved rail on menus
-  const maxWidth = isHero
-    ? Math.max(width, 1)
-    : Math.min(Math.max(width, 1), scale.railCols);
+    if (!frame) {
+      return padSlotLines([], slotCols, slotRows);
+    }
+    const raw = renderFrameLines(frame, renderOpts);
+    return padSlotLines(raw, slotCols, slotRows);
+  }, [frame, renderOpts, slotCols, slotRows]);
 
   if (!frame) {
     return (
-      <Box>
-        <Text dimColor>mascot unavailable</Text>
+      <Box width={slotCols} height={slotRows} flexShrink={0}>
+        <Text dimColor>{" ".repeat(slotCols)}</Text>
       </Box>
     );
   }
 
+  // Extra reserved lines for optional chrome (fixed 0 when off)
+  const chromeRows = (label ? 1 : 0) + (showCounter ? 1 : 0) + (caption ? 1 : 0);
+  const totalRows = slotRows + chromeRows;
+
   return (
-    <Box flexDirection="column" flexShrink={0} width={maxWidth}>
-      {label ? <Text dimColor>{label}</Text> : null}
-      <Box
-        flexDirection="column"
-        width={maxWidth}
-        height={height}
-        flexShrink={0}
-        overflow="hidden"
-      >
-        {lines.map((line, i) => (
-          <Text key={i} wrap="truncate">
-            {line.length > maxWidth ? line.slice(0, maxWidth) : line}
-          </Text>
-        ))}
-      </Box>
-      {showCounter ? (
-        <Text dimColor>
-          {index + 1}/{frameCount}
+    <Box
+      flexDirection="column"
+      flexShrink={0}
+      width={slotCols}
+      height={totalRows}
+      overflow="hidden"
+    >
+      {label ? (
+        <Text dimColor wrap="truncate">
+          {label.padEnd(slotCols, " ").slice(0, slotCols)}
         </Text>
       ) : null}
-      {caption ? <Text dimColor>{caption}</Text> : null}
+      {lines.map((line, i) => (
+        <Text key={i}>{line}</Text>
+      ))}
+      {showCounter ? (
+        <Text dimColor>
+          {`${index + 1}/${frameCount}`.padEnd(slotCols, " ").slice(0, slotCols)}
+        </Text>
+      ) : null}
+      {caption ? (
+        <Text dimColor>
+          {caption.padEnd(slotCols, " ").slice(0, slotCols)}
+        </Text>
+      ) : null}
     </Box>
   );
 }

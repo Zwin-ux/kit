@@ -12,9 +12,8 @@ export interface ScreenShellProps {
 }
 
 /**
- * Full-screen-safe row layout:
- * fixed small mascot rail + flexible content (gets the rest of the window).
- * Shell is always compact rail — never hero.
+ * Fixed mascot rail + flexible content.
+ * Rail width/height pinned so fox animation cannot push the menu.
  */
 export function ScreenShell({
   frames,
@@ -45,6 +44,7 @@ export function ScreenShell({
         marginRight={1}
         flexShrink={0}
         width={scale.railCols}
+        height={scale.railRows}
         overflow="hidden"
       >
         <MascotPlayer

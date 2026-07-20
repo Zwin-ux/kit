@@ -98,6 +98,9 @@ export function App(): React.ReactElement {
   const [selectedRemoteIndex, setSelectedRemoteIndex] = useState(0);
   const [selectedHarnessIndex, setSelectedHarnessIndex] = useState(0);
   const [selectTick, setSelectTick] = useState(0);
+  const [selectDirection, setSelectDirection] = useState<
+    "up" | "down" | "none"
+  >("none");
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [libraryError, setLibraryError] = useState<string | undefined>();
   const [packsError, setPacksError] = useState<string | undefined>();
@@ -134,7 +137,8 @@ export function App(): React.ReactElement {
     setActionFlash(message);
   }, []);
 
-  const bumpSelect = useCallback(() => {
+  const bumpSelect = useCallback((direction: "up" | "down" | "none" = "none") => {
+    setSelectDirection(direction);
     setSelectTick((t) => t + 1);
   }, []);
 
@@ -719,14 +723,14 @@ export function App(): React.ReactElement {
         setSelectedPackIndex((i) =>
           packs.length === 0 ? 0 : (i - 1 + packs.length) % packs.length,
         );
-        bumpSelect();
+        bumpSelect("up");
         return;
       }
       if (key.downArrow) {
         setSelectedPackIndex((i) =>
           packs.length === 0 ? 0 : (i + 1) % packs.length,
         );
-        bumpSelect();
+        bumpSelect("down");
         return;
       }
       if (key.return || input === "i") {
@@ -744,7 +748,7 @@ export function App(): React.ReactElement {
         const pack = packs[index];
         if (pack) {
           setSelectedPackIndex(index);
-          bumpSelect();
+          bumpSelect("none");
           void installSelectedPack(pack.name, "install");
         }
       }
@@ -766,14 +770,14 @@ export function App(): React.ReactElement {
         setSelectedPackIndex((i) =>
           packs.length === 0 ? 0 : (i - 1 + packs.length) % packs.length,
         );
-        bumpSelect();
+        bumpSelect("up");
         return;
       }
       if (key.downArrow) {
         setSelectedPackIndex((i) =>
           packs.length === 0 ? 0 : (i + 1) % packs.length,
         );
-        bumpSelect();
+        bumpSelect("down");
         return;
       }
       if (key.return || input === "i") {
@@ -804,7 +808,7 @@ export function App(): React.ReactElement {
             ? 0
             : (i - 1 + remotePacks.length) % remotePacks.length,
         );
-        bumpSelect();
+        bumpSelect("up");
         return;
       }
       if (key.downArrow) {
@@ -813,7 +817,7 @@ export function App(): React.ReactElement {
             ? 0
             : (i + 1) % remotePacks.length,
         );
-        bumpSelect();
+        bumpSelect("down");
         return;
       }
       if (key.return || input === "i") {
@@ -840,7 +844,7 @@ export function App(): React.ReactElement {
         setSelectedSkillIndex((i) =>
           skills.length === 0 ? 0 : (i - 1 + skills.length) % skills.length,
         );
-        bumpSelect();
+        bumpSelect("up");
         setLastChecks(undefined);
         return;
       }
@@ -848,7 +852,7 @@ export function App(): React.ReactElement {
         setSelectedSkillIndex((i) =>
           skills.length === 0 ? 0 : (i + 1) % skills.length,
         );
-        bumpSelect();
+        bumpSelect("down");
         setLastChecks(undefined);
         return;
       }
@@ -897,7 +901,7 @@ export function App(): React.ReactElement {
           (i - 1 + PATHS_LINKABLE_HARNESSES.length) %
           PATHS_LINKABLE_HARNESSES.length,
         );
-        bumpSelect();
+        bumpSelect("up");
         setConfirmLinkWrite(false);
         return;
       }
@@ -905,7 +909,7 @@ export function App(): React.ReactElement {
         setSelectedHarnessIndex((i) =>
           (i + 1) % PATHS_LINKABLE_HARNESSES.length,
         );
-        bumpSelect();
+        bumpSelect("down");
         setConfirmLinkWrite(false);
         return;
       }
@@ -1014,6 +1018,7 @@ export function App(): React.ReactElement {
         mascotVariant={m.variant}
         selectedHarnessIndex={selectedHarnessIndex}
         selectTick={selectTick}
+        selectDirection={selectDirection}
         scope={pathScope}
         confirmWrite={confirmLinkWrite}
         loading={pathLoading}
@@ -1042,6 +1047,7 @@ export function App(): React.ReactElement {
         skills={skills}
         selectedIndex={selectedSkillIndex}
         selectTick={selectTick}
+        selectDirection={selectDirection}
         frames={m.frames}
         mascotVariant={m.variant}
         confirmRemove={confirmRemove}
@@ -1065,6 +1071,7 @@ export function App(): React.ReactElement {
         packs={packs}
         selectedIndex={selectedPackIndex}
         selectTick={selectTick}
+        selectDirection={selectDirection}
         frames={m.frames}
         mascotVariant={m.variant}
         recommended={recommended}
@@ -1091,6 +1098,7 @@ export function App(): React.ReactElement {
         packs={remotePacks}
         selectedIndex={selectedRemoteIndex}
         selectTick={selectTick}
+        selectDirection={selectDirection}
         loading={exploreLoading}
         registryUrl={getRegistryUrl()}
         query={exploreQuery}
@@ -1116,6 +1124,7 @@ export function App(): React.ReactElement {
       applied={applied}
       selectedPackIndex={selectedPackIndex}
       selectTick={selectTick}
+      selectDirection={selectDirection}
       recommended={recommended}
       skillRecs={skillRecs}
       topPick={topPick}

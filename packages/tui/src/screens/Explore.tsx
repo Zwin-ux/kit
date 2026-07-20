@@ -7,7 +7,7 @@ import { StatusIcon } from "../mascot/StatusIcon.js";
 import { Footer, Header } from "../components/Chrome.js";
 import { ScreenShell } from "../components/ScreenShell.js";
 import { ErrorLine, Spinner, SuccessLine } from "../components/Motion.js";
-import { SelectPulse } from "../motion/index.js";
+import { SelectPulse, type SelectDirection } from "../motion/index.js";
 
 export interface ExploreProps {
   frames: PixelFrame[];
@@ -15,6 +15,7 @@ export interface ExploreProps {
   packs: RegistryPackSummary[];
   selectedIndex: number;
   selectTick?: number;
+  selectDirection?: SelectDirection;
   loading: boolean;
   registryUrl: string;
   query: string;
@@ -31,6 +32,7 @@ export function Explore({
   packs,
   selectedIndex,
   selectTick = 0,
+  selectDirection = "none",
   loading,
   registryUrl,
   query,
@@ -84,7 +86,8 @@ export function Explore({
                     <SelectPulse
                       selected={index === selectedIndex}
                       tick={selectTick}
-                    />{" "}
+                      direction={selectDirection}
+                    />
                     <PackIcon packName={pack.name} size="mini" animate />{" "}
                     <Text bold={index === selectedIndex}>{pack.title}</Text>
                     <Text dimColor> · {pack.skillCount} skills</Text>

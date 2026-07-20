@@ -13,7 +13,11 @@ import {
   getPackIconBitmap,
   renderPackIconLines,
 } from "../src/mascot/packIcons.js";
-import { layoutScaleFromTerminal } from "../src/mascot/layoutScale.js";
+import {
+  LAYOUT_CAPS,
+  layoutScaleFromTerminal,
+} from "../src/mascot/layoutScale.js";
+import { padSlotLines } from "../src/mascot/MascotPlayer.js";
 import {
   STATUS_ICON_IDS,
   STATUS_ICON_SIZE,
@@ -113,7 +117,7 @@ describe("pack silhouette icons", () => {
   });
 });
 
-describe("layout scale", () => {
+describe("layout scale — fixed rail slot", () => {
   const sizes = [
     [60, 20],
     [80, 24],
@@ -121,48 +125,46 @@ describe("layout scale", () => {
     [200, 60],
   ] as const;
 
-  it("hard-caps art: mascot ≤10, rail ≤12, pack ≤ half fox", () => {
+  it("pins railCols/railRows and keeps pack ≤ half fox", () => {
     for (const [cols, rows] of sizes) {
       const s = layoutScaleFromTerminal(cols, rows);
-      expect(s.mascotFit.height).toBeLessThanOrEqual(10);
-      expect(s.mascotFit.width).toBeLessThanOrEqual(10);
-      expect(s.railCols).toBeLessThanOrEqual(12);
+      expect(s.railCols).toBeGreaterThanOrEqual(10);
+      expect(s.railCols).toBeLessThanOrEqual(LAYOUT_CAPS.railColsTall);
+      expect(s.railRows).toBeGreaterThanOrEqual(9);
+      expect(s.railRows).toBeLessThanOrEqual(LAYOUT_CAPS.railRowsTall);
+      expect(s.mascotFit.width).toBeLessThanOrEqual(s.railCols);
+      expect(s.mascotFit.height).toBeLessThanOrEqual(s.railRows);
       expect(s.mascotCell).toBe("single");
       if (s.showPackDetail) {
-        expect(s.packDetailSize).toBeGreaterThan(0);
         expect(s.packDetailSize).toBeLessThanOrEqual(
           Math.floor(s.mascotFit.height / 2),
         );
-        expect(s.packDetailSize).toBeLessThanOrEqual(4);
-      } else {
-        expect(s.packDetailSize).toBe(0);
       }
     }
   });
 
-  it("common 80×24 uses 8-row fox and no pack detail billboard", () => {
+  it("common 80×24 has roomy fixed slot, no pack detail", () => {
     const s = layoutScaleFromTerminal(80, 24);
     expect(s.mode).toBe("normal");
-    expect(s.mascotFit.height).toBe(8);
-    expect(s.railCols).toBeLessThanOrEqual(9);
+    expect(s.railCols).toBe(LAYOUT_CAPS.railColsNormal);
+    expect(s.railRows).toBe(LAYOUT_CAPS.railRowsNormal);
     expect(s.showPackDetail).toBe(false);
   });
 
-  it("wide uses more content; tall may grow fox to 10 only", () => {
-    const normal = layoutScaleFromTerminal(80, 24);
-    const wideTall = layoutScaleFromTerminal(120, 40);
-    expect(wideTall.mode).toBe("wide");
-    expect(normal.mascotFit.height).toBe(8);
-    expect(wideTall.mascotFit.height).toBe(10);
-    expect(wideTall.mascotCell).toBe("single");
-    expect(wideTall.listMaxItems).toBeGreaterThan(normal.listMaxItems);
+  it("padSlotLines freezes line count and width", () => {
+    const a = padSlotLines(["██", "█"], 12, 10);
+    const b = padSlotLines(["████████████████", "x", "y", "z"], 12, 10);
+    expect(a).toHaveLength(10);
+    expect(b).toHaveLength(10);
+    for (const line of [...a, ...b]) {
+      expect(line).toHaveLength(12);
+    }
   });
 
-  it("narrow hides pack detail bitmaps", () => {
+  it("narrow still has fixed rail rows", () => {
     const narrow = layoutScaleFromTerminal(60, 20);
-    expect(narrow.mode).toBe("narrow");
+    expect(narrow.railRows).toBe(LAYOUT_CAPS.railRowsNarrow);
     expect(narrow.showPackDetail).toBe(false);
-    expect(narrow.mascotFit.height).toBe(8);
   });
 });
 

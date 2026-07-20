@@ -11,13 +11,18 @@ import {
   Spinner,
   SuccessLine,
 } from "../components/Motion.js";
-import { ActionFlash, BlinkCursor } from "../motion/index.js";
+import {
+  ActionFlash,
+  BlinkCursor,
+  type SelectDirection,
+} from "../motion/index.js";
 import { ToolkitPicker } from "../components/ToolkitPicker.js";
 
 export interface PacksProps {
   packs: PackListItem[];
   selectedIndex: number;
   selectTick?: number;
+  selectDirection?: SelectDirection;
   frames: PixelFrame[];
   mascotVariant?: MascotVariant;
   recommended: ToolkitRecommendation[];
@@ -37,6 +42,7 @@ export function Packs({
   packs,
   selectedIndex,
   selectTick = 0,
+  selectDirection = "none",
   frames,
   mascotVariant = "idle",
   recommended,
@@ -81,6 +87,7 @@ export function Packs({
               packs={packs}
               selectedIndex={selectedIndex}
               selectTick={selectTick}
+              selectDirection={selectDirection}
               recommended={recommended}
               appliedNames={appliedNames}
               {...(filter ? { filter } : {})}

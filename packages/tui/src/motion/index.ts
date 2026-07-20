@@ -8,5 +8,6 @@ export { CountUp } from "./CountUp.js";
 export { StaggerLines } from "./StaggerLines.js";
 export { ActionFlash } from "./ActionFlash.js";
 export { SelectPulse } from "./SelectPulse.js";
+export type { SelectDirection } from "./SelectPulse.js";
 export { Spinner } from "./Spinner.js";
 export type { SpinnerProps } from "./Spinner.js";

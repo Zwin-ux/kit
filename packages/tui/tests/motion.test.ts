@@ -43,3 +43,10 @@ describe("typewriter timing budget", () => {
     expect(ms).toBeLessThanOrEqual(1500);
   });
 });
+
+describe("rail motion budget", () => {
+  it("keeps rail fps calm to reduce full-screen paint thrash", async () => {
+    const { LAYOUT_CAPS } = await import("../src/mascot/layoutScale.js");
+    expect(LAYOUT_CAPS.railFrameDelayMs).toBeGreaterThanOrEqual(200);
+  });
+});

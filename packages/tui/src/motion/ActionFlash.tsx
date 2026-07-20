@@ -3,8 +3,8 @@ import { Text } from "ink";
 import { motionEnabled } from "./motionEnabled.js";
 
 /**
- * Brief one-shot status flash after a key action (install, link, test…).
- * Pass a rising `nonce` so the same label can re-trigger.
+ * One-shot status flash after a key action.
+ * Always reserves one terminal line so mount/unmount never jumps the layout.
  */
 export function ActionFlash(props: {
   message: string | undefined;
@@ -12,7 +12,7 @@ export function ActionFlash(props: {
   nonce?: number;
   /** ms to hold the flash. Default 420. */
   holdMs?: number;
-}): React.ReactElement | null {
+}): React.ReactElement {
   const { message, nonce = 0, holdMs = 420 } = props;
   const [visible, setVisible] = useState(false);
   const [text, setText] = useState<string | undefined>();
@@ -32,7 +32,10 @@ export function ActionFlash(props: {
     return () => clearTimeout(t);
   }, [message, nonce, holdMs]);
 
-  if (!text || !visible) return null;
+  // Always one line — empty space when idle (no null → no reflow)
+  if (!text || !visible) {
+    return <Text> </Text>;
+  }
 
   return <Text dimColor>▸ {text}</Text>;
 }
