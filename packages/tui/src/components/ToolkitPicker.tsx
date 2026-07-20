@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { PackListItem } from "@kit-skills/core";
-import type { ToolkitRecommendation } from "@kit-skills/core";
+import type { PackListItem } from "@mzwin/kit-core";
+import type { ToolkitRecommendation } from "@mzwin/kit-core";
 import { PackIcon } from "../mascot/PackIcon.js";
 import { SelectPulse } from "../motion/index.js";
 

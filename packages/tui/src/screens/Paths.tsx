@@ -5,7 +5,7 @@ import type {
   LinkResult,
   PathReport,
   PathScope,
-} from "@kit-skills/core";
+} from "@mzwin/kit-core";
 import type { PixelFrame } from "../mascot/types.js";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { Footer, Header } from "../components/Chrome.js";

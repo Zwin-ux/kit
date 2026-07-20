@@ -1,12 +1,12 @@
 /**
  * Pixel-art TUI for Kit.
- * Drawing and keyboard input only. Business logic stays in @kit-skills/core.
+ * Drawing and keyboard input only. Business logic stays in @mzwin/kit-core.
  */
 
-export { KIT_PACKAGE_VERSION } from "@kit-skills/shared";
+export { KIT_PACKAGE_VERSION } from "@mzwin/kit-shared";
 
 /** Package identity for consumers. */
-export const TUI_PACKAGE_NAME = "@kit-skills/tui" as const;
+export const TUI_PACKAGE_NAME = "@mzwin/kit-tui" as const;
 
 export { loadMascotFrames, pngToFrame } from "./mascot/loadFrames.js";
 export { renderFrame } from "./mascot/renderBitmap.js";

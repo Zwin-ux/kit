@@ -1,6 +1,6 @@
 import { access, readdir } from "node:fs/promises";
 import path from "node:path";
-import { KIT_PACKAGE_VERSION } from "@kit-skills/shared";
+import { KIT_PACKAGE_VERSION } from "@mzwin/kit-shared";
 import { readAuthSession } from "../auth/store.js";
 import { getRegistryUrl } from "../auth/login.js";
 import { getFirstRunStatus, readConfig } from "../config/config.js";

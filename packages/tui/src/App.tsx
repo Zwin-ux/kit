@@ -34,7 +34,7 @@ import {
   type SkillRecommendation,
   type ToolkitRecommendation,
   type RegistryPackSummary,
-} from "@kit-skills/core";
+} from "@mzwin/kit-core";
 import { loadMascotFrames } from "./mascot/loadFrames.js";
 import type { PixelFrame } from "./mascot/types.js";
 import { Spinner } from "./components/Motion.js";

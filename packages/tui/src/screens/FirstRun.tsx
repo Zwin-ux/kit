@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { FIRST_RUN_PACK_OPTIONS } from "@kit-skills/core";
+import { FIRST_RUN_PACK_OPTIONS } from "@mzwin/kit-core";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { PackIcon } from "../mascot/PackIcon.js";
 import type { PixelFrame } from "../mascot/types.js";

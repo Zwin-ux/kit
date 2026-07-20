@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { KIT_PACKAGE_VERSION } from "@kit-skills/shared";
+import { KIT_PACKAGE_VERSION } from "@mzwin/kit-shared";
 import { FadeSteps } from "../motion/index.js";
 
 export function Header(props: {

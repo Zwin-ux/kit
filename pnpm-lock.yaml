@@ -38,16 +38,16 @@ importers:
 
   packages/cli:
     dependencies:
-      '@kit-skills/catalog':
+      '@mzwin/kit-catalog':
         specifier: workspace:*
         version: link:../catalog
-      '@kit-skills/core':
+      '@mzwin/kit-core':
         specifier: workspace:*
         version: link:../core
-      '@kit-skills/shared':
+      '@mzwin/kit-shared':
         specifier: workspace:*
         version: link:../shared
-      '@kit-skills/tui':
+      '@mzwin/kit-tui':
         specifier: workspace:*
         version: link:../tui
     devDependencies:
@@ -57,7 +57,7 @@ importers:
 
   packages/core:
     dependencies:
-      '@kit-skills/shared':
+      '@mzwin/kit-shared':
         specifier: workspace:*
         version: link:../shared
       semver:
@@ -85,10 +85,10 @@ importers:
 
   packages/tui:
     dependencies:
-      '@kit-skills/core':
+      '@mzwin/kit-core':
         specifier: workspace:*
         version: link:../core
-      '@kit-skills/shared':
+      '@mzwin/kit-shared':
         specifier: workspace:*
         version: link:../shared
       ink:

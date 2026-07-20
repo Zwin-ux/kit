@@ -49,7 +49,7 @@ Same skills. Multiple agents. No rewriting prompts per tool.
 ### Global CLI (recommended)
 
 ```bash
-npm i -g @kit-skills/cli
+npm i -g @mzwin/kit
 
 kit init --pack essentials
 kit recommend --dir .
@@ -202,7 +202,7 @@ Browse the built-in set in [`skills/`](skills/).
   <sub>
     <a href="LICENSE">MIT</a>
     ·
-    <a href="https://www.npmjs.com/package/@kit-skills/cli">npm</a>
+    <a href="https://www.npmjs.com/package/@mzwin/kit">npm</a>
     ·
     <a href="CHANGELOG.md">Changelog</a>
     ·

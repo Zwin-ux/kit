@@ -1,6 +1,6 @@
 {
-  "name": "@kit-skills/shared",
-  "version": "0.1.0",
+  "name": "@mzwin/kit-shared",
+  "version": "0.1.2",
   "description": "Shared types and utilities for Kit",
   "license": "MIT",
   "type": "module",
@@ -25,11 +25,13 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node -e \"console.log('@kit-skills/shared: no tests yet')\"",
+    "test": "node -e \"console.log('@mzwin/kit-shared: no tests yet')\"",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 {
-  "name": "@kit-skills/cli",
-  "version": "0.1.0",
+  "name": "@mzwin/kit",
+  "version": "0.1.2",
   "description": "Kit CLI — portable agent skills for Claude Code, Grok Build, and Codex",
   "license": "MIT",
   "type": "module",
@@ -26,7 +26,7 @@
     "kit"
   ],
   "bin": {
-    "kit": "./dist/bin.js"
+    "kit": "dist/bin.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -36,18 +36,20 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node -e \"console.log('@kit-skills/cli: no tests yet')\"",
+    "test": "node -e \"console.log('@mzwin/kit: no tests yet')\"",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@kit-skills/catalog": "workspace:*",
-    "@kit-skills/core": "workspace:*",
-    "@kit-skills/shared": "workspace:*",
-    "@kit-skills/tui": "workspace:*"
+    "@mzwin/kit-catalog": "workspace:*",
+    "@mzwin/kit-core": "workspace:*",
+    "@mzwin/kit-shared": "workspace:*",
+    "@mzwin/kit-tui": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

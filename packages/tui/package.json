@@ -1,6 +1,6 @@
 {
-  "name": "@kit-skills/tui",
-  "version": "0.1.0",
+  "name": "@mzwin/kit-tui",
+  "version": "0.1.2",
   "description": "Pixel-art terminal interface for Kit",
   "license": "MIT",
   "type": "module",
@@ -18,7 +18,7 @@
     "url": "https://github.com/Zwin-ux/kit/issues"
   },
   "bin": {
-    "kit-tui": "./dist/bin.js"
+    "kit-tui": "dist/bin.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,7 +28,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -41,8 +43,8 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@kit-skills/core": "workspace:*",
-    "@kit-skills/shared": "workspace:*",
+    "@mzwin/kit-core": "workspace:*",
+    "@mzwin/kit-shared": "workspace:*",
     "ink": "^5.2.1",
     "pngjs": "^7.0.0",
     "react": "^18.3.1"

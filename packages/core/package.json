@@ -1,6 +1,6 @@
 {
-  "name": "@kit-skills/core",
-  "version": "0.1.0",
+  "name": "@mzwin/kit-core",
+  "version": "0.1.2",
   "description": "Skill parser, validator, and local library for Kit",
   "license": "MIT",
   "type": "module",
@@ -25,7 +25,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -34,7 +36,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@kit-skills/shared": "workspace:*",
+    "@mzwin/kit-shared": "workspace:*",
     "semver": "^7.7.2",
     "yaml": "^2.8.0"
   },

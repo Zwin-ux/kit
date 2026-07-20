@@ -3,8 +3,8 @@
 ## 0.1.0 — Public npm + import + keep-alive
 
 ### Install
-- Publish `@kit-skills/cli` (bin: `kit`) with `@kit-skills/core`, `shared`, `tui`, `catalog`
-- Bundled packs/skills via `@kit-skills/catalog` so global install works without cloning
+- Publish `@mzwin/kit` (bin: `kit`) with `@mzwin/kit-core`, `shared`, `tui`, `catalog`
+- Bundled packs/skills via `@mzwin/kit-catalog` so global install works without cloning
 
 ### Capture / link
 - `kit import --from claude-code|codex|grok-build|all` — harness → Kit library (dry-run default)

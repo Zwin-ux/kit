@@ -74,7 +74,7 @@ node scripts/sync-claude-plugin.mjs
 Skills also install via:
 
 \`\`\`bash
-npm i -g @kit-skills/cli
+npm i -g @mzwin/kit
 kit link --to claude-code --write
 \`\`\`
 `,

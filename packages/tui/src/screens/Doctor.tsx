@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { DoctorReport } from "@kit-skills/core";
+import type { DoctorReport } from "@mzwin/kit-core";
 import type { PixelFrame } from "../mascot/types.js";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { Footer, Header } from "../components/Chrome.js";

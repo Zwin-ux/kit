@@ -3,10 +3,10 @@
  * Parse, validate, and manage skills. No TUI code here.
  */
 
-export { KIT_PACKAGE_VERSION } from "@kit-skills/shared";
+export { KIT_PACKAGE_VERSION } from "@mzwin/kit-shared";
 
 /** Package identity for consumers. */
-export const CORE_PACKAGE_NAME = "@kit-skills/core" as const;
+export const CORE_PACKAGE_NAME = "@mzwin/kit-core" as const;
 
 export {
   KNOWN_AGENTS,

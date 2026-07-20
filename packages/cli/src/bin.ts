@@ -34,8 +34,8 @@ import {
   type HarnessId,
   type LinkMode,
   type PathScope,
-} from "@kit-skills/core";
-import { KIT_PACKAGE_VERSION } from "@kit-skills/shared";
+} from "@mzwin/kit-core";
+import { KIT_PACKAGE_VERSION } from "@mzwin/kit-shared";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -143,7 +143,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "tui" || command === "ui" || command === "start") {
-    const { startTui } = await import("@kit-skills/tui");
+    const { startTui } = await import("@mzwin/kit-tui");
     startTui();
     return;
   }
@@ -185,9 +185,9 @@ function printHelp(): void {
   console.log("  kit recommend [--dir <project>]");
   console.log("");
   console.log("Library:  ~/.kit (or KIT_HOME)");
-  console.log("Packs:    @kit-skills/catalog or packs/ in this repo (KIT_PACKS)");
+  console.log("Packs:    @mzwin/kit-catalog or packs/ in this repo (KIT_PACKS)");
   console.log("Registry: KIT_REGISTRY_URL or production Railway URL");
-  console.log("Install:  npm i -g @kit-skills/cli");
+  console.log("Install:  npm i -g @mzwin/kit");
   console.log("Tip:      kit import --from claude-code → kit link --to codex --write");
 }
 

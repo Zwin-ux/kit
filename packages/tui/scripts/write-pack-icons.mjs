@@ -3,7 +3,7 @@
  * - 16×16 masters → assets/pixel/packs/
  * - 64×64 nearest-neighbor upscales → docs/assets/packs/ (README)
  *
- * Run: pnpm --filter @kit-skills/tui build && pnpm --filter @kit-skills/tui icons:write
+ * Run: pnpm --filter @mzwin/kit-tui build && pnpm --filter @mzwin/kit-tui icons:write
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";

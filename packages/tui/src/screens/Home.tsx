@@ -6,7 +6,7 @@ import type {
   PackListItem,
   SkillRecommendation,
   ToolkitRecommendation,
-} from "@kit-skills/core";
+} from "@mzwin/kit-core";
 import type { PixelFrame } from "../mascot/types.js";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { Footer, Header, StatusLine } from "../components/Chrome.js";

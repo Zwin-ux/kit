@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 
 /**
  * Find the packs/ directory.
- * Order: KIT_PACKS env → @kit-skills/catalog package → monorepo walk.
+ * Order: KIT_PACKS env → @mzwin/kit-catalog package → monorepo walk.
  */
 export async function resolvePacksRoot(
   options?: { startDir?: string },
@@ -37,7 +37,7 @@ export async function resolvePacksRoot(
 
 /**
  * Find the skills/ catalog directory.
- * Order: KIT_SKILLS env → sibling of packs → @kit-skills/catalog → monorepo walk.
+ * Order: KIT_SKILLS env → sibling of packs → @mzwin/kit-catalog → monorepo walk.
  */
 export async function resolveSkillsCatalogRoot(
   options?: { startDir?: string; packsRoot?: string },
@@ -69,10 +69,10 @@ export async function resolveSkillsCatalogRoot(
   return undefined;
 }
 
-/** Resolve packs/skills shipped inside @kit-skills/catalog (published npm layout). */
+/** Resolve packs/skills shipped inside @mzwin/kit-catalog (published npm layout). */
 function resolveCatalogSubdir(sub: "packs" | "skills"): string | undefined {
   try {
-    const pkgJson = require.resolve("@kit-skills/catalog/package.json");
+    const pkgJson = require.resolve("@mzwin/kit-catalog/package.json");
     return path.join(path.dirname(pkgJson), sub);
   } catch {
     // Not installed / not linked — monorepo walk will handle dev.
