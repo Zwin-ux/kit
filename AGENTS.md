@@ -1,61 +1,61 @@
-# Instructions for Coding Agents
+# AGENTS.md — Living Context for Coding Agents
 
-You work on Kit.
+You are working on **Kit**.
+
 Kit is a terminal-native Agent Skills platform.
-The interface uses pixel art.
-The interface is a TUI only. There is no web app.
+The only interface is a pixel-art TUI.
+There is no web app.
 
-## Project Goals
-- Make skills portable across Claude Code, Grok Build, Codex, and other agents.
-- Keep the full user experience inside a pixel-art TUI.
-- Provide free accounts from the first version.
-- Use a young fox named Kit as the mascot. The fox holds a wrench.
-- Validate skills strictly.
-- Keep the local engine offline-first.
+## Core Identity
+- Portable skills that work across Claude Code, Grok Build, Codex, and others
+- Pure black-and-white silhouette visual language
+- Free accounts from day one (Railway later)
+- Offline-first local engine
+- Strict validation
 
-## Current Priority
-Complete Phase 0 and Phase 1.
-Build the local skills engine first.
-Build the TUI after the core works.
+## Current State (update this section when major progress happens)
+
+**Done**
+- Monorepo structure (pnpm)
+- Skill schema parser + strict validator
+- Local skill library (install / list / remove)
+- Basic docs and architecture
+
+**In Progress**
+- TUI shell + mascot animation (Issue #4)
+
+**Next Priority After TUI Shell**
+1. Official starter pack (4–6 high-quality skills)
+2. First-run experience (offer to install starter pack)
+3. Minimal useful Home screen in the TUI
+4. Railway accounts + publish (later)
+
+## How to Maintain This File
+When you complete a meaningful piece of work:
+- Update the "Current State" section
+- Keep language short and factual
+- Do not write long status reports here
 
 ## Key Documents
-- README.md
 - ARCHITECTURE.md
 - ROADMAP.md
-- docs/PIXEL_ART.md
 - docs/SKILL_SCHEMA.md
-- docs/PACKAGE_STRUCTURE.md
 - docs/LOCAL_LIBRARY.md
+- docs/PIXEL_ART.md
 - docs/TUI_SCREENS.md
+- assets/pixel/README.md
 
-## Language Style for Documentation
-Use clear and simple language.
-Follow principles from Simplified Technical English:
-- Use short sentences.
-- Use active voice.
-- Use simple verb forms.
-- Avoid unnecessary words.
-- Keep one main idea per sentence.
-- Use consistent terms.
+## Visual Rules (Non-Negotiable)
+- Pure black silhouette only for TUI assets
+- High contrast
+- Must read at 16×16 and 32×32
+- No color inside the TUI for the mascot
+- Same four frames used for both TUI animation and GitHub GIF
 
-## Code Style
-- Use modern TypeScript.
-- Use strong types.
-- Validate all inputs.
-- Keep modules small and focused.
-- Write clear error messages.
-- Do not add web frontend code.
-
-## Pixel Art Rules
-- Use strong silhouettes.
-- Keep high contrast.
-- Use flat colors.
-- Make art readable at 16x16.
-
-## Working Rules
-- Make small and clear changes.
-- Update documents when behavior changes.
-- Prefer simple and reliable solutions.
-- Ask when a decision has large impact.
+## Working Style
+- Small, clear commits
+- Prefer simple solutions
+- Update docs when behavior changes
+- Ask only when a decision has large product impact
 
 Grok Build is the preferred coding agent for this repository.
