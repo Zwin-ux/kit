@@ -13,19 +13,38 @@ Use these exact filenames so the TUI can load them easily:
 
 ```
 assets/pixel/
-├── kit-frame-1.png   # Neutral pose
+├── kit-frame-1.png   # Neutral pose (master)
 ├── kit-frame-2.png   # Tail up + slight head tilt
 ├── kit-frame-3.png   # Small shift
 └── kit-frame-4.png   # Return / ready pose
 ```
 
-## Rules for Grok Build
+## Rules for Grok Build (TUI)
 - Load the four frames from this folder
 - Cycle them slowly for splash and loading states
 - Keep the animation simple (4–6 frames per second)
 - Scale cleanly to 16×16 and 32×32
 - Do not add color or effects in code
 
+## GitHub GIF
+The same four frames must also be usable to create a small animated GIF for the README and GitHub social preview.
+
+Recommended GIF settings:
+- Size: 128×128 or 256×256
+- Frame delay: 180–250 ms
+- Loop forever
+- Keep pure black on transparent or white background
+- No extra effects
+
+Suggested output filename:
+```
+assets/pixel/kit-idle.gif
+```
+
+Once `kit-idle.gif` exists, it can be embedded directly in the README.
+
 ## Current Status
 Master direction is locked: pure black silhouette only.
-Once the four PNG files exist with the exact names above, the TUI can wire them immediately.
+Frame 1 (master) is defined.
+Frames 2–4 are described as small controlled changes from the master.
+Once the four PNGs exist, both the TUI and the GitHub GIF can be created from the same source.
