@@ -15,7 +15,12 @@ import {
   loadPack,
   loadSkill,
   removeSkill,
+  runDoctor,
+  testAllPacks,
+  testPack,
+  testSkill,
   validatePack,
+  type CheckResult,
   type HarnessId,
   type LinkMode,
   type PathScope,
@@ -87,6 +92,16 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "test") {
+    await runTest(args.slice(1));
+    return;
+  }
+
+  if (command === "doctor") {
+    await runDoctorCmd(args.slice(1));
+    return;
+  }
+
   if (command === "tui" || command === "ui" || command === "start") {
     const { startTui } = await import("@kit-skills/tui");
     startTui();
@@ -117,10 +132,12 @@ function printHelp(): void {
   console.log("  kit pack apply <pack> [--dir <project>]");
   console.log("  kit paths [--dir <project>] [--skill <name>]");
   console.log("  kit link [--to <harness|all>] [--scope personal|project] [--write] [--force] [--mode symlink|copy] [--dir <project>]");
+  console.log("  kit test [skill-dir|pack-name|--all-packs]");
+  console.log("  kit doctor [--dir <project>]");
   console.log("");
   console.log("Library: ~/.kit (or KIT_HOME)");
   console.log("Packs:   packs/ in the Kit repo (or KIT_PACKS)");
-  console.log("Tip:     kit init → pack apply → kit link --write");
+  console.log("Tip:     kit init → pack apply → kit link --write → kit doctor");
 }
 
 async function runInit(rest: string[]): Promise<void> {
@@ -579,6 +596,214 @@ async function runLink(rest: string[]): Promise<void> {
     console.log("");
     console.log("No files written. Re-run with --write to apply.");
   }
+}
+
+function printChecks(checks: CheckResult[], indent = "  "): void {
+  for (const check of checks) {
+    const mark =
+      check.level === "pass"
+        ? "✓"
+        : check.level === "fail"
+          ? "✗"
+          : check.level === "warn"
+            ? "!"
+            : "·";
+    console.log(`${indent}${mark} ${check.message}`);
+    if (check.detail) {
+      console.log(`${indent}  ${check.detail}`);
+    }
+  }
+}
+
+async function runTest(rest: string[]): Promise<void> {
+  if (rest.includes("--help") || rest.includes("-h") || rest.length === 0) {
+    console.log("Usage:");
+    console.log("  kit test --all-packs");
+    console.log("  kit test <pack-name>");
+    console.log("  kit test <skill-dir>");
+    console.log("  kit test pack <pack-name>");
+    console.log("  kit test skill <skill-dir>");
+    if (rest.length === 0) process.exit(1);
+    return;
+  }
+
+  if (rest.includes("--all-packs") || rest[0] === "packs") {
+    const result = await testAllPacks();
+    if (result.ok) {
+      console.log(
+        `OK  ${result.value.passed} pack(s) passed, ${result.value.failed} failed`,
+      );
+      for (const pack of result.value.packs) {
+        console.log(
+          `  ✓ ${pack.packName}@${pack.version} (${pack.skillReports.length} skills)`,
+        );
+      }
+      return;
+    }
+    if (result.report) {
+      console.error(result.error);
+      for (const pack of result.report.packs) {
+        const mark = pack.ok ? "✓" : "✗";
+        console.error(
+          `  ${mark} ${pack.packName ?? pack.target}${pack.version ? `@${pack.version}` : ""}`,
+        );
+        if (!pack.ok) {
+          printChecks(pack.checks, "    ");
+          for (const skill of pack.skillReports.filter((s) => !s.ok)) {
+            console.error(
+              `    ✗ ${skill.skillName ?? skill.target}`,
+            );
+            printChecks(skill.checks, "      ");
+            if (skill.issues.length > 0) {
+              console.error(`      ${formatIssues(skill.issues)}`);
+            }
+          }
+        }
+      }
+      process.exit(1);
+    }
+    fail(result.error);
+  }
+
+  if (rest[0] === "pack") {
+    const name = rest[1];
+    if (!name) fail("Usage: kit test pack <pack-name>");
+    await testOnePack(name);
+    return;
+  }
+
+  if (rest[0] === "skill") {
+    const dir = rest[1];
+    if (!dir) fail("Usage: kit test skill <skill-dir>");
+    await testOneSkill(dir);
+    return;
+  }
+
+  const target = rest[0];
+  if (!target) fail("Usage: kit test <skill-dir|pack-name|--all-packs>");
+
+  // Prefer pack name when it validates as a pack; else skill dir.
+  const asPack = await testPack(target);
+  if (asPack.ok || (asPack.report && asPack.report.packName)) {
+    if (asPack.ok) {
+      printPackTestOk(asPack.value);
+      return;
+    }
+    printPackTestFail(asPack.error, asPack.report);
+    process.exit(1);
+  }
+
+  await testOneSkill(target);
+}
+
+async function testOnePack(name: string): Promise<void> {
+  const result = await testPack(name);
+  if (result.ok) {
+    printPackTestOk(result.value);
+    return;
+  }
+  printPackTestFail(result.error, result.report);
+  process.exit(1);
+}
+
+async function testOneSkill(dir: string): Promise<void> {
+  const result = await testSkill(dir);
+  if (result.ok) {
+    console.log(
+      `OK  ${result.value.skillName}@${result.value.version}`,
+    );
+    printChecks(result.value.checks);
+    return;
+  }
+  console.error(result.error);
+  if (result.report) {
+    printChecks(result.report.checks);
+    if (result.report.issues.length > 0) {
+      console.error(formatIssues(result.report.issues));
+    }
+  }
+  process.exit(1);
+}
+
+function printPackTestOk(report: {
+  packName?: string;
+  version?: string;
+  skillReports: { skillName?: string; version?: string }[];
+  checks: CheckResult[];
+}): void {
+  console.log(`OK  pack ${report.packName}@${report.version}`);
+  printChecks(report.checks);
+  for (const skill of report.skillReports) {
+    console.log(`  · ${skill.skillName}@${skill.version}`);
+  }
+}
+
+function printPackTestFail(
+  error: string,
+  report:
+    | {
+        packName?: string;
+        version?: string;
+        checks: CheckResult[];
+        skillReports: {
+          ok: boolean;
+          skillName?: string;
+          target: string;
+          checks: CheckResult[];
+          issues: { field: string; message: string }[];
+        }[];
+      }
+    | undefined,
+): void {
+  console.error(error);
+  if (!report) return;
+  printChecks(report.checks);
+  for (const skill of report.skillReports.filter((s) => !s.ok)) {
+    console.error(`  ✗ ${skill.skillName ?? skill.target}`);
+    printChecks(skill.checks, "    ");
+    if (skill.issues.length > 0) {
+      console.error(`    ${formatIssues(skill.issues)}`);
+    }
+  }
+}
+
+async function runDoctorCmd(rest: string[]): Promise<void> {
+  const dirFlag = rest.indexOf("--dir");
+  let projectDir: string | undefined;
+  if (dirFlag >= 0) {
+    projectDir = rest[dirFlag + 1];
+    if (!projectDir || projectDir.startsWith("-")) {
+      fail("Usage: kit doctor [--dir <project>]");
+    }
+  }
+
+  const report = await runDoctor({
+    ...(projectDir ? { projectDir } : {}),
+  });
+
+  console.log(`kit doctor  v${report.version}`);
+  console.log(`  home:    ${report.kitHome}`);
+  console.log(`  project: ${report.projectDir}`);
+  console.log(
+    `  summary: ${report.summary.passed} pass · ${report.summary.warnings} warn · ${report.summary.failed} fail`,
+  );
+  console.log("");
+  printChecks(report.checks, "");
+
+  if (!report.ok) {
+    console.log("");
+    console.log("Doctor found problems. Fix the ✗ items above.");
+    process.exit(1);
+  }
+
+  if (report.summary.warnings > 0) {
+    console.log("");
+    console.log("Doctor OK with warnings.");
+    return;
+  }
+
+  console.log("");
+  console.log("Doctor OK.");
 }
 
 main().catch((error: unknown) => {

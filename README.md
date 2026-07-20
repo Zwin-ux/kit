@@ -49,6 +49,8 @@ kit pack apply web-app --dir .   # also copy into ./.kit/skills
 kit tui                          # first-run + Home actions
 kit paths                        # where agents look for skills
 kit link --to claude-code --write
+kit test --all-packs             # validate official packs
+kit doctor                       # local health check
 ```
 
 | Pack | Best for |

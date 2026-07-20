@@ -16,8 +16,9 @@
 - [x] Local library (install / list / remove)
 - [x] Starter packs (schema, catalog skills, install / apply)
 - [x] Cross-harness path normalization (`kit paths` / `kit link`)
-- Simple test runner
-- [x] CLI entrypoint that the TUI will later wrap (`validate`, `install`, `list`, `remove`, `pack`, `tui`)
+- [x] Simple test runner (`kit test`)
+- [x] Health check (`kit doctor`)
+- [x] CLI entrypoint that the TUI will later wrap (`validate`, `install`, `list`, `remove`, `pack`, `paths`, `link`, `test`, `doctor`, `tui`)
 
 ## Phase 2 — Pixel-Art TUI + Accounts
 - [x] TUI shell with pixel-art rendering (splash + home + 4-frame mascot cycle)

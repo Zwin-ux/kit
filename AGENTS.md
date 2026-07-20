@@ -29,15 +29,16 @@ There is no web app.
 
 **Done (also)**
 - Cross-harness path map: `kit paths` + `kit link --write`
+- Skill/pack test runner: `kit test`
+- Health check: `kit doctor`
 
 **In Progress**
-- Full-stack quality polish (tests, DX)
+- Full-stack quality polish / CI
 
 **Next Priority**
-1. Skill test runner (`kit test`)
-2. `kit doctor` health check
-3. Workshop screen (validate / edit later)
-4. Railway accounts + publish (later)
+1. GitHub Actions CI (test + doctor + pack gate)
+2. Workshop screen (validate / edit later)
+3. Railway accounts + publish (later)
 
 ## How to Maintain This File
 When you complete a meaningful piece of work:
@@ -52,6 +53,7 @@ When you complete a meaningful piece of work:
 - docs/LOCAL_LIBRARY.md
 - docs/STARTER_PACKS.md
 - docs/HARNESS_PATHS.md
+- docs/TESTING.md
 - docs/PIXEL_ART.md
 - docs/TUI_SCREENS.md
 - assets/pixel/README.md

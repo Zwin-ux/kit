@@ -17,6 +17,8 @@ pnpm kit -- init --pack essentials
 pnpm kit -- pack list
 pnpm kit -- paths
 pnpm kit -- link --to claude-code          # dry-run
+pnpm kit -- test --all-packs
+pnpm kit -- doctor
 ```
 
 ## Layout

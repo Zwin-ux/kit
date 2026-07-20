@@ -100,3 +100,23 @@ export {
   type LinkResult,
   type PathsResult,
 } from "./paths/mod.js";
+
+export {
+  testSkill,
+  testPack,
+  testAllPacks,
+  type TestSkillOptions,
+  type TestPackOptions,
+  type SkillTestReport,
+  type PackTestReport,
+  type MultiPackTestReport,
+  type TestResult,
+  type CheckResult,
+  type CheckLevel,
+} from "./test/mod.js";
+
+export {
+  runDoctor,
+  type DoctorOptions,
+  type DoctorReport,
+} from "./doctor/mod.js";
