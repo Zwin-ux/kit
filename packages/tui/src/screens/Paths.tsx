@@ -79,8 +79,8 @@ export function Paths({
             <StatusIcon id="link" size="mini" />
             <Text bold> Where should skills land?</Text>
           </Box>
-          <Text dimColor wrap="wrap">
-            Pick a harness · scope · approve the folder before any write
+          <Text dimColor>
+            Pick a harness · scope · approve folder before write
           </Text>
 
           {report ? (

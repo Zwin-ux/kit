@@ -2,13 +2,13 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { CheckResult, InstalledSkill } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
-import { StatusIcon } from "../mascot/StatusIcon.js";
-import { levelToStatusIcon } from "../mascot/statusIcons.js";
 import { Footer, Header } from "../components/Chrome.js";
 import { ScreenShell } from "../components/ScreenShell.js";
 import { ErrorLine, Pulse, SuccessLine } from "../components/Motion.js";
 import {
   ActionFlash,
+  fixedLine,
+  fixedLines,
   SelectPulse,
   StaggerLines,
   type SelectDirection,
@@ -57,8 +57,7 @@ export function Library({
           {empty ? (
             <Box flexDirection="column">
               <Box>
-                <StatusIcon id="folder" size="mini" dimColor />
-                <Text bold> Empty library</Text>
+                <Text bold>Empty library</Text>
               </Box>
               <StaggerLines>
                 {[
@@ -80,7 +79,7 @@ export function Library({
                     tick={selectTick}
                     direction={selectDirection}
                   />
-                  <StatusIcon id="skill" size="mini" dimColor />{" "}
+                  <Text dimColor>s </Text>
                   <Text bold={index === selectedIndex}>{skill.name}</Text>
                   <Text dimColor>@{skill.version}</Text>
                 </Text>
@@ -88,27 +87,31 @@ export function Library({
             </Box>
           )}
 
-          {selected ? (
-            <Box marginTop={1} flexDirection="column">
-              <Text dimColor wrap="wrap">
-                {selected.description}
+          {/* Always 3 lines so ↑↓ never reflows (pad when empty) */}
+          <Box marginTop={1} flexDirection="column" flexShrink={0}>
+            {fixedLines(selected?.description ?? "", 2, 56).map((line, i) => (
+              <Text key={`d${i}`} dimColor>
+                {line}
               </Text>
-              <Text dimColor wrap="truncate">
-                {selected.installPath}
-              </Text>
-              <Text dimColor>
-                <StatusIcon id="arrow" size="mini" dimColor /> v validate · t
-                test · r remove
-              </Text>
-            </Box>
-          ) : null}
+            ))}
+            <Text dimColor>
+              {fixedLine(
+                selected
+                  ? `${selected.installPath}  ·  v validate · t test · r remove`
+                  : " ",
+                56,
+              )}
+            </Text>
+          </Box>
 
           {lastChecks && lastChecks.length > 0 ? (
             <Box marginTop={1} flexDirection="column">
-              {lastChecks.slice(0, 6).map((c) => (
-                <Text key={`${c.id}-${c.level}`} dimColor wrap="truncate">
-                  <StatusIcon id={levelToStatusIcon(c.level)} size="mini" />{" "}
-                  {c.message}
+              {lastChecks.slice(0, 3).map((c) => (
+                <Text key={`${c.id}-${c.level}`} dimColor>
+                  {fixedLine(
+                    `${c.level === "pass" ? "ok" : c.level === "fail" ? "x" : "!"} ${c.message}`,
+                    56,
+                  )}
                 </Text>
               ))}
             </Box>
@@ -116,7 +119,7 @@ export function Library({
 
           {confirmRemove && selected ? (
             <Box marginTop={1}>
-              <Pulse label={`Remove ${selected.name}? y / n`} />
+              <Pulse label={`Remove ${selected.name}? y / n · Esc cancel`} />
             </Box>
           ) : null}
 

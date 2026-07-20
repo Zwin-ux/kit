@@ -7,33 +7,35 @@ import { LAYOUT_CAPS } from "./layoutScale.js";
 export interface PackIconProps {
   packName: string;
   /**
-   * mini = single animated glyph (list rows) — default everywhere
-   * detail = tiny silhouette (≤4 rows) under selection
+   * mini = single static ASCII glyph (list rows) — default
+   * detail = small silhouette under selection
    * full = alias for detail
    */
   size?: "full" | "detail" | "mini";
-  /** Pixel edge for detail (clamped 3–4). */
   detailEdge?: number;
+  /**
+   * Animate detail silhouette only. Mini list icons never animate
+   * (N timers caused flicker on ↑↓).
+   */
   animate?: boolean;
 }
 
 /**
- * Pack logo — glyph-first. Detail is intentionally tiny (≤ half the fox).
+ * Pack logo — list rows are static single-cell ASCII.
  */
 export function PackIcon({
   packName,
   size = "mini",
   detailEdge = LAYOUT_CAPS.packDetailMax,
-  animate = true,
+  animate = false,
 }: PackIconProps): React.ReactElement {
-  const anim = animate && motionEnabled();
-  const frame = useIntervalFrame(4, 280, anim);
-
   if (size === "mini") {
-    return <Text>{packIconGlyph(packName, anim ? frame : 0)}</Text>;
+    // Always static — never start a timer on list rows
+    return <Text>{packIconGlyph(packName, 0)}</Text>;
   }
 
-  // Hard clamp — never 6–10 again
+  const anim = animate && motionEnabled();
+  const frame = useIntervalFrame(4, 280, anim);
   const edge = Math.max(3, Math.min(LAYOUT_CAPS.packDetailMax, detailEdge));
   const lines = renderPackIconLines(packName, {
     edge,
@@ -43,9 +45,7 @@ export function PackIcon({
   return (
     <Box flexDirection="column" width={edge} height={edge} flexShrink={0}>
       {lines.map((line, i) => (
-        <Text key={i} wrap="truncate">
-          {line}
-        </Text>
+        <Text key={i}>{line}</Text>
       ))}
     </Box>
   );

@@ -23,6 +23,7 @@ import { ToolkitPicker } from "../components/ToolkitPicker.js";
 import {
   ActionFlash,
   BlinkCursor,
+  fixedLine,
   type SelectDirection,
 } from "../motion/index.js";
 
@@ -225,21 +226,19 @@ export function Home({
             </Box>
           ) : null}
 
-          {selected && !busy && !pointingProject ? (
-            <Box marginTop={1}>
-              <Text dimColor wrap="truncate">
-                <StatusIcon id="arrow" size="mini" dimColor /> ↵ install{" "}
-                {selected.title}
-                {" · "}a apply to project · k link
-              </Text>
-            </Box>
-          ) : null}
-
-          {pointingProject ? (
-            <Box marginTop={1}>
-              <Text dimColor>Enter set · Esc cancel</Text>
-            </Box>
-          ) : null}
+          {/* Always 1 action line (pad when empty) — no height jump on selection */}
+          <Box marginTop={1} flexShrink={0}>
+            <Text dimColor>
+              {fixedLine(
+                selected && !busy && !pointingProject
+                  ? `enter install ${selected.title} · a apply · k link`
+                  : pointingProject
+                    ? "Enter set path · Esc cancel"
+                    : " ",
+                Math.min(scale.contentSoftMax, 64),
+              )}
+            </Text>
+          </Box>
 
           <Box marginTop={1}>
             <ActionFlash message={actionFlash} nonce={actionNonce} />

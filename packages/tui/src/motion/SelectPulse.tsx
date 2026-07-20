@@ -1,50 +1,29 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Text } from "ink";
-import { motionEnabled } from "./motionEnabled.js";
+import {
+  selectCursorGlyph,
+  type SelectDirection,
+} from "./fixedLines.js";
 
-export type SelectDirection = "up" | "down" | "none";
+export type { SelectDirection };
+
 
 /**
- * Fixed-width (2 col) selection cursor.
- * Directional glyph on move, then rest mark — never shifts list text.
+ * Fixed-width (2 col) selection cursor — one paint per keypress.
+ * ASCII only so Windows terminals never reflow on glyph width.
  */
 export function SelectPulse(props: {
   selected: boolean;
-  /** Bump when selection moves to re-trigger pulse. */
-  tick: number;
-  /** Last move direction for ↑↓ feedback. */
+  /** Kept for API compat; no delayed hot phase (that caused double glitch). */
+  tick?: number;
   direction?: SelectDirection;
 }): React.ReactElement {
-  const direction = props.direction ?? "none";
-  const [hot, setHot] = useState(false);
-
-  useEffect(() => {
-    if (!props.selected || !motionEnabled()) {
-      setHot(false);
-      return;
-    }
-    setHot(true);
-    const t = setTimeout(() => setHot(false), 160);
-    return () => clearTimeout(t);
-  }, [props.tick, props.selected]);
-
-  // Always 2 columns — layout stability
-  if (!props.selected) {
-    return <Text>{"  "}</Text>;
-  }
-
-  if (!motionEnabled()) {
-    return <Text>{"› "}</Text>;
-  }
-
-  if (hot && direction === "up") {
-    return <Text bold>{"↑ "}</Text>;
-  }
-  if (hot && direction === "down") {
-    return <Text bold>{"↓ "}</Text>;
-  }
-  if (hot) {
-    return <Text bold>{"» "}</Text>;
-  }
-  return <Text>{"› "}</Text>;
+  void props.tick;
+  const glyph = selectCursorGlyph(
+    props.selected,
+    props.direction ?? "none",
+  );
+  return (
+    <Text bold={props.selected}>{glyph}</Text>
+  );
 }

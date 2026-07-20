@@ -4,6 +4,7 @@ import type { PackListItem } from "@mzwin/kit-core";
 import type { ToolkitRecommendation } from "@mzwin/kit-core";
 import { PackIcon } from "../mascot/PackIcon.js";
 import { useLayoutScale } from "../mascot/useLayoutScale.js";
+import { fixedLine, fixedLines } from "../motion/fixedLines.js";
 import { SelectPulse, type SelectDirection } from "../motion/index.js";
 
 export interface ToolkitPickerProps {
@@ -15,13 +16,12 @@ export interface ToolkitPickerProps {
   filter?: string;
   appliedNames?: Set<string>;
   dense?: boolean;
-  /** Show detail panel under the list (fixed height — no in-row expand). */
   showSelectedIcon?: boolean;
 }
 
 /**
- * Pack list: one line per row (never expands under selection).
- * Detail lives in a sticky panel below so ↑↓ does not reflow the list.
+ * Pack list: one line per row, fixed detail panel, no list timers.
+ * ↑↓ must not change frame geometry.
  */
 export function ToolkitPicker({
   packs,
@@ -39,7 +39,8 @@ export function ToolkitPicker({
   const scoreByName = new Map(
     recommended.map((r) => [r.packName, r] as const),
   );
-  const showDetail =
+  // Detail bitmaps only when tall; always reserve 2 text lines under list
+  const showDetailIcon =
     showSelectedIcon &&
     !dense &&
     scale.showPackDetail &&
@@ -61,7 +62,7 @@ export function ToolkitPicker({
   if (filtered.length === 0) {
     return (
       <Text dimColor>
-        No match{filter ? ` for “${filter}”` : ""}. Esc clears filter.
+        No match{filter ? ` for “${filter}”` : ""}. Esc clear filter.
       </Text>
     );
   }
@@ -76,8 +77,13 @@ export function ToolkitPicker({
     ? scoreByName.get(selectedPack.name)
     : undefined;
 
-  // Fixed panel height: icon rows + 2 text lines (or empty placeholders)
-  const detailLines = showDetail ? scale.packDetailSize + 2 : 2;
+  const metaCols = Math.max(24, Math.min(scale.contentSoftMax, 56));
+  const detailText = fixedLines(
+    selectedPack?.description ?? "",
+    2,
+    metaCols,
+  );
+  const reasonLine = fixedLine(selectedRec?.reasons[0] ?? "", metaCols);
 
   return (
     <Box flexDirection="column">
@@ -88,8 +94,13 @@ export function ToolkitPicker({
         const applied = appliedNames?.has(pack.name);
         const extendsNote =
           pack.extends && pack.extends.length > 0
-            ? ` · +${pack.extends.join("+")}`
+            ? `+${pack.extends.join("+")}`
             : "";
+        // Fixed-ish meta: avoid mounting optional Text nodes that change width
+        const meta = fixedLine(
+          `· ${pack.skillCount}sk${extendsNote ? ` ${extendsNote}` : ""}${isTop ? " *" : ""}${applied ? " on" : ""}`,
+          Math.max(12, metaCols - 16),
+        );
 
         return (
           <Text key={pack.name} wrap="truncate">
@@ -98,28 +109,17 @@ export function ToolkitPicker({
               tick={selectTick}
               direction={selectDirection}
             />
-            <PackIcon packName={pack.name} size="mini" animate />{" "}
-            <Text bold={selected}>{pack.title}</Text>
-            <Text dimColor={!selected}>
-              {" "}
-              · {pack.skillCount} skills
-              {extendsNote}
-            </Text>
-            {isTop ? <Text> ★</Text> : null}
-            {applied ? <Text dimColor> · on</Text> : null}
+            <PackIcon packName={pack.name} size="mini" animate={false} />{" "}
+            <Text bold={selected}>{pack.title}</Text>{" "}
+            <Text dimColor>{meta.trimEnd()}</Text>
           </Text>
         );
       })}
 
-      {/* Sticky detail panel — always same height so ↑↓ never inserts rows */}
+      {/* Always 2 description lines + optional icon; height constant */}
       {!dense ? (
-        <Box
-          marginTop={1}
-          flexDirection="row"
-          height={detailLines}
-          overflow="hidden"
-        >
-          {showDetail && selectedPack ? (
+        <Box marginTop={1} flexDirection="row" flexShrink={0}>
+          {showDetailIcon && selectedPack ? (
             <Box
               marginRight={1}
               flexShrink={0}
@@ -130,21 +130,14 @@ export function ToolkitPicker({
                 packName={selectedPack.name}
                 size="detail"
                 detailEdge={scale.packDetailSize}
-                animate
+                animate={false}
               />
             </Box>
           ) : null}
-          <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-            <Text dimColor wrap="truncate">
-              {selectedPack
-                ? selectedPack.description.length > scale.contentSoftMax
-                  ? `${selectedPack.description.slice(0, scale.contentSoftMax - 1)}…`
-                  : selectedPack.description
-                : " "}
-            </Text>
-            <Text dimColor wrap="truncate">
-              {selectedRec?.reasons[0] ?? " "}
-            </Text>
+          <Box flexDirection="column" flexShrink={0}>
+            <Text dimColor>{detailText[0]}</Text>
+            <Text dimColor>{detailText[1]}</Text>
+            <Text dimColor>{reasonLine}</Text>
           </Box>
         </Box>
       ) : null}

@@ -7,7 +7,11 @@ import { StatusIcon } from "../mascot/StatusIcon.js";
 import { Footer, Header } from "../components/Chrome.js";
 import { ScreenShell } from "../components/ScreenShell.js";
 import { ErrorLine, Spinner, SuccessLine } from "../components/Motion.js";
-import { SelectPulse, type SelectDirection } from "../motion/index.js";
+import {
+  fixedLines,
+  SelectPulse,
+  type SelectDirection,
+} from "../motion/index.js";
 
 export interface ExploreProps {
   frames: PixelFrame[];
@@ -88,7 +92,11 @@ export function Explore({
                       tick={selectTick}
                       direction={selectDirection}
                     />
-                    <PackIcon packName={pack.name} size="mini" animate />{" "}
+                    <PackIcon
+                      packName={pack.name}
+                      size="mini"
+                      animate={false}
+                    />{" "}
                     <Text bold={index === selectedIndex}>{pack.title}</Text>
                     <Text dimColor> · {pack.skillCount} skills</Text>
                   </Text>
@@ -97,17 +105,19 @@ export function Explore({
             )}
           </Box>
 
-          {selected && !loading ? (
-            <Box marginTop={1} flexDirection="column">
-              <Text dimColor wrap="wrap">
-                {selected.description}
+          {/* Fixed 2-line detail — no multi-line wrap under selection */}
+          <Box marginTop={1} flexDirection="column" flexShrink={0}>
+            {fixedLines(selected?.description ?? "", 2, 56).map((line, i) => (
+              <Text key={`d${i}`} dimColor>
+                {line}
               </Text>
-              <Text dimColor>
-                <StatusIcon id="arrow" size="mini" dimColor /> ↵ install local
-                match · / search · r refresh
-              </Text>
-            </Box>
-          ) : null}
+            ))}
+            <Text dimColor>
+              {selected && !loading
+                ? "  enter install · / search · r refresh · Esc cancel search"
+                : " "}
+            </Text>
+          </Box>
         </ScreenShell>
       </Box>
 

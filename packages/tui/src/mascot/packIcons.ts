@@ -317,22 +317,23 @@ export function renderPackIconLines(
   return lines;
 }
 
-/** Mini glyph cycles for list-row animation (one cell wide). */
-const GLYPH_CYCLES: Record<string, string[]> = {
-  essentials: ["◆", "◇", "◆", "◈"],
-  "web-app": ["▣", "▢", "▣", "▥"],
-  library: ["▤", "▥", "▤", "▦"],
-  "cli-tool": ["›", "»", "›", "›"],
-  "api-service": ["◈", "◇", "◈", "◆"],
-  "full-stack": ["☰", "≡", "☰", "≡"],
-  "data-ml": ["▥", "▦", "▥", "▤"],
+/**
+ * Mini list glyphs — ASCII single-cell only.
+ * Ambiguous Unicode (◆☰▣) reflows Windows terminals when selection moves.
+ * `frame` kept for API compat; list icons are static.
+ */
+const ASCII_GLYPHS: Record<string, string> = {
+  essentials: "*",
+  "web-app": "#",
+  library: "=",
+  "cli-tool": ">",
+  "api-service": "+",
+  "full-stack": "%",
+  "data-ml": "~",
 };
 
-/** One-line mini glyph for list rows. */
-export function packIconGlyph(packName: string, frame = 0): string {
-  const cycle = GLYPH_CYCLES[packName];
-  if (cycle) {
-    return cycle[((frame % cycle.length) + cycle.length) % cycle.length]!;
-  }
-  return "·";
+/** One-line mini glyph for list rows (always display width 1). */
+export function packIconGlyph(packName: string, _frame = 0): string {
+  void _frame;
+  return ASCII_GLYPHS[packName] ?? "o";
 }

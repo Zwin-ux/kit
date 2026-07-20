@@ -86,6 +86,20 @@ Mascot frames:
 - Missing PNGs → built-in placeholders per variant
 - ~140–180 ms/frame; `KIT_REDUCED_MOTION=1` freezes frame 0
 
+### Selection stability (P0)
+
+↑↓ must **never** change frame geometry — only which row is marked.
+
+| Rule | Implementation |
+|------|----------------|
+| List rows | 1 line each; ASCII mini glyph; no animate timers |
+| Cursor | Always 2 cells: `  ` / `> ` / `^ ` / `v ` |
+| Detail panel | Always fixed lines (`fixedLines`, never `wrap="wrap"`) |
+| Action hint | Always 1 truncated line |
+| Tests | `tests/selection-stability.test.ts` |
+
+QA: hold ↓ through Home/Packs/Library — list must not jump.
+
 ### Fixed mascot slot (no layout thrash)
 
 Animation may change **pixels only**. Rail width/height and line count never change on frame tick.

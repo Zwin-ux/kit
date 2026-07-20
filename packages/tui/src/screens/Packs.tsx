@@ -14,6 +14,7 @@ import {
 import {
   ActionFlash,
   BlinkCursor,
+  fixedLine,
   type SelectDirection,
 } from "../motion/index.js";
 import { ToolkitPicker } from "../components/ToolkitPicker.js";
@@ -93,18 +94,16 @@ export function Packs({
               {...(filter ? { filter } : {})}
             />
           )}
-          {selected && !busy ? (
-            <Box marginTop={1}>
-              <Text dimColor wrap="truncate">
-                <StatusIcon id="arrow" size="mini" dimColor /> ↵ install{" "}
-                {selected.title}
-                {selected.extends?.length
-                  ? ` (+ ${selected.extends.join(", ")})`
-                  : ""}{" "}
-                · a apply · k link
-              </Text>
-            </Box>
-          ) : null}
+          <Box marginTop={1} flexShrink={0}>
+            <Text dimColor>
+              {fixedLine(
+                selected && !busy
+                  ? `enter install ${selected.title}${selected.extends?.length ? ` +${selected.extends.join("+")}` : ""} · a apply · k link`
+                  : " ",
+                64,
+              )}
+            </Text>
+          </Box>
           <Box marginTop={1}>
             <ActionFlash message={actionFlash} nonce={actionNonce} />
           </Box>
