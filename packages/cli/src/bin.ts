@@ -782,29 +782,21 @@ async function runHome(rest: string[]): Promise<void> {
   const { story, snapshot, headline } = sit;
 
   console.log("");
-  console.log(`kit ${KIT_PACKAGE_VERSION}  ·  one library, many agents`);
+  console.log(`kit ${KIT_PACKAGE_VERSION}`);
   console.log("");
   console.log(`  ${headline}`);
   console.log("");
-  console.log(`  Story   ${story.title}`);
-  console.log(`  Who     ${story.who}`);
-  console.log(`  Pain    ${story.pain}`);
-  console.log(`  Win     ${story.win}`);
-  console.log("");
   console.log(
-    `  Library ${snapshot.libraryCount} skills  ·  ~${snapshot.harnessSkillEstimate} in agent folders`,
+    `  library  ${snapshot.libraryCount}    agents  ~${snapshot.harnessSkillEstimate}`,
   );
   if (snapshot.recommendedPack) {
-    console.log(`  Project pack hint: ${snapshot.recommendedPack}`);
+    console.log(`  project  ${snapshot.recommendedPack}`);
   }
   console.log("");
-  console.log("  Do this next");
-  console.log(`    ${story.primary}`);
-  for (const n of story.next.slice(0, 3)) {
-    console.log(`    ${n}`);
+  console.log(`  →  ${story.primary}`);
+  for (const n of story.next.slice(0, 2)) {
+    console.log(`     ${n}`);
   }
-  console.log("");
-  console.log("  Or: kit --help   ·   kit tui");
   console.log("");
 }
 
@@ -857,14 +849,12 @@ async function runReadyCmd(rest: string[]): Promise<void> {
 
   const r = result.value;
   console.log("");
-  console.log(r.dryRun ? "READY  (dry-run)" : "READY  (applied)");
+  console.log(r.dryRun ? "READY" : "READY  ✓");
   console.log("");
-  console.log(`  Project  ${r.projectDir}`);
-  console.log(`  Story    ${r.story.title}`);
-  console.log(`  Pack     ${r.packName}`);
-  console.log(`  Signal   ${r.recommendSummary}`);
+  console.log(`  ${r.projectDir}`);
+  console.log(`  pack     ${r.packName}`);
+  console.log(`  ${r.recommendSummary}`);
   console.log("");
-  console.log("  Steps");
   for (const s of r.steps) {
     const mark =
       s.status === "done"
@@ -874,19 +864,14 @@ async function runReadyCmd(rest: string[]): Promise<void> {
           : s.status === "skipped"
             ? "-"
             : "✗";
-    console.log(`  ${mark} ${s.id.padEnd(14)}  ${s.detail}`);
-  }
-  if (r.notes.length) {
-    console.log("");
-    for (const n of r.notes) console.log(`  · ${n}`);
+    console.log(`  ${mark}  ${s.detail}`);
   }
   if (r.dryRun) {
     console.log("");
-    console.log("  Next: kit ready --write");
-    console.log("        kit ready --write --unify   # if you have a huge skill pile");
+    console.log("  →  kit ready --write");
   } else if (r.doctorOk) {
     console.log("");
-    console.log("  Agents are useful on this repo. Open Claude/Codex here, or: kit tui");
+    console.log("  →  open claude / codex here   ·   kit tui");
   }
   console.log("");
 }

@@ -3,13 +3,14 @@ import { Box, Text } from "ink";
 import { FIRST_RUN_PACK_OPTIONS } from "@mzwin/kit-core";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { PackIcon } from "../mascot/PackIcon.js";
-import type { PixelFrame } from "../mascot/types.js";
+import type { MascotVariant, PixelFrame } from "../mascot/types.js";
 import { Footer, Header } from "../components/Chrome.js";
 import { ErrorLine, Spinner, SuccessLine } from "../components/Motion.js";
 import { StaggerLines } from "../motion/index.js";
 
 export interface FirstRunProps {
   frames: PixelFrame[];
+  mascotVariant?: MascotVariant;
   busy?: boolean;
   statusMessage?: string;
   errorMessage?: string;
@@ -17,6 +18,7 @@ export interface FirstRunProps {
 
 export function FirstRun({
   frames,
+  mascotVariant = "idle",
   busy,
   statusMessage,
   errorMessage,
@@ -39,7 +41,12 @@ export function FirstRun({
 
       <Box marginTop={1} flexDirection="row">
         <Box marginRight={2} flexShrink={0}>
-          <MascotPlayer frames={frames} playing size="compact" />
+          <MascotPlayer
+            frames={frames}
+            playing
+            size="compact"
+            variant={mascotVariant}
+          />
         </Box>
 
         <Box flexDirection="column" flexGrow={1}>
@@ -56,7 +63,7 @@ export function FirstRun({
 
       {busy ? (
         <Box marginTop={1}>
-          <Spinner label="Installing" active />
+          <Spinner label="Installing" active style="icon" />
         </Box>
       ) : null}
 

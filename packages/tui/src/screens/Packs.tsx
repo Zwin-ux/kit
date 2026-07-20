@@ -1,8 +1,9 @@
 import React from "react";
 import { Box, Text } from "ink";
 import type { PackListItem, ToolkitRecommendation } from "@mzwin/kit-core";
-import type { PixelFrame } from "../mascot/types.js";
+import type { MascotVariant, PixelFrame } from "../mascot/types.js";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
+import { StatusIcon } from "../mascot/StatusIcon.js";
 import { Footer, Header } from "../components/Chrome.js";
 import {
   ErrorLine,
@@ -18,6 +19,7 @@ export interface PacksProps {
   selectedIndex: number;
   selectTick?: number;
   frames: PixelFrame[];
+  mascotVariant?: MascotVariant;
   recommended: ToolkitRecommendation[];
   filter: string;
   filtering?: boolean;
@@ -36,6 +38,7 @@ export function Packs({
   selectedIndex,
   selectTick = 0,
   frames,
+  mascotVariant = "idle",
   recommended,
   filter,
   filtering,
@@ -49,6 +52,9 @@ export function Packs({
   progress,
 }: PacksProps): React.ReactElement {
   const selected = packs[selectedIndex];
+  const variant =
+    mascotVariant ??
+    (busy ? "scan" : statusMessage ? "success" : "idle");
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
@@ -56,11 +62,18 @@ export function Packs({
 
       <Box marginTop={1} flexDirection="row">
         <Box marginRight={2} flexShrink={0}>
-          <MascotPlayer frames={frames} playing size="compact" />
+          <MascotPlayer
+            frames={frames}
+            playing
+            size="compact"
+            variant={variant}
+          />
         </Box>
 
         <Box flexDirection="column" flexGrow={1}>
-          <Text bold>Browse</Text>
+          <Text bold>
+            <StatusIcon id="pack" size="mini" /> Browse
+          </Text>
           {filter || filtering ? (
             <Text dimColor>
               /{filter}
@@ -85,7 +98,8 @@ export function Packs({
           {selected && !busy ? (
             <Box marginTop={1}>
               <Text dimColor>
-                ↵ install {selected.title}
+                <StatusIcon id="arrow" size="mini" dimColor /> ↵ install{" "}
+                {selected.title}
                 {selected.extends?.length
                   ? ` (+ ${selected.extends.join(", ")})`
                   : ""}{" "}
@@ -109,7 +123,7 @@ export function Packs({
         </Box>
       ) : busy ? (
         <Box marginTop={1}>
-          <Spinner label="Installing" active />
+          <Spinner label="Installing" active style="icon" />
         </Box>
       ) : null}
 

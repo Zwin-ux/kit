@@ -1,17 +1,20 @@
 import React from "react";
 import { Box, Text } from "ink";
 import type { CheckResult, InstalledSkill } from "@mzwin/kit-core";
-import type { PixelFrame } from "../mascot/types.js";
+import type { MascotVariant, PixelFrame } from "../mascot/types.js";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
+import { StatusIcon } from "../mascot/StatusIcon.js";
+import { levelToStatusIcon } from "../mascot/statusIcons.js";
 import { Footer, Header } from "../components/Chrome.js";
 import { ErrorLine, Pulse, SuccessLine } from "../components/Motion.js";
-import { ActionFlash, SelectPulse } from "../motion/index.js";
+import { ActionFlash, SelectPulse, StaggerLines } from "../motion/index.js";
 
 export interface LibraryProps {
   skills: InstalledSkill[];
   selectedIndex: number;
   selectTick: number;
   frames: PixelFrame[];
+  mascotVariant?: MascotVariant;
   confirmRemove: boolean;
   statusMessage?: string;
   errorMessage?: string;
@@ -27,6 +30,7 @@ export function Library({
   selectedIndex,
   selectTick,
   frames,
+  mascotVariant = "idle",
   confirmRemove,
   statusMessage,
   errorMessage,
@@ -44,14 +48,31 @@ export function Library({
 
       <Box marginTop={1} flexDirection="row">
         <Box marginRight={2} flexShrink={0}>
-          <MascotPlayer frames={frames} playing size="compact" />
+          <MascotPlayer
+            frames={frames}
+            playing
+            size="compact"
+            variant={mascotVariant}
+          />
         </Box>
 
         <Box flexDirection="column" flexGrow={1}>
           {empty ? (
             <Box flexDirection="column">
-              <Text bold>Empty</Text>
-              <Text dimColor>p packs · ↵ install a starter</Text>
+              <Box>
+                <StatusIcon id="folder" size="mini" dimColor />
+                <Text bold> Empty library</Text>
+              </Box>
+              <StaggerLines>
+                {[
+                  <Text key="a" dimColor>
+                    p packs · install a starter
+                  </Text>,
+                  <Text key="b" dimColor>
+                    kit ready --write · one-shot setup
+                  </Text>,
+                ]}
+              </StaggerLines>
             </Box>
           ) : (
             <Box flexDirection="column">
@@ -61,6 +82,7 @@ export function Library({
                     selected={index === selectedIndex}
                     tick={selectTick}
                   />{" "}
+                  <StatusIcon id="skill" size="mini" dimColor />{" "}
                   <Text bold={index === selectedIndex}>{skill.name}</Text>
                   <Text dimColor>@{skill.version}</Text>
                 </Text>
@@ -72,7 +94,10 @@ export function Library({
             <Box marginTop={1} flexDirection="column">
               <Text dimColor>{selected.description}</Text>
               <Text dimColor>{selected.installPath}</Text>
-              <Text dimColor>v validate · t test · r remove</Text>
+              <Text dimColor>
+                <StatusIcon id="arrow" size="mini" dimColor /> v validate · t
+                test · r remove
+              </Text>
             </Box>
           ) : null}
 
@@ -80,7 +105,7 @@ export function Library({
             <Box marginTop={1} flexDirection="column">
               {lastChecks.slice(0, 6).map((c) => (
                 <Text key={`${c.id}-${c.level}`} dimColor>
-                  {c.level === "pass" ? "✓" : c.level === "fail" ? "✗" : "!"}{" "}
+                  <StatusIcon id={levelToStatusIcon(c.level)} size="mini" />{" "}
                   {c.message}
                 </Text>
               ))}

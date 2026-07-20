@@ -7,8 +7,9 @@ import type {
   SkillRecommendation,
   ToolkitRecommendation,
 } from "@mzwin/kit-core";
-import type { PixelFrame } from "../mascot/types.js";
+import type { MascotVariant, PixelFrame } from "../mascot/types.js";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
+import { StatusIcon } from "../mascot/StatusIcon.js";
 import { Footer, Header, StatusLine } from "../components/Chrome.js";
 import {
   CountUp,
@@ -22,6 +23,7 @@ import { ActionFlash, BlinkCursor } from "../motion/index.js";
 
 export interface HomeProps {
   frames: PixelFrame[];
+  mascotVariant?: MascotVariant;
   skills: InstalledSkill[];
   packs: PackListItem[];
   applied: AppliedPackRecord[];
@@ -57,6 +59,7 @@ function shortPath(p: string): string {
 
 export function Home({
   frames,
+  mascotVariant = "idle",
   skills,
   packs,
   applied,
@@ -86,6 +89,9 @@ export function Home({
   const selected = packs[selectedPackIndex];
   const topReasons =
     recommended.find((r) => r.packName === topPick)?.reasons.slice(0, 2) ?? [];
+  const variant =
+    mascotVariant ??
+    (busy ? "scan" : celebrateCount !== undefined ? "success" : "idle");
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
@@ -100,7 +106,12 @@ export function Home({
 
       <Box marginTop={1} flexDirection="row">
         <Box flexDirection="column" marginRight={2} flexShrink={0}>
-          <MascotPlayer frames={frames} playing size="compact" />
+          <MascotPlayer
+            frames={frames}
+            playing
+            size="compact"
+            variant={variant}
+          />
         </Box>
 
         <Box flexDirection="column" flexGrow={1}>
@@ -111,10 +122,15 @@ export function Home({
               <BlinkCursor active />
             </Text>
           ) : (
-            <Text dimColor>{shortPath(targetProject)}</Text>
+            <Text dimColor>
+              <StatusIcon id="folder" size="mini" dimColor />{" "}
+              {shortPath(targetProject)}
+            </Text>
           )}
           {recommendSummary && !pointingProject ? (
-            <Text>★ {recommendSummary}</Text>
+            <Text>
+              <StatusIcon id="star" size="mini" /> {recommendSummary}
+            </Text>
           ) : null}
           {topReasons.length > 0 && !pointingProject ? (
             <Text dimColor>· {topReasons[0]}</Text>
@@ -126,9 +142,14 @@ export function Home({
           </Text>
 
           <Box marginTop={1} flexDirection="column">
-            <Text bold>Toolkits</Text>
+            <Text bold>
+              <StatusIcon id="pack" size="mini" /> Toolkits
+            </Text>
             {topPick ? (
-              <Text dimColor>★ {topPick} selected for this project</Text>
+              <Text dimColor>
+                <StatusIcon id="star" size="mini" dimColor /> {topPick}{" "}
+                selected for this project
+              </Text>
             ) : (
               <Text dimColor>Start with Essentials on most repos</Text>
             )}
@@ -147,10 +168,12 @@ export function Home({
 
           {skillRecs.length > 0 ? (
             <Box marginTop={1} flexDirection="column">
-              <Text bold>Suggested skills</Text>
+              <Text bold>
+                <StatusIcon id="skill" size="mini" /> Suggested skills
+              </Text>
               {skillRecs.slice(0, 5).map((s) => (
                 <Text key={s.skillName} dimColor>
-                  · {s.skillName}
+                  <StatusIcon id="skill" size="mini" dimColor /> {s.skillName}
                   {s.fromPack ? ` · ${s.fromPack}` : ""}
                 </Text>
               ))}
@@ -162,12 +185,15 @@ export function Home({
             {libraryError ? (
               <Text color="red">{libraryError}</Text>
             ) : emptyLibrary ? (
-              <Text dimColor>None yet · ↵ installs ★ selection (+ deps)</Text>
+              <Text dimColor>
+                <StatusIcon id="folder" size="mini" dimColor /> None yet · ↵
+                installs ★ selection (+ deps)
+              </Text>
             ) : (
               <>
                 {skills.slice(0, 4).map((skill) => (
                   <Text key={skill.name} dimColor>
-                    · {skill.name}
+                    <StatusIcon id="ok" size="mini" dimColor /> {skill.name}
                   </Text>
                 ))}
                 {skills.length > 4 ? (
@@ -182,7 +208,8 @@ export function Home({
               <Text bold>Applied here</Text>
               {applied.map((pack) => (
                 <Text key={pack.name} dimColor>
-                  · {pack.title} ({pack.skills.length})
+                  <StatusIcon id="pack" size="mini" dimColor /> {pack.title} (
+                  {pack.skills.length})
                 </Text>
               ))}
             </Box>
@@ -191,7 +218,8 @@ export function Home({
           {selected && !busy && !pointingProject ? (
             <Box marginTop={1}>
               <Text dimColor>
-                ↵ install {selected.title}
+                <StatusIcon id="arrow" size="mini" dimColor /> ↵ install{" "}
+                {selected.title}
                 {" · "}a apply to project · k link
               </Text>
             </Box>
@@ -219,7 +247,7 @@ export function Home({
         </Box>
       ) : busy ? (
         <Box marginTop={1}>
-          <Spinner label="Working" active />
+          <Spinner label="Working" active style="icon" />
         </Box>
       ) : null}
 

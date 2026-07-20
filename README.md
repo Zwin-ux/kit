@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/kit-idle.gif" alt="Kit idle" width="180" />
+  <img src="docs/assets/kit-idle.gif" alt="Kit idle" width="160" />
 </p>
 
 <p align="center">
@@ -18,28 +18,64 @@
 
 ---
 
-## Install
+<p align="center">
+  <img src="docs/assets/ad-install.png" alt="Install Kit" width="640" />
+</p>
 
 ```bash
 npm i -g @mzwin/kit
 kit --version
 ```
 
-- Node 20 or later
-- Package: [@mzwin/kit](https://www.npmjs.com/package/@mzwin/kit)
-- Command name: `kit`
-
 ```bash
-kit                       # show status and next step
+kit                       # status + next step
 kit ready --write         # set up this project
 kit unify --write --link  # clean agent skill folders into one library
 ```
 
 ---
 
-## What you get
+<p align="center">
+  <img src="docs/assets/demo-unify.gif" alt="kit unify — filter noise, keep keepers" width="640" />
+</p>
 
-### Starter packs
+<p align="center"><sub>Scan agent folders. Drop noise. Keep what earns a place.</sub></p>
+
+<p align="center">
+  <img src="docs/assets/ad-unify.png" alt="Unify still" width="480" />
+</p>
+
+---
+
+<p align="center">
+  <img src="docs/assets/demo-ready.gif" alt="kit ready — one-shot setup" width="640" />
+</p>
+
+<p align="center"><sub>Recommend · install · apply · link · doctor. One command.</sub></p>
+
+<p align="center">
+  <img src="docs/assets/ad-ready.png" alt="Ready still" width="480" />
+</p>
+
+---
+
+<p align="center">
+  <img src="docs/assets/demo-link.gif" alt="kit link — library to agents" width="640" />
+</p>
+
+<p align="center"><sub>Library → Claude · Codex · Grok.</sub></p>
+
+<p align="center">
+  <img src="docs/assets/ad-link.png" alt="Link still" width="480" />
+</p>
+
+---
+
+## Starter packs
+
+<p align="center">
+  <img src="docs/assets/packs-strip.png" alt="Starter packs" width="720" />
+</p>
 
 A pack is a set of skills for one project type.  
 Most packs include **essentials**, then add extra skills.
@@ -60,7 +96,9 @@ kit recommend --dir .
 kit pack apply essentials --dir .
 ```
 
-### Skills (built-in catalog)
+---
+
+## Skills
 
 Each skill is a short instruction file. Agents load it when the task matches.
 
@@ -89,7 +127,9 @@ Full pack notes: [docs/packs.md](docs/packs.md)
 
 ---
 
-## Main commands
+<p align="center">
+  <img src="docs/assets/ad-commands.png" alt="Main commands" width="640" />
+</p>
 
 | Command | Purpose |
 |---------|---------|
@@ -106,14 +146,14 @@ Full pack notes: [docs/packs.md](docs/packs.md)
 
 ---
 
-## How Kit works
+## How it works
 
 1. Skills live in a local library (`~/.kit`).
 2. Packs install groups of skills into that library.
 3. `link` makes those skills available to each agent.
 4. `unify` imports and cleans skills that already exist in agent folders.
 
-Agents supported: **Claude Code**, **Codex**, **Grok Build**.
+Agents: **Claude Code** · **Codex** · **Grok Build**.
 
 ---
 
@@ -129,8 +169,11 @@ pnpm kit -- doctor
 ---
 
 <p align="center">
+  <img src="docs/assets/kit-success.gif" alt="Kit ready" width="200" />
+</p>
+
+<p align="center">
   <img src="docs/assets/kit-wordmark.png" alt="KIT" width="140" /><br />
-  <img src="docs/assets/kit-mascot.png" alt="Kit mascot" width="96" /><br />
   <sub>Skills your agents use.</sub>
 </p>
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.5 — Animated TUI + visual README
+
+### TUI
+- **Status icons** — 8×8 pure-black glyphs (ok/fail/warn, skill, pack, link, agents, spinner…)
+- **Mascot variants** — idle · scan · success (placeholder + optional PNG masters)
+- **Icon spinner** on load/install/doctor/paths
+- List rows get type glyphs; Doctor checks get pass/warn/fail icons
+- `KIT_REDUCED_MOTION=1` freezes mascot + spinners
+
+### README
+- Motion demos: `demo-unify.gif`, `demo-ready.gif`, `demo-link.gif`, `kit-success.gif`
+- `packs-strip.png` + ad cards in visual scroll
+
+```bash
+kit tui
+```
+
 ## 0.1.4 — Product stories: `kit` home + `kit ready`
 
 ### Why

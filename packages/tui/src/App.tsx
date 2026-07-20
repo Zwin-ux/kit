@@ -35,8 +35,8 @@ import {
   type ToolkitRecommendation,
   type RegistryPackSummary,
 } from "@mzwin/kit-core";
-import { loadMascotFrames } from "./mascot/loadFrames.js";
-import type { PixelFrame } from "./mascot/types.js";
+import { loadAllMascotFrames } from "./mascot/loadFrames.js";
+import type { MascotVariant, PixelFrame } from "./mascot/types.js";
 import { Spinner } from "./components/Motion.js";
 import { Splash } from "./screens/Splash.js";
 import { Home } from "./screens/Home.js";
@@ -75,6 +75,8 @@ export function App(): React.ReactElement {
   const { exit } = useApp();
   const [screen, setScreen] = useState<Screen>("loading");
   const [frames, setFrames] = useState<PixelFrame[]>([]);
+  const [scanFrames, setScanFrames] = useState<PixelFrame[]>([]);
+  const [successFrames, setSuccessFrames] = useState<PixelFrame[]>([]);
   const [skills, setSkills] = useState<InstalledSkill[]>([]);
   const [packs, setPacks] = useState<PackListItem[]>([]);
   const [applied, setApplied] = useState<AppliedPackRecord[]>([]);
@@ -410,9 +412,11 @@ export function App(): React.ReactElement {
 
     (async () => {
       try {
-        const loaded = await loadMascotFrames();
+        const loaded = await loadAllMascotFrames();
         if (cancelled) return;
-        setFrames(loaded.frames);
+        setFrames(loaded.idle);
+        setScanFrames(loaded.scan);
+        setSuccessFrames(loaded.success);
       } catch (error) {
         if (cancelled) return;
         const detail = error instanceof Error ? error.message : String(error);
@@ -929,10 +933,34 @@ export function App(): React.ReactElement {
     }
   });
 
+  /** Pick mascot loop + frames for current UI state. */
+  const pickMascot = (
+    mode: "idle" | "scan" | "success" | "auto",
+    auto?: { busy?: boolean; ok?: boolean },
+  ): { frames: PixelFrame[]; variant: MascotVariant } => {
+    let variant: MascotVariant = "idle";
+    if (mode === "scan" || (mode === "auto" && auto?.busy)) {
+      variant = "scan";
+    } else if (mode === "success" || (mode === "auto" && auto?.ok)) {
+      variant = "success";
+    }
+    const set =
+      variant === "scan"
+        ? scanFrames.length
+          ? scanFrames
+          : frames
+        : variant === "success"
+          ? successFrames.length
+            ? successFrames
+            : frames
+          : frames;
+    return { frames: set, variant };
+  };
+
   if (screen === "loading" || frames.length === 0) {
     return (
       <Box padding={1} flexDirection="column">
-        <Spinner label="Loading Kit" active />
+        <Spinner label="Loading Kit" active style="icon" />
         {loadError ? <Text color="red">{loadError}</Text> : null}
       </Box>
     );
@@ -943,9 +971,14 @@ export function App(): React.ReactElement {
   }
 
   if (screen === "first-run") {
+    const m = pickMascot("auto", {
+      busy,
+      ok: Boolean(statusMessage && !errorMessage),
+    });
     return (
       <FirstRun
-        frames={frames}
+        frames={m.frames}
+        mascotVariant={m.variant}
         busy={busy}
         {...(statusMessage !== undefined ? { statusMessage } : {})}
         {...(errorMessage !== undefined ? { errorMessage } : {})}
@@ -954,9 +987,13 @@ export function App(): React.ReactElement {
   }
 
   if (screen === "doctor") {
+    const m = pickMascot(
+      doctorLoading ? "scan" : doctorReport?.ok ? "success" : "idle",
+    );
     return (
       <Doctor
-        frames={frames}
+        frames={m.frames}
+        mascotVariant={m.variant}
         loading={doctorLoading}
         {...(doctorReport !== undefined ? { report: doctorReport } : {})}
         {...(errorMessage !== undefined ? { errorMessage } : {})}
@@ -967,9 +1004,14 @@ export function App(): React.ReactElement {
   }
 
   if (screen === "paths") {
+    const m = pickMascot("auto", {
+      busy: pathLoading || linking,
+      ok: Boolean(linkResult && !linkResult.dryRun),
+    });
     return (
       <Paths
-        frames={frames}
+        frames={m.frames}
+        mascotVariant={m.variant}
         selectedHarnessIndex={selectedHarnessIndex}
         selectTick={selectTick}
         scope={pathScope}
@@ -988,12 +1030,20 @@ export function App(): React.ReactElement {
   }
 
   if (screen === "library") {
+    const m = pickMascot(
+      skills.length === 0
+        ? "idle"
+        : statusMessage && !errorMessage
+          ? "success"
+          : "idle",
+    );
     return (
       <Library
         skills={skills}
         selectedIndex={selectedSkillIndex}
         selectTick={selectTick}
-        frames={frames}
+        frames={m.frames}
+        mascotVariant={m.variant}
         confirmRemove={confirmRemove}
         actionNonce={actionNonce}
         {...(statusMessage !== undefined ? { statusMessage } : {})}
@@ -1006,12 +1056,17 @@ export function App(): React.ReactElement {
   }
 
   if (screen === "packs") {
+    const m = pickMascot("auto", {
+      busy,
+      ok: Boolean(statusMessage && !errorMessage && !busy),
+    });
     return (
       <Packs
         packs={packs}
         selectedIndex={selectedPackIndex}
         selectTick={selectTick}
-        frames={frames}
+        frames={m.frames}
+        mascotVariant={m.variant}
         recommended={recommended}
         filter={packFilter}
         filtering={filteringPacks}
@@ -1028,11 +1083,14 @@ export function App(): React.ReactElement {
   }
 
   if (screen === "explore") {
+    const m = pickMascot(exploreLoading ? "scan" : "idle");
     return (
       <Explore
-        frames={frames}
+        frames={m.frames}
+        mascotVariant={m.variant}
         packs={remotePacks}
         selectedIndex={selectedRemoteIndex}
+        selectTick={selectTick}
         loading={exploreLoading}
         registryUrl={getRegistryUrl()}
         query={exploreQuery}
@@ -1042,9 +1100,17 @@ export function App(): React.ReactElement {
     );
   }
 
+  const homeMascot = pickMascot("auto", {
+    busy,
+    ok: Boolean(
+      celebrateCount !== undefined || (statusMessage && !errorMessage && !busy),
+    ),
+  });
+
   return (
     <Home
-      frames={frames}
+      frames={homeMascot.frames}
+      mascotVariant={homeMascot.variant}
       skills={skills}
       packs={packs}
       applied={applied}

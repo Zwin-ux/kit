@@ -19,7 +19,7 @@ export function Splash({ frames }: SplashProps): React.ReactElement {
       <Header screen="Splash" />
 
       <Box marginTop={1} flexShrink={0}>
-        <MascotPlayer frames={frames} playing />
+        <MascotPlayer frames={frames} playing variant="idle" />
       </Box>
 
       <Box marginTop={1} flexDirection="column">

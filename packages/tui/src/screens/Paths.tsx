@@ -6,8 +6,10 @@ import type {
   PathReport,
   PathScope,
 } from "@mzwin/kit-core";
-import type { PixelFrame } from "../mascot/types.js";
+import type { MascotVariant, PixelFrame } from "../mascot/types.js";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
+import { StatusIcon } from "../mascot/StatusIcon.js";
+import { harnessToStatusIcon } from "../mascot/statusIcons.js";
 import { Footer, Header } from "../components/Chrome.js";
 import { ErrorLine, Pulse, Spinner, SuccessLine } from "../components/Motion.js";
 import { ActionFlash, SelectPulse } from "../motion/index.js";
@@ -16,6 +18,7 @@ const LINKABLE: HarnessId[] = ["claude-code", "codex", "grok-build"];
 
 export interface PathsProps {
   frames: PixelFrame[];
+  mascotVariant?: MascotVariant;
   report?: PathReport;
   loading?: boolean;
   linking?: boolean;
@@ -39,6 +42,7 @@ export interface PathsProps {
  */
 export function Paths({
   frames,
+  mascotVariant = "idle",
   report,
   loading,
   linking,
@@ -54,6 +58,13 @@ export function Paths({
   actionNonce = 0,
 }: PathsProps): React.ReactElement {
   const selected = LINKABLE[selectedHarnessIndex] ?? "claude-code";
+  const variant =
+    mascotVariant ??
+    (linking || loading
+      ? "scan"
+      : linkResult && !linkResult.dryRun
+        ? "success"
+        : "idle");
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
@@ -61,11 +72,19 @@ export function Paths({
 
       <Box marginTop={1} flexDirection="row">
         <Box marginRight={2} flexShrink={0}>
-          <MascotPlayer frames={frames} playing size="compact" />
+          <MascotPlayer
+            frames={frames}
+            playing
+            size="compact"
+            variant={variant}
+          />
         </Box>
 
         <Box flexDirection="column" flexGrow={1}>
-          <Text bold>Where should skills land?</Text>
+          <Box>
+            <StatusIcon id="link" size="mini" />
+            <Text bold> Where should skills land?</Text>
+          </Box>
           <Text dimColor>
             Pick a harness · scope · approve the folder before any write
           </Text>
@@ -73,7 +92,8 @@ export function Paths({
           {report ? (
             <Box marginTop={1} flexDirection="column">
               <Text dimColor>
-                library · {report.installedSkillNames.length} skills ready
+                <StatusIcon id="skill" size="mini" dimColor /> library ·{" "}
+                {report.installedSkillNames.length} skills ready
               </Text>
             </Box>
           ) : null}
@@ -90,6 +110,7 @@ export function Paths({
                     selected={index === selectedHarnessIndex}
                     tick={selectTick}
                   />{" "}
+                  <StatusIcon id={harnessToStatusIcon(id)} size="mini" />{" "}
                   <Text bold={index === selectedHarnessIndex}>{id}</Text>
                   <Text dimColor>
                     {entry
@@ -115,7 +136,9 @@ export function Paths({
 
           {targetRoot ? (
             <Box marginTop={1} flexDirection="column">
-              <Text bold>Target folder</Text>
+              <Text bold>
+                <StatusIcon id="folder" size="mini" /> Target folder
+              </Text>
               <Text>{targetRoot}</Text>
             </Box>
           ) : null}
@@ -129,7 +152,8 @@ export function Paths({
           ) : (
             <Box marginTop={1}>
               <Text dimColor>
-                ↵ propose {selected} · p plan only · tab scope · r refresh
+                <StatusIcon id="arrow" size="mini" dimColor /> ↵ propose{" "}
+                {selected} · p plan only · tab scope · r refresh
               </Text>
             </Box>
           )}
@@ -139,6 +163,7 @@ export function Paths({
               <Spinner
                 label={linking ? "Linking" : "Loading paths"}
                 active
+                style="icon"
               />
             </Box>
           ) : null}
@@ -146,6 +171,10 @@ export function Paths({
           {linkResult ? (
             <Box marginTop={1} flexDirection="column">
               <Text dimColor>
+                <StatusIcon
+                  id={linkResult.dryRun ? "info" : "ok"}
+                  size="mini"
+                />{" "}
                 {linkResult.dryRun ? "plan" : "wrote"} · {linkResult.linked}{" "}
                 linked · {linkResult.skipped} skipped
                 {linkResult.failed.length

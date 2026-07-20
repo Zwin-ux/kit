@@ -1,29 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text } from "ink";
-import { motionEnabled, TypeLine, useIntervalFrame } from "../motion/index.js";
+import {
+  motionEnabled,
+  Spinner,
+  TypeLine,
+  useIntervalFrame,
+} from "../motion/index.js";
 
-const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+export { Spinner } from "../motion/index.js";
+export type { SpinnerProps } from "../motion/index.js";
+
 const PULSE = ["·", "•", "●", "•"];
 const DOTS = [".  ", ".. ", "..."];
-
-/**
- * Small terminal spinner for busy states.
- * Pure text — no color gimmicks.
- */
-export function Spinner(props: {
-  label?: string;
-  active?: boolean;
-}): React.ReactElement {
-  const active = props.active !== false;
-  const i = useIntervalFrame(SPINNER.length, 80, active);
-
-  return (
-    <Text>
-      {active && motionEnabled() ? SPINNER[i] : active ? "…" : "✓"}
-      {props.label ? ` ${props.label}` : ""}
-    </Text>
-  );
-}
 
 /** Soft pulse mark for status lines. */
 export function Pulse(props: { label?: string }): React.ReactElement {

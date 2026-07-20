@@ -78,22 +78,23 @@ kit init --pack essentials
 # or open the TUI and press 1 / 2 / 3 after Splash
 ```
 
-Mascot frames (Alpha 1):
-- Prefer `assets/pixel/kit-frame-1.png` … `kit-frame-6.png` (tail wag)
-- Pure black silhouette; laying-down fox; no wrench
-- High-res masters are downscaled for the terminal
-- If PNGs are missing, the TUI uses a built-in 6-frame placeholder
-- Cycle delay is about 180 ms per frame (~5–6 fps)
-- Animate mascot on Splash and First-run only (Home stays calm)
+Mascot frames:
+- **idle** — `kit-frame-1..6.png` (tail wag) · default menus + splash
+- **scan** — `kit-scan-1..4.png` (ear tilt) · load / install / doctor run / explore
+- **success** — `kit-success-1..4.png` (bob) · healthy doctor, install done, link wrote
+- Pure black silhouette; no wrench; NN downscale for terminal
+- Missing PNGs → built-in placeholders per variant
+- ~140–180 ms/frame; `KIT_REDUCED_MOTION=1` freezes frame 0
 
-### kit-idle in the TUI
+### kit-idle (+ variants) in the TUI
 
 Terminals cannot play GIF files inside Ink on all platforms.
-Kit plays the **same six frames** as `assets/pixel/kit-idle.gif` via `MascotPlayer`.
+Kit plays pixel frames via `MascotPlayer` (same language as `kit-idle.gif`).
 
-- Splash: full live kit-idle loop
-- First-run / Packs / empty Library: compact live loop
-- Home: compact loop only when the library is empty
+- Splash: full **idle** loop
+- Busy work: compact **scan** loop
+- Success moments: compact **success** loop
+- Otherwise: compact **idle** on all main screens
 
 Keys:
 - Splash: any key → First-run (if needed) or Home · `q` quit
@@ -106,18 +107,19 @@ Keys:
 - Paths: `↑↓` harness · `↵` link write · `p` plan · `r` refresh
 
 Motion (restrained — explain or reward, never decorate alone):
-- **kit-idle** mascot: always playing compact on main menus; full on Splash
+- **Mascot variants**: idle / scan / success by screen state
+- **StatusIcon**: ok · fail · warn · skill · pack · link · agent · spinner (list + doctor)
+- **PackIcon**: pack picker rows + selected 16×16
 - **Enter (↵)** installs the selected toolkit on Home, Packs, Explore (`i` still works)
 - **SelectPulse** (`›`→`»`) on ↑↓ selection change
 - **ActionFlash** (`▸ …`) on every meaningful key (nav, install, link, validate, test)
-- **TypeLine**: splash tagline once; success messages; empty-library tip
+- **TypeLine**: splash tagline once; success messages
 - **BlinkCursor**: after splash typewriter; packs filter while typing
-- **Spinner / ProgressBar**: load and install (calm, no competing mascot on Home during busy)
+- **Spinner** (braille or icon) / **ProgressBar**: load and install
 - **SuccessLine**: types once after install, then holds
-- **CountUp**: skill count flash after install/apply
+- **CountUp**: skill count flash after install/apply; doctor pass tally
 - **ErrorLine**: brief `!` pulse, then static red
-- **StaggerLines**: first-run pack options once
+- **StaggerLines**: first-run pack options; empty library tips
 - **FadeSteps**: header screen name on change
-- **Never animate**: pack/skill list rows, footer keys, doctor dumps
-- **Reduced motion**: `KIT_REDUCED_MOTION=1` → final frames immediately
-- Primitives live in `packages/tui/src/motion/`; re-exported from `components/Motion.tsx`
+- **Reduced motion**: `KIT_REDUCED_MOTION=1` → final frames / static icons
+- Primitives: `packages/tui/src/motion/` + `mascot/statusIcons.ts`

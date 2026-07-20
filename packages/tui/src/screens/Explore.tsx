@@ -1,15 +1,19 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text } from "ink";
 import type { RegistryPackSummary } from "@mzwin/kit-core";
-import type { PixelFrame } from "../mascot/types.js";
+import type { MascotVariant, PixelFrame } from "../mascot/types.js";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
+import { StatusIcon } from "../mascot/StatusIcon.js";
 import { Footer, Header } from "../components/Chrome.js";
 import { ErrorLine, Spinner, SuccessLine } from "../components/Motion.js";
+import { SelectPulse } from "../motion/index.js";
 
 export interface ExploreProps {
   frames: PixelFrame[];
+  mascotVariant?: MascotVariant;
   packs: RegistryPackSummary[];
   selectedIndex: number;
+  selectTick?: number;
   loading: boolean;
   registryUrl: string;
   query: string;
@@ -22,8 +26,10 @@ export interface ExploreProps {
  */
 export function Explore({
   frames,
+  mascotVariant = "idle",
   packs,
   selectedIndex,
+  selectTick = 0,
   loading,
   registryUrl,
   query,
@@ -32,6 +38,7 @@ export function Explore({
 }: ExploreProps): React.ReactElement {
   const selected = packs[selectedIndex];
   const [slowLoad, setSlowLoad] = useState(false);
+  const variant = mascotVariant ?? (loading ? "scan" : "idle");
 
   useEffect(() => {
     if (!loading) {
@@ -49,7 +56,12 @@ export function Explore({
 
       <Box marginTop={1} flexDirection="row">
         <Box marginRight={2} flexShrink={0}>
-          <MascotPlayer frames={frames} playing size="compact" />
+          <MascotPlayer
+            frames={frames}
+            playing
+            size="compact"
+            variant={variant}
+          />
         </Box>
 
         <Box flexDirection="column" flexGrow={1}>
@@ -57,25 +69,31 @@ export function Explore({
           {query ? <Text dimColor>/{query}</Text> : null}
 
           <Box marginTop={1} flexDirection="column">
-            <Text bold>Remote</Text>
+            <Text bold>
+              <StatusIcon id="pack" size="mini" /> Remote
+            </Text>
             {loading ? (
               <Spinner
                 label={slowLoad ? "Still loading…" : "Loading"}
                 active
+                style="icon"
               />
             ) : packs.length === 0 ? (
-              <Text dimColor>No packs · check KIT_REGISTRY_URL</Text>
+              <Text dimColor>
+                <StatusIcon id="folder" size="mini" dimColor /> No packs ·
+                check KIT_REGISTRY_URL
+              </Text>
             ) : (
               packs.map((pack, index) => {
-                const mark = index === selectedIndex ? "›" : " ";
                 return (
                   <Text key={pack.name}>
-                    {mark}{" "}
+                    <SelectPulse
+                      selected={index === selectedIndex}
+                      tick={selectTick}
+                    />{" "}
+                    <StatusIcon id="pack" size="mini" dimColor />{" "}
                     <Text bold={index === selectedIndex}>{pack.title}</Text>
-                    <Text dimColor>
-                      {" "}
-                      · {pack.skillCount} skills
-                    </Text>
+                    <Text dimColor> · {pack.skillCount} skills</Text>
                   </Text>
                 );
               })
@@ -85,7 +103,10 @@ export function Explore({
           {selected && !loading ? (
             <Box marginTop={1} flexDirection="column">
               <Text dimColor>{selected.description}</Text>
-              <Text dimColor>↵ install local match · / search · r refresh</Text>
+              <Text dimColor>
+                <StatusIcon id="arrow" size="mini" dimColor /> ↵ install local
+                match · / search · r refresh
+              </Text>
             </Box>
           ) : null}
         </Box>

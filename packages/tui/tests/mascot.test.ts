@@ -1,12 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { getPlaceholderFrames } from "../src/mascot/placeholderFrames.js";
 import { renderFrame } from "../src/mascot/renderBitmap.js";
-import { FRAME_COUNT } from "../src/mascot/types.js";
+import {
+  FRAME_COUNT,
+  SCAN_FRAME_COUNT,
+  SUCCESS_FRAME_COUNT,
+} from "../src/mascot/types.js";
 import {
   OFFICIAL_PACK_ICONS,
   PACK_ICON_SIZE,
   getPackIconBitmap,
 } from "../src/mascot/packIcons.js";
+import {
+  STATUS_ICON_IDS,
+  STATUS_ICON_SIZE,
+  getStatusIconBitmap,
+  levelToStatusIcon,
+  harnessToStatusIcon,
+} from "../src/mascot/statusIcons.js";
 import { PNG } from "pngjs";
 import { pngToFrame } from "../src/mascot/loadFrames.js";
 
@@ -21,6 +32,17 @@ describe("placeholder mascot frames", () => {
       expect(frame.pixels).toHaveLength(16 * 16);
       expect(frame.source).toBe("placeholder");
       expect(frame.pixels.some(Boolean)).toBe(true);
+    }
+  });
+
+  it("provides scan and success variants", () => {
+    const scan = getPlaceholderFrames("scan");
+    const success = getPlaceholderFrames("success");
+    expect(scan).toHaveLength(SCAN_FRAME_COUNT);
+    expect(success).toHaveLength(SUCCESS_FRAME_COUNT);
+    for (const frame of [...scan, ...success]) {
+      expect(frame.pixels.some(Boolean)).toBe(true);
+      expect(frame.pixels).toHaveLength(16 * 16);
     }
   });
 
@@ -51,6 +73,26 @@ describe("pack silhouette icons", () => {
       expect(bmp).toHaveLength(PACK_ICON_SIZE * PACK_ICON_SIZE);
       expect(bmp.some(Boolean)).toBe(true);
     }
+  });
+});
+
+describe("status icons", () => {
+  it("ships 8×8 bitmaps for every id", () => {
+    expect(STATUS_ICON_IDS.length).toBeGreaterThanOrEqual(16);
+    for (const id of STATUS_ICON_IDS) {
+      const bmp = getStatusIconBitmap(id);
+      expect(bmp).toHaveLength(STATUS_ICON_SIZE * STATUS_ICON_SIZE);
+      expect(bmp.some(Boolean)).toBe(true);
+    }
+  });
+
+  it("maps doctor levels and harnesses", () => {
+    expect(levelToStatusIcon("pass")).toBe("ok");
+    expect(levelToStatusIcon("fail")).toBe("fail");
+    expect(levelToStatusIcon("warn")).toBe("warn");
+    expect(harnessToStatusIcon("claude-code")).toBe("agent-claude");
+    expect(harnessToStatusIcon("codex")).toBe("agent-codex");
+    expect(harnessToStatusIcon("grok-build")).toBe("agent-grok");
   });
 });
 
