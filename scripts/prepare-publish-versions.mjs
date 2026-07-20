@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ver = process.argv[2] || "0.1.1";
+const ver = process.argv[2] || "0.1.5";
 
 const files = {
   shared: "packages/shared/package.json",

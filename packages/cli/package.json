@@ -1,6 +1,6 @@
 {
   "name": "@mzwin/kit",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Portable agent skills for Claude Code, Codex, and Grok. kit ready · kit unify · one library many agents.",
   "license": "MIT",
   "type": "module",

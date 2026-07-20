@@ -1,4 +1,4 @@
-import { cp, rm, access } from "node:fs/promises";
+import { cp, mkdir, rename, rm, access } from "node:fs/promises";
 import path from "node:path";
 import { loadSkill, formatIssues } from "../loadSkill.js";
 import {
@@ -8,7 +8,7 @@ import {
   skillInstallPath,
   upsertIndexEntry,
 } from "./indexStore.js";
-import { getKitHome } from "./paths.js";
+import { getKitHome, getSkillsDir } from "./paths.js";
 import type {
   InstalledSkill,
   LibraryIndexEntry,
@@ -57,32 +57,51 @@ export async function installSkill(
 
   await ensureLibraryDirs(kitHome);
 
-  if (await pathExists(target)) {
-    if (!options.force) {
-      return {
-        ok: false,
-        error: `Skill "${skill.name}" is already installed at ${target}. Use force to replace it.`,
-      };
-    }
-    await rm(target, { recursive: true, force: true });
+  if (await pathExists(target) && !options.force) {
+    return {
+      ok: false,
+      error: `Skill "${skill.name}" is already installed at ${target}. Use force to replace it.`,
+    };
   }
 
+  // Stage → validate → rename. Never leave a half-deleted live skill.
+  const skillsRoot = getSkillsDir(kitHome);
+  const staging = path.join(
+    skillsRoot,
+    `.tmp-${skill.name}-${Date.now().toString(36)}`,
+  );
+
   try {
-    await cp(resolvedSource, target, {
+    await mkdir(staging, { recursive: true });
+    await cp(resolvedSource, staging, {
       recursive: true,
       force: true,
       errorOnExist: false,
       filter: (src) => {
         const base = path.basename(src);
-        // Skip VCS noise if present in the source folder.
         return base !== ".git" && base !== "node_modules";
       },
     });
+
+    const staged = await loadSkill(staging);
+    if (!staged.ok) {
+      await rm(staging, { recursive: true, force: true });
+      return {
+        ok: false,
+        error: `Staged skill failed validation:\n${formatIssues(staged.issues)}`,
+      };
+    }
+
+    if (await pathExists(target)) {
+      await rm(target, { recursive: true, force: true });
+    }
+    await rename(staging, target);
   } catch (error) {
+    await rm(staging, { recursive: true, force: true }).catch(() => {});
     const detail = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
-      error: `Failed to copy skill into library: ${detail}`,
+      error: `Failed to install skill into library: ${detail}`,
     };
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "@mzwin/kit-core",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Skill parser, validator, and local library for Kit",
   "license": "MIT",
   "type": "module",

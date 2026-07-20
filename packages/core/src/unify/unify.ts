@@ -273,24 +273,43 @@ export async function runUnify(
       await rm(tmpRoot, { recursive: true, force: true });
     }
 
-    if (doLink && adoptedNames.length > 0) {
-      const linkResult = await linkSkills({
-        kitHome,
-        projectDir,
-        harnesses,
-        scope: "project",
-        write: true,
-        force: true,
-        mode: "copy",
-        skillNames: adoptedNames,
-      });
-      if (linkResult.ok) {
-        linked = linkResult.value.linked;
+    // Link keepers (new adopts ∪ already in library), not only this-run adopts
+    if (doLink) {
+      const linkNames = [
+        ...new Set([
+          ...adoptedNames,
+          ...keepers.filter((c) => c.inLibrary).map((c) => c.name),
+        ]),
+      ];
+      if (linkNames.length === 0) {
         notes.push(
-          `linked ${linked} skill install(s) into project harness folders`,
+          "Link requested but no keepers in library. Adopt first or lower --min-score.",
         );
       } else {
-        notes.push(`link failed: ${linkResult.error}`);
+        const linkResult = await linkSkills({
+          kitHome,
+          projectDir,
+          harnesses,
+          scope: "project",
+          write: true,
+          force,
+          mode: "symlink",
+          skillNames: linkNames,
+        });
+        if (linkResult.ok) {
+          linked = linkResult.value.linked;
+          if (linkResult.value.failed.length > 0) {
+            notes.push(
+              `link partial: ${linked} ok, ${linkResult.value.failed.length} failed`,
+            );
+          } else {
+            notes.push(
+              `linked ${linked} skill install(s) into project harness folders`,
+            );
+          }
+        } else {
+          notes.push(`link failed: ${linkResult.error}`);
+        }
       }
     }
 
@@ -304,34 +323,49 @@ export async function runUnify(
       `Safe default would adopt ${Math.min(top, adoptReady)} keepers (not ${noiseAll.length} noise skills).`,
     );
     notes.push("Pass --write to adopt keepers into ~/.kit.");
-    notes.push("Pass --write --link to also wire them into this project.");
+    notes.push("Pass --write --link to also wire keepers into this project.");
+    if (doLink && !write) {
+      notes.push("--link requires --write (no silent no-op).");
+    }
     if (!includeNoise) {
       notes.push("Noise filter on. Use --all to include automation bulk (not recommended).");
     }
   }
 
-  return {
-    ok: true,
-    value: {
-      projectDir,
-      kitHome,
-      dryRun: !write,
-      includeNoise,
-      scanned: hits.length,
-      unique: candidates.length,
-      noiseCount: noiseAll.length,
-      keeperCount: keepers.length,
-      alreadyInLibrary: candidates.filter((c) => c.inLibrary).length,
-      adoptReady,
-      adopted,
-      linked,
-      candidates: visible,
-      keepers,
-      noiseSample,
-      adoptedNames,
-      notes,
-    },
+  const linkHardFail =
+    write && doLink && notes.some((n) => n.startsWith("link failed:"));
+  const linkPartial =
+    write && doLink && notes.some((n) => n.startsWith("link partial:"));
+
+  const report: UnifyReport = {
+    projectDir,
+    kitHome,
+    dryRun: !write,
+    includeNoise,
+    scanned: hits.length,
+    unique: candidates.length,
+    noiseCount: noiseAll.length,
+    keeperCount: keepers.length,
+    alreadyInLibrary: candidates.filter((c) => c.inLibrary).length,
+    adoptReady,
+    adopted,
+    linked,
+    candidates: visible,
+    keepers,
+    noiseSample,
+    adoptedNames,
+    notes,
   };
+
+  if (linkHardFail) {
+    return { ok: false, error: "Unify link step failed" };
+  }
+  // Partial link still returns report; CLI should exit 1 if notes mention partial
+  if (linkPartial) {
+    notes.push("Link had partial failures — check harness folders.");
+  }
+
+  return { ok: true, value: report };
 }
 
 async function collectSkillHits(

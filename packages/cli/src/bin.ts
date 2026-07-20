@@ -656,6 +656,10 @@ async function runLink(rest: string[]): Promise<void> {
     console.log("");
     console.log("No files written. Re-run with --write to apply.");
   }
+
+  if (plan.failed.length > 0) {
+    fail(`Link finished with ${plan.failed.length} failure(s).`);
+  }
 }
 
 async function runImport(rest: string[]): Promise<void> {
@@ -664,7 +668,8 @@ async function runImport(rest: string[]): Promise<void> {
       "Usage: kit import [--from claude-code|codex|grok-build|all] [--scope personal|project] [--dir <project>] [--skill <name>] [--write] [--force]",
     );
     console.log("");
-    console.log("Capture skills from agent harness folders into the Kit library.");
+    console.log("Capture Kit-shaped skills from harness folders into ~/.kit.");
+    console.log("For messy agent dumps use: kit unify --write");
     console.log("Default is a dry-run. Pass --write to install into ~/.kit.");
     return;
   }
@@ -772,6 +777,10 @@ async function runImport(rest: string[]): Promise<void> {
     console.log("");
     console.log("No files written. Re-run with --write to install into ~/.kit.");
   }
+
+  if (plan.failed.length > 0) {
+    fail(`Import finished with ${plan.failed.length} failure(s).`);
+  }
 }
 
 async function runHome(rest: string[]): Promise<void> {
@@ -853,35 +862,63 @@ async function runReadyCmd(rest: string[]): Promise<void> {
     ...(projectDir ? { projectDir } : {}),
     ...(pack ? { pack } : {}),
   });
-  if (!result.ok) fail(result.error);
 
-  const r = result.value;
-  console.log("");
-  console.log(r.dryRun ? "READY" : "READY  ✓");
-  console.log("");
-  console.log(`  ${r.projectDir}`);
-  console.log(`  pack     ${r.packName}`);
-  console.log(`  ${r.recommendSummary}`);
-  console.log("");
-  for (const s of r.steps) {
-    const mark =
-      s.status === "done"
-        ? "✓"
-        : s.status === "planned"
-          ? "·"
-          : s.status === "skipped"
-            ? "-"
-            : "✗";
-    console.log(`  ${mark}  ${s.detail}`);
+  const r = result.ok
+    ? result.value
+    : "value" in result && result.value
+      ? result.value
+      : null;
+
+  if (!result.ok && !r) {
+    fail(result.error);
   }
-  if (r.dryRun) {
+
+  if (r) {
     console.log("");
-    console.log("  →  kit ready --write");
-  } else if (r.doctorOk) {
+    if (r.dryRun) {
+      console.log("READY  (dry-run)");
+    } else if (r.complete) {
+      console.log("READY  ✓");
+    } else {
+      console.log("READY  incomplete");
+    }
     console.log("");
-    console.log("  →  open claude / codex here   ·   kit tui");
+    console.log(`  ${r.projectDir}`);
+    console.log(`  pack     ${r.packName}`);
+    console.log(`  ${r.recommendSummary}`);
+    console.log("");
+    for (const s of r.steps) {
+      const mark =
+        s.status === "done"
+          ? "✓"
+          : s.status === "planned"
+            ? "·"
+            : s.status === "skipped"
+              ? "-"
+              : "✗";
+      console.log(`  ${mark}  ${s.detail}`);
+    }
+    if (r.notes.length > 0) {
+      console.log("");
+      for (const n of r.notes) console.log(`  · ${n}`);
+    }
+    if (r.dryRun) {
+      console.log("");
+      console.log("  →  kit ready --write");
+      console.log("  →  kit ready --write --unify   # also clean personal dumps");
+    } else if (r.complete) {
+      console.log("");
+      console.log("  →  open claude / codex here   ·   kit tui");
+    }
+    console.log("");
   }
-  console.log("");
+
+  if (!result.ok) {
+    fail(result.error);
+  }
+  if (r && !r.dryRun && !r.complete) {
+    fail("Ready did not complete successfully.");
+  }
 }
 
 async function runUnifyCmd(rest: string[]): Promise<void> {
@@ -905,6 +942,10 @@ async function runUnifyCmd(rest: string[]): Promise<void> {
   const force = rest.includes("--force");
   const includeNoise = rest.includes("--all");
   const asJson = rest.includes("--json");
+
+  if (link && !write) {
+    fail("kit unify --link requires --write (use: kit unify --write --link)");
+  }
 
   const dirFlag = rest.indexOf("--dir");
   let projectDir: string | undefined;
@@ -1026,14 +1067,10 @@ async function runUnifyCmd(rest: string[]): Promise<void> {
       `  Safe default: adopt up to ${Math.min(top ?? 25, report.adoptReady)} keepers — not ${report.noiseCount} noise skills.`,
     );
     console.log("");
-    console.log("  Why this matters");
-    console.log("    Vibe coders install skills for every tool. They rot in one agent.");
-    console.log("    Unify makes a single library Claude, Codex, and Grok can all share.");
-    console.log("");
     console.log("  Next");
     console.log("    kit unify --write           # one portable library");
-    console.log("    kit unify --write --link    # + wire into this project");
-    console.log("    kit ready --write           # pack + link this repo in one shot");
+    console.log("    kit unify --write --link    # + wire keepers into this project");
+    console.log("    kit ready --write           # pack + link this repo");
   } else if (report.adoptedNames.length > 0) {
     console.log("");
     console.log(
@@ -1043,6 +1080,14 @@ async function runUnifyCmd(rest: string[]): Promise<void> {
     console.log("  Next: kit link --to all --write   ·   kit ready --write   ·   kit list");
   }
   console.log("");
+
+  if (
+    report.notes.some(
+      (n) => n.startsWith("link failed:") || n.startsWith("link partial:"),
+    )
+  ) {
+    fail("Unify link step failed or partial.");
+  }
 }
 
 function printChecks(checks: CheckResult[], indent = "  "): void {

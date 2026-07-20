@@ -88,8 +88,45 @@ describe("detectSituation + runReady", () => {
     expect(ready.ok).toBe(true);
     if (!ready.ok) return;
     expect(ready.value.dryRun).toBe(true);
+    expect(ready.value.complete).toBe(false);
     expect(ready.value.packName).toBe("essentials");
     expect(ready.value.steps.some((s) => s.id === "pack-install")).toBe(true);
+    // unify is opt-in only
+    expect(ready.value.steps.find((s) => s.id === "unify")?.status).toBe(
+      "skipped",
+    );
+  });
+
+  it("ready --write without --unify never adopts from chaos alone", async () => {
+    const kitHome = await tempDir("kit-ready-nounify-");
+    const projectDir = await tempDir("kit-ready-nounify-proj-");
+    const homeDir = await tempDir("kit-ready-nounify-user-");
+    await writeFile(
+      path.join(projectDir, "package.json"),
+      JSON.stringify({ name: "x", private: true }),
+      "utf8",
+    );
+
+    const before = await listSkills({ kitHome });
+    expect(before.ok && before.value.length === 0).toBe(true);
+
+    const result = await runReady({
+      kitHome,
+      projectDir,
+      homeDir,
+      write: true,
+      unify: false,
+      pack: "essentials",
+      packsRoot,
+      skillsRoot,
+      force: true,
+    });
+    const report = result.ok
+      ? result.value
+      : "value" in result
+        ? result.value
+        : undefined;
+    expect(report?.steps.find((s) => s.id === "unify")?.status).toBe("skipped");
   });
 
   it("ready --write installs essentials into library", async () => {
@@ -110,14 +147,22 @@ describe("detectSituation + runReady", () => {
       pack: "essentials",
       packsRoot,
       skillsRoot,
+      force: true,
     });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.dryRun).toBe(false);
-    expect(result.value.steps.find((s) => s.id === "pack-install")?.status).toBe(
+    // may be ok:false if doctor fails in isolated home — still must have report
+    const report = result.ok
+      ? result.value
+      : "value" in result
+        ? result.value
+        : undefined;
+    expect(report).toBeDefined();
+    if (!report) return;
+    expect(report.dryRun).toBe(false);
+    expect(report.steps.find((s) => s.id === "pack-install")?.status).toBe(
       "done",
     );
-    expect(result.value.steps.find((s) => s.id === "link")?.status).toBe("done");
+    expect(report.steps.find((s) => s.id === "link")?.status).toBe("done");
+    expect(report.steps.find((s) => s.id === "unify")?.status).toBe("skipped");
 
     const listed = await listSkills({ kitHome });
     expect(listed.ok).toBe(true);

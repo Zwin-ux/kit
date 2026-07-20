@@ -19,10 +19,17 @@ export interface ReadyOptions extends PackLoadOptions {
   pack?: string;
   /** When false, plan only. Default false. */
   write?: boolean;
-  /** Also run unify --write keepers before link. Default false. */
+  /**
+   * Also run unify keepers before link.
+   * Opt-in only — never auto-run from chaos story alone.
+   */
   unify?: boolean;
   /** Harnesses to link. Default all linkable. */
   harnesses?: HarnessId[];
+  /**
+   * Force overwrite of existing harness skill dirs on link.
+   * Default false (skip existing). Pack catalog install still replaces.
+   */
   force?: boolean;
   onProgress?: (msg: string) => void;
 }
@@ -40,17 +47,22 @@ export interface ReadyReport {
   }>;
   doctorOk: boolean | null;
   notes: string[];
+  /**
+   * Write path: true only when no failed steps and doctor has zero failures.
+   * Dry-run: always false.
+   */
+  complete: boolean;
 }
 
 export type ReadyResult =
   | { ok: true; value: ReadyReport }
-  | { ok: false; error: string };
+  | { ok: false; error: string; value?: ReadyReport };
 
 /**
  * One-shot: make this project agent-ready.
  * recommend → install pack → apply → optional unify → link → doctor
  *
- * This is the "I opened a repo, make my agents useful" command.
+ * Write path: ok only when complete (agents actually wired + doctor green).
  */
 export async function runReady(
   options: ReadyOptions = {},
@@ -68,6 +80,11 @@ export async function runReady(
   const progress = options.onProgress;
   const notes: string[] = [];
   const steps: ReadyReport["steps"] = [];
+
+  const dirGuard = guardProjectDir(projectDir, write, force);
+  if (!dirGuard.ok) {
+    return { ok: false, error: dirGuard.error };
+  }
 
   progress?.("Reading your setup…");
   const situation = await detectSituation({
@@ -90,12 +107,9 @@ export async function runReady(
   }
 
   const packName =
-    options.pack?.trim() ||
-    rec.value.topPick ||
-    "essentials";
+    options.pack?.trim() || rec.value.topPick || "essentials";
   const recommendSummary = rec.value.summary;
 
-  // Step: pack install
   if (!write) {
     steps.push({
       id: "pack-install",
@@ -107,11 +121,17 @@ export async function runReady(
       status: "planned",
       detail: `Would apply "${packName}" to ${projectDir}`,
     });
-    if (doUnify || situation.story.id === "chaos-cleanup") {
+    if (doUnify) {
       steps.push({
         id: "unify",
         status: "planned",
         detail: "Would adopt skill keepers from Claude/Codex/Grok into ~/.kit",
+      });
+    } else {
+      steps.push({
+        id: "unify",
+        status: "skipped",
+        detail: "Skipped (pass --unify to clean personal skill dumps)",
       });
     }
     steps.push({
@@ -126,7 +146,9 @@ export async function runReady(
     });
     notes.push("Dry-run. Pass --write to apply.");
     if (situation.story.id === "chaos-cleanup" && !doUnify) {
-      notes.push("Tip: add --unify to also clean your personal skill pile.");
+      notes.push(
+        "Many agent skill folders detected. Pass --unify with --write to also clean personal dumps.",
+      );
     }
     return {
       ok: true,
@@ -139,6 +161,7 @@ export async function runReady(
         steps,
         doctorOk: null,
         notes,
+        complete: false,
       },
     };
   }
@@ -186,7 +209,7 @@ export async function runReady(
     preferredPack: packName,
   });
 
-  if (doUnify || situation.story.id === "chaos-cleanup") {
+  if (doUnify) {
     progress?.("Unifying personal skill keepers…");
     const unified = await runUnify({
       kitHome,
@@ -220,6 +243,11 @@ export async function runReady(
       status: "skipped",
       detail: "Skipped (pass --unify to clean personal skill dumps)",
     });
+    if (situation.story.id === "chaos-cleanup") {
+      notes.push(
+        "Chaos pile detected but unify skipped. Re-run with --unify if you want keepers adopted.",
+      );
+    }
   }
 
   progress?.("Linking into agent harnesses…");
@@ -229,15 +257,29 @@ export async function runReady(
     harnesses,
     scope: "project",
     write: true,
-    force: true,
-    mode: "copy",
+    force,
+    mode: "symlink",
   });
   if (linked.ok) {
-    steps.push({
-      id: "link",
-      status: "done",
-      detail: `Linked ${linked.value.linked} (skipped ${linked.value.skipped})`,
-    });
+    if (linked.value.failed.length > 0) {
+      steps.push({
+        id: "link",
+        status: "failed",
+        detail: `Linked ${linked.value.linked}, failed ${linked.value.failed.length}`,
+      });
+      notes.push(
+        `Link partial failures: ${linked.value.failed
+          .slice(0, 5)
+          .map((f) => f.skillName)
+          .join(", ")}`,
+      );
+    } else {
+      steps.push({
+        id: "link",
+        status: "done",
+        detail: `Linked ${linked.value.linked} (skipped ${linked.value.skipped})`,
+      });
+    }
   } else {
     steps.push({ id: "link", status: "failed", detail: linked.error });
     notes.push(`Link failed: ${linked.error}`);
@@ -253,20 +295,68 @@ export async function runReady(
       : `Doctor found ${doctor.summary.failed} failure(s)`,
   });
 
-  notes.push("Agents on this project can now load Kit skills.");
-  notes.push("Open work in Claude Code / Codex from this folder, or run kit tui.");
+  const failedSteps = steps.filter((s) => s.status === "failed");
+  const complete = failedSteps.length === 0 && doctor.ok;
 
-  return {
-    ok: true,
-    value: {
-      dryRun: false,
-      projectDir,
-      story: situation.story,
-      packName,
-      recommendSummary,
-      steps,
-      doctorOk: doctor.ok,
-      notes,
-    },
+  if (complete) {
+    notes.push("Agents on this project can load Kit skills.");
+    notes.push(
+      "Open work in Claude Code / Codex from this folder, or run kit tui.",
+    );
+  } else {
+    notes.push(
+      `Incomplete: ${failedSteps.map((s) => s.id).join(", ") || "doctor"}. Fix and re-run kit ready --write.`,
+    );
+  }
+
+  const report: ReadyReport = {
+    dryRun: false,
+    projectDir,
+    story: situation.story,
+    packName,
+    recommendSummary,
+    steps,
+    doctorOk: doctor.ok,
+    notes,
+    complete,
   };
+
+  if (!complete) {
+    return {
+      ok: false,
+      error: `Ready incomplete (${failedSteps.map((s) => s.id).join(", ") || "doctor"}). Project: ${projectDir}`,
+      value: report,
+    };
+  }
+
+  return { ok: true, value: report };
+}
+
+function guardProjectDir(
+  projectDir: string,
+  write: boolean,
+  force: boolean,
+): { ok: true } | { ok: false; error: string } {
+  if (!write) return { ok: true };
+
+  const resolved = path.resolve(projectDir);
+  const homeRaw = process.env.USERPROFILE ?? process.env.HOME ?? "";
+  const home = homeRaw ? path.resolve(homeRaw) : "";
+  const root = path.parse(resolved).root;
+
+  const banned =
+    home &&
+    (resolved === home ||
+      resolved === root ||
+      resolved === path.resolve(home, "Downloads") ||
+      resolved === path.resolve(home, "Desktop"));
+
+  if (!force && banned) {
+    return {
+      ok: false,
+      error: `Refusing to write kit state into ${resolved}. Pass --dir <project> or --force if intentional.`,
+    };
+  }
+
+  return { ok: true };
 }

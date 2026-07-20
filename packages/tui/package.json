@@ -1,6 +1,6 @@
 {
   "name": "@mzwin/kit-tui",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Pixel-art terminal interface for Kit",
   "license": "MIT",
   "type": "module",
