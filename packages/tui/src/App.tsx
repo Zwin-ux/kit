@@ -18,6 +18,7 @@ import {
   removeSkill,
   recommendToolkits,
   runDoctor,
+  runStatus,
   testSkill,
   updateConfig,
   exploreListPacks,
@@ -37,6 +38,9 @@ import {
 } from "@mzwin/kit-core";
 import { loadAllMascotFrames } from "./mascot/loadFrames.js";
 import type { MascotVariant, PixelFrame } from "./mascot/types.js";
+import { useLayoutScale } from "./mascot/useLayoutScale.js";
+import { useMouseClick } from "./mouse/useMouse.js";
+import type { HitRegion } from "./mouse/HitMap.js";
 import { Spinner } from "./components/Motion.js";
 import { Splash } from "./screens/Splash.js";
 import { Home } from "./screens/Home.js";
@@ -73,7 +77,9 @@ const FIRST_RUN_BY_KEY: Record<string, string> = {
 
 export function App(): React.ReactElement {
   const { exit } = useApp();
+  const scale = useLayoutScale();
   const [screen, setScreen] = useState<Screen>("loading");
+  const [agentStatusLine, setAgentStatusLine] = useState<string | undefined>();
   const [frames, setFrames] = useState<PixelFrame[]>([]);
   const [scanFrames, setScanFrames] = useState<PixelFrame[]>([]);
   const [successFrames, setSuccessFrames] = useState<PixelFrame[]>([]);
@@ -141,6 +147,98 @@ export function App(): React.ReactElement {
     setSelectDirection(direction);
     setSelectTick((t) => t + 1);
   }, []);
+
+  /** Click-to-select (mouse). Keyboard still primary. */
+  const onMouseClick = useCallback(
+    (region: HitRegion) => {
+      const idx = region.data?.index;
+      if (typeof idx !== "number") return;
+      if (region.id.startsWith("pack:")) {
+        setSelectedPackIndex(
+          Math.max(0, Math.min(idx, Math.max(0, packs.length - 1))),
+        );
+        bumpSelect("none");
+        return;
+      }
+      if (region.id.startsWith("skill:")) {
+        setSelectedSkillIndex(
+          Math.max(0, Math.min(idx, Math.max(0, skills.length - 1))),
+        );
+        bumpSelect("none");
+        return;
+      }
+      if (region.id.startsWith("remote:")) {
+        setSelectedRemoteIndex(
+          Math.max(0, Math.min(idx, Math.max(0, remotePacks.length - 1))),
+        );
+        bumpSelect("none");
+        return;
+      }
+      if (region.id.startsWith("harness:")) {
+        setSelectedHarnessIndex(
+          Math.max(
+            0,
+            Math.min(idx, Math.max(0, PATHS_LINKABLE_HARNESSES.length - 1)),
+          ),
+        );
+        bumpSelect("none");
+      }
+    },
+    [packs.length, skills.length, remotePacks.length, bumpSelect],
+  );
+
+  const hitMap = useMouseClick(onMouseClick, screen !== "loading");
+
+  // Rebuild hit regions for current list (approximate rows from layout hint)
+  useEffect(() => {
+    hitMap.clear();
+    const start = scale.listStartRowHint;
+    const col0 = scale.mascotPlacement === "rail" ? scale.railCols + 4 : 2;
+    const col1 = Math.max(col0 + 20, scale.columns - 2);
+    if (screen === "home" || screen === "packs") {
+      hitMap.addListRows({
+        idPrefix: "pack",
+        count: packs.length,
+        startRow: start,
+        col0,
+        col1,
+      });
+    } else if (screen === "library") {
+      hitMap.addListRows({
+        idPrefix: "skill",
+        count: skills.length,
+        startRow: start,
+        col0,
+        col1,
+      });
+    } else if (screen === "explore") {
+      hitMap.addListRows({
+        idPrefix: "remote",
+        count: remotePacks.length,
+        startRow: start,
+        col0,
+        col1,
+      });
+    } else if (screen === "paths") {
+      hitMap.addListRows({
+        idPrefix: "harness",
+        count: PATHS_LINKABLE_HARNESSES.length,
+        startRow: start,
+        col0,
+        col1,
+      });
+    }
+  }, [
+    hitMap,
+    screen,
+    packs.length,
+    skills.length,
+    remotePacks.length,
+    scale.listStartRowHint,
+    scale.mascotPlacement,
+    scale.railCols,
+    scale.columns,
+  ]);
 
   const resolveTarget = useCallback(async (): Promise<string> => {
     const env = process.env.KIT_PROJECT_DIR?.trim();
@@ -220,6 +318,28 @@ export function App(): React.ReactElement {
       }
     } catch {
       setDoctorSummary(undefined);
+    }
+
+    try {
+      const st = await runStatus({ projectDir });
+      if (st.ok) {
+        const bits = st.value.rows
+          .filter((row) => row.scope === "project")
+          .map((row) => {
+            const name =
+              row.harness === "claude-code"
+                ? "claude"
+                : row.harness === "grok-build"
+                  ? "grok"
+                  : "codex";
+            const mark =
+              row.state === "ok" ? "ok" : row.state === "partial" ? "~" : "x";
+            return `${name}:${mark}`;
+          });
+        setAgentStatusLine(bits.join(" · "));
+      }
+    } catch {
+      setAgentStatusLine(undefined);
     }
   }, [resolveTarget]);
 
@@ -1147,6 +1267,7 @@ export function App(): React.ReactElement {
         : errorMessage !== undefined
           ? { statusMessage: errorMessage }
           : {})}
+      {...(agentStatusLine !== undefined ? { agentStatusLine } : {})}
     />
   );
 }

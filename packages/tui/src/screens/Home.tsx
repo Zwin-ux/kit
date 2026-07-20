@@ -54,6 +54,8 @@ export interface HomeProps {
   actionNonce?: number;
   busy?: boolean;
   progress?: { current: number; total: number; skillName: string };
+  /** e.g. claude:ok · codex:x · grok:ok */
+  agentStatusLine?: string;
 }
 
 function shortPath(p: string): string {
@@ -91,6 +93,7 @@ export function Home({
   actionNonce = 0,
   busy,
   progress,
+  agentStatusLine,
 }: HomeProps): React.ReactElement {
   const scale = useLayoutScale();
   const emptyLibrary = skills.length === 0;
@@ -156,6 +159,9 @@ export function Home({
             {doctorSummary ? ` · ${doctorSummary}` : ""}
             {" · o point"}
           </Text>
+          {agentStatusLine ? (
+            <Text wrap="truncate">agents {agentStatusLine}</Text>
+          ) : null}
 
           <Box marginTop={1} flexDirection="column">
             <Text bold>Toolkits</Text>
