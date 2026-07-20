@@ -191,6 +191,9 @@ pnpm typecheck
 pnpm kit -- doctor
 ```
 
+CI is **test-only** (build, typecheck, unit tests, all packs, doctor) — no deploy, no secrets.  
+Details: [.github/README.md](.github/README.md)
+
 [CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md)
 
 ---
