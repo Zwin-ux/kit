@@ -98,6 +98,12 @@ Kit plays the **same six frames** as `assets/pixel/kit-idle.gif` via `MascotPlay
 Keys:
 - Splash: any key → First-run (if needed) or Home · `q` quit
 - First-run: `1` essentials · `2` web-app · `3` library · `s` skip · `q` quit
-- Home: `↑↓` pack · `i` install · `a` apply · `l` library · `p` packs · `s` splash · `q` quit
+- Home: `↑↓` toolkit · `i` install · `a` apply · `e` explore · `l` library · `p` packs · `s` splash · `q` quit
+- Packs: filter by typing · `★ recommended` from project signals · progress bar on install
+- Explore: remote Railway catalog · `/` search · `i` install matching local pack · `r` refresh
 - Library: `↑↓` skill · `r` remove (y/n) · `p` packs · `h` home · `s` splash · `q` quit
-- Packs: `↑↓` pack · `i` install · `a` apply · `l` library · `h` home · `s` splash · `q` quit
+
+Motion (restrained):
+- Spinner on load/busy
+- Progress bar while installing toolkit skills
+- kit-idle mascot only on splash / empty / pack browse — not competing with dense lists

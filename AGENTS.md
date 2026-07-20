@@ -35,15 +35,17 @@ There is no web app.
 - Railway registry API MVP (public read catalog + GitHub App auth)
 - `kit login` / `whoami` / `logout` (device flow → ~/.kit/auth.json)
 - `kit explore` registry client + `kit.cmd` / `kit.ps1` Windows shims
+- Toolkit recommender (`kit recommend` + TUI ★ badges)
+- TUI Explore screen + install progress + motion primitives
 
 **In Progress**
-- Product polish (Workshop later)
+- Workshop / publish depth
 
 **Next Priority**
-1. Registry client in CLI/TUI (`kit explore`)
-2. GitHub App / device-code auth for publish
-3. Workshop screen (validate / edit)
-4. Postgres-backed catalog + publish API
+1. TUI device-flow login screen
+2. Authenticated publish API
+3. Workshop screen (create/validate skill)
+4. Postgres-backed catalog
 
 ## How to Maintain This File
 When you complete a meaningful piece of work:

@@ -22,6 +22,7 @@ import {
   loadSkill,
   loginWithDeviceFlow,
   logout,
+  recommendToolkits,
   removeSkill,
   runDoctor,
   testAllPacks,
@@ -130,6 +131,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "recommend") {
+    await runRecommend(args.slice(1));
+    return;
+  }
+
   if (command === "tui" || command === "ui" || command === "start") {
     const { startTui } = await import("@kit-skills/tui");
     startTui();
@@ -169,12 +175,13 @@ function printHelp(): void {
   console.log("  kit explore search <query>");
   console.log("  kit explore show <pack>");
   console.log("  kit explore skills [--agent <id>]");
+  console.log("  kit recommend [--dir <project>]");
   console.log("");
   console.log("Library:  ~/.kit (or KIT_HOME)");
   console.log("Packs:    packs/ in the Kit repo (or KIT_PACKS)");
   console.log("Registry: KIT_REGISTRY_URL or production Railway URL");
   console.log("Windows:  .\\kit.cmd whoami   (from repo root after pnpm build)");
-  console.log("Tip:      kit login → kit explore packs → kit pack install essentials");
+  console.log("Tip:      kit recommend → kit pack install <top> → kit login");
 }
 
 async function runInit(rest: string[]): Promise<void> {
@@ -1012,6 +1019,46 @@ async function runExplore(rest: string[]): Promise<void> {
   }
 
   fail(`kit explore: unknown command: ${sub}`);
+}
+
+async function runRecommend(rest: string[]): Promise<void> {
+  const dirFlag = rest.indexOf("--dir");
+  let projectDir: string | undefined;
+  if (dirFlag >= 0) {
+    projectDir = rest[dirFlag + 1];
+    if (!projectDir || projectDir.startsWith("-")) {
+      fail("Usage: kit recommend [--dir <project>]");
+    }
+  }
+
+  const result = await recommendToolkits({
+    ...(projectDir ? { projectDir } : {}),
+  });
+  if (!result.ok) fail(result.error);
+
+  const report = result.value;
+  console.log(`Toolkit recommendations for ${report.projectDir}`);
+  if (report.signals.length > 0) {
+    console.log(`Signals: ${report.signals.join(", ")}`);
+  } else {
+    console.log("Signals: (none detected — defaults apply)");
+  }
+  console.log("");
+  for (const rec of report.recommendations) {
+    const star = rec.packName === report.topPick ? "★ " : "  ";
+    console.log(
+      `${star}${rec.packName.padEnd(12)} score ${rec.score}  ${rec.title}`,
+    );
+    for (const reason of rec.reasons) {
+      console.log(`     · ${reason}`);
+    }
+  }
+  if (report.topPick) {
+    console.log("");
+    console.log(`Top pick: ${report.topPick}`);
+    console.log(`Install:  kit pack install ${report.topPick}`);
+    console.log(`Apply:    kit pack apply ${report.topPick} --dir .`);
+  }
 }
 
 main().catch((error: unknown) => {

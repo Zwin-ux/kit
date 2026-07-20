@@ -149,3 +149,10 @@ export {
   type RegistryPackSummary,
   type RegistrySkillSummary,
 } from "./explore/mod.js";
+
+export {
+  recommendToolkits,
+  type ToolkitRecommendation,
+  type RecommendReport,
+  type RecommendResult,
+} from "./recommend/mod.js";

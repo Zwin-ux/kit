@@ -17,6 +17,12 @@ export interface InstallPackOptions extends PackLoadOptions {
    * Default true for packs so a pack install is complete.
    */
   force?: boolean;
+  /** Progress callback: current skill index (1-based), total, skill name. */
+  onProgress?: (info: {
+    current: number;
+    total: number;
+    skillName: string;
+  }) => void;
 }
 
 export interface ApplyPackOptions extends InstallPackOptions {
@@ -59,7 +65,15 @@ export async function installPack(
   const skipped: string[] = [];
   const errors: string[] = [];
 
+  const total = loaded.value.skills.length;
+  let index = 0;
   for (const entry of loaded.value.skills) {
+    index += 1;
+    options.onProgress?.({
+      current: index,
+      total,
+      skillName: entry.name,
+    });
     const result = await installSkill(entry.sourceDir, { kitHome, force });
     if (!result.ok) {
       if (result.error.includes("already installed") && !force) {

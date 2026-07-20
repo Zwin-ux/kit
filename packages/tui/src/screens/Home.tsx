@@ -4,10 +4,13 @@ import type {
   AppliedPackRecord,
   InstalledSkill,
   PackListItem,
+  ToolkitRecommendation,
 } from "@kit-skills/core";
 import type { PixelFrame } from "../mascot/types.js";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { Footer, Header, StatusLine } from "../components/Chrome.js";
+import { ProgressBar, Spinner, SuccessLine } from "../components/Motion.js";
+import { ToolkitPicker } from "../components/ToolkitPicker.js";
 
 export interface HomeProps {
   frames: PixelFrame[];
@@ -15,10 +18,14 @@ export interface HomeProps {
   packs: PackListItem[];
   applied: AppliedPackRecord[];
   selectedPackIndex: number;
+  recommended: ToolkitRecommendation[];
+  topPick: string | null;
+  userLogin?: string;
   libraryError?: string;
   packsError?: string;
   statusMessage?: string;
   busy?: boolean;
+  progress?: { current: number; total: number; skillName: string };
 }
 
 export function Home({
@@ -27,17 +34,30 @@ export function Home({
   packs,
   applied,
   selectedPackIndex,
+  recommended,
+  topPick,
+  userLogin,
   libraryError,
   packsError,
   statusMessage,
   busy,
+  progress,
 }: HomeProps): React.ReactElement {
-  const selected = packs[selectedPackIndex];
   const emptyLibrary = skills.length === 0;
+  const appliedNames = new Set(applied.map((a) => a.name));
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      <Header screen="Home" detail={busy ? "working…" : "offline"} />
+      <Header
+        screen="Home"
+        detail={
+          busy
+            ? "working…"
+            : userLogin
+              ? `@${userLogin} · offline`
+              : "offline"
+        }
+      />
 
       {emptyLibrary ? (
         <Box marginTop={1}>
@@ -45,7 +65,7 @@ export function Home({
             frames={frames}
             playing={!busy}
             size="compact"
-            caption="kit-idle · install a pack to fill your library"
+            caption="kit-idle · pick a toolkit below"
           />
         </Box>
       ) : null}
@@ -56,52 +76,44 @@ export function Home({
           <Text color="red">{libraryError}</Text>
         ) : emptyLibrary ? (
           <Text dimColor>
-            None yet. Press p for packs, or 1–3 to install quickly.
+            None yet. Choose a toolkit — ★ marks the recommended pack.
           </Text>
         ) : (
-          skills.slice(0, 6).map((skill) => (
+          skills.slice(0, 5).map((skill) => (
             <Text key={skill.name}>
               · {skill.name}@{skill.version}
               <Text dimColor> — {skill.description}</Text>
             </Text>
           ))
         )}
-        {skills.length > 6 ? (
-          <Text dimColor>
-            {" "}
-            …and {skills.length - 6} more (press l for Library)
-          </Text>
+        {skills.length > 5 ? (
+          <Text dimColor>  …+{skills.length - 5} more (l library)</Text>
         ) : null}
       </Box>
 
       <Box marginTop={1} flexDirection="column">
-        <Text bold>Starter packs</Text>
+        <Text bold>Skill toolkits</Text>
+        {topPick ? (
+          <Text dimColor>
+            Suggested for this project: {topPick}
+          </Text>
+        ) : null}
         {packsError ? (
           <Text color="red">{packsError}</Text>
-        ) : packs.length === 0 ? (
-          <Text dimColor>
-            No packs found. Run Kit from the repo or set KIT_PACKS.
-          </Text>
         ) : (
-          packs.map((pack, index) => {
-            const mark = index === selectedPackIndex ? "›" : " ";
-            return (
-              <Text key={pack.name}>
-                {mark} {index + 1}. {pack.title}{" "}
-                <Text dimColor>
-                  ({pack.name} · {pack.skillCount} skills)
-                </Text>
-              </Text>
-            );
-          })
+          <ToolkitPicker
+            packs={packs}
+            selectedIndex={selectedPackIndex}
+            recommended={recommended}
+            appliedNames={appliedNames}
+          />
         )}
-        {selected ? <Text dimColor>  {selected.description}</Text> : null}
       </Box>
 
       <Box marginTop={1} flexDirection="column">
-        <Text bold>Applied in this project</Text>
+        <Text bold>Applied here</Text>
         {applied.length === 0 ? (
-          <Text dimColor>None. Select a pack and press a to apply.</Text>
+          <Text dimColor>None. Press a to apply selected toolkit.</Text>
         ) : (
           applied.map((pack) => (
             <Text key={pack.name}>
@@ -112,13 +124,35 @@ export function Home({
         )}
       </Box>
 
+      {busy && progress ? (
+        <Box marginTop={1}>
+          <ProgressBar
+            current={progress.current}
+            total={progress.total}
+            label={`installing ${progress.skillName}`}
+          />
+        </Box>
+      ) : busy ? (
+        <Box marginTop={1}>
+          <Spinner label="Working" active />
+        </Box>
+      ) : null}
+
+      {statusMessage && !busy ? (
+        <Box marginTop={1}>
+          <SuccessLine message={statusMessage.replace(/^✓\s*/, "")} />
+        </Box>
+      ) : null}
+
       <StatusLine
         skillCount={skills.length}
         packCount={packs.length}
-        {...(statusMessage !== undefined ? { message: statusMessage } : {})}
+        {...(statusMessage !== undefined && busy
+          ? { message: statusMessage }
+          : {})}
       />
 
-      <Footer keys="↑↓ pack · i install · a apply · l library · p packs · s splash · q quit" />
+      <Footer keys="↑↓ toolkit · i install · a apply · e explore · l library · p packs · s splash · q quit" />
     </Box>
   );
 }
