@@ -25,6 +25,7 @@ Build the TUI after the core works.
 - docs/PIXEL_ART.md
 - docs/SKILL_SCHEMA.md
 - docs/PACKAGE_STRUCTURE.md
+- docs/LOCAL_LIBRARY.md
 - docs/TUI_SCREENS.md
 
 ## Language Style for Documentation

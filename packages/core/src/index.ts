@@ -23,3 +23,19 @@ export {
   parseAndValidateSkillMd,
   formatIssues,
 } from "./loadSkill.js";
+
+export {
+  getKitHome,
+  getSkillsDir,
+  getLibraryIndexPath,
+  installSkill,
+  listSkills,
+  removeSkill,
+  type InstallOptions,
+  type ListOptions,
+  type RemoveOptions,
+  type InstalledSkill,
+  type LibraryIndex,
+  type LibraryIndexEntry,
+  type LibraryResult,
+} from "./library/mod.js";

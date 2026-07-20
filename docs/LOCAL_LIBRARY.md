@@ -1,0 +1,46 @@
+# Local Skill Library
+
+## Goal
+Store skills on disk for offline use.
+Support install, list, and remove.
+
+## Location
+
+Default home:
+
+```
+~/.kit/
+  library.json
+  skills/
+    <skill-name>/
+      SKILL.md
+      ...
+```
+
+Override the home directory with `KIT_HOME`.
+
+## Rules
+- Validate a skill before install.
+- Copy the skill folder into `~/.kit/skills/<name>/`.
+- Keep metadata in `library.json`.
+- Do not require network access.
+
+## Core API
+
+Package: `@kit-skills/core`
+
+- `installSkill(sourceDir, options?)`
+- `listSkills(options?)`
+- `removeSkill(name, options?)`
+- `getKitHome()`
+- `getSkillsDir()`
+
+## CLI
+
+```sh
+kit validate ./skills/add-readme
+kit install ./skills/add-readme
+kit install ./skills/add-readme --force
+kit list
+kit remove add-readme
+```
