@@ -32,7 +32,8 @@ There is no web app.
 - Skill/pack test runner: `kit test`
 - Health check: `kit doctor`
 - GitHub Actions CI (build/test/packs/doctor only — no deploy)
-- Railway registry API MVP (public read catalog)
+- Railway registry API MVP (public read catalog + GitHub App auth)
+- `kit login` / `whoami` / `logout` (device flow → ~/.kit/auth.json)
 
 **In Progress**
 - Product polish (Workshop later)

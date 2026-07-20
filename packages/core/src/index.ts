@@ -120,3 +120,21 @@ export {
   type DoctorOptions,
   type DoctorReport,
 } from "./doctor/mod.js";
+
+export {
+  DEFAULT_REGISTRY_URL,
+  getRegistryUrl,
+  getAuthPath,
+  readAuthSession,
+  writeAuthSession,
+  clearAuthSession,
+  loginWithDeviceFlow,
+  getLoggedInUser,
+  logout,
+  type KitAuthUser,
+  type KitAuthSession,
+  type AuthResult,
+  type LoginProgress,
+  type LoginOptions,
+  type DeviceStartPayload,
+} from "./auth/mod.js";

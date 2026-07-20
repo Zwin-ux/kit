@@ -1,6 +1,8 @@
 import { access, readdir } from "node:fs/promises";
 import path from "node:path";
 import { KIT_PACKAGE_VERSION } from "@kit-skills/shared";
+import { readAuthSession } from "../auth/store.js";
+import { getRegistryUrl } from "../auth/login.js";
 import { getFirstRunStatus, readConfig } from "../config/config.js";
 import { listSkills } from "../library/library.js";
 import { getConfigPath, getKitHome, getSkillsDir } from "../library/paths.js";
@@ -96,6 +98,52 @@ export async function runDoctor(
       ? "First-run not completed (empty library)."
       : `First-run settled (${firstRun.reason}, ${firstRun.skillCount} skill(s)).`,
   });
+
+  const session = await readAuthSession(kitHome);
+  if (session) {
+    checks.push({
+      id: "auth",
+      level: "pass",
+      message: `Logged in as @${session.user.login}`,
+      detail: session.registryUrl,
+    });
+  } else {
+    checks.push({
+      id: "auth",
+      level: "warn",
+      message: `Not logged in (registry ${getRegistryUrl()}). Run: kit login`,
+    });
+  }
+
+  try {
+    const regRes = await fetch(`${getRegistryUrl()}/health`, {
+      headers: { Accept: "application/json" },
+    });
+    if (regRes.ok) {
+      const body = (await regRes.json()) as {
+        authConfigured?: boolean;
+        appCredentialsConfigured?: boolean;
+      };
+      checks.push({
+        id: "registry",
+        level: "pass",
+        message: `Registry reachable (${getRegistryUrl()}) authConfigured=${Boolean(body.authConfigured)} appKey=${Boolean(body.appCredentialsConfigured)}`,
+      });
+    } else {
+      checks.push({
+        id: "registry",
+        level: "warn",
+        message: `Registry HTTP ${regRes.status} at ${getRegistryUrl()}`,
+      });
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    checks.push({
+      id: "registry",
+      level: "warn",
+      message: `Registry unreachable: ${detail}`,
+    });
+  }
 
   const listed = await listSkills({ kitHome });
   if (!listed.ok) {

@@ -27,3 +27,8 @@ export function getLibraryIndexPath(kitHome: string = getKitHome()): string {
 export function getConfigPath(kitHome: string = getKitHome()): string {
   return path.join(kitHome, "config.json");
 }
+
+/** GitHub auth session file. */
+export function getAuthPath(kitHome: string = getKitHome()): string {
+  return path.join(kitHome, "auth.json");
+}

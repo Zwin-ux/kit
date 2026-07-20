@@ -51,6 +51,8 @@ kit paths                        # where agents look for skills
 kit link --to claude-code --write
 kit test --all-packs             # validate official packs
 kit doctor                       # local health check
+kit login                        # GitHub device flow
+kit whoami
 ```
 
 | Pack | Best for |

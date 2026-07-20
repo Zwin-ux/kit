@@ -70,6 +70,16 @@ Auth endpoints:
 - `GET /auth/github/callback`
 - `POST /webhooks/github`
 
+### CLI login
+
+```sh
+kit login     # device flow; stores ~/.kit/auth.json
+kit whoami
+kit logout
+```
+
+Override registry: `KIT_REGISTRY_URL=https://kit-registry-production.up.railway.app`
+
 ## Safety
 
 - Catalog GET is public

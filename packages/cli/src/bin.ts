@@ -5,6 +5,8 @@ import {
   describePaths,
   formatIssues,
   getFirstRunStatus,
+  getLoggedInUser,
+  getRegistryUrl,
   installPack,
   installSkill,
   isFirstRunPackName,
@@ -14,6 +16,8 @@ import {
   listSkills,
   loadPack,
   loadSkill,
+  loginWithDeviceFlow,
+  logout,
   removeSkill,
   runDoctor,
   testAllPacks,
@@ -102,6 +106,21 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "login") {
+    await runLogin(args.slice(1));
+    return;
+  }
+
+  if (command === "logout") {
+    await runLogout();
+    return;
+  }
+
+  if (command === "whoami") {
+    await runWhoami();
+    return;
+  }
+
   if (command === "tui" || command === "ui" || command === "start") {
     const { startTui } = await import("@kit-skills/tui");
     startTui();
@@ -134,10 +153,14 @@ function printHelp(): void {
   console.log("  kit link [--to <harness|all>] [--scope personal|project] [--write] [--force] [--mode symlink|copy] [--dir <project>]");
   console.log("  kit test [skill-dir|pack-name|--all-packs]");
   console.log("  kit doctor [--dir <project>]");
+  console.log("  kit login");
+  console.log("  kit whoami");
+  console.log("  kit logout");
   console.log("");
-  console.log("Library: ~/.kit (or KIT_HOME)");
-  console.log("Packs:   packs/ in the Kit repo (or KIT_PACKS)");
-  console.log("Tip:     kit init → pack apply → kit link --write → kit doctor");
+  console.log("Library:  ~/.kit (or KIT_HOME)");
+  console.log("Packs:    packs/ in the Kit repo (or KIT_PACKS)");
+  console.log("Registry: KIT_REGISTRY_URL or production Railway URL");
+  console.log("Tip:      kit login → kit init → kit pack apply → kit link --write");
 }
 
 async function runInit(rest: string[]): Promise<void> {
@@ -804,6 +827,63 @@ async function runDoctorCmd(rest: string[]): Promise<void> {
 
   console.log("");
   console.log("Doctor OK.");
+}
+
+async function runLogin(rest: string[]): Promise<void> {
+  if (rest.includes("--help") || rest.includes("-h")) {
+    console.log("Usage: kit login");
+    console.log("");
+    console.log("Signs in with GitHub device flow via the Kit registry.");
+    console.log(`Registry: ${getRegistryUrl()}`);
+    console.log("Override with KIT_REGISTRY_URL.");
+    return;
+  }
+
+  console.log("Kit login (GitHub device flow)");
+  console.log(`Registry: ${getRegistryUrl()}`);
+  console.log("");
+
+  const result = await loginWithDeviceFlow({
+    onPrompt: (progress) => {
+      console.log(progress.message);
+      console.log("");
+      console.log(`  1. Open ${progress.verificationUri}`);
+      console.log(`  2. Enter code: ${progress.userCode}`);
+      console.log("  3. Approve Kit-skills");
+      console.log("");
+      console.log("Waiting for approval…");
+    },
+  });
+
+  if (!result.ok) fail(result.error);
+
+  console.log("");
+  console.log(`Logged in as @${result.value.user.login}`);
+  if (result.value.user.name) {
+    console.log(`  name: ${result.value.user.name}`);
+  }
+  console.log(`  session: ~/.kit/auth.json`);
+  console.log("");
+  console.log("Next: kit whoami · kit doctor · kit tui");
+}
+
+async function runLogout(): Promise<void> {
+  const result = await logout();
+  if (!result.ok) fail(result.error);
+  console.log("Logged out. Session cleared.");
+}
+
+async function runWhoami(): Promise<void> {
+  const result = await getLoggedInUser();
+  if (!result.ok) fail(result.error);
+  const s = result.value;
+  console.log(`@${s.user.login}`);
+  if (s.user.name) console.log(`  name:     ${s.user.name}`);
+  console.log(`  id:       ${s.user.id}`);
+  console.log(`  profile:  ${s.user.html_url}`);
+  console.log(`  loggedIn: ${s.loggedInAt}`);
+  console.log(`  registry: ${s.registryUrl}`);
+  console.log(`  scope:    ${s.scope || "(none)"}`);
 }
 
 main().catch((error: unknown) => {
