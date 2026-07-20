@@ -39,3 +39,25 @@ export {
   type LibraryIndexEntry,
   type LibraryResult,
 } from "./library/mod.js";
+
+export {
+  parsePackMd,
+  validatePackFrontMatter,
+  resolvePacksRoot,
+  resolveSkillsCatalogRoot,
+  loadPack,
+  listPacks,
+  validatePack,
+  installPack,
+  applyPack,
+  type PackLoadOptions,
+  type InstallPackOptions,
+  type ApplyPackOptions,
+  type SkillPack,
+  type ResolvedPackSkill,
+  type LoadedPack,
+  type PackResult,
+  type PackListItem,
+  type InstallPackResult,
+  type ApplyPackResult,
+} from "./pack/mod.js";

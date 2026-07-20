@@ -34,7 +34,24 @@ Kit fixes that with three hard opinions:
 - Cross-harness path normalization
 - Safe script execution
 - Local library + offline-first
+- **Starter packs** for project types (essentials, web-app, library)
 - Built-in skill testing against fixtures or your current repo
+
+### Starter packs (available now)
+
+```sh
+kit pack list
+kit pack install essentials      # install into ~/.kit
+kit pack apply web-app --dir .   # also copy into ./.kit/skills
+```
+
+| Pack | Best for |
+|------|----------|
+| `essentials` | Any repo |
+| `web-app` | Apps and sites |
+| `library` | Packages and SDKs |
+
+See [docs/STARTER_PACKS.md](./docs/STARTER_PACKS.md).
 
 ### Pixel-Art TUI
 - Explore & install skills

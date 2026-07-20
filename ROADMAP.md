@@ -14,9 +14,10 @@
 ## Phase 1 — Local Skills Engine
 - [x] Skill parser + strict validator
 - [x] Local library (install / list / remove)
+- [x] Starter packs (schema, catalog skills, install / apply)
 - Cross-harness path normalization
 - Simple test runner
-- [x] CLI entrypoint that the TUI will later wrap (`validate`, `install`, `list`, `remove`, `tui`)
+- [x] CLI entrypoint that the TUI will later wrap (`validate`, `install`, `list`, `remove`, `pack`, `tui`)
 
 ## Phase 2 — Pixel-Art TUI + Accounts
 - [x] TUI shell with pixel-art rendering (splash + home + 4-frame mascot cycle)

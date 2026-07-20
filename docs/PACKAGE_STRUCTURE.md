@@ -15,7 +15,8 @@ kit/
 ├── apps/
 │   └── registry-api/         # Railway backend service
 ├── docs/
-├── skills/                   # Example skills
+├── skills/                   # Shared skill catalog
+├── packs/                    # Starter packs (PACK.md + skill lists)
 ├── assets/
 │   └── pixel/                # Pixel art files
 ├── AGENTS.md

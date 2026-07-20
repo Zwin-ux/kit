@@ -43,4 +43,8 @@ kit install ./skills/add-readme
 kit install ./skills/add-readme --force
 kit list
 kit remove add-readme
+kit pack install essentials
+kit pack apply essentials --dir .
 ```
+
+See also [STARTER_PACKS.md](./STARTER_PACKS.md).

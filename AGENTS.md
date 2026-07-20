@@ -19,15 +19,17 @@ There is no web app.
 - Monorepo structure (pnpm)
 - Skill schema parser + strict validator
 - Local skill library (install / list / remove)
+- TUI shell + mascot frame cycle
+- Starter packs: essentials, web-app, library + pack CLI/API
 - Basic docs and architecture
 
 **In Progress**
-- TUI shell + mascot animation (Issue #4)
+- Pixel mascot PNG assets (separate track)
 
-**Next Priority After TUI Shell**
-1. Official starter pack (4–6 high-quality skills)
-2. First-run experience (offer to install starter pack)
-3. Minimal useful Home screen in the TUI
+**Next Priority**
+1. First-run experience (offer to install essentials pack)
+2. Home screen: show packs + installed skills
+3. Cross-harness path normalization
 4. Railway accounts + publish (later)
 
 ## How to Maintain This File
@@ -41,9 +43,11 @@ When you complete a meaningful piece of work:
 - ROADMAP.md
 - docs/SKILL_SCHEMA.md
 - docs/LOCAL_LIBRARY.md
+- docs/STARTER_PACKS.md
 - docs/PIXEL_ART.md
 - docs/TUI_SCREENS.md
 - assets/pixel/README.md
+- packs/README.md
 
 ## Visual Rules (Non-Negotiable)
 - Pure black silhouette only for TUI assets
