@@ -1,24 +1,31 @@
-# Pixel Assets
+# Pixel Assets – Kit Mascot
 
-## Mascot Animation
-
-Target style: pure black and white silhouette.
-
-Rules:
-- High contrast black shape
+## Style
+- Pure black silhouette
 - White or transparent background
-- Strong readable silhouette
-- Minimal internal detail
-- Must work at 16x16 and 32x32
+- No gray, no anti-aliasing, no internal detail
+- Optimized for 16×16 and 32×32 TUI display
+- High contrast for terminal
 
-We need 4 frames for a simple idle animation:
-1. Neutral
-2. Tail up / slight head turn
-3. Blink or small shift
-4. Return to neutral (or ready pose)
+## Animation Frames (Idle / Setup)
 
-Current status:
-Generated frames were not consistent enough for production.
-Use one strong base silhouette and create the other frames manually in a pixel editor (Aseprite recommended).
+Use these exact filenames so the TUI can load them easily:
 
-Keep all frames on the exact same model and proportions.
+```
+assets/pixel/
+├── kit-frame-1.png   # Neutral pose
+├── kit-frame-2.png   # Tail up + slight head tilt
+├── kit-frame-3.png   # Small shift
+└── kit-frame-4.png   # Return / ready pose
+```
+
+## Rules for Grok Build
+- Load the four frames from this folder
+- Cycle them slowly for splash and loading states
+- Keep the animation simple (4–6 frames per second)
+- Scale cleanly to 16×16 and 32×32
+- Do not add color or effects in code
+
+## Current Status
+Master direction is locked: pure black silhouette only.
+Once the four PNG files exist with the exact names above, the TUI can wire them immediately.
