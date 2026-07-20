@@ -15,12 +15,13 @@ export interface ToolkitPickerProps {
   filter?: string;
   appliedNames?: Set<string>;
   dense?: boolean;
-  /** Show tiny detail silhouette under selection (layout-gated). */
+  /** Show detail panel under the list (fixed height — no in-row expand). */
   showSelectedIcon?: boolean;
 }
 
 /**
- * Pack list: animated mini glyphs. Optional 4×4 detail under selection only.
+ * Pack list: one line per row (never expands under selection).
+ * Detail lives in a sticky panel below so ↑↓ does not reflow the list.
  */
 export function ToolkitPicker({
   packs,
@@ -39,7 +40,10 @@ export function ToolkitPicker({
     recommended.map((r) => [r.packName, r] as const),
   );
   const showDetail =
-    showSelectedIcon && scale.showPackDetail && scale.packDetailSize > 0;
+    showSelectedIcon &&
+    !dense &&
+    scale.showPackDetail &&
+    scale.packDetailSize > 0;
 
   const filtered = filter
     ? packs.filter((p) => {
@@ -65,12 +69,21 @@ export function ToolkitPicker({
   const originalIndex = (pack: PackListItem) =>
     packs.findIndex((p) => p.name === pack.name);
 
+  const selectedPack =
+    packs[selectedIndex] ??
+    filtered.find((p) => originalIndex(p) === selectedIndex);
+  const selectedRec = selectedPack
+    ? scoreByName.get(selectedPack.name)
+    : undefined;
+
+  // Fixed panel height: icon rows + 2 text lines (or empty placeholders)
+  const detailLines = showDetail ? scale.packDetailSize + 2 : 2;
+
   return (
     <Box flexDirection="column">
       {filtered.map((pack) => {
         const oi = originalIndex(pack);
         const selected = oi === selectedIndex;
-        const rec = scoreByName.get(pack.name);
         const isTop = pack.name === top;
         const applied = appliedNames?.has(pack.name);
         const extendsNote =
@@ -79,57 +92,62 @@ export function ToolkitPicker({
             : "";
 
         return (
-          <Box key={pack.name} flexDirection="column">
-            <Text wrap="truncate">
-              <SelectPulse
-                selected={selected}
-                tick={selectTick}
-                direction={selectDirection}
-              />
-              <PackIcon packName={pack.name} size="mini" animate />{" "}
-              <Text bold={selected}>{pack.title}</Text>
-              <Text dimColor>
-                {" "}
-                · {pack.skillCount} skills
-                {extendsNote}
-              </Text>
-              {isTop ? <Text> ★</Text> : null}
-              {applied ? <Text dimColor> · on</Text> : null}
+          <Text key={pack.name} wrap="truncate">
+            <SelectPulse
+              selected={selected}
+              tick={selectTick}
+              direction={selectDirection}
+            />
+            <PackIcon packName={pack.name} size="mini" animate />{" "}
+            <Text bold={selected}>{pack.title}</Text>
+            <Text dimColor={!selected}>
+              {" "}
+              · {pack.skillCount} skills
+              {extendsNote}
             </Text>
-            {!dense && selected ? (
-              <Box marginLeft={2} flexDirection="row">
-                {showDetail ? (
-                  <Box
-                    marginRight={1}
-                    flexShrink={0}
-                    width={scale.packDetailSize}
-                    height={scale.packDetailSize}
-                  >
-                    <PackIcon
-                      packName={pack.name}
-                      size="detail"
-                      detailEdge={scale.packDetailSize}
-                      animate
-                    />
-                  </Box>
-                ) : null}
-                <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-                  <Text dimColor wrap="truncate">
-                    {pack.description.length > scale.contentSoftMax
-                      ? `${pack.description.slice(0, scale.contentSoftMax - 1)}…`
-                      : pack.description}
-                  </Text>
-                  {rec && rec.reasons.length > 0 ? (
-                    <Text dimColor wrap="truncate">
-                      {rec.reasons[0]}
-                    </Text>
-                  ) : null}
-                </Box>
-              </Box>
-            ) : null}
-          </Box>
+            {isTop ? <Text> ★</Text> : null}
+            {applied ? <Text dimColor> · on</Text> : null}
+          </Text>
         );
       })}
+
+      {/* Sticky detail panel — always same height so ↑↓ never inserts rows */}
+      {!dense ? (
+        <Box
+          marginTop={1}
+          flexDirection="row"
+          height={detailLines}
+          overflow="hidden"
+        >
+          {showDetail && selectedPack ? (
+            <Box
+              marginRight={1}
+              flexShrink={0}
+              width={scale.packDetailSize}
+              height={scale.packDetailSize}
+            >
+              <PackIcon
+                packName={selectedPack.name}
+                size="detail"
+                detailEdge={scale.packDetailSize}
+                animate
+              />
+            </Box>
+          ) : null}
+          <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+            <Text dimColor wrap="truncate">
+              {selectedPack
+                ? selectedPack.description.length > scale.contentSoftMax
+                  ? `${selectedPack.description.slice(0, scale.contentSoftMax - 1)}…`
+                  : selectedPack.description
+                : " "}
+            </Text>
+            <Text dimColor wrap="truncate">
+              {selectedRec?.reasons[0] ?? " "}
+            </Text>
+          </Box>
+        </Box>
+      ) : null}
     </Box>
   );
 }

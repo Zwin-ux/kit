@@ -89,6 +89,34 @@ describe("placeholder mascot frames", () => {
       expect(s.w).toBe(12);
     }
   });
+
+  it("fit ignores tight so frames do not scale-swim", () => {
+    const frames = getPlaceholderFrames();
+    const fit = { width: 10, height: 10 };
+    // Same opts as MascotPlayer rail: fit set → tight must not re-crop
+    const a = renderFrame(frames[0]!, {
+      tight: true,
+      fit,
+      cell: "█",
+      empty: " ",
+    });
+    const b = renderFrame(frames[2]!, {
+      tight: true,
+      fit,
+      cell: "█",
+      empty: " ",
+    });
+    expect(a.split("\n")).toHaveLength(10);
+    expect(b.split("\n")).toHaveLength(10);
+    // With tight disabled under fit, scale is stable across tail poses
+    const a2 = renderFrame(frames[0]!, {
+      tight: false,
+      fit,
+      cell: "█",
+      empty: " ",
+    });
+    expect(a).toBe(a2);
+  });
 });
 
 describe("pack silhouette icons", () => {

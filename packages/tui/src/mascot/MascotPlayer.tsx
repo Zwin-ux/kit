@@ -98,12 +98,14 @@ export function MascotPlayer({
 
   const frame = frames[enabled ? index : 0] ?? frames[0];
 
+  // tight: false with fit — composition fixed at load (normalizeFrame).
+  // Re-tightening each frame was the silhouette "breathe" / TUI thrash bug.
   const renderOpts: RenderFrameOptions = useMemo(() => {
     if (isHero) {
       return {
         cell: "█",
         empty: " ",
-        tight: true,
+        tight: false,
         pad: 0,
         fit: {
           width: scale.splashFit.width,
@@ -114,7 +116,7 @@ export function MascotPlayer({
     return {
       cell: "█",
       empty: " ",
-      tight: true,
+      tight: false,
       pad: 0,
       fit: {
         width: scale.mascotFit.width,

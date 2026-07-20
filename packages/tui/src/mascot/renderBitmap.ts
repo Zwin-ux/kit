@@ -73,9 +73,12 @@ function preparePixels(
   frame: PixelFrame,
   options?: RenderFrameOptions,
 ): { pixels: boolean[]; width: number; height: number } {
-  const tight = options?.tight === true;
-  const pad = options?.pad ?? (tight ? 1 : 0);
   const fit = options?.fit;
+  // When fitting into a fixed slot, NEVER tight-crop first.
+  // Re-cropping each animation frame changes bbox → scale/ox/oy swim
+  // (fox "breathes" and the whole TUI feels like it moves).
+  const tight = options?.tight === true && !fit;
+  const pad = options?.pad ?? (tight ? 1 : 0);
 
   let pixels = frame.pixels;
   let width = frame.width;
