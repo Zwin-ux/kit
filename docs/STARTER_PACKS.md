@@ -4,6 +4,20 @@
 Give a project a strong set of skills in one step.
 A pack is a curated list of validated skills for a project type.
 
+## v1 ship set (7 packs)
+
+| Pack | Depends on | Best for |
+|------|------------|----------|
+| `essentials` | — | Default first install |
+| `web-app` | essentials | Apps / sites |
+| `library` | essentials | Packages / SDKs |
+| `cli-tool` | essentials | CLIs |
+| `api-service` | essentials | HTTP backends |
+| `full-stack` | essentials | UI + API products |
+| `data-ml` | essentials | Data / ML |
+
+Each pack has a pure black 16×16 silhouette in `assets/pixel/packs/` and the TUI picker.
+
 ## Why packs matter
 Single skills are useful.
 Packs make Kit valuable on day one.
@@ -41,6 +55,24 @@ skills:
   - code-review
   - write-tests
   - fix-bug
+  - pr-ready
+---
+```
+
+Stack packs **extend** Essentials so dependency skills always install:
+
+```yaml
+---
+name: web-app
+title: Web App
+description: Full starter for apps and sites. Includes Essentials plus ship and a11y skills.
+version: 0.2.0
+extends:
+  - essentials
+skills:
+  - ship-checklist
+  - a11y-pass
+  - pr-ready
 ---
 ```
 
@@ -49,7 +81,8 @@ Rules:
 - `title` is a short display name
 - `description` is one or two sentences
 - `version` is semver
-- `skills` is a non-empty list of skill names
+- `skills` lists own skills (may be empty only if `extends` is set)
+- `extends` is an optional list of base pack names; their skills merge first (de-duped)
 - `tags` and `projectTypes` are optional string lists
 
 ### Skill resolution order

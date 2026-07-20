@@ -1,32 +1,31 @@
-# Skill Catalog
+# Skill catalog
 
 Shared skills used by starter packs and direct installs.
 
-Each skill is a folder with `SKILL.md`.
+Each skill is a folder with `SKILL.md`.  
 See [docs/SKILL_SCHEMA.md](../docs/SKILL_SCHEMA.md).
 
-## Catalog (v0)
+## Catalog (v1)
 
 | Skill | Purpose |
 |-------|---------|
 | `add-readme` | Clear project README |
-| `project-setup` | Baseline repo setup for agents and humans |
+| `project-setup` | Baseline repo setup |
 | `code-review` | Structured change review |
-| `write-tests` | Focused tests for important behavior |
+| `write-tests` | Focused tests |
 | `fix-bug` | Root-cause bug fixing |
+| `pr-ready` | PR summary, test plan, risks |
 | `ship-checklist` | Pre-ship checklist for apps |
-| `a11y-pass` | Basic accessibility improvements |
+| `a11y-pass` | Basic accessibility pass |
 | `api-docs` | Public API documentation |
-| `changelog` | Release notes / changelog entries |
+| `changelog` | Release notes |
+| `cli-help` | CLI usage and help text |
+| `data-check` | Data/notebook hygiene |
+| `workspace-setup` | Monorepo / workspace map |
 
-## Install one skill
-
-```sh
-kit install ./skills/add-readme
-```
-
-## Install a pack
+## Install
 
 ```sh
-kit pack install essentials
+pnpm kit -- install ./skills/add-readme
+pnpm kit -- pack install essentials
 ```

@@ -6,6 +6,11 @@ export interface KitConfig {
   firstRunCompleted: boolean;
   /** Preferred starter pack name (default essentials). */
   preferredPack: string;
+  /**
+   * Project Kit is “pointed at” for auto-recommend / apply / link.
+   * Absolute or relative path; empty means process.cwd().
+   */
+  targetProjectDir?: string;
   /** ISO timestamp when first-run was completed or skipped. */
   firstRunCompletedAt?: string;
   /** How first-run ended. */
@@ -18,25 +23,52 @@ export const DEFAULT_KIT_CONFIG: KitConfig = {
   preferredPack: "essentials",
 };
 
-/** Official packs offered on first-run (stable order for key bindings). */
+/**
+ * Official packs on first-run (v1 ship set — 7 packs).
+ * Stack packs extend essentials so dependency skills always install.
+ */
 export const FIRST_RUN_PACK_OPTIONS = [
   {
     key: "1",
     name: "essentials",
     title: "Essentials",
-    blurb: "Docs, setup, review, tests, bugfix — any project.",
+    blurb: "Best default — setup, docs, review, tests, fix, PRs.",
   },
   {
     key: "2",
     name: "web-app",
     title: "Web App",
-    blurb: "Essentials plus ship checklist and accessibility pass.",
+    blurb: "Essentials + ship, a11y, PR craft for apps/sites.",
   },
   {
     key: "3",
     name: "library",
     title: "Library",
-    blurb: "API docs, changelog, tests, and careful review.",
+    blurb: "Essentials + API docs and changelog for packages.",
+  },
+  {
+    key: "4",
+    name: "cli-tool",
+    title: "CLI Tool",
+    blurb: "Essentials + CLI help for terminal tools.",
+  },
+  {
+    key: "5",
+    name: "api-service",
+    title: "API Service",
+    blurb: "Essentials + API docs and ship for backends.",
+  },
+  {
+    key: "6",
+    name: "full-stack",
+    title: "Full Stack",
+    blurb: "Essentials + web + API skills for full products.",
+  },
+  {
+    key: "7",
+    name: "data-ml",
+    title: "Data / ML",
+    blurb: "Essentials + data checks for notebooks and pipelines.",
   },
 ] as const;
 

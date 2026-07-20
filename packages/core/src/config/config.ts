@@ -164,5 +164,12 @@ function normalizeConfig(raw: unknown): KitConfig {
     config.firstRunOutcome = row.firstRunOutcome;
   }
 
+  if (
+    typeof row.targetProjectDir === "string" &&
+    row.targetProjectDir.trim()
+  ) {
+    config.targetProjectDir = row.targetProjectDir.trim();
+  }
+
   return config;
 }

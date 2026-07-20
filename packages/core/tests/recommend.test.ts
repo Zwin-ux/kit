@@ -82,5 +82,38 @@ describe("recommendToolkits", () => {
     expect(
       result.value.recommendations.some((r) => r.packName === "essentials"),
     ).toBe(true);
+    expect(result.value.summary.length).toBeGreaterThan(0);
+    expect(result.value.skillRecommendations.length).toBeGreaterThan(0);
+  });
+
+  it("suggests cli skills when package.bin is set", async () => {
+    const dir = await tempDir("kit-rec-cli-");
+    await writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        name: "my-cli",
+        bin: { kit: "./bin.js" },
+        dependencies: { commander: "^12.0.0" },
+      }),
+      "utf8",
+    );
+    const result = await recommendToolkits({
+      projectDir: dir,
+      packsRoot: path.join(repoRoot, "packs"),
+      skillsRoot: path.join(repoRoot, "skills"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.topPick).toBe("cli-tool");
+    expect(
+      result.value.skillRecommendations.some((s) => s.skillName === "cli-help"),
+    ).toBe(true);
+  });
+
+  it("fails clearly when project path is missing", async () => {
+    const result = await recommendToolkits({
+      projectDir: path.join(os.tmpdir(), "kit-does-not-exist-xyz"),
+    });
+    expect(result.ok).toBe(false);
   });
 });

@@ -99,7 +99,7 @@ The repo will contain clear instructions and skills so Grok Build (and later oth
 
 ## Design Principles
 
-1. Terminal only — no web app
+1. Product is the CLI + pixel TUI (no separate web app product)
 2. Pixel art is part of the product, not decoration
 3. Free + accounts = distribution
 4. Strict validation over flexibility

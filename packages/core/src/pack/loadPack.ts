@@ -11,6 +11,7 @@ import type {
   PackListItem,
   PackResult,
   ResolvedPackSkill,
+  SkillPack,
 } from "./types.js";
 import { validatePackFrontMatter } from "./validatePack.js";
 
@@ -25,46 +26,14 @@ export interface PackLoadOptions {
 
 /**
  * Load a pack by folder path or by pack name under packs/.
+ * Resolves `extends` so dependency packs contribute their skills first.
  */
 export async function loadPack(
   packDirOrName: string,
   options: PackLoadOptions = {},
 ): Promise<PackResult<LoadedPack>> {
-  const packDir = await resolvePackDir(packDirOrName, options);
-  if (!packDir.ok) return packDir;
-
-  const packFile = path.join(packDir.value, "PACK.md");
-  let content: string;
-  try {
-    content = await readFile(packFile, "utf8");
-  } catch {
-    return {
-      ok: false,
-      error: `PACK.md is missing in ${packDir.value}`,
-    };
-  }
-
-  const parsed = parsePackMd(content);
-  if (!parsed.ok) {
-    return {
-      ok: false,
-      error: formatIssues(parsed.issues),
-      issues: parsed.issues,
-    };
-  }
-
-  const validated = validatePackFrontMatter(
-    parsed.value.frontMatter,
-    parsed.value.body,
-    packDir.value,
-  );
-  if (!validated.ok) {
-    return {
-      ok: false,
-      error: formatIssues(validated.issues),
-      issues: validated.issues,
-    };
-  }
+  const expanded = await loadPackExpanded(packDirOrName, options, []);
+  if (!expanded.ok) return expanded;
 
   const packsRootForSkills =
     options.packsRoot ?? (await resolvePacksRoot(options));
@@ -81,11 +50,12 @@ export async function loadPack(
 
   const resolved: ResolvedPackSkill[] = [];
   const skillErrors: string[] = [];
+  const packDir = expanded.value.rootDir;
 
-  for (const skillName of validated.pack.skillNames) {
+  for (const skillName of expanded.value.skillNames) {
     const candidates = [
       {
-        dir: path.join(packDir.value, "skills", skillName),
+        dir: path.join(packDir, "skills", skillName),
         origin: "pack-local" as const,
       },
       ...(skillsRoot
@@ -102,7 +72,6 @@ export async function loadPack(
     for (const candidate of candidates) {
       const loaded = await loadSkill(candidate.dir);
       if (!loaded.ok) {
-        // Missing folder is normal when trying the next origin.
         if (loaded.issues[0]?.message.includes("SKILL.md is missing")) {
           continue;
         }
@@ -130,6 +99,19 @@ export async function loadPack(
     }
 
     if (!found) {
+      // Also try pack-local folders of extended packs (dependency skills live there).
+      const fromExtends = await tryResolveFromExtendedPacks(
+        skillName,
+        expanded.value.extends,
+        options,
+      );
+      if (fromExtends) {
+        resolved.push(fromExtends);
+        found = true;
+      }
+    }
+
+    if (!found) {
       skillErrors.push(
         `${skillName}: not found in pack-local skills/ or catalog skills/.`,
       );
@@ -139,14 +121,14 @@ export async function loadPack(
   if (skillErrors.length > 0) {
     return {
       ok: false,
-      error: `Pack "${validated.pack.name}" has skill problems:\n${skillErrors.join("\n")}`,
+      error: `Pack "${expanded.value.name}" has skill problems:\n${skillErrors.join("\n")}`,
     };
   }
 
   return {
     ok: true,
     value: {
-      pack: validated.pack,
+      pack: expanded.value,
       skills: resolved,
     },
   };
@@ -184,7 +166,6 @@ export async function listPacks(
       packsRoot,
     });
     if (!loaded.ok) {
-      // Skip invalid folders (keep list useful).
       continue;
     }
     const { pack } = loaded.value;
@@ -194,6 +175,7 @@ export async function listPacks(
       description: pack.description,
       version: pack.version,
       skillCount: pack.skillNames.length,
+      extends: pack.extends,
       tags: pack.tags,
       projectTypes: pack.projectTypes,
       rootDir: pack.rootDir,
@@ -211,6 +193,130 @@ export async function validatePack(
   options: PackLoadOptions = {},
 ): Promise<PackResult<LoadedPack>> {
   return loadPack(packDirOrName, options);
+}
+
+/** Parse + validate + merge extends into skillNames (no skill file resolve). */
+async function loadPackExpanded(
+  packDirOrName: string,
+  options: PackLoadOptions,
+  stack: string[],
+): Promise<PackResult<SkillPack>> {
+  const meta = await loadPackMeta(packDirOrName, options);
+  if (!meta.ok) return meta;
+
+  const pack = meta.value;
+  if (stack.includes(pack.name)) {
+    return {
+      ok: false,
+      error: `Pack extend cycle: ${[...stack, pack.name].join(" → ")}`,
+    };
+  }
+
+  const nextStack = [...stack, pack.name];
+  const merged: string[] = [];
+  const seen = new Set<string>();
+
+  const pushAll = (names: string[]) => {
+    for (const n of names) {
+      if (seen.has(n)) continue;
+      seen.add(n);
+      merged.push(n);
+    }
+  };
+
+  for (const base of pack.extends) {
+    const parent = await loadPackExpanded(base, options, nextStack);
+    if (!parent.ok) {
+      return {
+        ok: false,
+        error: `Pack "${pack.name}" extends "${base}" failed: ${parent.error}`,
+        ...(parent.issues ? { issues: parent.issues } : {}),
+      };
+    }
+    pushAll(parent.value.skillNames);
+  }
+
+  pushAll(pack.ownSkillNames);
+
+  if (merged.length === 0) {
+    return {
+      ok: false,
+      error: `Pack "${pack.name}" has no skills after resolving extends.`,
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...pack,
+      skillNames: merged,
+    },
+  };
+}
+
+async function loadPackMeta(
+  packDirOrName: string,
+  options: PackLoadOptions,
+): Promise<PackResult<SkillPack>> {
+  const packDir = await resolvePackDir(packDirOrName, options);
+  if (!packDir.ok) return packDir;
+
+  const packFile = path.join(packDir.value, "PACK.md");
+  let content: string;
+  try {
+    content = await readFile(packFile, "utf8");
+  } catch {
+    return {
+      ok: false,
+      error: `PACK.md is missing in ${packDir.value}`,
+    };
+  }
+
+  const parsed = parsePackMd(content);
+  if (!parsed.ok) {
+    return {
+      ok: false,
+      error: formatIssues(parsed.issues),
+      issues: parsed.issues,
+    };
+  }
+
+  const validated = validatePackFrontMatter(
+    parsed.value.frontMatter,
+    parsed.value.body,
+    packDir.value,
+  );
+  if (!validated.ok) {
+    return {
+      ok: false,
+      error: formatIssues(validated.issues),
+      issues: validated.issues,
+    };
+  }
+
+  return { ok: true, value: validated.pack };
+}
+
+async function tryResolveFromExtendedPacks(
+  skillName: string,
+  extendsList: string[],
+  options: PackLoadOptions,
+): Promise<ResolvedPackSkill | null> {
+  for (const base of extendsList) {
+    const dir = await resolvePackDir(base, options);
+    if (!dir.ok) continue;
+    const packLocal = path.join(dir.value, "skills", skillName);
+    const loaded = await loadSkill(packLocal);
+    if (loaded.ok && loaded.skill.name === skillName) {
+      return {
+        name: skillName,
+        sourceDir: packLocal,
+        skill: loaded.skill,
+        origin: "pack-local",
+      };
+    }
+  }
+  return null;
 }
 
 async function resolvePackDir(

@@ -34,30 +34,46 @@ afterEach(async () => {
 });
 
 describe("official packs", () => {
-  it("lists essentials, web-app, and library", async () => {
+  it("lists all starter packs", async () => {
     const result = await listPacks({ packsRoot, skillsRoot });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const names = result.value.map((p) => p.name).sort();
-    expect(names).toEqual(["essentials", "library", "web-app"]);
+    expect(names).toEqual([
+      "api-service",
+      "cli-tool",
+      "data-ml",
+      "essentials",
+      "full-stack",
+      "library",
+      "web-app",
+    ]);
   });
 
   it("loads and validates essentials with all skills", async () => {
     const result = await validatePack("essentials", { packsRoot, skillsRoot });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.pack.skillNames).toHaveLength(5);
-    expect(result.value.skills).toHaveLength(5);
+    // base + pr-ready
+    expect(result.value.pack.skillNames).toHaveLength(6);
+    expect(result.value.skills).toHaveLength(6);
   });
 
-  it("loads web-app and library packs", async () => {
+  it("merges extends so dependency skills install with stack packs", async () => {
     const web = await loadPack("web-app", { packsRoot, skillsRoot });
     const lib = await loadPack("library", { packsRoot, skillsRoot });
+    const cli = await loadPack("cli-tool", { packsRoot, skillsRoot });
     expect(web.ok).toBe(true);
     expect(lib.ok).toBe(true);
-    if (!web.ok || !lib.ok) return;
-    expect(web.value.skills.length).toBe(7);
-    expect(lib.value.skills.length).toBe(5);
+    expect(cli.ok).toBe(true);
+    if (!web.ok || !lib.ok || !cli.ok) return;
+    // essentials(6) + extras (web:3, lib:3, cli:2) with de-dupe of pr-ready
+    expect(web.value.pack.extends).toEqual(["essentials"]);
+    expect(web.value.skills.map((s) => s.name)).toContain("project-setup");
+    expect(web.value.skills.map((s) => s.name)).toContain("a11y-pass");
+    expect(web.value.skills.length).toBe(8);
+    expect(lib.value.skills.length).toBe(8);
+    expect(cli.value.skills.length).toBe(7);
   });
 });
 
@@ -73,7 +89,7 @@ describe("install and apply pack", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.installed.length).toBe(5);
+    expect(result.value.installed.length).toBe(6);
 
     const index = await readFile(
       path.join(kitHome, "library.json"),

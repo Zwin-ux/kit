@@ -97,13 +97,27 @@ Kit plays the **same six frames** as `assets/pixel/kit-idle.gif` via `MascotPlay
 
 Keys:
 - Splash: any key → First-run (if needed) or Home · `q` quit
-- First-run: `1` essentials · `2` web-app · `3` library · `s` skip · `q` quit
-- Home: `↑↓` toolkit · `i` install · `a` apply · `e` explore · `l` library · `p` packs · `s` splash · `q` quit
-- Packs: filter by typing · `★ recommended` from project signals · progress bar on install
-- Explore: remote Railway catalog · `/` search · `i` install matching local pack · `r` refresh
-- Library: `↑↓` skill · `r` remove (y/n) · `p` packs · `h` home · `s` splash · `q` quit
+- First-run: `1` essentials · `2` web · `3` library · `4` cli · `5` api · `s` skip · `q` quit
+- Home: `↑↓` · `↵`/`i` install · `a` apply · `k` paths · `d` doctor · `e` explore · `l` library · `p` packs · `q` quit
+- Packs: filter by typing · `★ recommended` · progress on install · stack packs show `+essentials`
+- Explore: remote catalog · `/` search · `↵` install · `r` refresh
+- Library: `↑↓` · `v` validate · `t` test · `r` remove · `k` paths
+- Doctor: `r` re-run health checks
+- Paths: `↑↓` harness · `↵` link write · `p` plan · `r` refresh
 
-Motion (restrained):
-- Spinner on load/busy
-- Progress bar while installing toolkit skills
-- kit-idle mascot only on splash / empty / pack browse — not competing with dense lists
+Motion (restrained — explain or reward, never decorate alone):
+- **kit-idle** mascot: always playing compact on main menus; full on Splash
+- **Enter (↵)** installs the selected toolkit on Home, Packs, Explore (`i` still works)
+- **SelectPulse** (`›`→`»`) on ↑↓ selection change
+- **ActionFlash** (`▸ …`) on every meaningful key (nav, install, link, validate, test)
+- **TypeLine**: splash tagline once; success messages; empty-library tip
+- **BlinkCursor**: after splash typewriter; packs filter while typing
+- **Spinner / ProgressBar**: load and install (calm, no competing mascot on Home during busy)
+- **SuccessLine**: types once after install, then holds
+- **CountUp**: skill count flash after install/apply
+- **ErrorLine**: brief `!` pulse, then static red
+- **StaggerLines**: first-run pack options once
+- **FadeSteps**: header screen name on change
+- **Never animate**: pack/skill list rows, footer keys, doctor dumps
+- **Reduced motion**: `KIT_REDUCED_MOTION=1` → final frames immediately
+- Primitives live in `packages/tui/src/motion/`; re-exported from `components/Motion.tsx`

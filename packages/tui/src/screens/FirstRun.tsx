@@ -2,8 +2,11 @@ import React from "react";
 import { Box, Text } from "ink";
 import { FIRST_RUN_PACK_OPTIONS } from "@kit-skills/core";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
+import { PackIcon } from "../mascot/PackIcon.js";
 import type { PixelFrame } from "../mascot/types.js";
 import { Footer, Header } from "../components/Chrome.js";
+import { ErrorLine, Spinner, SuccessLine } from "../components/Motion.js";
+import { StaggerLines } from "../motion/index.js";
 
 export interface FirstRunProps {
   frames: PixelFrame[];
@@ -18,53 +21,58 @@ export function FirstRun({
   statusMessage,
   errorMessage,
 }: FirstRunProps): React.ReactElement {
+  const optionNodes = FIRST_RUN_PACK_OPTIONS.map((option) => (
+    <Box key={option.name} flexDirection="column">
+      <Text>
+        <Text bold>{option.key}</Text>
+        <Text> </Text>
+        <PackIcon packName={option.name} size="mini" />
+        <Text> {option.title}</Text>
+      </Text>
+      <Text dimColor>  {option.blurb}</Text>
+    </Box>
+  ));
+
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      <Header screen="First run" detail="choose a starter pack" />
+      <Header screen="First run" detail="starter pack" />
 
-      <Box marginTop={1}>
-        <MascotPlayer frames={frames} playing={!busy} size="compact" />
-      </Box>
+      <Box marginTop={1} flexDirection="row">
+        <Box marginRight={2} flexShrink={0}>
+          <MascotPlayer frames={frames} playing size="compact" />
+        </Box>
 
-      <Box marginTop={1} flexDirection="column">
-        <Text bold>Welcome. Install a starter pack to begin.</Text>
-        <Text dimColor>
-          One pack gives your agents a strong default skill set.
-        </Text>
-      </Box>
+        <Box flexDirection="column" flexGrow={1}>
+          <Text bold>Pick a starter</Text>
+          <Text dimColor>
+            7 kits · each ships dependency skills via essentials
+          </Text>
 
-      <Box marginTop={1} flexDirection="column">
-        {FIRST_RUN_PACK_OPTIONS.map((option) => (
-          <Box key={option.name} flexDirection="column">
-            <Text>
-              <Text bold>{option.key}</Text>
-              <Text> {option.title} </Text>
-              <Text dimColor>({option.name})</Text>
-            </Text>
-            <Text dimColor>  {option.blurb}</Text>
+          <Box marginTop={1} flexDirection="column">
+            <StaggerLines stepMs={45}>{optionNodes}</StaggerLines>
           </Box>
-        ))}
+        </Box>
       </Box>
 
       {busy ? (
         <Box marginTop={1}>
-          <Text>Installing pack…</Text>
+          <Spinner label="Installing" active />
         </Box>
       ) : null}
 
-      {statusMessage ? (
+      {statusMessage && !busy ? (
         <Box marginTop={1}>
-          <Text>{statusMessage}</Text>
+          <SuccessLine message={statusMessage.replace(/^✓\s*/, "")} />
         </Box>
       ) : null}
 
       {errorMessage ? (
         <Box marginTop={1}>
-          <Text color="red">{errorMessage}</Text>
+          <ErrorLine message={errorMessage} />
         </Box>
       ) : null}
 
-      <Footer keys="1 essentials · 2 web-app · 3 library · s skip · q quit" />
+      <Footer keys="1–7 install · s skip · q quit" />
     </Box>
   );
 }

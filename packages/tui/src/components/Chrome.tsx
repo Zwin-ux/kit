@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { KIT_PACKAGE_VERSION } from "@kit-skills/shared";
+import { FadeSteps } from "../motion/index.js";
 
 export function Header(props: {
   screen: string;
@@ -9,9 +10,11 @@ export function Header(props: {
   return (
     <Box>
       <Text bold>Kit</Text>
+      <Text dimColor> · </Text>
+      <FadeSteps text={props.screen} triggerKey={props.screen} />
       <Text dimColor>
         {" "}
-        · {props.screen} · v{KIT_PACKAGE_VERSION}
+        · v{KIT_PACKAGE_VERSION}
         {props.detail ? ` · ${props.detail}` : ""}
       </Text>
     </Box>
@@ -34,7 +37,7 @@ export function StatusLine(props: {
   return (
     <Box marginTop={1} flexDirection="column">
       <Text dimColor>
-        offline · {props.skillCount} skill(s) · {props.packCount} pack(s)
+        {props.skillCount} skills · {props.packCount} packs
       </Text>
       {props.message ? <Text>{props.message}</Text> : null}
     </Box>

@@ -2,30 +2,33 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { PackListItem } from "@kit-skills/core";
 import type { ToolkitRecommendation } from "@kit-skills/core";
+import { PackIcon } from "../mascot/PackIcon.js";
+import { SelectPulse } from "../motion/index.js";
 
 export interface ToolkitPickerProps {
   packs: PackListItem[];
   selectedIndex: number;
-  /** Recommended pack names in score order. */
+  selectTick?: number;
   recommended?: ToolkitRecommendation[];
-  /** Filter: show only packs matching tag or project type substring. */
   filter?: string;
   appliedNames?: Set<string>;
-  /** Show skill count and version row */
   dense?: boolean;
+  /** Show full 16×16 silhouette under the selected row. Default true. */
+  showSelectedIcon?: boolean;
 }
 
 /**
- * Shared pack/toolkit list with recommendation badges.
- * Used on Home, Packs, and First-run.
+ * Shared pack/toolkit list with silhouette marks + recommendation badges.
  */
 export function ToolkitPicker({
   packs,
   selectedIndex,
+  selectTick = 0,
   recommended = [],
   filter,
   appliedNames,
   dense = false,
+  showSelectedIcon = true,
 }: ToolkitPickerProps): React.ReactElement {
   const top = recommended[0]?.packName;
   const scoreByName = new Map(
@@ -48,12 +51,11 @@ export function ToolkitPicker({
   if (filtered.length === 0) {
     return (
       <Text dimColor>
-        No toolkits match{filter ? ` “${filter}”` : ""}. Clear filter with Esc.
+        No match{filter ? ` for “${filter}”` : ""}. Esc clears filter.
       </Text>
     );
   }
 
-  // Map filtered index → original packs index for selection highlight
   const originalIndex = (pack: PackListItem) =>
     packs.findIndex((p) => p.name === pack.name);
 
@@ -61,39 +63,42 @@ export function ToolkitPicker({
     <Box flexDirection="column">
       {filtered.map((pack) => {
         const oi = originalIndex(pack);
-        const mark = oi === selectedIndex ? "›" : " ";
+        const selected = oi === selectedIndex;
         const rec = scoreByName.get(pack.name);
         const isTop = pack.name === top;
         const applied = appliedNames?.has(pack.name);
+        const extendsNote =
+          pack.extends && pack.extends.length > 0
+            ? ` · +${pack.extends.join("+")}`
+            : "";
 
         return (
-          <Box key={pack.name} flexDirection="column" marginBottom={dense ? 0 : 0}>
+          <Box key={pack.name} flexDirection="column">
             <Text>
-              {mark}{" "}
-              <Text bold={oi === selectedIndex}>{pack.title}</Text>
+              <SelectPulse selected={selected} tick={selectTick} />{" "}
+              <PackIcon packName={pack.name} size="mini" />{" "}
+              <Text bold={selected}>{pack.title}</Text>
               <Text dimColor>
                 {" "}
-                ({pack.name} · {pack.skillCount} skills · v{pack.version})
+                · {pack.skillCount} skills
+                {extendsNote}
               </Text>
-              {isTop ? <Text> ★ recommended</Text> : null}
-              {applied ? <Text dimColor> · applied</Text> : null}
+              {isTop ? <Text> ★</Text> : null}
+              {applied ? <Text dimColor> · on</Text> : null}
             </Text>
-            {!dense && oi === selectedIndex ? (
-              <Box flexDirection="column" marginLeft={3}>
-                <Text dimColor>{pack.description}</Text>
-                {rec && rec.reasons.length > 0 ? (
-                  <Text dimColor>
-                    why: {rec.reasons.slice(0, 2).join("; ")}
-                  </Text>
+            {!dense && selected ? (
+              <Box marginLeft={2} marginTop={0} flexDirection="row">
+                {showSelectedIcon ? (
+                  <Box marginRight={2} flexShrink={0}>
+                    <PackIcon packName={pack.name} size="full" />
+                  </Box>
                 ) : null}
-                {pack.projectTypes.length > 0 ? (
-                  <Text dimColor>
-                    fits: {pack.projectTypes.join(", ")}
-                  </Text>
-                ) : null}
-                {pack.tags.length > 0 ? (
-                  <Text dimColor>tags: {pack.tags.join(", ")}</Text>
-                ) : null}
+                <Box flexDirection="column">
+                  <Text dimColor>{pack.description}</Text>
+                  {rec && rec.reasons.length > 0 ? (
+                    <Text dimColor>{rec.reasons[0]}</Text>
+                  ) : null}
+                </Box>
               </Box>
             ) : null}
           </Box>

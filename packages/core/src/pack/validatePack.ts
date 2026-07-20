@@ -47,7 +47,26 @@ export function validatePackFrontMatter(
   const tags = optionalStringList(frontMatter.tags, "tags", issues) ?? [];
   const projectTypes =
     optionalStringList(frontMatter.projectTypes, "projectTypes", issues) ?? [];
-  const skillNames = requireSkillNames(frontMatter.skills, issues);
+  const extendsList =
+    optionalStringList(frontMatter.extends, "extends", issues) ?? [];
+  const ownSkillNames = optionalSkillNames(frontMatter.skills, issues) ?? [];
+
+  if (ownSkillNames.length === 0 && extendsList.length === 0) {
+    issues.push({
+      field: "skills",
+      message:
+        "skills must list at least one skill, or set extends to inherit from another pack.",
+    });
+  }
+
+  for (const [i, base] of extendsList.entries()) {
+    if (name !== undefined && base === name) {
+      issues.push({
+        field: `extends[${i}]`,
+        message: "a pack cannot extend itself.",
+      });
+    }
+  }
 
   if (issues.length > 0) {
     return { ok: false, issues };
@@ -62,7 +81,10 @@ export function validatePackFrontMatter(
       version: version as string,
       tags,
       projectTypes,
-      skillNames: skillNames as string[],
+      extends: extendsList,
+      ownSkillNames,
+      // Filled by loadPack after resolving extends.
+      skillNames: [...ownSkillNames],
       body,
       rootDir,
     },
@@ -115,25 +137,18 @@ function optionalStringList(
   return items;
 }
 
-function requireSkillNames(
+/** Own skills list — may be empty when `extends` supplies the base set. */
+function optionalSkillNames(
   value: unknown,
   issues: ValidationIssue[],
 ): string[] | undefined {
   if (value === undefined) {
-    issues.push({ field: "skills", message: "skills is required." });
-    return undefined;
+    return [];
   }
   if (!Array.isArray(value)) {
     issues.push({
       field: "skills",
       message: "skills must be a list of skill names.",
-    });
-    return undefined;
-  }
-  if (value.length === 0) {
-    issues.push({
-      field: "skills",
-      message: "skills must list at least one skill.",
     });
     return undefined;
   }

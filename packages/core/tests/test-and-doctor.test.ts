@@ -58,7 +58,7 @@ compatibility:
     const result = await testPack("essentials", { packsRoot, skillsRoot });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.skillReports.length).toBe(5);
+    expect(result.value.skillReports.length).toBe(6);
   });
 
   it("passes all official packs", async () => {

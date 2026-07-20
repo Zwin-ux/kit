@@ -1,139 +1,208 @@
 # Kit
 
-**The terminal-native, pixel-art Agent Skills platform.**
+<p align="center">
+  <img src="assets/pixel/kit-idle.gif" alt="Kit idle animation — baby fox silhouette" width="200" />
+</p>
 
-Create, share, test, and run portable skills that work across Claude Code, Grok Build, Codex, Cursor, and more.
+<p align="center">
+  <strong>Portable agent skills.</strong><br />
+  One library. Many agents. A pixel TUI with soul.
+</p>
 
-Free forever for individuals. Account-based for mass adoption.  
-**No web app. Everything lives in a high-quality pixel-art TUI.**
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#starter-packs">Packs</a> ·
+  <a href="#tui">TUI</a> ·
+  <a href="#cli">CLI</a> ·
+  <a href="docs/STARTER_PACKS.md">Docs</a>
+</p>
 
-![Kit Mascot](docs/assets/kit-mascot.png)
+---
 
-![Kit idle animation](assets/pixel/kit-idle.gif)
+**Kit** is how you install, apply, and wire [Agent Skills](docs/SKILL_SCHEMA.md) so Claude Code, Grok Build, Codex, and friends share the same playbook.
 
-> A baby fox (a “kit”) that helps you build and share the tools your agents actually use.
+Offline-first engine. Seven starter packs. A black-and-white fox that actually lives in your terminal.
 
-## Why Kit exists
+```text
+point at a repo  →  ★ auto-recommend  →  ↵ install  →  apply  →  link  →  doctor green
+```
 
-Agent Skills are becoming a real standard (SKILL.md and friends), but the ecosystem is still fragmented:
+---
 
-- Different folder conventions per harness
-- Weak validation
-- Painful sharing
-- Almost no good testing story
-- Zero soul
+## Quick start
 
-Kit fixes that with three hard opinions:
+**Requirements:** Node 20+, [pnpm](https://pnpm.io) 10
 
-1. **Portable by default** — one skill, many agents
-2. **Terminal only** — a beautiful pixel-art TUI is the entire product
-3. **Account-native** — free accounts from day one so we can grow into teams, private registries, and more later
+```bash
+git clone https://github.com/Zwin-ux/kit.git
+cd kit
+pnpm install
+pnpm build
+```
 
-## Core Features (Target)
+**Windows**
 
-### Local Engine
-- Strict skill schema + excellent validation
-- Cross-harness path normalization
-- Safe script execution
-- Local library + offline-first
-- **Starter packs** for project types (essentials, web-app, library)
-- Built-in skill testing against fixtures or your current repo
-
-### Starter packs (available now)
-
-```sh
-# From the repo root (Windows), after pnpm build:
-.\kit.cmd login
-.\kit.cmd whoami
-.\kit.cmd explore packs
-.\kit.cmd explore search readme
+```powershell
+.\kit.cmd recommend --dir .
 .\kit.cmd init --pack essentials
 .\kit.cmd pack apply essentials --dir .
-.\kit.cmd paths
 .\kit.cmd link --to claude-code --write
 .\kit.cmd doctor
 .\kit.cmd tui
 ```
 
-`kit` is not a global binary yet. Use `.\kit.cmd` (Windows) or `./kit.ps1` from the repo, or:
+**macOS / Linux**
 
-```sh
-node packages/cli/dist/bin.js <command>
-pnpm kit -- <command>
+```bash
+./kit.ps1 recommend --dir .    # or: pnpm kit -- recommend --dir .
+pnpm kit -- init --pack essentials
+pnpm kit -- pack apply essentials --dir .
+pnpm kit -- link --to claude-code --write
+pnpm kit -- doctor
+pnpm kit -- tui
 ```
 
-| Pack | Best for |
-|------|----------|
-| `essentials` | Any repo |
-| `web-app` | Apps and sites |
-| `library` | Packages and SDKs |
-
-See [docs/STARTER_PACKS.md](./docs/STARTER_PACKS.md).
-
-### Pixel-Art TUI
-- Explore & install skills
-- Create and edit skills with live validation
-- Test skills instantly
-- Manage your library and versions
-- Profile, following, collections
-- Smooth pixel animations and strong personality
-
-### Account Service (Free)
-- Signup / login entirely from the TUI
-- Publish skills under your name
-- Sync library across machines
-- Follow creators
-- Private skills (limited on free tier)
-- Basic analytics on your skills
-- Designed so we can later add teams, orgs, verified publishers, etc.
-
-## Mascot
-
-**Kit** — a confident little fox holding a wrench.  
-Pixel-art, limited palette, iconic enough for GitHub avatars, splash screens, and in-TUI sprites.
-
-## Tech Direction
-
-- **Core**: High-quality TypeScript package (npm)
-- **TUI**: Pixel-art first (Ink or custom + pixel assets, or hybrid with Rust for performance)
-- **Backend**: Railway (auth, registry, search, social, sync)
-- **Skill Format**: Strict, well-documented extension of the emerging open skills standard
-- **Grok Build**: First-class citizen and the preferred coding agent for developing Kit itself
-
-## Repo Status
-
-Public. Planning and foundation phase.
-
-We are using Grok Build as the primary coding agent for this project.
-
-## Roadmap (High Level)
-
-**Phase 0 – Foundation**
-- Repo, mascot, vision, architecture docs
-- Skill schema v0
-- Basic CLI + TUI skeleton with pixel art
-
-**Phase 1 – Local Skills Engine**
-- Validator, local install/list/remove
-- Cross-harness discovery
-- Test runner
-
-**Phase 2 – TUI + Accounts**
-- Full pixel-art TUI
-- Auth flow in terminal
-- Publish + search against Railway registry
-
-**Phase 3 – Social + Polish**
-- Following, collections, profiles
-- Animations, themes, quality-of-life
-- Documentation site (minimal, still terminal-first ethos)
-
-## Development
-
-This project is being built with Grok Build as the main coding agent.
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) and [ROADMAP.md](./ROADMAP.md) for deeper planning.
+> There is no global `kit` binary yet. Use `.\kit.cmd` / `pnpm kit --` from the repo after build.
 
 ---
 
-Made with care for people who live in the terminal.
+## Starter packs
+
+Seven kits for v1. Stack packs **extend essentials** so base skills always install with the stack.
+
+| | Pack | Best for |
+|---|------|----------|
+| <img src="docs/assets/packs/essentials.png" width="48" alt="essentials" /> | **essentials** | Any repo — default first install |
+| <img src="docs/assets/packs/web-app.png" width="48" alt="web-app" /> | **web-app** | Apps and sites |
+| <img src="docs/assets/packs/library.png" width="48" alt="library" /> | **library** | Packages and SDKs |
+| <img src="docs/assets/packs/cli-tool.png" width="48" alt="cli-tool" /> | **cli-tool** | Developer CLIs |
+| <img src="docs/assets/packs/api-service.png" width="48" alt="api-service" /> | **api-service** | HTTP backends |
+| <img src="docs/assets/packs/full-stack.png" width="48" alt="full-stack" /> | **full-stack** | UI + API products |
+| <img src="docs/assets/packs/data-ml.png" width="48" alt="data-ml" /> | **data-ml** | Data and ML work |
+
+```bash
+pnpm kit -- pack list
+pnpm kit -- recommend --dir ../my-app
+pnpm kit -- pack install web-app
+pnpm kit -- pack apply web-app --dir ../my-app
+```
+
+Full format: [docs/STARTER_PACKS.md](docs/STARTER_PACKS.md) · icons: [assets/pixel/packs](assets/pixel/packs)
+
+---
+
+## Point → recommend → install
+
+Kit scans the project you point at and suggests a pack **and** individual skills.
+
+```bash
+pnpm kit -- recommend --dir ~/code/my-next-app
+# → "my-next-app looks like a web app → web-app"
+# → skills: a11y-pass, ship-checklist, pr-ready, …
+```
+
+In the TUI: **`o`** types a path, Enter saves it, Home shows ★ summary + suggested skills.
+
+---
+
+## TUI
+
+```bash
+pnpm tui
+# or
+.\kit.cmd tui
+```
+
+| Key | Action |
+|-----|--------|
+| `1`–`7` | First-run pack install |
+| `↵` | Install selected toolkit |
+| `a` | Apply pack to pointed project |
+| `o` | Point at a project (auto-recommend) |
+| `k` | Paths — pick harness, **approve folder**, then link |
+| `d` | Doctor |
+| `e` | Explore registry |
+| `l` | Library · `v` validate · `t` test |
+| `q` | Quit |
+
+Personality stays with **kit-idle**. Text motion is restrained (status, success, selection).  
+Reduced motion: `KIT_REDUCED_MOTION=1`.
+
+Screens: [docs/TUI_SCREENS.md](docs/TUI_SCREENS.md)
+
+---
+
+## CLI
+
+| Command | What it does |
+|---------|----------------|
+| `init --pack <name>` | First-run install |
+| `pack list` / `install` / `apply` | Starter packs |
+| `recommend --dir <path>` | Auto-suggest pack + skills |
+| `paths` / `link --to <harness> --write` | Wire skills into agents |
+| `test` / `doctor` | Quality + health |
+| `login` / `whoami` / `logout` | GitHub device flow |
+| `explore packs` / `search` | Public registry catalog |
+| `tui` | Pixel interface |
+
+---
+
+## Skill format
+
+Each skill is a folder with `SKILL.md` — strict front matter, clear body, multi-agent compatibility.
+
+```yaml
+---
+name: pr-ready
+description: Prepare a clear pull request summary, test plan, and risk notes.
+version: 0.1.0
+compatibility:
+  - claude-code
+  - grok-build
+  - codex
+---
+```
+
+Schema: [docs/SKILL_SCHEMA.md](docs/SKILL_SCHEMA.md) · catalog: [skills/](skills/)
+
+---
+
+## What ships in Alpha
+
+| Area | Status |
+|------|--------|
+| Local engine (validate, library, packs, link, test, doctor) | ✅ |
+| 7 starter packs + silhouette icons | ✅ |
+| Pixel TUI + kit-idle + motion | ✅ |
+| Auto-recommend by project | ✅ |
+| GitHub login + Railway catalog explore | ✅ |
+| Workshop / publish / social | ⏳ next |
+
+Roadmap: [ROADMAP.md](ROADMAP.md) · Architecture: [ARCHITECTURE.md](ARCHITECTURE.md)
+
+---
+
+## Develop
+
+```bash
+pnpm install
+pnpm build
+pnpm test
+pnpm typecheck
+pnpm kit -- doctor
+```
+
+Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Agents: [AGENTS.md](AGENTS.md)
+
+Built primarily with [Grok Build](https://x.ai).
+
+---
+
+<p align="center">
+  <img src="docs/assets/kit-mascot.png" alt="Kit mascot" width="120" /><br />
+  <sub>Kit — a little fox for the tools your agents actually use.</sub>
+</p>
+
+<p align="center">
+  <sub>MIT · <a href="LICENSE">License</a> · <a href="CHANGELOG.md">Changelog</a></sub>
+</p>

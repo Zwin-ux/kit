@@ -153,7 +153,7 @@ function printHelp(): void {
   console.log("Usage:");
   console.log("  kit --version");
   console.log("  kit --help");
-  console.log("  kit init [--pack essentials|web-app|library] [--apply] [--dir <path>]");
+  console.log("  kit init [--pack essentials|web-app|library|cli-tool|api-service|full-stack|data-ml] [--apply] [--dir <path>]");
   console.log("  kit tui");
   console.log("  kit validate <skill-dir>");
   console.log("  kit install <skill-dir> [--force]");
@@ -201,7 +201,9 @@ async function runInit(rest: string[]): Promise<void> {
   if (packFlag >= 0) {
     const value = rest[packFlag + 1];
     if (!value || value.startsWith("-")) {
-      fail("Usage: kit init [--pack essentials|web-app|library]");
+      fail(
+        "Usage: kit init [--pack essentials|web-app|library|cli-tool|api-service|full-stack|data-ml]",
+      );
     }
     packName = value;
   }
@@ -1037,27 +1039,41 @@ async function runRecommend(rest: string[]): Promise<void> {
   if (!result.ok) fail(result.error);
 
   const report = result.value;
-  console.log(`Toolkit recommendations for ${report.projectDir}`);
+  console.log(report.summary);
+  console.log(`Project: ${report.projectDir}`);
   if (report.signals.length > 0) {
     console.log(`Signals: ${report.signals.join(", ")}`);
   } else {
-    console.log("Signals: (none detected — defaults apply)");
+    console.log("Signals: (none — defaults apply)");
   }
   console.log("");
+  console.log("Packs");
   for (const rec of report.recommendations) {
     const star = rec.packName === report.topPick ? "★ " : "  ";
     console.log(
       `${star}${rec.packName.padEnd(12)} score ${rec.score}  ${rec.title}`,
     );
-    for (const reason of rec.reasons) {
+    for (const reason of rec.reasons.slice(0, 2)) {
       console.log(`     · ${reason}`);
+    }
+  }
+  if (report.skillRecommendations.length > 0) {
+    console.log("");
+    console.log("Skills this project likely wants");
+    for (const s of report.skillRecommendations) {
+      const via = s.fromPack ? ` (via ${s.fromPack})` : "";
+      console.log(`  · ${s.skillName}${via}`);
+      if (s.reasons[0]) console.log(`      ${s.reasons[0]}`);
     }
   }
   if (report.topPick) {
     console.log("");
     console.log(`Top pick: ${report.topPick}`);
     console.log(`Install:  kit pack install ${report.topPick}`);
-    console.log(`Apply:    kit pack apply ${report.topPick} --dir .`);
+    console.log(
+      `Apply:    kit pack apply ${report.topPick} --dir ${report.projectDir}`,
+    );
+    console.log(`Point TUI: kit recommend --dir ${report.projectDir}`);
   }
 }
 

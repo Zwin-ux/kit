@@ -9,7 +9,14 @@ export interface SkillPack {
   version: string;
   tags: string[];
   projectTypes: string[];
-  /** Ordered skill names from PACK.md. */
+  /**
+   * Base packs whose skills are installed first (dependency packs).
+   * Declared order is preserved; own `skills` are appended, de-duped.
+   */
+  extends: string[];
+  /** Own skill names from PACK.md (before merge). */
+  ownSkillNames: string[];
+  /** Fully resolved skill names: extends (depth-first) then own. */
   skillNames: string[];
   /** Markdown body after front matter. */
   body: string;
@@ -40,6 +47,8 @@ export interface PackListItem {
   description: string;
   version: string;
   skillCount: number;
+  /** Base packs this pack extends (if any). */
+  extends: string[];
   tags: string[];
   projectTypes: string[];
   rootDir: string;

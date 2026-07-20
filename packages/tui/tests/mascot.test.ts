@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { getPlaceholderFrames } from "../src/mascot/placeholderFrames.js";
 import { renderFrame } from "../src/mascot/renderBitmap.js";
 import { FRAME_COUNT } from "../src/mascot/types.js";
+import {
+  OFFICIAL_PACK_ICONS,
+  PACK_ICON_SIZE,
+  getPackIconBitmap,
+} from "../src/mascot/packIcons.js";
 import { PNG } from "pngjs";
 import { pngToFrame } from "../src/mascot/loadFrames.js";
 
@@ -25,6 +30,27 @@ describe("placeholder mascot frames", () => {
     expect(text.split("\n")).toHaveLength(16);
     expect(text).toMatch(/█/);
     expect(text).not.toMatch(/[a-zA-Z]/);
+  });
+
+  it("tight crop keeps content with padding (no edge clip)", () => {
+    const frame = getPlaceholderFrames()[0]!;
+    const lines = renderFrame(frame, { tight: true, pad: 1 }).split("\n");
+    expect(lines.length).toBeGreaterThan(2);
+    expect(lines.some((l) => l.includes("█"))).toBe(true);
+    // First/last rows should be padding (empty) after tight+pad
+    expect(lines[0]?.trim()).toBe("");
+    expect(lines[lines.length - 1]?.trim()).toBe("");
+  });
+});
+
+describe("pack silhouette icons", () => {
+  it("ships 7 official pack icons at 16×16", () => {
+    expect(OFFICIAL_PACK_ICONS).toHaveLength(7);
+    for (const name of OFFICIAL_PACK_ICONS) {
+      const bmp = getPackIconBitmap(name);
+      expect(bmp).toHaveLength(PACK_ICON_SIZE * PACK_ICON_SIZE);
+      expect(bmp.some(Boolean)).toBe(true);
+    }
   });
 });
 

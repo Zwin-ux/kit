@@ -1,8 +1,8 @@
 ---
 name: web-app
 title: Web App
-description: Starter skills for application and site projects.
-version: 0.1.0
+description: Full starter for apps and sites. Includes Essentials plus ship and a11y skills.
+version: 0.2.0
 tags:
   - starter
   - web
@@ -10,18 +10,20 @@ projectTypes:
   - web
   - app
   - site
+extends:
+  - essentials
 skills:
-  - add-readme
-  - project-setup
-  - code-review
-  - write-tests
-  - fix-bug
   - ship-checklist
   - a11y-pass
+  - pr-ready
 ---
 
 # Web App
 
-Use this pack for product apps, sites, and UI-heavy work.
+For product apps, sites, and UI-heavy work.
 
-It includes Essentials plus ship readiness and a basic accessibility pass.
+**Depends on Essentials** (setup, docs, review, tests, bugfix) then adds:
+
+- Pre-ship checklist
+- Accessibility pass
+- PR-ready write-up

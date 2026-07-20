@@ -14,11 +14,12 @@ skills:
   - code-review
   - write-tests
   - fix-bug
+  - pr-ready
 ---
 
 # Essentials
 
-Install this pack first on most repositories.
+**Install this first on most repos.** Kit’s default toolkit.
 
-It covers setup, docs, review, tests, and bug fixing.
-Use it when you want a strong default agent skill set without stack-specific extras.
+It covers setup, docs, review, tests, bug fixing, and PR-ready write-ups.
+Other starter packs **extend** Essentials so you always get these base skills.

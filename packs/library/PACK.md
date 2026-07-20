@@ -1,8 +1,8 @@
 ---
 name: library
 title: Library
-description: Starter skills for libraries, SDKs, and shared packages.
-version: 0.1.0
+description: Full starter for packages and SDKs. Includes Essentials plus API docs and changelog.
+version: 0.2.0
 tags:
   - starter
   - library
@@ -10,16 +10,16 @@ projectTypes:
   - library
   - sdk
   - package
+extends:
+  - essentials
 skills:
-  - add-readme
   - api-docs
   - changelog
-  - write-tests
-  - code-review
+  - pr-ready
 ---
 
 # Library
 
-Use this pack for packages other people import.
+For packages other people import.
 
-It focuses on public API docs, release notes, tests, and careful review.
+**Depends on Essentials**, then adds public API docs, changelog craft, and PR-ready notes.

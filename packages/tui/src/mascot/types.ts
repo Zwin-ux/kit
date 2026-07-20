@@ -29,5 +29,8 @@ export const FRAME_FILES = [
  */
 export const FRAME_DELAY_MS = 180;
 
-/** Max height when loading high-res PNGs into the TUI. */
-export const TUI_FRAME_MAX_HEIGHT = 24;
+/**
+ * Max height when loading high-res PNGs into the TUI.
+ * Keep modest so the full fox fits beside menus without wrapping/clipping.
+ */
+export const TUI_FRAME_MAX_HEIGHT = 16;
