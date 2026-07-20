@@ -145,38 +145,31 @@ describe("pack silhouette icons", () => {
   });
 });
 
-describe("layout scale — fixed rail slot", () => {
-  const sizes = [
-    [60, 20],
-    [80, 24],
-    [120, 40],
-    [200, 60],
-  ] as const;
-
-  it("pins railCols/railRows and keeps pack ≤ half fox", () => {
-    for (const [cols, rows] of sizes) {
-      const s = layoutScaleFromTerminal(cols, rows);
-      expect(s.railCols).toBeGreaterThanOrEqual(10);
-      expect(s.railCols).toBeLessThanOrEqual(LAYOUT_CAPS.railColsTall);
-      expect(s.railRows).toBeGreaterThanOrEqual(9);
-      expect(s.railRows).toBeLessThanOrEqual(LAYOUT_CAPS.railRowsTall);
-      expect(s.mascotFit.width).toBeLessThanOrEqual(s.railCols);
-      expect(s.mascotFit.height).toBeLessThanOrEqual(s.railRows);
-      expect(s.mascotCell).toBe("single");
-      if (s.showPackDetail) {
-        expect(s.packDetailSize).toBeLessThanOrEqual(
-          Math.floor(s.mascotFit.height / 2),
-        );
-      }
-    }
+describe("layout scale — menu-first breakpoints", () => {
+  it("stack mode for narrow terminals (menu owns the frame)", () => {
+    const s = layoutScaleFromTerminal(60, 20);
+    expect(s.mode).toBe("stack");
+    expect(s.mascotPlacement === "hidden" || s.mascotPlacement === "top").toBe(
+      true,
+    );
+    expect(s.contentMinCols).toBeLessThanOrEqual(32);
   });
 
-  it("common 80×24 has roomy fixed slot, no pack detail", () => {
+  it("split mode for common 80x24", () => {
     const s = layoutScaleFromTerminal(80, 24);
-    expect(s.mode).toBe("normal");
-    expect(s.railCols).toBe(LAYOUT_CAPS.railColsNormal);
-    expect(s.railRows).toBe(LAYOUT_CAPS.railRowsNormal);
+    expect(s.mode).toBe("split");
+    expect(s.mascotPlacement).toBe("rail");
+    expect(s.railCols).toBe(LAYOUT_CAPS.railColsSplit);
+    expect(s.railRows).toBe(LAYOUT_CAPS.railRowsSplit);
     expect(s.showPackDetail).toBe(false);
+  });
+
+  it("wide mode densifies lists", () => {
+    const split = layoutScaleFromTerminal(80, 24);
+    const wide = layoutScaleFromTerminal(120, 40);
+    expect(wide.mode).toBe("wide");
+    expect(wide.listMaxItems).toBeGreaterThan(split.listMaxItems);
+    expect(wide.mascotPlacement).toBe("rail");
   });
 
   it("padSlotLines freezes line count and width", () => {
@@ -187,12 +180,6 @@ describe("layout scale — fixed rail slot", () => {
     for (const line of [...a, ...b]) {
       expect(line).toHaveLength(12);
     }
-  });
-
-  it("narrow still has fixed rail rows", () => {
-    const narrow = layoutScaleFromTerminal(60, 20);
-    expect(narrow.railRows).toBe(LAYOUT_CAPS.railRowsNarrow);
-    expect(narrow.showPackDetail).toBe(false);
   });
 });
 

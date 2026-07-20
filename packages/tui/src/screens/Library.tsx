@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { CheckResult, InstalledSkill } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
+import { useLayoutScale } from "../mascot/useLayoutScale.js";
 import { Footer, Header } from "../components/Chrome.js";
 import { ScreenShell } from "../components/ScreenShell.js";
 import { ErrorLine, Pulse, SuccessLine } from "../components/Motion.js";
@@ -45,15 +46,29 @@ export function Library({
   actionNonce = 0,
   lastChecks,
 }: LibraryProps): React.ReactElement {
+  const scale = useLayoutScale();
   const selected = skills[selectedIndex];
   const empty = skills.length === 0;
+  const focusLabel =
+    selected && skills.length > 0
+      ? `${selectedIndex + 1}/${skills.length} ${selected.name}`
+      : undefined;
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
+    <Box
+      flexDirection="column"
+      paddingX={scale.padX}
+      paddingY={scale.padY}
+      width="100%"
+    >
       <Header screen="Library" detail={`${skills.length} skill(s)`} />
 
       <Box marginTop={1} width="100%">
-        <ScreenShell frames={frames} mascotVariant={mascotVariant}>
+        <ScreenShell
+          frames={frames}
+          mascotVariant={mascotVariant}
+          {...(focusLabel !== undefined ? { focusLabel } : {})}
+        >
           {empty ? (
             <Box flexDirection="column">
               <Box>

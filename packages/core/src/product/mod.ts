@@ -16,3 +16,11 @@ export {
   type ReadyReport,
   type ReadyResult,
 } from "./ready.js";
+export {
+  runStatus,
+  type StatusOptions,
+  type StatusReport,
+  type StatusResult,
+  type HarnessStatusRow,
+  type HarnessLinkState,
+} from "./status.js";

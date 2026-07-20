@@ -20,8 +20,7 @@ export interface ToolkitPickerProps {
 }
 
 /**
- * Pack list: one line per row, fixed detail panel, no list timers.
- * ↑↓ must not change frame geometry.
+ * Menu-first pack list: geometry stable on ↑↓; density follows layout mode.
  */
 export function ToolkitPicker({
   packs,
@@ -39,7 +38,6 @@ export function ToolkitPicker({
   const scoreByName = new Map(
     recommended.map((r) => [r.packName, r] as const),
   );
-  // Detail bitmaps only when tall; always reserve 2 text lines under list
   const showDetailIcon =
     showSelectedIcon &&
     !dense &&
@@ -62,13 +60,30 @@ export function ToolkitPicker({
   if (filtered.length === 0) {
     return (
       <Text dimColor>
-        No match{filter ? ` for “${filter}”` : ""}. Esc clear filter.
+        No match{filter ? ` for "${filter}"` : ""}. Esc clear filter.
       </Text>
     );
   }
 
   const originalIndex = (pack: PackListItem) =>
     packs.findIndex((p) => p.name === pack.name);
+
+  // Window list around selection so small screens still show the focused row
+  const maxShow = scale.packListMax > 0 ? scale.packListMax : filtered.length;
+  let windowed = filtered;
+  let windowOffset = 0;
+  if (filtered.length > maxShow) {
+    const selInFiltered = Math.max(
+      0,
+      filtered.findIndex((p) => originalIndex(p) === selectedIndex),
+    );
+    const half = Math.floor(maxShow / 2);
+    windowOffset = Math.max(
+      0,
+      Math.min(selInFiltered - half, filtered.length - maxShow),
+    );
+    windowed = filtered.slice(windowOffset, windowOffset + maxShow);
+  }
 
   const selectedPack =
     packs[selectedIndex] ??
@@ -77,17 +92,26 @@ export function ToolkitPicker({
     ? scoreByName.get(selectedPack.name)
     : undefined;
 
-  const metaCols = Math.max(24, Math.min(scale.contentSoftMax, 56));
-  const detailText = fixedLines(
-    selectedPack?.description ?? "",
-    2,
-    metaCols,
-  );
+  const metaCols = Math.max(20, Math.min(scale.contentSoftMax, 56));
+  const detailText = fixedLines(selectedPack?.description ?? "", 2, metaCols);
   const reasonLine = fixedLine(selectedRec?.reasons[0] ?? "", metaCols);
+  const focusIdx =
+    filtered.findIndex((p) => originalIndex(p) === selectedIndex) + 1;
 
   return (
     <Box flexDirection="column">
-      {filtered.map((pack) => {
+      {/* A11y: stable selection readout */}
+      <Text bold>
+        {focusIdx > 0
+          ? `${focusIdx}/${filtered.length} ${selectedPack?.title ?? ""}`
+          : `${filtered.length} packs`}
+      </Text>
+
+      {windowOffset > 0 ? (
+        <Text dimColor>  ^ {windowOffset} more above</Text>
+      ) : null}
+
+      {windowed.map((pack) => {
         const oi = originalIndex(pack);
         const selected = oi === selectedIndex;
         const isTop = pack.name === top;
@@ -96,14 +120,13 @@ export function ToolkitPicker({
           pack.extends && pack.extends.length > 0
             ? `+${pack.extends.join("+")}`
             : "";
-        // Fixed-ish meta: avoid mounting optional Text nodes that change width
         const meta = fixedLine(
-          `· ${pack.skillCount}sk${extendsNote ? ` ${extendsNote}` : ""}${isTop ? " *" : ""}${applied ? " on" : ""}`,
-          Math.max(12, metaCols - 16),
+          `${pack.skillCount}sk${extendsNote ? ` ${extendsNote}` : ""}${isTop ? " *" : ""}${applied ? " on" : ""}`,
+          Math.max(10, metaCols - 18),
         );
 
         return (
-          <Text key={pack.name} wrap="truncate">
+          <Text key={pack.name} wrap="truncate" inverse={selected}>
             <SelectPulse
               selected={selected}
               tick={selectTick}
@@ -111,12 +134,17 @@ export function ToolkitPicker({
             />
             <PackIcon packName={pack.name} size="mini" animate={false} />{" "}
             <Text bold={selected}>{pack.title}</Text>{" "}
-            <Text dimColor>{meta.trimEnd()}</Text>
+            <Text dimColor={!selected}>{meta.trimEnd()}</Text>
           </Text>
         );
       })}
 
-      {/* Always 2 description lines + optional icon; height constant */}
+      {windowOffset + windowed.length < filtered.length ? (
+        <Text dimColor>
+          {"  "}v {filtered.length - windowOffset - windowed.length} more below
+        </Text>
+      ) : null}
+
       {!dense ? (
         <Box marginTop={1} flexDirection="row" flexShrink={0}>
           {showDetailIcon && selectedPack ? (

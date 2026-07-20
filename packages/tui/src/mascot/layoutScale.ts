@@ -1,58 +1,81 @@
 /**
- * Terminal layout scale — fixed mascot slot + content-first.
+ * Menu-first terminal layout.
  *
- * Animation may change pixels inside the rail only.
- * Rail width/height never change on frame tick.
+ * Priority: readable menus + stable geometry + a11y.
+ * Mascot is brand chrome — never steals the menu on small windows.
+ *
+ * Breakpoints (cols × rows):
+ *   stack  — < 72 cols OR < 22 rows  → full-width menu, no side rail
+ *   split  — normal desktop           → compact left rail + menu
+ *   wide   — ≥ 110 cols AND ≥ 32 rows → split + denser lists
  */
 
-export type LayoutMode = "narrow" | "normal" | "wide";
+export type LayoutMode = "stack" | "split" | "wide";
+
+export type MascotPlacement = "hidden" | "top" | "rail";
 
 export interface LayoutScale {
   mode: LayoutMode;
   columns: number;
   rows: number;
-  /**
-   * Pixel canvas for letterboxing the fox (≤ rail interior).
-   */
+
+  /** Where the mascot lives this frame (resize only). */
+  mascotPlacement: MascotPlacement;
   mascotFit: { width: number; height: number };
-  /** Rail always single-width █. */
   mascotCell: "single";
-  /**
-   * Reserved rail slot in terminal cells — CONSTANT while animating.
-   * MascotPlayer must paint exactly railRows lines of length ≤ railCols.
-   */
   railCols: number;
   railRows: number;
+
+  /** Outer page padding (cells). */
+  padX: number;
+  padY: number;
+
+  /** Menu/content column — primary focus. */
+  contentMinCols: number;
+  /** Soft max for truncated descriptions / action lines. */
+  contentSoftMax: number;
+  /** How many secondary list items (installed skills, etc.). */
+  listMaxItems: number;
+  /** Max pack rows visible before “+N more” (0 = show all). */
+  packListMax: number;
+
   packDetailSize: number;
   showPackDetail: boolean;
+
   splashFit: { width: number; height: number };
   splashCell: "single" | "double";
-  contentMinCols: number;
-  contentSoftMax: number;
-  listMaxItems: number;
+
+  /**
+   * 1-based terminal row where the first menu list item starts
+   * (for mouse hit-testing). Approximate; updated by shells when possible.
+   */
+  listStartRowHint: number;
 }
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 
 export const LAYOUT_CAPS = {
-  /** Pinned rail budgets — more room for fox, never thrash. */
-  railColsNormal: 12,
-  railRowsNormal: 10,
-  railColsTall: 14,
-  railRowsTall: 12,
-  railColsNarrow: 10,
-  railRowsNarrow: 9,
+  /** Side rail only when split/wide — keep small so menu breathes. */
+  railColsSplit: 10,
+  railRowsSplit: 8,
+  railColsWide: 12,
+  railRowsWide: 10,
+  /** Tiny top brand when stacked (optional height). */
+  topBrandRows: 3,
   packDetailMax: 4,
-  packDetailMinRows: 28,
   splashFitMax: 12,
-  /** Slightly slower rail fps reduces full-screen paint thrash. */
-  railFrameDelayMs: 210,
+  railFrameDelayMs: 220,
+  /** Below this width, menu owns 100% of the frame. */
+  stackMaxCols: 72,
+  stackMaxRows: 22,
+  wideMinCols: 110,
+  wideMinRows: 32,
 } as const;
 
 /**
- * Pick layout from terminal size.
- * Mode changes on resize only — never on animation tick.
+ * Compute layout from terminal size.
+ * Changes only on resize — never on animation tick.
  */
 export function layoutScaleFromTerminal(
   columns?: number,
@@ -61,56 +84,97 @@ export function layoutScaleFromTerminal(
   const cols = columns && columns > 0 ? columns : DEFAULT_COLS;
   const r = rows && rows > 0 ? rows : DEFAULT_ROWS;
 
-  let mode: LayoutMode = "narrow";
-  if (cols >= 110 && r >= 32) mode = "wide";
-  else if (cols >= 80 && r >= 24) mode = "normal";
-  else if (cols >= 100 || r >= 30) mode = "normal";
-
-  // Fixed rail slot — enough room, constant per mode
-  let railCols: number = LAYOUT_CAPS.railColsNormal;
-  let railRows: number = LAYOUT_CAPS.railRowsNormal;
-  if (mode === "narrow" || r < 22) {
-    railCols = LAYOUT_CAPS.railColsNarrow;
-    railRows = LAYOUT_CAPS.railRowsNarrow;
-  } else if (r >= 32) {
-    railCols = LAYOUT_CAPS.railColsTall;
-    railRows = LAYOUT_CAPS.railRowsTall;
+  // --- mode ---
+  let mode: LayoutMode = "split";
+  if (cols < LAYOUT_CAPS.stackMaxCols || r < LAYOUT_CAPS.stackMaxRows) {
+    mode = "stack";
+  } else if (cols >= LAYOUT_CAPS.wideMinCols && r >= LAYOUT_CAPS.wideMinRows) {
+    mode = "wide";
   }
 
-  // Letterbox fox into interior (leave 1 col air if room)
-  const fitW = Math.max(6, railCols - 1);
-  const fitH = Math.max(6, railRows);
-  const mascotFit = { width: fitW, height: fitH };
+  // --- mascot placement (menu-first) ---
+  let mascotPlacement: MascotPlacement = "rail";
+  let railCols = 0;
+  let railRows = 0;
+  if (mode === "stack") {
+    // Tiny top strip only if we have vertical room; else hide entirely
+    mascotPlacement = r >= 20 ? "top" : "hidden";
+    railCols = Math.min(cols - 4, 16);
+    railRows = mascotPlacement === "top" ? LAYOUT_CAPS.topBrandRows : 0;
+  } else if (mode === "wide") {
+    mascotPlacement = "rail";
+    railCols = LAYOUT_CAPS.railColsWide;
+    railRows = LAYOUT_CAPS.railRowsWide;
+  } else {
+    mascotPlacement = "rail";
+    railCols = LAYOUT_CAPS.railColsSplit;
+    railRows = LAYOUT_CAPS.railRowsSplit;
+  }
 
+  const mascotFit = {
+    width: Math.max(4, railCols > 0 ? railCols - 1 : 8),
+    height: Math.max(3, railRows > 0 ? railRows : 6),
+  };
+
+  // Padding: tighter on small screens so content fits
+  const padX = mode === "stack" ? 1 : 2;
+  const padY = mode === "stack" ? 0 : 1;
+
+  // Content budget: leftover after rail + padding
+  const chromeX = padX * 2 + (mascotPlacement === "rail" ? railCols + 2 : 0);
+  const contentAvail = Math.max(20, cols - chromeX);
+  const contentSoftMax =
+    mode === "wide" ? Math.min(96, contentAvail) : Math.min(72, contentAvail);
+  const contentMinCols = mode === "stack" ? 20 : 32;
+
+  // Density
+  const listMaxItems = mode === "wide" ? 8 : mode === "split" ? 5 : 3;
+  const packListMax = mode === "wide" ? 0 : mode === "split" ? 8 : 6;
+
+  // Detail silhouettes only when tall enough (don't eat menu)
   const packDetailSize =
-    r >= LAYOUT_CAPS.packDetailMinRows
-      ? Math.min(LAYOUT_CAPS.packDetailMax, Math.floor(fitH / 2))
+    mode !== "stack" && r >= 28
+      ? Math.min(LAYOUT_CAPS.packDetailMax, 4)
       : 0;
 
   const splashEdge = Math.min(
     LAYOUT_CAPS.splashFitMax,
-    mode === "narrow" ? 10 : 12,
+    mode === "stack" ? 10 : 12,
   );
 
-  const listMaxItems = mode === "wide" ? 8 : mode === "normal" ? 4 : 3;
+  // Header(1) + pad + optional top mascot + section labels ≈ list start
+  const listStartRowHint =
+    1 +
+    padY +
+    1 +
+    (mascotPlacement === "top" ? railRows + 1 : 0) +
+    4;
 
   return {
     mode,
     columns: cols,
     rows: r,
+    mascotPlacement,
     mascotFit,
     mascotCell: "single",
     railCols,
     railRows,
+    padX,
+    padY,
+    contentMinCols,
+    contentSoftMax,
+    listMaxItems,
+    packListMax,
     packDetailSize,
     showPackDetail: packDetailSize > 0,
     splashFit: { width: splashEdge, height: splashEdge },
     splashCell: "single",
-    contentMinCols: mode === "narrow" ? 28 : 40,
-    contentSoftMax: mode === "wide" ? 96 : mode === "normal" ? 72 : 48,
-    listMaxItems,
+    listStartRowHint,
   };
 }
+
+/** @deprecated alias for older call sites */
+export type LayoutModeLegacy = "narrow" | "normal" | "wide";
 
 export function splashMascotFit(scale: LayoutScale): {
   width: number;

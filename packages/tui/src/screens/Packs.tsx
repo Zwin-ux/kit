@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { PackListItem, ToolkitRecommendation } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
+import { useLayoutScale } from "../mascot/useLayoutScale.js";
 import { StatusIcon } from "../mascot/StatusIcon.js";
 import { Footer, Header } from "../components/Chrome.js";
 import { ScreenShell } from "../components/ScreenShell.js";
@@ -63,8 +64,14 @@ export function Packs({
     mascotVariant ??
     (busy ? "scan" : statusMessage ? "success" : "idle");
 
+  const scale = useLayoutScale();
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
+    <Box
+      flexDirection="column"
+      paddingX={scale.padX}
+      paddingY={scale.padY}
+      width="100%"
+    >
       <Header screen="Packs" detail="toolkits" />
 
       <Box marginTop={1} width="100%">

@@ -27,6 +27,7 @@ import {
   removeSkill,
   runDoctor,
   runReady,
+  runStatus,
   runUnify,
   detectSituation,
   testAllPacks,
@@ -68,6 +69,11 @@ async function main(): Promise<void> {
 
   if (command === "ready") {
     await runReadyCmd(args.slice(1));
+    return;
+  }
+
+  if (command === "status") {
+    await runStatusCmd(args.slice(1));
     return;
   }
 
@@ -173,8 +179,9 @@ function printHelp(): void {
   console.log("Start here:");
   console.log("  kit                         # your situation + next move");
   console.log("  kit ready --write           # make THIS repo agent-ready");
+  console.log("  kit status                  # are agents actually wired?");
   console.log("  kit unify --write --link    # clean skill mess → portable library");
-  console.log("  kit tui                     # keyboard console (interactive terminal)");
+  console.log("  kit tui                     # keyboard + click console");
   console.log("");
   console.log("Everyday:");
   console.log("  kit recommend --dir .");
@@ -815,6 +822,76 @@ async function runHome(rest: string[]): Promise<void> {
     console.log(`     ${n}`);
   }
   console.log("");
+}
+
+async function runStatusCmd(rest: string[]): Promise<void> {
+  if (rest.includes("--help") || rest.includes("-h")) {
+    console.log("Usage: kit status [--dir <project>] [--scope project|personal|both] [--json]");
+    console.log("");
+    console.log("Show whether Kit library skills are present in Claude/Codex/Grok folders.");
+    return;
+  }
+
+  const asJson = rest.includes("--json");
+  const dirFlag = rest.indexOf("--dir");
+  let projectDir: string | undefined;
+  if (dirFlag >= 0) {
+    projectDir = rest[dirFlag + 1];
+    if (!projectDir || projectDir.startsWith("-")) {
+      fail("Usage: kit status --dir <project>");
+    }
+  }
+
+  const scopeFlag = rest.indexOf("--scope");
+  let scope: "project" | "personal" | "both" | undefined;
+  if (scopeFlag >= 0) {
+    const v = rest[scopeFlag + 1];
+    if (v === "project" || v === "personal" || v === "both") scope = v;
+    else fail("Usage: kit status --scope project|personal|both");
+  }
+
+  const result = await runStatus({
+    ...(projectDir ? { projectDir } : {}),
+    ...(scope ? { scope } : {}),
+  });
+  if (!result.ok) fail(result.error);
+
+  const r = result.value;
+  if (asJson) {
+    console.log(JSON.stringify(r, null, 2));
+    if (!r.allOk) process.exit(1);
+    return;
+  }
+
+  console.log("");
+  console.log("STATUS");
+  console.log("");
+  console.log(`  project   ${r.projectDir}`);
+  console.log(`  library   ${r.libraryCount} skill(s)`);
+  console.log("");
+  for (const row of r.rows) {
+    const mark =
+      row.state === "ok" ? "ok" : row.state === "partial" ? "~~" : "!!";
+    const short =
+      row.harness === "claude-code"
+        ? "claude"
+        : row.harness === "grok-build"
+          ? "grok"
+          : row.harness;
+    console.log(
+      `  ${mark}  ${short.padEnd(8)}  ${row.scope.padEnd(9)}  linked ${String(row.linkedNames.length).padStart(3)} / lib ${r.libraryCount}  ${row.state}`,
+    );
+  }
+  if (r.notes.length) {
+    console.log("");
+    for (const n of r.notes) console.log(`  · ${n}`);
+  }
+  if (r.nextCommand) {
+    console.log("");
+    console.log(`  →  ${r.nextCommand}`);
+  }
+  console.log("");
+  if (!r.allOk) process.exit(1);
 }
 
 async function runReadyCmd(rest: string[]): Promise<void> {

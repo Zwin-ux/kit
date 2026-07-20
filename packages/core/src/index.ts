@@ -148,6 +148,7 @@ export {
   pickStory,
   detectSituation,
   runReady,
+  runStatus,
   type StoryId,
   type UserStory,
   type SituationSnapshot,
@@ -156,6 +157,11 @@ export {
   type ReadyOptions,
   type ReadyReport,
   type ReadyResult,
+  type StatusOptions,
+  type StatusReport,
+  type StatusResult,
+  type HarnessStatusRow,
+  type HarnessLinkState,
 } from "./product/mod.js";
 
 export {

@@ -103,8 +103,18 @@ export function Home({
     (busy ? "scan" : celebrateCount !== undefined ? "success" : "idle");
   const skillShow = scale.listMaxItems;
 
+  const focusLabel =
+    selected && packs.length > 0
+      ? `${selectedPackIndex + 1}/${packs.length} ${selected.title}`
+      : undefined;
+
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
+    <Box
+      flexDirection="column"
+      paddingX={scale.padX}
+      paddingY={scale.padY}
+      width="100%"
+    >
       <Header
         screen="Home"
         {...(busy
@@ -115,8 +125,12 @@ export function Home({
       />
 
       <Box marginTop={1} width="100%">
-        <ScreenShell frames={frames} mascotVariant={variant}>
-          <Text bold>Pointed at</Text>
+        <ScreenShell
+          frames={frames}
+          mascotVariant={variant}
+          {...(focusLabel !== undefined ? { focusLabel } : {})}
+        >
+          <Text bold>Project</Text>
           {pointingProject ? (
             <Text>
               path: {pointDraft}
@@ -124,38 +138,32 @@ export function Home({
             </Text>
           ) : (
             <Text dimColor wrap="truncate">
-              <StatusIcon id="folder" size="mini" dimColor />{" "}
               {shortPath(targetProject)}
             </Text>
           )}
           {recommendSummary && !pointingProject ? (
-            <Text wrap="truncate">
-              <StatusIcon id="star" size="mini" /> {recommendSummary}
-            </Text>
+            <Text wrap="truncate">* {recommendSummary}</Text>
           ) : null}
-          {topReasons.length > 0 && !pointingProject ? (
+          {topReasons.length > 0 &&
+          !pointingProject &&
+          scale.mode !== "stack" ? (
             <Text dimColor wrap="truncate">
               · {topReasons[0]}
             </Text>
           ) : null}
           <Text dimColor wrap="truncate">
-            {userLogin ? `@${userLogin}` : "not logged in"}
+            {userLogin ? `@${userLogin}` : "local"}
             {doctorSummary ? ` · ${doctorSummary}` : ""}
             {" · o point"}
           </Text>
 
           <Box marginTop={1} flexDirection="column">
-            <Text bold>
-              <StatusIcon id="pack" size="mini" /> Toolkits
-            </Text>
-            {topPick ? (
+            <Text bold>Toolkits</Text>
+            {topPick && scale.mode !== "stack" ? (
               <Text dimColor wrap="truncate">
-                <StatusIcon id="star" size="mini" dimColor /> {topPick}{" "}
-                selected for this project
+                * {topPick} for this project
               </Text>
-            ) : (
-              <Text dimColor>Start with Essentials on most repos</Text>
-            )}
+            ) : null}
             {packsError ? (
               <Text color="red">{packsError}</Text>
             ) : (
@@ -279,12 +287,19 @@ export function Home({
       <StatusLine
         skillCount={skills.length}
         packCount={packs.length}
+        {...(focusLabel !== undefined ? { focus: focusLabel } : {})}
         {...(statusMessage !== undefined && busy
           ? { message: statusMessage }
           : {})}
       />
 
-      <Footer keys="o point · ↑↓ · ↵ install · a apply · k paths · d doctor · e explore · l library · q quit" />
+      <Footer
+        keys={
+          scale.mode === "stack"
+            ? "o point · up/down · enter install · a apply · k link · q quit"
+            : "o point · up/down · enter install · a apply · k paths · d doctor · e explore · l library · q quit"
+        }
+      />
     </Box>
   );
 }
