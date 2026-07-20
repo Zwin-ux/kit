@@ -3,6 +3,10 @@ import {
   applyPack,
   completeFirstRun,
   describePaths,
+  exploreListPacks,
+  exploreListSkills,
+  exploreSearch,
+  exploreShowPack,
   formatIssues,
   getFirstRunStatus,
   getLoggedInUser,
@@ -121,6 +125,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "explore") {
+    await runExplore(args.slice(1));
+    return;
+  }
+
   if (command === "tui" || command === "ui" || command === "start") {
     const { startTui } = await import("@kit-skills/tui");
     startTui();
@@ -156,11 +165,16 @@ function printHelp(): void {
   console.log("  kit login");
   console.log("  kit whoami");
   console.log("  kit logout");
+  console.log("  kit explore packs");
+  console.log("  kit explore search <query>");
+  console.log("  kit explore show <pack>");
+  console.log("  kit explore skills [--agent <id>]");
   console.log("");
   console.log("Library:  ~/.kit (or KIT_HOME)");
   console.log("Packs:    packs/ in the Kit repo (or KIT_PACKS)");
   console.log("Registry: KIT_REGISTRY_URL or production Railway URL");
-  console.log("Tip:      kit login → kit init → kit pack apply → kit link --write");
+  console.log("Windows:  .\\kit.cmd whoami   (from repo root after pnpm build)");
+  console.log("Tip:      kit login → kit explore packs → kit pack install essentials");
 }
 
 async function runInit(rest: string[]): Promise<void> {
@@ -884,6 +898,120 @@ async function runWhoami(): Promise<void> {
   console.log(`  loggedIn: ${s.loggedInAt}`);
   console.log(`  registry: ${s.registryUrl}`);
   console.log(`  scope:    ${s.scope || "(none)"}`);
+}
+
+async function runExplore(rest: string[]): Promise<void> {
+  const sub = rest[0];
+  if (!sub || sub === "--help" || sub === "-h") {
+    console.log("Usage:");
+    console.log("  kit explore packs [--tag <tag>] [--type <projectType>]");
+    console.log("  kit explore show <pack>");
+    console.log("  kit explore skills [--agent <id>]");
+    console.log("  kit explore search <query>");
+    console.log("");
+    console.log(`Registry: ${getRegistryUrl()}`);
+    if (!sub) process.exit(1);
+    return;
+  }
+
+  if (sub === "packs" || sub === "list") {
+    const tagFlag = rest.indexOf("--tag");
+    const typeFlag = rest.indexOf("--type");
+    let tag: string | undefined;
+    let projectType: string | undefined;
+    if (tagFlag >= 0) {
+      tag = rest[tagFlag + 1];
+      if (!tag || tag.startsWith("-")) fail("Usage: kit explore packs --tag <tag>");
+    }
+    if (typeFlag >= 0) {
+      projectType = rest[typeFlag + 1];
+      if (!projectType || projectType.startsWith("-")) {
+        fail("Usage: kit explore packs --type <projectType>");
+      }
+    }
+    const result = await exploreListPacks({
+      ...(tag ? { tag } : {}),
+      ...(projectType ? { projectType } : {}),
+    });
+    if (!result.ok) fail(result.error);
+    console.log(`Registry packs (${result.value.count}) — ${getRegistryUrl()}`);
+    for (const pack of result.value.packs) {
+      console.log(
+        `${pack.name}@${pack.version}  (${pack.skillCount} skills)  ${pack.title}`,
+      );
+      console.log(`  ${pack.description}`);
+    }
+    return;
+  }
+
+  if (sub === "show") {
+    const name = rest[1];
+    if (!name) fail("Usage: kit explore show <pack>");
+    const result = await exploreShowPack(name);
+    if (!result.ok) fail(result.error);
+    const { pack, skills } = result.value;
+    console.log(`${pack.name}@${pack.version}`);
+    console.log(pack.title);
+    console.log(pack.description);
+    console.log(`publisher: ${pack.publisher}`);
+    console.log(`tags: ${pack.tags.join(", ") || "(none)"}`);
+    console.log("");
+    console.log("Skills:");
+    for (const skill of skills) {
+      console.log(`  - ${skill.name}@${skill.version}`);
+      console.log(`    ${skill.description}`);
+    }
+    console.log("");
+    console.log(`Install locally: kit pack install ${pack.name}`);
+    return;
+  }
+
+  if (sub === "skills") {
+    const agentFlag = rest.indexOf("--agent");
+    let agent: string | undefined;
+    if (agentFlag >= 0) {
+      agent = rest[agentFlag + 1];
+      if (!agent || agent.startsWith("-")) {
+        fail("Usage: kit explore skills --agent <id>");
+      }
+    }
+    const result = await exploreListSkills({
+      ...(agent ? { agent } : {}),
+    });
+    if (!result.ok) fail(result.error);
+    console.log(`Registry skills (${result.value.count})`);
+    for (const skill of result.value.skills) {
+      console.log(`${skill.name}@${skill.version}`);
+      console.log(`  ${skill.description}`);
+      console.log(`  agents: ${skill.compatibility.join(", ")}`);
+    }
+    return;
+  }
+
+  if (sub === "search") {
+    const query = rest.slice(1).join(" ").trim();
+    if (!query) fail("Usage: kit explore search <query>");
+    const result = await exploreSearch(query);
+    if (!result.ok) fail(result.error);
+    console.log(`Search "${result.value.q}" — ${result.value.count} hit(s)`);
+    if (result.value.packs.length > 0) {
+      console.log("");
+      console.log("Packs:");
+      for (const pack of result.value.packs) {
+        console.log(`  ${pack.name}@${pack.version} — ${pack.title}`);
+      }
+    }
+    if (result.value.skills.length > 0) {
+      console.log("");
+      console.log("Skills:");
+      for (const skill of result.value.skills) {
+        console.log(`  ${skill.name}@${skill.version} — ${skill.description}`);
+      }
+    }
+    return;
+  }
+
+  fail(`kit explore: unknown command: ${sub}`);
 }
 
 main().catch((error: unknown) => {

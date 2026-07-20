@@ -70,12 +70,15 @@ Auth endpoints:
 - `GET /auth/github/callback`
 - `POST /webhooks/github`
 
-### CLI login
+### CLI login + explore
 
 ```sh
-kit login     # device flow; stores ~/.kit/auth.json
-kit whoami
-kit logout
+.\kit.cmd login
+.\kit.cmd whoami
+.\kit.cmd explore packs
+.\kit.cmd explore search readme
+.\kit.cmd explore show essentials
+.\kit.cmd logout
 ```
 
 Override registry: `KIT_REGISTRY_URL=https://kit-registry-production.up.railway.app`

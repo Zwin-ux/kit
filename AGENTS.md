@@ -34,6 +34,7 @@ There is no web app.
 - GitHub Actions CI (build/test/packs/doctor only — no deploy)
 - Railway registry API MVP (public read catalog + GitHub App auth)
 - `kit login` / `whoami` / `logout` (device flow → ~/.kit/auth.json)
+- `kit explore` registry client + `kit.cmd` / `kit.ps1` Windows shims
 
 **In Progress**
 - Product polish (Workshop later)

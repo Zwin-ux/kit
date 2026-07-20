@@ -42,17 +42,24 @@ Kit fixes that with three hard opinions:
 ### Starter packs (available now)
 
 ```sh
-kit init --pack essentials       # first-run (library)
-kit pack list
-kit pack install essentials      # install into ~/.kit
-kit pack apply web-app --dir .   # also copy into ./.kit/skills
-kit tui                          # first-run + Home actions
-kit paths                        # where agents look for skills
-kit link --to claude-code --write
-kit test --all-packs             # validate official packs
-kit doctor                       # local health check
-kit login                        # GitHub device flow
-kit whoami
+# From the repo root (Windows), after pnpm build:
+.\kit.cmd login
+.\kit.cmd whoami
+.\kit.cmd explore packs
+.\kit.cmd explore search readme
+.\kit.cmd init --pack essentials
+.\kit.cmd pack apply essentials --dir .
+.\kit.cmd paths
+.\kit.cmd link --to claude-code --write
+.\kit.cmd doctor
+.\kit.cmd tui
+```
+
+`kit` is not a global binary yet. Use `.\kit.cmd` (Windows) or `./kit.ps1` from the repo, or:
+
+```sh
+node packages/cli/dist/bin.js <command>
+pnpm kit -- <command>
 ```
 
 | Pack | Best for |

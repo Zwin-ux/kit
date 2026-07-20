@@ -8,6 +8,26 @@ pnpm build
 pnpm test
 ```
 
+## Run the CLI (Windows)
+
+From the repo root after `pnpm build`:
+
+```powershell
+.\kit.cmd --help
+.\kit.cmd whoami
+.\kit.cmd explore packs
+.\kit.cmd login
+```
+
+Or:
+
+```powershell
+pnpm kit -- whoami
+node packages\cli\dist\bin.js whoami
+```
+
+There is no global `kit` command until you install/link the CLI yourself.
+
 ## Run
 
 ```sh
@@ -15,6 +35,7 @@ pnpm tui                 # pixel TUI (kit-idle animation on splash)
 pnpm kit -- --help
 pnpm kit -- init --pack essentials
 pnpm kit -- pack list
+pnpm kit -- explore packs
 pnpm kit -- paths
 pnpm kit -- link --to claude-code          # dry-run
 pnpm kit -- test --all-packs
