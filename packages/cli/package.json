@@ -1,6 +1,6 @@
 {
   "name": "@mzwin/kit",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Kit CLI — portable agent skills for Claude Code, Grok Build, and Codex",
   "license": "MIT",
   "type": "module",
@@ -46,10 +46,10 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@mzwin/kit-catalog": "workspace:*",
-    "@mzwin/kit-core": "workspace:*",
-    "@mzwin/kit-shared": "workspace:*",
-    "@mzwin/kit-tui": "workspace:*"
+    "@mzwin/kit-catalog": "0.1.3",
+    "@mzwin/kit-core": "0.1.3",
+    "@mzwin/kit-shared": "0.1.3",
+    "@mzwin/kit-tui": "0.1.3"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

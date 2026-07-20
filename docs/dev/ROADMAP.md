@@ -22,6 +22,8 @@
 - [x] Global install story (`npm i -g @kit-skills/cli`)
 - [x] `kit import` from Claude/Codex/Grok harness folders
 - [x] Keep-alive cron + skill queue
+- [x] `kit unify` — skill OS: scan/normalize/dedupe/rank/adopt keepers
+- [x] Global npm: `npm i -g @mzwin/kit`
 
 ## Later
 

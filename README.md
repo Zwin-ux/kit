@@ -8,37 +8,16 @@
 
 <p align="center">
   <strong>One library. Many agents.</strong><br />
-  Point Kit at a project. Install a starter pack.<br />
-  Wire skills into Claude Code, Grok Build, and Codex.
+  Your agents already have skills. They’re a mess.<br />
+  Kit unifies them — then packs and links them everywhere.
 </p>
 
 <p align="center">
-  <a href="#install"><img src="https://img.shields.io/badge/install-1a1a1a?style=for-the-badge" alt="Install" /></a>
+  <a href="#install"><img src="https://img.shields.io/badge/npm-@mzwin/kit-1a1a1a?style=for-the-badge" alt="npm" /></a>
+  <a href="#kit-unify"><img src="https://img.shields.io/badge/kit_unify-c45c2a?style=for-the-badge" alt="kit unify" /></a>
   <a href="#starter-packs"><img src="https://img.shields.io/badge/7_packs-1a1a1a?style=for-the-badge" alt="7 packs" /></a>
-  <a href="#open-the-tui"><img src="https://img.shields.io/badge/pixel_tui-1a1a1a?style=for-the-badge" alt="Pixel TUI" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-c45c2a?style=for-the-badge" alt="MIT" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1a1a1a?style=for-the-badge" alt="MIT" /></a>
 </p>
-
----
-
-## What Kit does
-
-<p align="center">
-  <img src="docs/assets/kit-flow.gif" alt="Point → Recommend → Install → Link" width="560" />
-</p>
-
-| | |
-|:--|:--|
-| **1. Point** | Aim Kit at any project folder |
-| **2. Recommend** | Get the right pack + skills for that repo |
-| **3. Install** | Drop curated skills into your library |
-| **4. Link** | Connect Claude Code, Grok Build, or Codex |
-
-<p align="center">
-  <img src="docs/assets/readme-terminal.png" alt="kit recommend → apply → link" width="560" />
-</p>
-
-Same skills. Multiple agents. No rewriting prompts per tool.
 
 ---
 
@@ -46,56 +25,113 @@ Same skills. Multiple agents. No rewriting prompts per tool.
 
 **Need:** [Node](https://nodejs.org) 20+
 
-### Global CLI (recommended)
+```bash
+npm i -g @mzwin/kit
+kit --version
+```
+
+That’s it. Global `kit` command.
+
+---
+
+## `kit unify`
+
+**The feature for right now.** Vibe coders already installed 50–900 skills across Claude Code and Codex. None of them travel. Most of them are noise.
+
+```bash
+kit unify
+```
+
+```text
+UNIFY  skill OS  (dry-run)
+
+  Scanned   998 skill folders  (Claude · Codex · Grok · Kit)
+  Unique    940
+  Noise     809 filtered
+  Keepers   4  (grade S/A · real structure or multi-agent)
+
+  Top keepers
+  A  careful         claude+codex   Safety guardrails…
+  A  freeze          claude+codex   Restrict edits…
+  …
+
+  Safe default: adopt keepers — not 809 automation dumps.
+```
+
+```bash
+kit unify --write           # adopt S/A keepers into ~/.kit
+kit unify --write --link    # + wire into this project’s agents
+```
+
+| Flag | What it does |
+|------|----------------|
+| *(none)* | Dry-run: scan, rank, show mess vs keepers |
+| `--write` | Adopt **keepers only** (not bulk noise) |
+| `--link` | With `--write`, copy into project Claude/Codex/Grok folders |
+| `--all` | Include noise (power user; not recommended) |
+| `--json` | Machine-readable report |
+
+Kit normalizes messy `SKILL.md` files (missing compatibility, bad names, long descriptions) into a portable schema, then dedupes by name across harnesses.
+
+---
+
+## Full loop
 
 ```bash
 npm i -g @mzwin/kit
 
+# 1) Clean the pile you already have
+kit unify
+kit unify --write
+
+# 2) Or start from a curated pack
 kit init --pack essentials
 kit recommend --dir .
 kit pack apply essentials --dir .
+
+# 3) Wire agents
 kit link --to claude-code --write
+kit link --to codex --write
+kit link --to grok-build --write
+
 kit doctor
 kit tui
 ```
 
-Wire other agents the same way:
-
-```bash
-kit link --to codex --write
-kit link --to grok-build --write
-```
-
-### Capture skills you already use
-
-Import skills from Claude Code / Codex / Grok folders into your Kit library:
+### Capture one harness only
 
 ```bash
 kit import --from claude-code          # dry-run
-kit import --from claude-code --write  # install into ~/.kit
-kit import --from all --write
+kit import --from claude-code --write
 ```
 
-### Skills-only (any agent that supports SKILL.md)
+### Skills-only install (any SKILL.md agent)
 
 ```bash
 npx skills add Zwin-ux/kit
 ```
 
-### From source
+---
 
-```bash
-git clone https://github.com/Zwin-ux/kit.git
-cd kit
-pnpm install && pnpm build
-pnpm kit -- doctor
-```
+## How it works
+
+<p align="center">
+  <img src="docs/assets/kit-flow.gif" alt="Point → Recommend → Install → Link" width="560" />
+</p>
+
+| | |
+|:--|:--|
+| **Unify** | Skill dumps → one ranked library |
+| **Recommend** | Point at a repo → right starter pack |
+| **Packs** | Curated skill sets (7 official) |
+| **Link** | Kit → Claude Code / Codex / Grok |
+| **Import** | Harness → Kit (single-direction capture) |
 
 ---
 
 ## Starter packs
 
-Seven kits. Stack packs extend **essentials**, so the basics always come along.
+Seven kits. Stack packs extend **essentials**.
 
 <p align="center">
   <img src="docs/assets/packs/essentials.png" width="48" alt="essentials" />
@@ -124,35 +160,12 @@ Seven kits. Stack packs extend **essentials**, so the basics always come along.
 | <img src="docs/assets/packs/data-ml.png" width="36" alt="" /> | **data-ml** | Data and ML work |
 
 ```bash
-pnpm kit -- recommend --dir ../my-app
-pnpm kit -- pack install web-app
-pnpm kit -- pack apply web-app --dir ../my-app
+kit recommend --dir ../my-app
+kit pack install web-app
+kit pack apply web-app --dir ../my-app
 ```
 
-More detail: [docs/packs.md](docs/packs.md)
-
----
-
-## Open the TUI
-
-```bash
-pnpm tui
-# Windows: .\kit.cmd tui
-```
-
-| Key | Action |
-|:---:|:-------|
-| **1–7** | Pick a starter pack |
-| **↵** | Install the selected pack |
-| **o** | Point at a project |
-| **a** | Apply pack to that project |
-| **k** | Link an agent harness |
-| **d** | Doctor |
-| **q** | Quit |
-
-<p align="center">
-  <img src="docs/assets/kit-idle.gif" width="120" alt="kit-idle" />
-</p>
+More: [docs/packs.md](docs/packs.md)
 
 ---
 
@@ -160,21 +173,18 @@ pnpm tui
 
 | Command | What it does |
 |---------|----------------|
-| `init --pack essentials` | First-run install |
+| `unify` | Rank + clean skill mess → portable library |
+| `init --pack essentials` | First-run pack install |
 | `recommend --dir <path>` | Suggest pack + skills |
 | `pack list` / `install` / `apply` | Manage packs |
-| `link --to claude-code --write` | Kit → agent harness |
-| `import --from claude-code --write` | Agent harness → Kit library |
+| `link --to claude-code --write` | Kit → agent |
+| `import --from claude-code --write` | Agent → Kit |
 | `doctor` | Health check |
 | `tui` | Pixel interface |
-
-Harness targets: `claude-code` · `grok-build` · `codex`
 
 ---
 
 ## Skills
-
-Skills are plain markdown with a short front matter block:
 
 ```yaml
 ---
@@ -188,7 +198,19 @@ compatibility:
 ---
 ```
 
-Browse the built-in set in [`skills/`](skills/).
+Browse built-ins in [`skills/`](skills/).
+
+---
+
+## From source
+
+```bash
+git clone https://github.com/Zwin-ux/kit.git
+cd kit
+pnpm install && pnpm build
+pnpm kit -- unify
+pnpm kit -- doctor
+```
 
 ---
 
@@ -202,7 +224,7 @@ Browse the built-in set in [`skills/`](skills/).
   <sub>
     <a href="LICENSE">MIT</a>
     ·
-    <a href="https://www.npmjs.com/package/@mzwin/kit">npm</a>
+    <a href="https://www.npmjs.com/package/@mzwin/kit">npm @mzwin/kit</a>
     ·
     <a href="CHANGELOG.md">Changelog</a>
     ·

@@ -126,6 +126,24 @@ export {
 } from "./doctor/mod.js";
 
 export {
+  normalizeSkillMd,
+  writeNormalizedSkill,
+  slugify,
+  scoreUnifyCandidate,
+  looksKitShaped,
+  runUnify,
+  type NormalizedSkillMd,
+  type ScoreInput,
+  type ScoreResult,
+  type SkillGrade,
+  type UnifyOptions,
+  type UnifyResult,
+  type UnifyReport,
+  type UnifyCandidate,
+  type UnifySourceHit,
+} from "./unify/mod.js";
+
+export {
   DEFAULT_REGISTRY_URL,
   getRegistryUrl,
   getAuthPath,

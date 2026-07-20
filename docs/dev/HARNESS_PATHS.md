@@ -79,6 +79,20 @@ kit import --from claude-code --skill my-skill --write
 Invalid folders (no `SKILL.md` / schema fail) are skipped with a reason.  
 Already-installed names skip unless `--force`.
 
+### Unify (skill OS — preferred for messy installs)
+
+Scan **all** harness dumps, normalize schema, dedupe by name, rank quality, filter bulk noise, adopt **keepers only**.
+
+```sh
+kit unify                      # dry-run: mess vs keepers
+kit unify --write              # adopt S/A keepers into ~/.kit
+kit unify --write --link       # + project harness links
+kit unify --all                # include automation noise (warn)
+kit unify --json               # machine report
+```
+
+Defaults protect users: dry-run, noise filter on, write adopts keepers only (not hundreds of `*-automation` stubs).
+
 ## Recommended flow
 
 ```sh

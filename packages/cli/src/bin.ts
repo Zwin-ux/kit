@@ -26,6 +26,7 @@ import {
   recommendToolkits,
   removeSkill,
   runDoctor,
+  runUnify,
   testAllPacks,
   testPack,
   testSkill,
@@ -107,6 +108,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "unify") {
+    await runUnifyCmd(args.slice(1));
+    return;
+  }
+
   if (command === "test") {
     await runTest(args.slice(1));
     return;
@@ -173,6 +179,7 @@ function printHelp(): void {
   console.log("  kit paths [--dir <project>] [--skill <name>]");
   console.log("  kit link [--to <harness|all>] [--scope personal|project] [--write] [--force] [--mode symlink|copy] [--dir <project>]");
   console.log("  kit import [--from <harness|all>] [--scope personal|project] [--write] [--force] [--skill <name>] [--dir <project>]");
+  console.log("  kit unify [--dir <project>] [--write] [--link] [--force] [--top <n>] [--min-score <n>]");
   console.log("  kit test [skill-dir|pack-name|--all-packs]");
   console.log("  kit doctor [--dir <project>]");
   console.log("  kit login");
@@ -186,9 +193,8 @@ function printHelp(): void {
   console.log("");
   console.log("Library:  ~/.kit (or KIT_HOME)");
   console.log("Packs:    @mzwin/kit-catalog or packs/ in this repo (KIT_PACKS)");
-  console.log("Registry: KIT_REGISTRY_URL or production Railway URL");
   console.log("Install:  npm i -g @mzwin/kit");
-  console.log("Tip:      kit import --from claude-code → kit link --to codex --write");
+  console.log("Tip:      kit unify --write --link   # one library, every agent");
 }
 
 async function runInit(rest: string[]): Promise<void> {
@@ -765,6 +771,160 @@ async function runImport(rest: string[]): Promise<void> {
     console.log("");
     console.log("No files written. Re-run with --write to install into ~/.kit.");
   }
+}
+
+async function runUnifyCmd(rest: string[]): Promise<void> {
+  if (rest.includes("--help") || rest.includes("-h")) {
+    console.log(
+      "Usage: kit unify [--dir <project>] [--write] [--link] [--force] [--top <n>] [--min-score <n>] [--all] [--json]",
+    );
+    console.log("");
+    console.log("Your agents already have skills. They're a mess.");
+    console.log("kit unify → one portable library every agent can use.");
+    console.log("");
+    console.log("  kit unify                 # show mess vs keepers (safe)");
+    console.log("  kit unify --write         # adopt S/A keepers only");
+    console.log("  kit unify --write --link  # adopt + project harness links");
+    console.log("  kit unify --all           # include automation noise (not recommended)");
+    return;
+  }
+
+  const write = rest.includes("--write");
+  const link = rest.includes("--link");
+  const force = rest.includes("--force");
+  const includeNoise = rest.includes("--all");
+  const asJson = rest.includes("--json");
+
+  const dirFlag = rest.indexOf("--dir");
+  let projectDir: string | undefined;
+  if (dirFlag >= 0) {
+    projectDir = rest[dirFlag + 1];
+    if (!projectDir || projectDir.startsWith("-")) {
+      fail("Usage: kit unify --dir <project>");
+    }
+  }
+
+  const topFlag = rest.indexOf("--top");
+  let top: number | undefined;
+  if (topFlag >= 0) {
+    const raw = rest[topFlag + 1];
+    const n = Number(raw);
+    if (!raw || Number.isNaN(n) || n < 1) fail("Usage: kit unify --top <positive number>");
+    top = n;
+  }
+
+  const minFlag = rest.indexOf("--min-score");
+  let minScore: number | undefined;
+  if (minFlag >= 0) {
+    const raw = rest[minFlag + 1];
+    const n = Number(raw);
+    if (!raw || Number.isNaN(n)) fail("Usage: kit unify --min-score <number>");
+    minScore = n;
+  }
+
+  const result = await runUnify({
+    write,
+    link,
+    force,
+    includeNoise,
+    ...(asJson
+      ? {}
+      : {
+          onProgress: (msg: string) => {
+            process.stderr.write(`  … ${msg}\n`);
+          },
+        }),
+    ...(projectDir ? { projectDir } : {}),
+    ...(top !== undefined ? { top } : {}),
+    ...(minScore !== undefined ? { minScore } : {}),
+  });
+  if (!result.ok) fail(result.error);
+
+  const report = result.value;
+  if (asJson) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  console.log("");
+  console.log(report.dryRun ? "UNIFY  skill OS  (dry-run)" : "UNIFY  skill OS  (applied)");
+  console.log("");
+  console.log(`  Scanned   ${report.scanned} skill folders  (Claude · Codex · Grok · Kit)`);
+  console.log(`  Unique    ${report.unique}`);
+  console.log(
+    `  Noise     ${report.noiseCount} filtered${report.includeNoise ? " (showing anyway: --all)" : ""}`,
+  );
+  console.log(
+    `  Keepers   ${report.keeperCount}  (grade S/A · real structure or multi-agent)`,
+  );
+  console.log(
+    `  Library   ${report.alreadyInLibrary} already in ~/.kit · ${report.adoptReady} ready to adopt`,
+  );
+  if (!report.dryRun) {
+    console.log(`  Adopted   ${report.adopted}  ·  linked ${report.linked}`);
+  }
+  console.log("");
+
+  const show = report.keepers.slice(0, 15);
+  if (show.length === 0) {
+    console.log("  No keepers found yet. Install a pack or loosen filters with --min-score 55.");
+  } else {
+    console.log("  Top keepers");
+    for (const c of show) {
+      const agents = [
+        ...new Set(
+          c.sources
+            .map((s) => s.harness)
+            .filter((h) => h === "claude-code" || h === "codex" || h === "grok-build"),
+        ),
+      ]
+        .map((h) => (h === "claude-code" ? "claude" : h === "grok-build" ? "grok" : h))
+        .join("+");
+      const mark = c.inLibrary ? "·" : "+";
+      const desc =
+        c.description.length > 52
+          ? `${c.description.slice(0, 49)}…`
+          : c.description;
+      console.log(
+        `  ${mark} ${c.grade}  ${String(c.score).padStart(3)}  ${c.name.padEnd(22)}  ${(agents || "kit").padEnd(14)}  ${desc}`,
+      );
+    }
+    if (report.keepers.length > 15) {
+      console.log(`  … ${report.keepers.length - 15} more keepers`);
+    }
+  }
+
+  if (report.noiseSample.length > 0 && !report.includeNoise) {
+    console.log("");
+    console.log("  Noise sample (filtered)");
+    for (const n of report.noiseSample.slice(0, 3)) {
+      console.log(
+        `  × ${n.name.padEnd(28)}  ${n.noiseReasons[0] ?? "noise"}`,
+      );
+    }
+  }
+
+  if (report.notes.length > 0) {
+    console.log("");
+    for (const n of report.notes) console.log(`  · ${n}`);
+  }
+
+  if (report.dryRun) {
+    console.log("");
+    console.log(
+      `  Safe default: adopt up to ${Math.min(top ?? 25, report.adoptReady)} keepers — not ${report.noiseCount} noise skills.`,
+    );
+    console.log("");
+    console.log("  Next");
+    console.log("    kit unify --write           # one portable library");
+    console.log("    kit unify --write --link    # + wire into this project");
+  } else if (report.adoptedNames.length > 0) {
+    console.log("");
+    console.log(
+      `  Adopted (${report.adoptedNames.length}): ${report.adoptedNames.slice(0, 12).join(", ")}${report.adoptedNames.length > 12 ? "…" : ""}`,
+    );
+  }
+  console.log("");
 }
 
 function printChecks(checks: CheckResult[], indent = "  "): void {
