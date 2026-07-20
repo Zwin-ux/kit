@@ -78,11 +78,12 @@ kit init --pack essentials
 # or open the TUI and press 1 / 2 / 3 after Splash
 ```
 
-Mascot frames:
-- Prefer `assets/pixel/kit-frame-1.png` … `kit-frame-4.png`
-- Pure black silhouette on white or transparent
-- If PNGs are missing, the TUI uses a built-in placeholder silhouette
-- Cycle delay is about 220 ms per frame
+Mascot frames (Alpha 1):
+- Prefer `assets/pixel/kit-frame-1.png` … `kit-frame-6.png` (tail wag)
+- Pure black silhouette; laying-down fox; no wrench
+- High-res masters are downscaled for the terminal
+- If PNGs are missing, the TUI uses a built-in 6-frame placeholder
+- Cycle delay is about 180 ms per frame (~5–6 fps)
 - Animate mascot on Splash and First-run only (Home stays calm)
 
 Keys:

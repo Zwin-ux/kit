@@ -6,6 +6,7 @@ import { resolvePixelAssetsDir } from "./resolveAssetsDir.js";
 import {
   FRAME_COUNT,
   FRAME_FILES,
+  TUI_FRAME_MAX_HEIGHT,
   type PixelFrame,
 } from "./types.js";
 
@@ -14,24 +15,29 @@ export interface LoadFramesResult {
   /** True when at least one frame came from a PNG file. */
   usedFiles: boolean;
   assetsDir?: string;
+  /** How many frames were loaded from disk (not placeholder). */
+  fileFrameCount: number;
 }
 
 /**
- * Load up to 4 idle frames from assets/pixel/kit-frame-N.png.
- * Missing files fall back to the built-in silhouette placeholders.
- * If some PNGs exist and some do not, placeholders fill the gaps
- * so the cycle always has 4 frames.
+ * Load up to 6 idle frames from assets/pixel/kit-frame-N.png.
+ * Missing files fall back to built-in silhouette placeholders.
+ * High-res masters are nearest-neighbor scaled for terminal display.
  */
 export async function loadMascotFrames(): Promise<LoadFramesResult> {
   const placeholders = getPlaceholderFrames();
   const assetsDir = await resolvePixelAssetsDir();
 
   if (!assetsDir) {
-    return { frames: placeholders, usedFiles: false };
+    return {
+      frames: placeholders,
+      usedFiles: false,
+      fileFrameCount: 0,
+    };
   }
 
   const frames: PixelFrame[] = [];
-  let usedFiles = false;
+  let fileFrameCount = 0;
 
   for (let i = 0; i < FRAME_COUNT; i++) {
     const fileName = FRAME_FILES[i];
@@ -43,9 +49,11 @@ export async function loadMascotFrames(): Promise<LoadFramesResult> {
     const filePath = path.join(assetsDir, fileName);
     try {
       const buffer = await readFile(filePath);
-      const frame = pngToFrame(buffer, i + 1, filePath);
+      const frame = pngToFrame(buffer, i + 1, filePath, {
+        maxHeight: TUI_FRAME_MAX_HEIGHT,
+      });
       frames.push(frame);
-      usedFiles = true;
+      fileFrameCount += 1;
     } catch {
       frames.push(placeholders[i]!);
     }
@@ -53,9 +61,15 @@ export async function loadMascotFrames(): Promise<LoadFramesResult> {
 
   return {
     frames,
-    usedFiles,
+    usedFiles: fileFrameCount > 0,
     assetsDir,
+    fileFrameCount,
   };
+}
+
+export interface PngToFrameOptions {
+  /** Nearest-neighbor downscale so TUI stays readable. */
+  maxHeight?: number;
 }
 
 /**
@@ -66,10 +80,11 @@ export function pngToFrame(
   buffer: Buffer,
   index: number,
   filePath?: string,
+  options: PngToFrameOptions = {},
 ): PixelFrame {
   const png = PNG.sync.read(buffer);
   const { width, height, data } = png;
-  const pixels: boolean[] = new Array(width * height);
+  const raw: boolean[] = new Array(width * height);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -78,18 +93,22 @@ export function pngToFrame(
       const g = data[idx + 1] ?? 0;
       const b = data[idx + 2] ?? 0;
       const a = data[idx + 3] ?? 0;
-      // Silhouette: opaque and dark enough counts as black.
       const luminance = (r + g + b) / 3;
-      const on = a >= 128 && luminance < 200;
-      pixels[y * width + x] = on;
+      raw[y * width + x] = a >= 128 && luminance < 200;
     }
   }
 
+  const maxHeight = options.maxHeight ?? TUI_FRAME_MAX_HEIGHT;
+  const scaled =
+    height > maxHeight
+      ? nearestNeighborScale(raw, width, height, maxHeight)
+      : { pixels: raw, width, height };
+
   const frame: PixelFrame = {
     index,
-    width,
-    height,
-    pixels,
+    width: scaled.width,
+    height: scaled.height,
+    pixels: scaled.pixels,
     source: "file",
   };
 
@@ -98,4 +117,24 @@ export function pngToFrame(
   }
 
   return frame;
+}
+
+function nearestNeighborScale(
+  pixels: boolean[],
+  srcW: number,
+  srcH: number,
+  targetH: number,
+): { pixels: boolean[]; width: number; height: number } {
+  const targetW = Math.max(1, Math.round((srcW * targetH) / srcH));
+  const out: boolean[] = new Array(targetW * targetH);
+
+  for (let y = 0; y < targetH; y++) {
+    const srcY = Math.min(srcH - 1, Math.floor((y * srcH) / targetH));
+    for (let x = 0; x < targetW; x++) {
+      const srcX = Math.min(srcW - 1, Math.floor((x * srcW) / targetW));
+      out[y * targetW + x] = pixels[srcY * srcW + srcX] === true;
+    }
+  }
+
+  return { pixels: out, width: targetW, height: targetH };
 }

@@ -9,6 +9,8 @@ Free forever for individuals. Account-based for mass adoption.
 
 ![Kit Mascot](docs/assets/kit-mascot.png)
 
+![Kit idle animation](assets/pixel/kit-idle.gif)
+
 > A baby fox (a “kit”) that helps you build and share the tools your agents actually use.
 
 ## Why Kit exists

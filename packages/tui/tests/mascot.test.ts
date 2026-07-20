@@ -6,9 +6,10 @@ import { PNG } from "pngjs";
 import { pngToFrame } from "../src/mascot/loadFrames.js";
 
 describe("placeholder mascot frames", () => {
-  it("provides four silhouette frames", () => {
+  it("provides six silhouette frames", () => {
     const frames = getPlaceholderFrames();
     expect(frames).toHaveLength(FRAME_COUNT);
+    expect(FRAME_COUNT).toBe(6);
     for (const frame of frames) {
       expect(frame.width).toBe(16);
       expect(frame.height).toBe(16);
@@ -45,7 +46,22 @@ describe("pngToFrame", () => {
       png.data[offset + 3] = rgba[3]!;
     });
     const buffer = PNG.sync.write(png);
-    const frame = pngToFrame(buffer, 1);
+    const frame = pngToFrame(buffer, 1, undefined, { maxHeight: 64 });
     expect(frame.pixels).toEqual([true, false, false, true]);
+  });
+
+  it("downscales tall frames for TUI", () => {
+    const png = new PNG({ width: 4, height: 40 });
+    for (let i = 0; i < png.data.length; i += 4) {
+      png.data[i] = 0;
+      png.data[i + 1] = 0;
+      png.data[i + 2] = 0;
+      png.data[i + 3] = 255;
+    }
+    const buffer = PNG.sync.write(png);
+    const frame = pngToFrame(buffer, 1, undefined, { maxHeight: 10 });
+    expect(frame.height).toBe(10);
+    expect(frame.width).toBeGreaterThan(0);
+    expect(frame.pixels.every(Boolean)).toBe(true);
   });
 });

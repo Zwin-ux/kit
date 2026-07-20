@@ -26,7 +26,7 @@ There is no web app.
 - Basic docs and architecture
 
 **In Progress**
-- Pixel mascot PNG assets (separate track)
+- (assets) Alpha 1 six-frame mascot committed; polish GIF / scale variants as needed
 
 **Next Priority**
 1. Library screen + remove confirm in TUI
@@ -57,7 +57,8 @@ When you complete a meaningful piece of work:
 - High contrast
 - Must read at 16×16 and 32×32
 - No color inside the TUI for the mascot
-- Same four frames used for both TUI animation and GitHub GIF
+- Alpha 1: laying-down fox, no wrench, 6-frame tail wag
+- Same six frames drive TUI animation and `kit-idle.gif`
 
 ## Working Style
 - Small, clear commits

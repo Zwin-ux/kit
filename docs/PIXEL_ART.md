@@ -7,25 +7,23 @@ Use strong silhouettes.
 
 ## Mascot
 Name: Kit
-Animal: Fox (young fox)
-Object: Wrench
+Animal: Young fox (cute anime / cartoon silhouette)
+Pose: Laying down / curled rest (Alpha 1)
+Object: None (no wrench in Alpha 1)
 
 Style rules:
+- Pure black silhouette only (in TUI)
 - High contrast
-- Bold black outlines
-- Flat colors only
-- Limited palette
 - Simple shapes
 - Clear silhouette
 - No complex shading
 - No anti-aliasing
+- No gray
+- Body locked; tail-only animation (6 frames)
 
 ## Palette
-- Deep orange
-- Cream
-- Black
-- Dark navy
-- One accent color (optional)
+- TUI: black on white/transparent only
+- Marketing assets may later reintroduce limited color outside the TUI
 
 ## Sizes
 Primary sizes:

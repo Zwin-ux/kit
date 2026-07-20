@@ -1,36 +1,37 @@
 import type { PixelFrame } from "./types.js";
+import { FRAME_COUNT } from "./types.js";
 
 /**
- * Pure black-and-white fox + wrench silhouettes for terminal use.
- * Used until kit-frame-1.png … kit-frame-4.png exist in assets/pixel/.
- * 16x16, high contrast, no gray.
+ * Fallback laying-down fox silhouette (Alpha 1).
+ * Pure black, no wrench. Six frames with tail-only motion.
+ * Used when PNG masters are missing.
  */
 
 const W = 16;
 const H = 16;
 
-/** Shared body template; frames only tweak tail / head. */
-function baseTemplate(): boolean[][] {
-  // y from top. 1 = black.
-  const g = (rows: string[]): boolean[][] =>
-    rows.map((row) => row.split("").map((c) => c === "#"));
+function g(rows: string[]): boolean[][] {
+  return rows.map((row) => row.split("").map((c) => c === "#"));
+}
 
+/** Body locked. Tail slots on the right side. */
+function baseBody(): boolean[][] {
   return g([
     "................",
     "....##....##....", // ears
     "...####..####...",
     "...##########...", // head
-    "...##..##..##...", // snout gap
+    "...##########...",
     "....########....",
-    "......####......", // neck
-    "...##########...", // torso
-    "..####....####..",
-    "..###......###..",
-    "...##.####.##...", // hips + tail stub area
-    "....##....##....", // legs
-    "....##....##....",
-    "....##....##....",
-    "...####..####...",
+    ".....######.....", // neck into body
+    "....########....", // curled body
+    "...##########...",
+    "...###....####..", // chest + tail base
+    "...##......###..",
+    "....##....####..",
+    ".....########...",
+    "......######....",
+    ".......####.....",
     "................",
   ]);
 }
@@ -45,73 +46,53 @@ function set(grid: boolean[][], x: number, y: number, on: boolean): void {
   row[x] = on;
 }
 
-/** Frame 1 — neutral, wrench held at left. */
-function frame1(): boolean[][] {
-  const g = cloneGrid(baseTemplate());
-  // wrench handle + head (left of body)
-  set(g, 1, 7, true);
-  set(g, 2, 7, true);
-  set(g, 1, 8, true);
-  set(g, 0, 6, true);
-  set(g, 0, 7, true);
-  set(g, 0, 8, true);
-  // tail low right
-  set(g, 13, 10, true);
-  set(g, 14, 11, true);
-  return g;
-}
+/** Tail poses: rest → up → peak → down → low → near rest */
+const TAIL: Array<Array<[number, number]>> = [
+  [
+    [12, 9],
+    [13, 10],
+    [14, 11],
+    [13, 12],
+  ],
+  [
+    [13, 8],
+    [14, 8],
+    [14, 9],
+    [15, 10],
+  ],
+  [
+    [13, 7],
+    [14, 7],
+    [15, 7],
+    [15, 8],
+  ],
+  [
+    [13, 8],
+    [14, 9],
+    [15, 9],
+    [14, 10],
+  ],
+  [
+    [12, 10],
+    [13, 11],
+    [14, 12],
+    [13, 12],
+  ],
+  [
+    [12, 9],
+    [13, 10],
+    [14, 11],
+    [14, 12],
+  ],
+];
 
-/** Frame 2 — tail up, slight head lean (ear shift). */
-function frame2(): boolean[][] {
-  const g = cloneGrid(baseTemplate());
-  set(g, 1, 7, true);
-  set(g, 2, 7, true);
-  set(g, 1, 8, true);
-  set(g, 0, 6, true);
-  set(g, 0, 7, true);
-  set(g, 0, 8, true);
-  // ears nudged
-  set(g, 3, 1, false);
-  set(g, 4, 0, true);
-  // tail up
-  set(g, 13, 9, true);
-  set(g, 14, 8, true);
-  set(g, 15, 7, true);
-  return g;
-}
-
-/** Frame 3 — small body shift right + blink (eye gap). */
-function frame3(): boolean[][] {
-  const g = cloneGrid(baseTemplate());
-  set(g, 1, 7, true);
-  set(g, 2, 7, true);
-  set(g, 1, 8, true);
-  set(g, 0, 6, true);
-  set(g, 0, 7, true);
-  set(g, 0, 8, true);
-  // blink: clear a mid-head pixel
-  set(g, 6, 3, false);
-  set(g, 9, 3, false);
-  // tail mid
-  set(g, 13, 10, true);
-  set(g, 14, 10, true);
-  return g;
-}
-
-/** Frame 4 — ready pose, tail curl. */
-function frame4(): boolean[][] {
-  const g = cloneGrid(baseTemplate());
-  set(g, 1, 7, true);
-  set(g, 2, 7, true);
-  set(g, 1, 8, true);
-  set(g, 0, 6, true);
-  set(g, 0, 7, true);
-  set(g, 0, 8, true);
-  set(g, 13, 10, true);
-  set(g, 14, 10, true);
-  set(g, 14, 9, true);
-  set(g, 13, 11, true);
-  return g;
+function frameAt(index: number): boolean[][] {
+  const grid = cloneGrid(baseBody());
+  const points = TAIL[index] ?? TAIL[0]!;
+  for (const [x, y] of points) {
+    set(grid, x, y, true);
+  }
+  return grid;
 }
 
 function toFrame(index: number, grid: boolean[][]): PixelFrame {
@@ -131,10 +112,9 @@ function toFrame(index: number, grid: boolean[][]): PixelFrame {
 }
 
 export function getPlaceholderFrames(): PixelFrame[] {
-  return [
-    toFrame(1, frame1()),
-    toFrame(2, frame2()),
-    toFrame(3, frame3()),
-    toFrame(4, frame4()),
-  ];
+  const frames: PixelFrame[] = [];
+  for (let i = 0; i < FRAME_COUNT; i++) {
+    frames.push(toFrame(i + 1, frameAt(i)));
+  }
+  return frames;
 }

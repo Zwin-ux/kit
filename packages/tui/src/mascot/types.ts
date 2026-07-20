@@ -1,6 +1,6 @@
 /** One animation frame as a monochrome bitmap (true = black pixel). */
 export interface PixelFrame {
-  /** Logical frame index 1–4. */
+  /** Logical frame index 1–6. */
   index: number;
   width: number;
   height: number;
@@ -12,13 +12,22 @@ export interface PixelFrame {
   path?: string;
 }
 
-export const FRAME_COUNT = 4;
+/** Alpha 1: six-frame tail wag. */
+export const FRAME_COUNT = 6;
 export const FRAME_FILES = [
   "kit-frame-1.png",
   "kit-frame-2.png",
   "kit-frame-3.png",
   "kit-frame-4.png",
+  "kit-frame-5.png",
+  "kit-frame-6.png",
 ] as const;
 
-/** Target idle cycle rate (ms between frames). */
-export const FRAME_DELAY_MS = 220;
+/**
+ * Target idle cycle rate (ms between frames).
+ * ~5–6 fps matches assets/pixel README (160–220 ms).
+ */
+export const FRAME_DELAY_MS = 180;
+
+/** Max height when loading high-res PNGs into the TUI. */
+export const TUI_FRAME_MAX_HEIGHT = 24;
