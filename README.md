@@ -244,7 +244,7 @@ Strict front matter. Clear body. Multi-agent compatibility.
 | Recommend · link · doctor | Durable catalog |
 | GitHub sign-in · explore | Global install |
 
-[ROADMAP](ROADMAP.md) · [ARCHITECTURE](ARCHITECTURE.md) · [CHANGELOG](CHANGELOG.md) · [CI](.github/README.md)
+[ROADMAP](ROADMAP.md) · [ARCHITECTURE](ARCHITECTURE.md) · [CHANGELOG](CHANGELOG.md) · [CI](.github/CI.md)
 
 ---
 
