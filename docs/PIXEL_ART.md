@@ -23,7 +23,18 @@ Style rules:
 
 ## Palette
 - TUI: black on white/transparent only
-- Marketing assets may later reintroduce limited color outside the TUI
+- GitHub / marketing assets: **black ink on warm paper** (`#F7F4ED`) so silhouettes stay visible on GitHub light *and* dark themes
+- Accent orange (`#C45C2A`) for rules and highlights only — never fill the fox
+- Do **not** ship black-on-transparent PNGs for the README (they vanish on dark mode)
+
+## Regenerating README assets
+
+```bash
+python packages/tui/scripts/generate-readme-assets.py
+# or: pnpm --filter @kit-skills/tui assets:readme
+```
+
+Writes: `docs/assets/readme-banner.png`, `kit-idle.gif`, `kit-flow.gif`, `readme-loop.png`, `readme-terminal.png`, pack tiles, social preview.
 
 ## Sizes
 Primary sizes:

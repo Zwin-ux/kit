@@ -1,50 +1,64 @@
 <p align="center">
-  <img src="docs/assets/readme-banner.png" alt="KIT — Portable Agent Skills" width="520" />
+  <img src="docs/assets/readme-banner.png" alt="KIT — Portable Agent Skills" width="720" />
 </p>
 
 <p align="center">
-  <img src="assets/pixel/kit-idle.gif" alt="Kit idle animation — pixel fox silhouette" width="280" />
-</p>
-
-<p align="center">
-  <img src="docs/assets/readme-loop.png" alt="Point · Recommend · Install · Link" width="480" />
+  <img src="docs/assets/kit-idle.gif" alt="Kit idle — pixel fox mascot" width="200" />
 </p>
 
 <p align="center">
   <strong>One library. Many agents.</strong><br />
-  Point Kit at a project. Install a starter pack. Wire skills into Claude Code, Grok Build, and Codex.
+  Point Kit at a project. Install a starter pack.<br />
+  Wire skills into Claude Code, Grok Build, and Codex.
 </p>
 
 <p align="center">
-  <a href="#quick-start"><img src="https://img.shields.io/badge/quick_start-black?style=for-the-badge" alt="Quick start" /></a>
-  <a href="#starter-packs"><img src="https://img.shields.io/badge/7_packs-black?style=for-the-badge" alt="7 packs" /></a>
-  <a href="#tui"><img src="https://img.shields.io/badge/pixel_tui-black?style=for-the-badge" alt="Pixel TUI" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black?style=for-the-badge" alt="MIT" /></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/quick_start-1a1a1a?style=for-the-badge" alt="Quick start" /></a>
+  <a href="#starter-packs"><img src="https://img.shields.io/badge/7_packs-1a1a1a?style=for-the-badge" alt="7 packs" /></a>
+  <a href="#tui"><img src="https://img.shields.io/badge/pixel_tui-1a1a1a?style=for-the-badge" alt="Pixel TUI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-c45c2a?style=for-the-badge" alt="MIT" /></a>
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#starter-packs">Packs</a> ·
-  <a href="#tui">TUI</a> ·
-  <a href="#cli">CLI</a> ·
-  <a href="docs/STARTER_PACKS.md">Docs</a> ·
+  <a href="#quick-start">Quick start</a>
+  ·
+  <a href="#how-it-works">How it works</a>
+  ·
+  <a href="#starter-packs">Packs</a>
+  ·
+  <a href="#tui">TUI</a>
+  ·
+  <a href="#cli">CLI</a>
+  ·
+  <a href="docs/STARTER_PACKS.md">Docs</a>
+  ·
   <a href="https://github.com/Zwin-ux/kit/releases/tag/v0.1.0-alpha">Alpha</a>
 </p>
 
 ---
 
-## What you get
+## How it works
 
-```text
-  ★  point at a repo
-  ★  auto-recommend the right pack + skills
-  ★  install with ↵ (or one CLI command)
-  ★  apply into the project
-  ★  link into your agent harness
-  ★  doctor green
-```
+<p align="center">
+  <img src="docs/assets/kit-flow.gif" alt="Point → Recommend → Install → Link" width="560" />
+</p>
 
-**Kit** is the portable skills layer for coding agents — strict `SKILL.md`, offline library, seven curated packs, and a pixel TUI with kit-idle.
+<p align="center">
+  <img src="docs/assets/readme-loop.png" alt="POINT · RECOMMEND · INSTALL · LINK" width="420" />
+</p>
+
+| Step | What happens |
+|------|----------------|
+| **Point** | Aim Kit at a repo folder |
+| **Recommend** | Score the right pack + skills from real signals |
+| **Install** | Land a curated pack in the offline library |
+| **Link** | Wire skills into Claude Code, Grok Build, or Codex |
+
+<p align="center">
+  <img src="docs/assets/readme-terminal.png" alt="kit recommend → apply → link" width="560" />
+</p>
+
+**Kit** is the portable skills layer for coding agents — strict `SKILL.md`, offline library, seven starter packs, and a pixel TUI with kit-idle.
 
 ---
 
@@ -60,7 +74,7 @@ pnpm install && pnpm build
 
 <table>
 <tr>
-<td width="50%">
+<td width="50%" valign="top">
 
 **Windows**
 
@@ -74,7 +88,7 @@ pnpm install && pnpm build
 ```
 
 </td>
-<td width="50%">
+<td width="50%" valign="top">
 
 **macOS / Linux**
 
@@ -97,33 +111,33 @@ Run from the repo root after build (`.\kit.cmd` or `pnpm kit --`).
 
 ## Starter packs
 
-Seven kits. Stack packs **extend essentials** so base skills always ride along.
+Seven kits. Stack packs **extend essentials**, so base skills always ride along.
 
 <p align="center">
-  <img src="docs/assets/packs/essentials.png" width="56" alt="essentials" />
-  &nbsp;
-  <img src="docs/assets/packs/web-app.png" width="56" alt="web-app" />
-  &nbsp;
-  <img src="docs/assets/packs/library.png" width="56" alt="library" />
-  &nbsp;
-  <img src="docs/assets/packs/cli-tool.png" width="56" alt="cli-tool" />
-  &nbsp;
-  <img src="docs/assets/packs/api-service.png" width="56" alt="api-service" />
-  &nbsp;
-  <img src="docs/assets/packs/full-stack.png" width="56" alt="full-stack" />
-  &nbsp;
-  <img src="docs/assets/packs/data-ml.png" width="56" alt="data-ml" />
+  <img src="docs/assets/packs/essentials.png" width="48" alt="essentials" />
+  &nbsp;&nbsp;
+  <img src="docs/assets/packs/web-app.png" width="48" alt="web-app" />
+  &nbsp;&nbsp;
+  <img src="docs/assets/packs/library.png" width="48" alt="library" />
+  &nbsp;&nbsp;
+  <img src="docs/assets/packs/cli-tool.png" width="48" alt="cli-tool" />
+  &nbsp;&nbsp;
+  <img src="docs/assets/packs/api-service.png" width="48" alt="api-service" />
+  &nbsp;&nbsp;
+  <img src="docs/assets/packs/full-stack.png" width="48" alt="full-stack" />
+  &nbsp;&nbsp;
+  <img src="docs/assets/packs/data-ml.png" width="48" alt="data-ml" />
 </p>
 
 | | Pack | Best for |
-|---|------|----------|
-| <img src="docs/assets/packs/essentials.png" width="40" alt="" /> | **essentials** | Any repo — start here |
-| <img src="docs/assets/packs/web-app.png" width="40" alt="" /> | **web-app** | Apps and sites |
-| <img src="docs/assets/packs/library.png" width="40" alt="" /> | **library** | Packages and SDKs |
-| <img src="docs/assets/packs/cli-tool.png" width="40" alt="" /> | **cli-tool** | Developer CLIs |
-| <img src="docs/assets/packs/api-service.png" width="40" alt="" /> | **api-service** | HTTP backends |
-| <img src="docs/assets/packs/full-stack.png" width="40" alt="" /> | **full-stack** | UI + API products |
-| <img src="docs/assets/packs/data-ml.png" width="40" alt="" /> | **data-ml** | Data and ML work |
+|:---:|:-----|:---------|
+| <img src="docs/assets/packs/essentials.png" width="36" alt="" /> | **essentials** | Any repo — start here |
+| <img src="docs/assets/packs/web-app.png" width="36" alt="" /> | **web-app** | Apps and sites |
+| <img src="docs/assets/packs/library.png" width="36" alt="" /> | **library** | Packages and SDKs |
+| <img src="docs/assets/packs/cli-tool.png" width="36" alt="" /> | **cli-tool** | Developer CLIs |
+| <img src="docs/assets/packs/api-service.png" width="36" alt="" /> | **api-service** | HTTP backends |
+| <img src="docs/assets/packs/full-stack.png" width="36" alt="" /> | **full-stack** | UI + API products |
+| <img src="docs/assets/packs/data-ml.png" width="36" alt="" /> | **data-ml** | Data and ML work |
 
 ```bash
 pnpm kit -- recommend --dir ../my-app
@@ -154,14 +168,14 @@ Skills this project likely wants
   · a11y-pass · ship-checklist · pr-ready · write-tests
 ```
 
-In the TUI: **`o`** → type a path → Enter. Home shows the ★ line and suggested skills.
+In the TUI: press **`o`**, type a path, hit Enter. Home shows the ★ line and suggested skills.
 
 ---
 
 ## TUI
 
 <p align="center">
-  <img src="assets/pixel/kit-idle.gif" width="160" alt="kit-idle" />
+  <img src="docs/assets/kit-idle.gif" width="140" alt="kit-idle" />
 </p>
 
 ```bash
@@ -169,19 +183,19 @@ pnpm tui          # or  .\kit.cmd tui
 ```
 
 | Key | What happens |
-|-----|----------------|
+|:---:|:-------------|
 | **1–7** | Install a starter pack (first-run) |
 | **↵** | Install the selected toolkit |
 | **a** | Apply pack to the pointed project |
 | **o** | Point Kit at a project folder |
-| **k** | Paths — pick harness, approve the folder, link |
+| **k** | Paths — pick harness, approve folder, link |
 | **d** | Doctor |
 | **e** | Explore registry |
 | **l** | Library · **v** validate · **t** test |
 | **q** | Quit |
 
 kit-idle is the product face. Motion is short and purposeful.  
-`KIT_REDUCED_MOTION=1` skips delays.
+Set `KIT_REDUCED_MOTION=1` to skip delays.
 
 → [docs/TUI_SCREENS.md](docs/TUI_SCREENS.md)
 
@@ -242,13 +256,19 @@ pnpm test && pnpm typecheck
 pnpm kit -- doctor
 ```
 
-[CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md)
+Regenerate README marketing assets (paper-bg banner, GIFs, pack tiles):
+
+```bash
+python packages/tui/scripts/generate-readme-assets.py
+```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md) · [docs/PIXEL_ART.md](docs/PIXEL_ART.md)
 
 ---
 
 <p align="center">
-  <img src="docs/assets/kit-wordmark.png" alt="KIT" width="200" /><br />
-  <img src="docs/assets/kit-mascot.png" alt="Kit mascot" width="96" /><br />
+  <img src="docs/assets/kit-wordmark.png" alt="KIT" width="160" /><br />
+  <img src="docs/assets/kit-mascot.png" alt="Kit mascot" width="120" /><br />
   <sub>Skills your agents actually use.</sub>
 </p>
 

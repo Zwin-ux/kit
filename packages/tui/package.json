@@ -24,6 +24,7 @@
     "test:watch": "vitest",
     "icons:write": "node scripts/write-pack-icons.mjs",
     "banner:write": "node scripts/write-readme-banner.mjs",
+    "assets:readme": "python scripts/generate-readme-assets.py",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

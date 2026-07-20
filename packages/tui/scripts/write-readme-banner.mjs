@@ -1,9 +1,13 @@
 /**
- * Generate GitHub README hero assets:
- * - docs/assets/kit-wordmark.png  — large "KIT" pixel wordmark
- * - docs/assets/readme-banner.png — wide banner: wordmark + tagline
+ * Legacy pixel-text hero assets (wordmark / banner / loop strip).
  *
- * Pure black on transparent (matches kit-idle language).
+ * Prefer the full marketing set (paper background + GIFs + pack tiles):
+ *   python packages/tui/scripts/generate-readme-assets.py
+ *
+ * Black-on-transparent looks fine on light GitHub but vanishes on dark mode.
+ * This script still writes transparent PNGs for TUI experiments — use the
+ * Python generator for anything linked from README.md.
+ *
  * Run: node packages/tui/scripts/write-readme-banner.mjs
  */
 import { mkdir, writeFile } from "node:fs/promises";
