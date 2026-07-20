@@ -2,9 +2,9 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { PackListItem, ToolkitRecommendation } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
-import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { StatusIcon } from "../mascot/StatusIcon.js";
 import { Footer, Header } from "../components/Chrome.js";
+import { ScreenShell } from "../components/ScreenShell.js";
 import {
   ErrorLine,
   ProgressBar,
@@ -57,20 +57,11 @@ export function Packs({
     (busy ? "scan" : statusMessage ? "success" : "idle");
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
+    <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
       <Header screen="Packs" detail="toolkits" />
 
-      <Box marginTop={1} flexDirection="row">
-        <Box marginRight={2} flexShrink={0}>
-          <MascotPlayer
-            frames={frames}
-            playing
-            size="compact"
-            variant={variant}
-          />
-        </Box>
-
-        <Box flexDirection="column" flexGrow={1}>
+      <Box marginTop={1} width="100%">
+        <ScreenShell frames={frames} mascotVariant={variant}>
           <Text bold>
             <StatusIcon id="pack" size="mini" /> Browse
           </Text>
@@ -97,7 +88,7 @@ export function Packs({
           )}
           {selected && !busy ? (
             <Box marginTop={1}>
-              <Text dimColor>
+              <Text dimColor wrap="truncate">
                 <StatusIcon id="arrow" size="mini" dimColor /> ↵ install{" "}
                 {selected.title}
                 {selected.extends?.length
@@ -110,7 +101,7 @@ export function Packs({
           <Box marginTop={1}>
             <ActionFlash message={actionFlash} nonce={actionNonce} />
           </Box>
-        </Box>
+        </ScreenShell>
       </Box>
 
       {busy && progress ? (

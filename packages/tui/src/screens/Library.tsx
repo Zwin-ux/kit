@@ -2,10 +2,10 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { CheckResult, InstalledSkill } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
-import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { StatusIcon } from "../mascot/StatusIcon.js";
 import { levelToStatusIcon } from "../mascot/statusIcons.js";
 import { Footer, Header } from "../components/Chrome.js";
+import { ScreenShell } from "../components/ScreenShell.js";
 import { ErrorLine, Pulse, SuccessLine } from "../components/Motion.js";
 import { ActionFlash, SelectPulse, StaggerLines } from "../motion/index.js";
 
@@ -21,7 +21,6 @@ export interface LibraryProps {
   libraryError?: string;
   actionFlash?: string;
   actionNonce?: number;
-  /** Last validate/test checks for selected skill. */
   lastChecks?: CheckResult[];
 }
 
@@ -43,20 +42,11 @@ export function Library({
   const empty = skills.length === 0;
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
+    <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
       <Header screen="Library" detail={`${skills.length} skill(s)`} />
 
-      <Box marginTop={1} flexDirection="row">
-        <Box marginRight={2} flexShrink={0}>
-          <MascotPlayer
-            frames={frames}
-            playing
-            size="compact"
-            variant={mascotVariant}
-          />
-        </Box>
-
-        <Box flexDirection="column" flexGrow={1}>
+      <Box marginTop={1} width="100%">
+        <ScreenShell frames={frames} mascotVariant={mascotVariant}>
           {empty ? (
             <Box flexDirection="column">
               <Box>
@@ -77,7 +67,7 @@ export function Library({
           ) : (
             <Box flexDirection="column">
               {skills.map((skill, index) => (
-                <Text key={skill.name}>
+                <Text key={skill.name} wrap="truncate">
                   <SelectPulse
                     selected={index === selectedIndex}
                     tick={selectTick}
@@ -92,8 +82,12 @@ export function Library({
 
           {selected ? (
             <Box marginTop={1} flexDirection="column">
-              <Text dimColor>{selected.description}</Text>
-              <Text dimColor>{selected.installPath}</Text>
+              <Text dimColor wrap="wrap">
+                {selected.description}
+              </Text>
+              <Text dimColor wrap="truncate">
+                {selected.installPath}
+              </Text>
               <Text dimColor>
                 <StatusIcon id="arrow" size="mini" dimColor /> v validate · t
                 test · r remove
@@ -104,7 +98,7 @@ export function Library({
           {lastChecks && lastChecks.length > 0 ? (
             <Box marginTop={1} flexDirection="column">
               {lastChecks.slice(0, 6).map((c) => (
-                <Text key={`${c.id}-${c.level}`} dimColor>
+                <Text key={`${c.id}-${c.level}`} dimColor wrap="truncate">
                   <StatusIcon id={levelToStatusIcon(c.level)} size="mini" />{" "}
                   {c.message}
                 </Text>
@@ -121,7 +115,7 @@ export function Library({
           <Box marginTop={1}>
             <ActionFlash message={actionFlash} nonce={actionNonce} />
           </Box>
-        </Box>
+        </ScreenShell>
       </Box>
 
       {statusMessage ? (

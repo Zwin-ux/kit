@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import type { PackListItem } from "@mzwin/kit-core";
 import type { ToolkitRecommendation } from "@mzwin/kit-core";
 import { PackIcon } from "../mascot/PackIcon.js";
+import { useLayoutScale } from "../mascot/useLayoutScale.js";
 import { SelectPulse } from "../motion/index.js";
 
 export interface ToolkitPickerProps {
@@ -13,12 +14,13 @@ export interface ToolkitPickerProps {
   filter?: string;
   appliedNames?: Set<string>;
   dense?: boolean;
-  /** Show full 16×16 silhouette under the selected row. Default true. */
+  /** Show detail silhouette under the selected row. Default true. */
   showSelectedIcon?: boolean;
 }
 
 /**
- * Shared pack/toolkit list with silhouette marks + recommendation badges.
+ * Shared pack/toolkit list with animated silhouette marks + recommendation badges.
+ * Detail icons stay smaller than the mascot (layout packDetailSize).
  */
 export function ToolkitPicker({
   packs,
@@ -30,6 +32,7 @@ export function ToolkitPicker({
   dense = false,
   showSelectedIcon = true,
 }: ToolkitPickerProps): React.ReactElement {
+  const scale = useLayoutScale();
   const top = recommended[0]?.packName;
   const scoreByName = new Map(
     recommended.map((r) => [r.packName, r] as const),
@@ -76,7 +79,7 @@ export function ToolkitPicker({
           <Box key={pack.name} flexDirection="column">
             <Text>
               <SelectPulse selected={selected} tick={selectTick} />{" "}
-              <PackIcon packName={pack.name} size="mini" />{" "}
+              <PackIcon packName={pack.name} size="mini" animate />{" "}
               <Text bold={selected}>{pack.title}</Text>
               <Text dimColor>
                 {" "}
@@ -89,14 +92,28 @@ export function ToolkitPicker({
             {!dense && selected ? (
               <Box marginLeft={2} marginTop={0} flexDirection="row">
                 {showSelectedIcon ? (
-                  <Box marginRight={2} flexShrink={0}>
-                    <PackIcon packName={pack.name} size="full" />
+                  <Box
+                    marginRight={2}
+                    flexShrink={0}
+                    width={scale.packDetailSize}
+                    height={scale.packDetailSize}
+                  >
+                    <PackIcon
+                      packName={pack.name}
+                      size="detail"
+                      detailEdge={scale.packDetailSize}
+                      animate
+                    />
                   </Box>
                 ) : null}
-                <Box flexDirection="column">
-                  <Text dimColor>{pack.description}</Text>
+                <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+                  <Text dimColor wrap="wrap">
+                    {pack.description}
+                  </Text>
                   {rec && rec.reasons.length > 0 ? (
-                    <Text dimColor>{rec.reasons[0]}</Text>
+                    <Text dimColor wrap="wrap">
+                      {rec.reasons[0]}
+                    </Text>
                   ) : null}
                 </Box>
               </Box>

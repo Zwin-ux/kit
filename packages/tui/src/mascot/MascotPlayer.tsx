@@ -11,6 +11,8 @@ import {
   type MascotVariant,
   type PixelFrame,
 } from "./types.js";
+import { useLayoutScale } from "./useLayoutScale.js";
+import { splashMascotFit, type LayoutScale } from "./layoutScale.js";
 
 export interface MascotPlayerProps {
   frames: PixelFrame[];
@@ -19,10 +21,11 @@ export interface MascotPlayerProps {
   /** Delay between frames in ms (default matches variant). */
   delayMs?: number;
   /**
-   * compact = side rail (single-width blocks, smaller)
-   * full = splash (double-wide cells)
+   * compact = side rail (layout-scaled, letterboxed)
+   * full / hero = splash (larger on wide terminals)
+   * auto = compact on rail sizing
    */
-  size?: "full" | "compact";
+  size?: "full" | "compact" | "hero" | "auto";
   /**
    * Optional caption under the animation.
    * Prefer empty for product UI — avoid asset-path / debug strings.
@@ -37,25 +40,30 @@ export interface MascotPlayerProps {
    * Frames themselves should already match the variant.
    */
   variant?: MascotVariant;
+  /** Override layout scale (tests). */
+  scale?: LayoutScale;
 }
 
 /**
  * Live terminal playback of the Kit mascot.
  *
- * Renders each row as its own Text inside a fixed-width Box so the fox
- * doesn’t wrap mid-sprite and get “cut off” in narrow layouts.
+ * Every frame is letterboxed into a fixed canvas so tail/ear motion never
+ * changes the reserved terminal box (no cut-off, no size jump).
  * KIT_REDUCED_MOTION=1 freezes on frame 0.
  */
 export function MascotPlayer({
   frames,
   playing = true,
   delayMs,
-  size = "full",
+  size = "compact",
   caption,
   showCounter = false,
   label,
   variant = "idle",
+  scale: scaleProp,
 }: MascotPlayerProps): React.ReactElement {
+  const liveScale = useLayoutScale();
+  const scale = scaleProp ?? liveScale;
   const [index, setIndex] = useState(0);
   const frameCount = frames.length;
   const enabled = motionEnabled();
@@ -70,7 +78,6 @@ export function MascotPlayer({
     return () => clearInterval(timer);
   }, [shouldPlay, frameCount, effectiveDelay]);
 
-  // Reset to first frame when variant / frame set length changes
   useEffect(() => {
     setIndex(0);
   }, [variant, frameCount]);
@@ -78,11 +85,29 @@ export function MascotPlayer({
   const frame = frames[enabled ? index : 0] ?? frames[0];
 
   const renderOpts: RenderFrameOptions = useMemo(() => {
-    if (size === "compact") {
-      return { cell: "█", empty: " ", tight: true, pad: 1 };
+    const isHero = size === "full" || size === "hero";
+    if (isHero) {
+      const splash = splashMascotFit(scale);
+      return {
+        cell: splash.cell === "double" ? "██" : "█",
+        empty: splash.cell === "double" ? "  " : " ",
+        tight: true,
+        pad: 0,
+        fit: { width: splash.width, height: splash.height },
+      };
     }
-    return { cell: "██", empty: "  ", tight: true, pad: 1 };
-  }, [size]);
+    // compact / auto rail — fixed fit from terminal scale
+    return {
+      cell: scale.mascotCell === "double" ? "██" : "█",
+      empty: scale.mascotCell === "double" ? "  " : " ",
+      tight: true,
+      pad: 0,
+      fit: {
+        width: scale.mascotFit.width,
+        height: scale.mascotFit.height,
+      },
+    };
+  }, [size, scale]);
 
   const lines = useMemo(() => {
     if (!frame) return [] as string[];
@@ -94,6 +119,8 @@ export function MascotPlayer({
     return renderedCellWidth(frame, renderOpts);
   }, [frame, renderOpts]);
 
+  const height = lines.length;
+
   if (!frame) {
     return (
       <Box>
@@ -103,11 +130,19 @@ export function MascotPlayer({
   }
 
   return (
-    <Box flexDirection="column" flexShrink={0}>
+    <Box flexDirection="column" flexShrink={0} width={Math.max(width, 1)}>
       {label ? <Text dimColor>{label}</Text> : null}
-      <Box flexDirection="column" width={Math.max(width, 1)} flexShrink={0}>
+      <Box
+        flexDirection="column"
+        width={Math.max(width, 1)}
+        height={height}
+        flexShrink={0}
+        overflow="hidden"
+      >
         {lines.map((line, i) => (
-          <Text key={i}>{line}</Text>
+          <Text key={i} wrap="truncate">
+            {line}
+          </Text>
         ))}
       </Box>
       {showCounter ? (

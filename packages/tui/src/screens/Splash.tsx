@@ -10,26 +10,21 @@ export interface SplashProps {
 }
 
 /**
- * Splash — full kit-idle loop + short brand line.
+ * Splash — full kit-idle loop scaled for the terminal (hero on full-screen).
  * No asset-path / debug chrome — product face only.
  */
 export function Splash({ frames }: SplashProps): React.ReactElement {
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
+    <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
       <Header screen="Splash" />
 
       <Box marginTop={1} flexShrink={0}>
-        <MascotPlayer frames={frames} playing variant="idle" />
+        <MascotPlayer frames={frames} playing size="hero" variant="idle" />
       </Box>
 
       <Box marginTop={1} flexDirection="column">
         <Text bold>Kit</Text>
-        <TypeLine
-          text="Portable agent skills"
-          dimColor
-          cursor
-          cps={30}
-        />
+        <TypeLine text="Portable agent skills" dimColor cursor cps={30} />
       </Box>
 
       <Footer keys="any key · q quit" />

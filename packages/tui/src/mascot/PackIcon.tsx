@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { motionEnabled, useIntervalFrame } from "../motion/index.js";
 import {
-  PACK_ICON_SIZE,
   packIconGlyph,
   renderPackIconLines,
 } from "./packIcons.js";
@@ -9,28 +9,47 @@ import {
 export interface PackIconProps {
   packName: string;
   /**
-   * full = 16-line silhouette (selected detail)
-   * mini = single glyph for list rows
+   * mini = single animated glyph (list rows)
+   * detail = small silhouette (selected pack) — always smaller than mascot
+   * full = legacy alias for detail
    */
-  size?: "full" | "mini";
+  size?: "full" | "detail" | "mini";
+  /** Pixel edge for detail mode (6–8). From layout scale. */
+  detailEdge?: number;
+  /** Animate glyph / silhouette. Default true when motion enabled. */
+  animate?: boolean;
 }
 
 /**
  * Silhouette icon for a starter pack — same pure black language as kit-idle.
+ * Detail size is intentionally smaller than the mascot rail so logos never dwarf the fox.
  */
 export function PackIcon({
   packName,
   size = "mini",
+  detailEdge = 8,
+  animate = true,
 }: PackIconProps): React.ReactElement {
+  const anim = animate && motionEnabled();
+  const frame = useIntervalFrame(4, 280, anim);
+
   if (size === "mini") {
-    return <Text>{packIconGlyph(packName)}</Text>;
+    return <Text>{packIconGlyph(packName, anim ? frame : 0)}</Text>;
   }
 
-  const lines = renderPackIconLines(packName);
+  // detail / full — fixed edge, animated pulse, single-width cells
+  const edge = Math.max(6, Math.min(10, detailEdge));
+  const lines = renderPackIconLines(packName, {
+    edge,
+    frame: anim ? frame : 0,
+  });
+
   return (
-    <Box flexDirection="column" width={PACK_ICON_SIZE} flexShrink={0}>
+    <Box flexDirection="column" width={edge} height={edge} flexShrink={0}>
       {lines.map((line, i) => (
-        <Text key={i}>{line}</Text>
+        <Text key={i} wrap="truncate">
+          {line}
+        </Text>
       ))}
     </Box>
   );

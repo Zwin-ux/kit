@@ -2,9 +2,10 @@ import React, { useEffect, useState } from "react";
 import { Box, Text } from "ink";
 import type { RegistryPackSummary } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
-import { MascotPlayer } from "../mascot/MascotPlayer.js";
+import { PackIcon } from "../mascot/PackIcon.js";
 import { StatusIcon } from "../mascot/StatusIcon.js";
 import { Footer, Header } from "../components/Chrome.js";
+import { ScreenShell } from "../components/ScreenShell.js";
 import { ErrorLine, Spinner, SuccessLine } from "../components/Motion.js";
 import { SelectPulse } from "../motion/index.js";
 
@@ -51,21 +52,14 @@ export function Explore({
   }, [loading]);
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
+    <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
       <Header screen="Explore" detail="registry" />
 
-      <Box marginTop={1} flexDirection="row">
-        <Box marginRight={2} flexShrink={0}>
-          <MascotPlayer
-            frames={frames}
-            playing
-            size="compact"
-            variant={variant}
-          />
-        </Box>
-
-        <Box flexDirection="column" flexGrow={1}>
-          <Text dimColor>{registryUrl}</Text>
+      <Box marginTop={1} width="100%">
+        <ScreenShell frames={frames} mascotVariant={variant}>
+          <Text dimColor wrap="truncate">
+            {registryUrl}
+          </Text>
           {query ? <Text dimColor>/{query}</Text> : null}
 
           <Box marginTop={1} flexDirection="column">
@@ -86,12 +80,12 @@ export function Explore({
             ) : (
               packs.map((pack, index) => {
                 return (
-                  <Text key={pack.name}>
+                  <Text key={pack.name} wrap="truncate">
                     <SelectPulse
                       selected={index === selectedIndex}
                       tick={selectTick}
                     />{" "}
-                    <StatusIcon id="pack" size="mini" dimColor />{" "}
+                    <PackIcon packName={pack.name} size="mini" animate />{" "}
                     <Text bold={index === selectedIndex}>{pack.title}</Text>
                     <Text dimColor> · {pack.skillCount} skills</Text>
                   </Text>
@@ -102,14 +96,16 @@ export function Explore({
 
           {selected && !loading ? (
             <Box marginTop={1} flexDirection="column">
-              <Text dimColor>{selected.description}</Text>
+              <Text dimColor wrap="wrap">
+                {selected.description}
+              </Text>
               <Text dimColor>
                 <StatusIcon id="arrow" size="mini" dimColor /> ↵ install local
                 match · / search · r refresh
               </Text>
             </Box>
           ) : null}
-        </Box>
+        </ScreenShell>
       </Box>
 
       {statusMessage ? (

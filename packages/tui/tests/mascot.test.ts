@@ -9,8 +9,11 @@ import {
 import {
   OFFICIAL_PACK_ICONS,
   PACK_ICON_SIZE,
+  getPackIconAnimBitmap,
   getPackIconBitmap,
+  renderPackIconLines,
 } from "../src/mascot/packIcons.js";
+import { layoutScaleFromTerminal } from "../src/mascot/layoutScale.js";
 import {
   STATUS_ICON_IDS,
   STATUS_ICON_SIZE,
@@ -63,6 +66,25 @@ describe("placeholder mascot frames", () => {
     expect(lines[0]?.trim()).toBe("");
     expect(lines[lines.length - 1]?.trim()).toBe("");
   });
+
+  it("letterbox fit keeps every frame the same terminal size", () => {
+    const frames = getPlaceholderFrames();
+    const fit = { width: 12, height: 12 };
+    const sizes = frames.map((frame) => {
+      const lines = renderFrame(frame, {
+        tight: true,
+        pad: 0,
+        fit,
+        cell: "█",
+        empty: " ",
+      }).split("\n");
+      return { h: lines.length, w: lines[0]?.length ?? 0 };
+    });
+    for (const s of sizes) {
+      expect(s.h).toBe(12);
+      expect(s.w).toBe(12);
+    }
+  });
 });
 
 describe("pack silhouette icons", () => {
@@ -73,6 +95,45 @@ describe("pack silhouette icons", () => {
       expect(bmp).toHaveLength(PACK_ICON_SIZE * PACK_ICON_SIZE);
       expect(bmp.some(Boolean)).toBe(true);
     }
+  });
+
+  it("detail render is smaller than mascot canvas (8 vs 12)", () => {
+    for (const name of OFFICIAL_PACK_ICONS) {
+      const lines = renderPackIconLines(name, { edge: 8, frame: 0 });
+      expect(lines).toHaveLength(8);
+      expect(lines[0]).toHaveLength(8);
+    }
+  });
+
+  it("animation frames stay fixed size", () => {
+    for (let f = 0; f < 4; f++) {
+      const bmp = getPackIconAnimBitmap("essentials", f, 8);
+      expect(bmp).toHaveLength(64);
+    }
+  });
+});
+
+describe("layout scale", () => {
+  it("keeps pack detail smaller than mascot fit", () => {
+    for (const [cols, rows] of [
+      [60, 20],
+      [80, 24],
+      [120, 40],
+    ] as const) {
+      const s = layoutScaleFromTerminal(cols, rows);
+      expect(s.packDetailSize).toBeLessThanOrEqual(s.mascotFit.height);
+      expect(s.packDetailSize).toBeLessThanOrEqual(s.mascotFit.width);
+    }
+  });
+
+  it("grows mascot on full-screen terminals", () => {
+    const narrow = layoutScaleFromTerminal(60, 20);
+    const wide = layoutScaleFromTerminal(120, 40);
+    expect(wide.mascotFit.height).toBeGreaterThanOrEqual(
+      narrow.mascotFit.height,
+    );
+    expect(wide.mode).toBe("wide");
+    expect(narrow.mode).toBe("narrow");
   });
 });
 

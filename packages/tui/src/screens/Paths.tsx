@@ -7,10 +7,10 @@ import type {
   PathScope,
 } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
-import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { StatusIcon } from "../mascot/StatusIcon.js";
 import { harnessToStatusIcon } from "../mascot/statusIcons.js";
 import { Footer, Header } from "../components/Chrome.js";
+import { ScreenShell } from "../components/ScreenShell.js";
 import { ErrorLine, Pulse, Spinner, SuccessLine } from "../components/Motion.js";
 import { ActionFlash, SelectPulse } from "../motion/index.js";
 
@@ -24,11 +24,8 @@ export interface PathsProps {
   linking?: boolean;
   selectedHarnessIndex: number;
   selectTick: number;
-  /** project = .claude/skills etc under cwd; personal = user home harness dirs */
   scope: PathScope;
-  /** Target folder that will receive skill links */
   targetRoot?: string;
-  /** Waiting for y/n before writing into targetRoot */
   confirmWrite?: boolean;
   linkResult?: LinkResult;
   statusMessage?: string;
@@ -67,25 +64,16 @@ export function Paths({
         : "idle");
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
+    <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
       <Header screen="Paths" detail={`${scope} · link`} />
 
-      <Box marginTop={1} flexDirection="row">
-        <Box marginRight={2} flexShrink={0}>
-          <MascotPlayer
-            frames={frames}
-            playing
-            size="compact"
-            variant={variant}
-          />
-        </Box>
-
-        <Box flexDirection="column" flexGrow={1}>
+      <Box marginTop={1} width="100%">
+        <ScreenShell frames={frames} mascotVariant={variant}>
           <Box>
             <StatusIcon id="link" size="mini" />
             <Text bold> Where should skills land?</Text>
           </Box>
-          <Text dimColor>
+          <Text dimColor wrap="wrap">
             Pick a harness · scope · approve the folder before any write
           </Text>
 
@@ -105,7 +93,7 @@ export function Paths({
                 (e) => e.harness === id && e.scope === scope,
               );
               return (
-                <Text key={id}>
+                <Text key={id} wrap="truncate">
                   <SelectPulse
                     selected={index === selectedHarnessIndex}
                     tick={selectTick}
@@ -139,7 +127,7 @@ export function Paths({
               <Text bold>
                 <StatusIcon id="folder" size="mini" /> Target folder
               </Text>
-              <Text>{targetRoot}</Text>
+              <Text wrap="truncate">{targetRoot}</Text>
             </Box>
           ) : null}
 
@@ -151,7 +139,7 @@ export function Paths({
             </Box>
           ) : (
             <Box marginTop={1}>
-              <Text dimColor>
+              <Text dimColor wrap="truncate">
                 <StatusIcon id="arrow" size="mini" dimColor /> ↵ propose{" "}
                 {selected} · p plan only · tab scope · r refresh
               </Text>
@@ -170,7 +158,7 @@ export function Paths({
 
           {linkResult ? (
             <Box marginTop={1} flexDirection="column">
-              <Text dimColor>
+              <Text dimColor wrap="truncate">
                 <StatusIcon
                   id={linkResult.dryRun ? "info" : "ok"}
                   size="mini"
@@ -182,7 +170,7 @@ export function Paths({
                   : ""}
               </Text>
               {!linkResult.dryRun && linkResult.items[0] ? (
-                <Text dimColor>
+                <Text dimColor wrap="truncate">
                   → {linkResult.items[0].targetDir.replace(/[/\\][^/\\]+$/, "")}
                 </Text>
               ) : null}
@@ -192,7 +180,7 @@ export function Paths({
           <Box marginTop={1}>
             <ActionFlash message={actionFlash} nonce={actionNonce} />
           </Box>
-        </Box>
+        </ScreenShell>
       </Box>
 
       {statusMessage ? (

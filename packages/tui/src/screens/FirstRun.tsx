@@ -1,10 +1,10 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { FIRST_RUN_PACK_OPTIONS } from "@mzwin/kit-core";
-import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { PackIcon } from "../mascot/PackIcon.js";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
 import { Footer, Header } from "../components/Chrome.js";
+import { ScreenShell } from "../components/ScreenShell.js";
 import { ErrorLine, Spinner, SuccessLine } from "../components/Motion.js";
 import { StaggerLines } from "../motion/index.js";
 
@@ -28,28 +28,22 @@ export function FirstRun({
       <Text>
         <Text bold>{option.key}</Text>
         <Text> </Text>
-        <PackIcon packName={option.name} size="mini" />
+        <PackIcon packName={option.name} size="mini" animate />
         <Text> {option.title}</Text>
       </Text>
-      <Text dimColor>  {option.blurb}</Text>
+      <Text dimColor wrap="truncate">
+        {"  "}
+        {option.blurb}
+      </Text>
     </Box>
   ));
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
+    <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
       <Header screen="First run" detail="starter pack" />
 
-      <Box marginTop={1} flexDirection="row">
-        <Box marginRight={2} flexShrink={0}>
-          <MascotPlayer
-            frames={frames}
-            playing
-            size="compact"
-            variant={mascotVariant}
-          />
-        </Box>
-
-        <Box flexDirection="column" flexGrow={1}>
+      <Box marginTop={1} width="100%">
+        <ScreenShell frames={frames} mascotVariant={mascotVariant}>
           <Text bold>Pick a starter</Text>
           <Text dimColor>
             7 kits · each ships dependency skills via essentials
@@ -58,7 +52,7 @@ export function FirstRun({
           <Box marginTop={1} flexDirection="column">
             <StaggerLines stepMs={45}>{optionNodes}</StaggerLines>
           </Box>
-        </Box>
+        </ScreenShell>
       </Box>
 
       {busy ? (

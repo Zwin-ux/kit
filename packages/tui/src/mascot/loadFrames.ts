@@ -3,6 +3,7 @@ import path from "node:path";
 import { PNG } from "pngjs";
 import { getPlaceholderFrames } from "./placeholderFrames.js";
 import { resolvePixelAssetsDir } from "./resolveAssetsDir.js";
+import { normalizeFrame } from "./renderBitmap.js";
 import {
   FRAME_COUNT,
   FRAME_FILES,
@@ -14,6 +15,9 @@ import {
   type MascotVariant,
   type PixelFrame,
 } from "./types.js";
+
+/** Canonical pixel canvas for all loaded mascot frames (no size jump). */
+const NORMALIZED_EDGE = 16;
 
 export interface LoadFramesResult {
   frames: PixelFrame[];
@@ -80,10 +84,11 @@ export async function loadMascotFrames(
     const filePath = path.join(assetsDir, fileName);
     try {
       const buffer = await readFile(filePath);
-      const frame = pngToFrame(buffer, i + 1, filePath, {
+      const raw = pngToFrame(buffer, i + 1, filePath, {
         maxHeight: TUI_FRAME_MAX_HEIGHT,
       });
-      frames.push(frame);
+      // Same 16×16 box every frame so animation never resizes the rail
+      frames.push(normalizeFrame(raw, NORMALIZED_EDGE, NORMALIZED_EDGE));
       fileFrameCount += 1;
     } catch {
       frames.push(placeholders[i]!);

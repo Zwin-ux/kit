@@ -2,10 +2,10 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { DoctorReport } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
-import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { StatusIcon } from "../mascot/StatusIcon.js";
 import { levelToStatusIcon } from "../mascot/statusIcons.js";
 import { Footer, Header } from "../components/Chrome.js";
+import { ScreenShell } from "../components/ScreenShell.js";
 import { CountUp, ErrorLine, Spinner } from "../components/Motion.js";
 import { ActionFlash } from "../motion/index.js";
 
@@ -36,7 +36,7 @@ export function Doctor({
     (loading ? "scan" : report?.ok ? "success" : "idle");
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
+    <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
       <Header
         screen="Doctor"
         {...(report
@@ -46,17 +46,8 @@ export function Doctor({
             : {})}
       />
 
-      <Box marginTop={1} flexDirection="row">
-        <Box marginRight={2} flexShrink={0}>
-          <MascotPlayer
-            frames={frames}
-            playing
-            size="compact"
-            variant={variant}
-          />
-        </Box>
-
-        <Box flexDirection="column" flexGrow={1}>
+      <Box marginTop={1} width="100%">
+        <ScreenShell frames={frames} mascotVariant={variant}>
           <Text bold>Install health</Text>
           <Text dimColor>Same checks as kit doctor · r re-run</Text>
 
@@ -73,7 +64,7 @@ export function Doctor({
                 {report.summary.warnings} warn · {report.summary.failed} fail
               </Text>
               {report.checks.map((c) => (
-                <Text key={`${c.id}-${c.message.slice(0, 24)}`}>
+                <Text key={`${c.id}-${c.message.slice(0, 24)}`} wrap="truncate">
                   <StatusIcon
                     id={levelToStatusIcon(c.level)}
                     size="mini"
@@ -98,7 +89,7 @@ export function Doctor({
           <Box marginTop={1}>
             <ActionFlash message={actionFlash} nonce={actionNonce} />
           </Box>
-        </Box>
+        </ScreenShell>
       </Box>
 
       {errorMessage ? (

@@ -8,9 +8,9 @@ import type {
   ToolkitRecommendation,
 } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
-import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { StatusIcon } from "../mascot/StatusIcon.js";
 import { Footer, Header, StatusLine } from "../components/Chrome.js";
+import { ScreenShell } from "../components/ScreenShell.js";
 import {
   CountUp,
   ErrorLine,
@@ -94,7 +94,7 @@ export function Home({
     (busy ? "scan" : celebrateCount !== undefined ? "success" : "idle");
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
+    <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
       <Header
         screen="Home"
         {...(busy
@@ -104,17 +104,8 @@ export function Home({
             : { detail: "local" })}
       />
 
-      <Box marginTop={1} flexDirection="row">
-        <Box flexDirection="column" marginRight={2} flexShrink={0}>
-          <MascotPlayer
-            frames={frames}
-            playing
-            size="compact"
-            variant={variant}
-          />
-        </Box>
-
-        <Box flexDirection="column" flexGrow={1}>
+      <Box marginTop={1} width="100%">
+        <ScreenShell frames={frames} mascotVariant={variant}>
           <Text bold>Pointed at</Text>
           {pointingProject ? (
             <Text>
@@ -122,20 +113,22 @@ export function Home({
               <BlinkCursor active />
             </Text>
           ) : (
-            <Text dimColor>
+            <Text dimColor wrap="truncate">
               <StatusIcon id="folder" size="mini" dimColor />{" "}
               {shortPath(targetProject)}
             </Text>
           )}
           {recommendSummary && !pointingProject ? (
-            <Text>
+            <Text wrap="truncate">
               <StatusIcon id="star" size="mini" /> {recommendSummary}
             </Text>
           ) : null}
           {topReasons.length > 0 && !pointingProject ? (
-            <Text dimColor>· {topReasons[0]}</Text>
+            <Text dimColor wrap="truncate">
+              · {topReasons[0]}
+            </Text>
           ) : null}
-          <Text dimColor>
+          <Text dimColor wrap="truncate">
             {userLogin ? `@${userLogin}` : "not logged in"}
             {doctorSummary ? ` · ${doctorSummary}` : ""}
             {" · o point"}
@@ -146,7 +139,7 @@ export function Home({
               <StatusIcon id="pack" size="mini" /> Toolkits
             </Text>
             {topPick ? (
-              <Text dimColor>
+              <Text dimColor wrap="truncate">
                 <StatusIcon id="star" size="mini" dimColor /> {topPick}{" "}
                 selected for this project
               </Text>
@@ -172,7 +165,7 @@ export function Home({
                 <StatusIcon id="skill" size="mini" /> Suggested skills
               </Text>
               {skillRecs.slice(0, 5).map((s) => (
-                <Text key={s.skillName} dimColor>
+                <Text key={s.skillName} dimColor wrap="truncate">
                   <StatusIcon id="skill" size="mini" dimColor /> {s.skillName}
                   {s.fromPack ? ` · ${s.fromPack}` : ""}
                 </Text>
@@ -192,7 +185,7 @@ export function Home({
             ) : (
               <>
                 {skills.slice(0, 4).map((skill) => (
-                  <Text key={skill.name} dimColor>
+                  <Text key={skill.name} dimColor wrap="truncate">
                     <StatusIcon id="ok" size="mini" dimColor /> {skill.name}
                   </Text>
                 ))}
@@ -207,7 +200,7 @@ export function Home({
             <Box marginTop={1} flexDirection="column">
               <Text bold>Applied here</Text>
               {applied.map((pack) => (
-                <Text key={pack.name} dimColor>
+                <Text key={pack.name} dimColor wrap="truncate">
                   <StatusIcon id="pack" size="mini" dimColor /> {pack.title} (
                   {pack.skills.length})
                 </Text>
@@ -217,7 +210,7 @@ export function Home({
 
           {selected && !busy && !pointingProject ? (
             <Box marginTop={1}>
-              <Text dimColor>
+              <Text dimColor wrap="truncate">
                 <StatusIcon id="arrow" size="mini" dimColor /> ↵ install{" "}
                 {selected.title}
                 {" · "}a apply to project · k link
@@ -234,7 +227,7 @@ export function Home({
           <Box marginTop={1}>
             <ActionFlash message={actionFlash} nonce={actionNonce} />
           </Box>
-        </Box>
+        </ScreenShell>
       </Box>
 
       {busy && progress ? (
