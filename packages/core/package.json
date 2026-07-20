@@ -1,9 +1,22 @@
 {
   "name": "@kit-skills/core",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Skill parser, validator, and local library for Kit",
+  "license": "MIT",
   "type": "module",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zwin-ux/kit.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/Zwin-ux/kit#readme",
+  "bugs": {
+    "url": "https://github.com/Zwin-ux/kit/issues"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

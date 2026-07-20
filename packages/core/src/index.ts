@@ -89,8 +89,10 @@ export {
   LINKABLE_HARNESSES,
   describePaths,
   linkSkills,
+  importSkillsFromHarness,
   type DescribePathsOptions,
   type LinkSkillsOptions,
+  type ImportSkillsOptions,
   type HarnessId,
   type PathScope,
   type HarnessSkillPath,
@@ -98,6 +100,8 @@ export {
   type LinkMode,
   type LinkPlanItem,
   type LinkResult,
+  type ImportPlanItem,
+  type ImportResult,
   type PathsResult,
 } from "./paths/mod.js";
 

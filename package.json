@@ -1,6 +1,6 @@
 {
   "name": "kit",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Portable agent skills for Claude Code, Grok Build, and Codex",
   "packageManager": "pnpm@10.12.4",
@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "pnpm -r run build",
+    "build": "pnpm catalog:sync && pnpm -r --filter \"!@kit-skills/catalog\" run build",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "clean": "pnpm -r run clean",
@@ -16,9 +16,12 @@
     "tui": "pnpm --filter @kit-skills/tui start",
     "init": "pnpm --filter @kit-skills/cli exec node dist/bin.js init",
     "doctor": "pnpm --filter @kit-skills/cli exec node dist/bin.js doctor",
-    "test:packs": "pnpm --filter @kit-skills/cli exec node dist/bin.js test --all-packs"
+    "test:packs": "pnpm --filter @kit-skills/cli exec node dist/bin.js test --all-packs",
+    "keep-alive": "node scripts/keep-alive.mjs",
+    "catalog:sync": "node scripts/sync-catalog-package.mjs",
+    "plugin:claude": "node scripts/sync-claude-plugin.mjs",
+    "publish:all": "node scripts/publish.mjs"
   },
-
   "devDependencies": {
     "@types/node": "^22.15.21",
     "typescript": "^5.8.3"

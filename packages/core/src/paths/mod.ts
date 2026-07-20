@@ -6,6 +6,8 @@ export type {
   LinkMode,
   LinkPlanItem,
   LinkResult,
+  ImportPlanItem,
+  ImportResult,
   PathsResult,
 } from "./types.js";
 export {
@@ -16,3 +18,7 @@ export {
 } from "./harness.js";
 export { describePaths, type DescribePathsOptions } from "./describe.js";
 export { linkSkills, type LinkSkillsOptions } from "./link.js";
+export {
+  importSkillsFromHarness,
+  type ImportSkillsOptions,
+} from "./import.js";

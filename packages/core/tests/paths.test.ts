@@ -1,10 +1,18 @@
-import { access, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  rm,
+  writeFile,
+  readFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { installSkill } from "../src/library/library.js";
+import { installSkill, listSkills } from "../src/library/library.js";
 import {
   describePaths,
+  importSkillsFromHarness,
   linkSkills,
   resolveHarnessSkillsRoot,
 } from "../src/paths/mod.js";
@@ -193,5 +201,75 @@ compatibility:
       "utf8",
     );
     expect(skillMd).toContain("name: path-write");
+  });
+});
+
+describe("importSkillsFromHarness", () => {
+  it("dry-runs and installs valid harness skills into Kit library", async () => {
+    const kitHome = await tempDir("kit-import-home-");
+    const homeDir = await tempDir("kit-import-user-");
+    const projectDir = await tempDir("kit-import-proj-");
+    const skillDir = path.join(homeDir, ".claude", "skills", "capture-me");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      path.join(skillDir, "SKILL.md"),
+      `---
+name: capture-me
+description: Demo skill captured from Claude harness.
+version: 0.1.0
+compatibility:
+  - claude-code
+  - codex
+---
+
+# Capture me
+
+1. Do the thing.
+2. Report done.
+`,
+      "utf8",
+    );
+
+    const dry = await importSkillsFromHarness({
+      kitHome,
+      homeDir,
+      projectDir,
+      harnesses: ["claude-code"],
+      scope: "personal",
+      write: false,
+    });
+    expect(dry.ok).toBe(true);
+    if (!dry.ok) return;
+    expect(dry.value.dryRun).toBe(true);
+    expect(dry.value.imported).toBe(1);
+    expect(dry.value.items.some((i) => i.skillName === "capture-me")).toBe(
+      true,
+    );
+
+    const listedBefore = await listSkills({ kitHome });
+    expect(listedBefore.ok).toBe(true);
+    if (listedBefore.ok) {
+      expect(listedBefore.value.find((s) => s.name === "capture-me")).toBe(
+        undefined,
+      );
+    }
+
+    const written = await importSkillsFromHarness({
+      kitHome,
+      homeDir,
+      projectDir,
+      harnesses: ["claude-code"],
+      scope: "personal",
+      write: true,
+    });
+    expect(written.ok).toBe(true);
+    if (!written.ok) return;
+    expect(written.value.dryRun).toBe(false);
+    expect(written.value.imported).toBe(1);
+
+    const listed = await listSkills({ kitHome });
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.value.some((s) => s.name === "capture-me")).toBe(true);
   });
 });

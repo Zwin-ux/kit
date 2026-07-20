@@ -44,50 +44,52 @@ Same skills. Multiple agents. No rewriting prompts per tool.
 
 ## Install
 
-**Need:** Node 20+ and [pnpm](https://pnpm.io) 10
+**Need:** [Node](https://nodejs.org) 20+
+
+### Global CLI (recommended)
+
+```bash
+npm i -g @kit-skills/cli
+
+kit init --pack essentials
+kit recommend --dir .
+kit pack apply essentials --dir .
+kit link --to claude-code --write
+kit doctor
+kit tui
+```
+
+Wire other agents the same way:
+
+```bash
+kit link --to codex --write
+kit link --to grok-build --write
+```
+
+### Capture skills you already use
+
+Import skills from Claude Code / Codex / Grok folders into your Kit library:
+
+```bash
+kit import --from claude-code          # dry-run
+kit import --from claude-code --write  # install into ~/.kit
+kit import --from all --write
+```
+
+### Skills-only (any agent that supports SKILL.md)
+
+```bash
+npx skills add Zwin-ux/kit
+```
+
+### From source
 
 ```bash
 git clone https://github.com/Zwin-ux/kit.git
 cd kit
 pnpm install && pnpm build
-```
-
-Then from the repo root:
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-**Windows**
-
-```powershell
-.\kit.cmd init --pack essentials
-.\kit.cmd recommend --dir .
-.\kit.cmd pack apply essentials --dir .
-.\kit.cmd link --to claude-code --write
-.\kit.cmd doctor
-.\kit.cmd tui
-```
-
-</td>
-<td width="50%" valign="top">
-
-**macOS / Linux**
-
-```bash
-pnpm kit -- init --pack essentials
-pnpm kit -- recommend --dir .
-pnpm kit -- pack apply essentials --dir .
-pnpm kit -- link --to claude-code --write
 pnpm kit -- doctor
-pnpm kit -- tui
 ```
-
-</td>
-</tr>
-</table>
-
-That’s the whole loop: install a pack, apply it to a project, link your agent, open the TUI.
 
 ---
 
@@ -161,7 +163,8 @@ pnpm tui
 | `init --pack essentials` | First-run install |
 | `recommend --dir <path>` | Suggest pack + skills |
 | `pack list` / `install` / `apply` | Manage packs |
-| `link --to claude-code --write` | Wire into your agent |
+| `link --to claude-code --write` | Kit → agent harness |
+| `import --from claude-code --write` | Agent harness → Kit library |
 | `doctor` | Health check |
 | `tui` | Pixel interface |
 
@@ -198,6 +201,8 @@ Browse the built-in set in [`skills/`](skills/).
 <p align="center">
   <sub>
     <a href="LICENSE">MIT</a>
+    ·
+    <a href="https://www.npmjs.com/package/@kit-skills/cli">npm</a>
     ·
     <a href="CHANGELOG.md">Changelog</a>
     ·

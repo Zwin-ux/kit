@@ -51,6 +51,29 @@ export interface LinkResult {
   failed: Array<{ skillName: string; error: string }>;
 }
 
+/** Plan item for harness → Kit library import. */
+export interface ImportPlanItem {
+  skillName: string;
+  sourceDir: string;
+  harness: HarnessId;
+  scope: PathScope;
+  action:
+    | "import"
+    | "replace"
+    | "skip-exists"
+    | "skip-invalid"
+    | "skip-missing-root";
+  reason?: string;
+}
+
+export interface ImportResult {
+  dryRun: boolean;
+  items: ImportPlanItem[];
+  imported: number;
+  skipped: number;
+  failed: Array<{ skillName: string; error: string }>;
+}
+
 export type PathsResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: string };

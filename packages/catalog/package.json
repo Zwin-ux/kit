@@ -1,0 +1,33 @@
+{
+  "name": "@kit-skills/catalog",
+  "version": "0.1.0",
+  "description": "Official Kit starter packs and skill catalog",
+  "license": "MIT",
+  "type": "module",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zwin-ux/kit.git",
+    "directory": "packages/catalog"
+  },
+  "homepage": "https://github.com/Zwin-ux/kit#readme",
+  "bugs": {
+    "url": "https://github.com/Zwin-ux/kit/issues"
+  },
+  "files": [
+    "skills",
+    "packs",
+    "package.json",
+    "README.md"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/sync-catalog-package.mjs",
+    "build": "node ../../scripts/sync-catalog-package.mjs",
+    "typecheck": "node -e \"process.exit(0)\"",
+    "test": "node -e \"console.log('@kit-skills/catalog: content package')\"",
+    "clean": "node -e \"const fs=require('node:fs'); for (const d of ['skills','packs']) fs.rmSync(d,{recursive:true,force:true})\""
+  }
+}

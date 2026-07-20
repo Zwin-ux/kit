@@ -34,7 +34,7 @@ kit paths --dir ./my-app
 kit paths --skill add-readme
 ```
 
-### Link into a harness
+### Link into a harness (Kit → agent)
 
 Default is a **dry-run**. Nothing is written without `--write`.
 
@@ -59,23 +59,48 @@ Modes:
 - `symlink` (default) — falls back to copy if symlink fails  
 - `copy` — full folder copy  
 
+### Import from a harness (agent → Kit)
+
+Capture skills already on disk for Claude Code / Codex / Grok into `~/.kit`.
+
+Default is a **dry-run**. Nothing is written without `--write`.
+
+```sh
+# Plan only (personal harness dirs)
+kit import --from claude-code
+kit import --from all
+
+# Install into Kit library
+kit import --from claude-code --write
+kit import --from codex --scope personal --write --force
+kit import --from claude-code --skill my-skill --write
+```
+
+Invalid folders (no `SKILL.md` / schema fail) are skipped with a reason.  
+Already-installed names skip unless `--force`.
+
 ## Recommended flow
 
 ```sh
+npm i -g @kit-skills/cli
 kit init --pack essentials
 kit pack apply essentials --dir .
 kit paths
 kit link --to claude-code --write
+# later, pull custom skills back into Kit:
+kit import --from claude-code --write
 ```
 
 ## Core API
 
 - `describePaths(options?)`
 - `linkSkills(options?)`
+- `importSkillsFromHarness(options?)`
 - `resolveHarnessSkillsRoot(harness, scope, options)`
 
 ## Safety rules
 
-- Never write harness folders without `write: true` / `--write`
-- Prefer project scope for team repos
-- Use `--force` only when replacing an existing target is intentional
+- Never write harness folders without `write: true` / `--write` on **link**
+- Never write the Kit library without `write: true` / `--write` on **import**
+- Prefer project scope for team repos when linking
+- Use `--force` only when replacing an existing target/install is intentional

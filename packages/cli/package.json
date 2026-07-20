@@ -1,9 +1,30 @@
 {
   "name": "@kit-skills/cli",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Command-line entry points for Kit",
+  "version": "0.1.0",
+  "description": "Kit CLI — portable agent skills for Claude Code, Grok Build, and Codex",
+  "license": "MIT",
   "type": "module",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zwin-ux/kit.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/Zwin-ux/kit#readme",
+  "bugs": {
+    "url": "https://github.com/Zwin-ux/kit/issues"
+  },
+  "keywords": [
+    "agent-skills",
+    "claude-code",
+    "codex",
+    "cli",
+    "skills",
+    "kit"
+  ],
   "bin": {
     "kit": "./dist/bin.js"
   },
@@ -23,6 +44,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@kit-skills/catalog": "workspace:*",
     "@kit-skills/core": "workspace:*",
     "@kit-skills/shared": "workspace:*",
     "@kit-skills/tui": "workspace:*"

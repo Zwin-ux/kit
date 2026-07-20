@@ -1,9 +1,13 @@
 import { access } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+const require = createRequire(import.meta.url);
+
 /**
- * Find the monorepo packs/ directory (or KIT_PACKS override).
+ * Find the packs/ directory.
+ * Order: KIT_PACKS env → @kit-skills/catalog package → monorepo walk.
  */
 export async function resolvePacksRoot(
   options?: { startDir?: string },
@@ -13,6 +17,9 @@ export async function resolvePacksRoot(
     const candidate = path.resolve(fromEnv);
     if (await exists(candidate)) return candidate;
   }
+
+  const fromCatalog = resolveCatalogSubdir("packs");
+  if (fromCatalog && (await exists(fromCatalog))) return fromCatalog;
 
   const starts = [
     options?.startDir,
@@ -29,7 +36,8 @@ export async function resolvePacksRoot(
 }
 
 /**
- * Find the monorepo skills/ catalog directory (or KIT_SKILLS override).
+ * Find the skills/ catalog directory.
+ * Order: KIT_SKILLS env → sibling of packs → @kit-skills/catalog → monorepo walk.
  */
 export async function resolveSkillsCatalogRoot(
   options?: { startDir?: string; packsRoot?: string },
@@ -45,6 +53,9 @@ export async function resolveSkillsCatalogRoot(
     if (await exists(sibling)) return sibling;
   }
 
+  const fromCatalog = resolveCatalogSubdir("skills");
+  if (fromCatalog && (await exists(fromCatalog))) return fromCatalog;
+
   const starts = [
     options?.startDir,
     process.cwd(),
@@ -56,6 +67,17 @@ export async function resolveSkillsCatalogRoot(
     if (found) return found;
   }
   return undefined;
+}
+
+/** Resolve packs/skills shipped inside @kit-skills/catalog (published npm layout). */
+function resolveCatalogSubdir(sub: "packs" | "skills"): string | undefined {
+  try {
+    const pkgJson = require.resolve("@kit-skills/catalog/package.json");
+    return path.join(path.dirname(pkgJson), sub);
+  } catch {
+    // Not installed / not linked — monorepo walk will handle dev.
+    return undefined;
+  }
 }
 
 async function walkForDir(

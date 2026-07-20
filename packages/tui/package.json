@@ -1,9 +1,22 @@
 {
   "name": "@kit-skills/tui",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Pixel-art terminal interface for Kit",
+  "license": "MIT",
   "type": "module",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zwin-ux/kit.git",
+    "directory": "packages/tui"
+  },
+  "homepage": "https://github.com/Zwin-ux/kit#readme",
+  "bugs": {
+    "url": "https://github.com/Zwin-ux/kit/issues"
+  },
   "bin": {
     "kit-tui": "./dist/bin.js"
   },

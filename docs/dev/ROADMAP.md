@@ -19,7 +19,9 @@
 - [ ] Workshop: scaffold + validate + test skill
 - [ ] Authenticated publish API
 - [ ] Postgres-backed durable catalog
-- [ ] Global install story (`npm i -g` / path setup)
+- [x] Global install story (`npm i -g @kit-skills/cli`)
+- [x] `kit import` from Claude/Codex/Grok harness folders
+- [x] Keep-alive cron + skill queue
 
 ## Later
 

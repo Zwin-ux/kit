@@ -1,0 +1,73 @@
+# Weekly catalog keep-alive: validate skills, promote one queued skill, open PR.
+# Never force-pushes main. Distinct concurrency group from CI.
+name: Keep-alive
+
+on:
+  schedule:
+    # Mondays 15:00 UTC
+    - cron: "0 15 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: kit-keep-alive-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote:
+    name: Sync catalog and promote queue skill
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Check queue + live skills
+        run: node scripts/keep-alive.mjs --check
+
+      - name: Promote next queue skill + sync README
+        run: node scripts/keep-alive.mjs
+
+      - name: Pack smoke (after promotion)
+        run: pnpm exec node packages/cli/dist/bin.js test --all-packs
+        env:
+          KIT_HOME: ${{ runner.temp }}/kit-home
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore(catalog): keep-alive skill promotion"
+          title: "chore(catalog): keep-alive skill promotion"
+          body: |
+            Automated keep-alive run.
+
+            - Validates live skills + queue
+            - Promotes **one** skill from `catalog/queue/` when available
+            - Syncs `skills/README.md`
+            - Writes `catalog/KEEP_ALIVE_REPORT.md`
+
+            Review the new skill carefully before merge.
+          branch: keep-alive/catalog
+          delete-branch: true
+          labels: keep-alive, catalog

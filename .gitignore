@@ -9,6 +9,11 @@ dist/
 coverage/
 **/coverage/
 
+# Synced into packages/catalog before pack/publish
+packages/catalog/skills/
+packages/catalog/packs/
+catalog/KEEP_ALIVE_REPORT.md
+
 # Local Kit data (user home installs; project apply output may be committed intentionally)
 # Ignore root-level runtime only if created during local runs
 /.kit/

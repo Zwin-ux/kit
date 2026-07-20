@@ -14,6 +14,7 @@ import {
   installPack,
   installSkill,
   isFirstRunPackName,
+  importSkillsFromHarness,
   linkSkills,
   listFirstRunPackOptions,
   listPacks,
@@ -101,6 +102,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "import") {
+    await runImport(args.slice(1));
+    return;
+  }
+
   if (command === "test") {
     await runTest(args.slice(1));
     return;
@@ -166,6 +172,7 @@ function printHelp(): void {
   console.log("  kit pack apply <pack> [--dir <project>]");
   console.log("  kit paths [--dir <project>] [--skill <name>]");
   console.log("  kit link [--to <harness|all>] [--scope personal|project] [--write] [--force] [--mode symlink|copy] [--dir <project>]");
+  console.log("  kit import [--from <harness|all>] [--scope personal|project] [--write] [--force] [--skill <name>] [--dir <project>]");
   console.log("  kit test [skill-dir|pack-name|--all-packs]");
   console.log("  kit doctor [--dir <project>]");
   console.log("  kit login");
@@ -178,10 +185,10 @@ function printHelp(): void {
   console.log("  kit recommend [--dir <project>]");
   console.log("");
   console.log("Library:  ~/.kit (or KIT_HOME)");
-  console.log("Packs:    packs/ in the Kit repo (or KIT_PACKS)");
+  console.log("Packs:    @kit-skills/catalog or packs/ in this repo (KIT_PACKS)");
   console.log("Registry: KIT_REGISTRY_URL or production Railway URL");
-  console.log("Windows:  .\\kit.cmd whoami   (from repo root after pnpm build)");
-  console.log("Tip:      kit recommend → kit pack install <top> → kit login");
+  console.log("Install:  npm i -g @kit-skills/cli");
+  console.log("Tip:      kit import --from claude-code → kit link --to codex --write");
 }
 
 async function runInit(rest: string[]): Promise<void> {
@@ -641,6 +648,122 @@ async function runLink(rest: string[]): Promise<void> {
   if (plan.dryRun) {
     console.log("");
     console.log("No files written. Re-run with --write to apply.");
+  }
+}
+
+async function runImport(rest: string[]): Promise<void> {
+  if (rest.includes("--help") || rest.includes("-h")) {
+    console.log(
+      "Usage: kit import [--from claude-code|codex|grok-build|all] [--scope personal|project] [--dir <project>] [--skill <name>] [--write] [--force]",
+    );
+    console.log("");
+    console.log("Capture skills from agent harness folders into the Kit library.");
+    console.log("Default is a dry-run. Pass --write to install into ~/.kit.");
+    return;
+  }
+
+  const write = rest.includes("--write");
+  const force = rest.includes("--force");
+
+  const fromFlag = rest.indexOf("--from");
+  let harnesses: HarnessId[] | undefined;
+  if (fromFlag >= 0) {
+    const value = rest[fromFlag + 1];
+    if (!value || value.startsWith("-")) {
+      fail("Usage: kit import --from <claude-code|codex|grok-build|all>");
+    }
+    if (value === "all") {
+      harnesses = ["claude-code", "codex", "grok-build"];
+    } else if (
+      value === "claude-code" ||
+      value === "codex" ||
+      value === "grok-build"
+    ) {
+      harnesses = [value];
+    } else {
+      fail(
+        `Unknown harness "${value}". Use claude-code, codex, grok-build, or all.`,
+      );
+    }
+  }
+
+  const scopeFlag = rest.indexOf("--scope");
+  let scope: PathScope = "personal";
+  if (scopeFlag >= 0) {
+    const value = rest[scopeFlag + 1];
+    if (value !== "personal" && value !== "project") {
+      fail("Usage: kit import --scope personal|project");
+    }
+    scope = value;
+  }
+
+  const dirFlag = rest.indexOf("--dir");
+  let projectDir: string | undefined;
+  if (dirFlag >= 0) {
+    projectDir = rest[dirFlag + 1];
+    if (!projectDir || projectDir.startsWith("-")) {
+      fail("Usage: kit import --dir <project>");
+    }
+  }
+
+  const skillFlag = rest.indexOf("--skill");
+  let skillNames: string[] | undefined;
+  if (skillFlag >= 0) {
+    const value = rest[skillFlag + 1];
+    if (!value || value.startsWith("-")) {
+      fail("Usage: kit import --skill <name>");
+    }
+    skillNames = [value];
+  }
+
+  const result = await importSkillsFromHarness({
+    write,
+    force,
+    scope,
+    ...(harnesses ? { harnesses } : {}),
+    ...(projectDir ? { projectDir } : {}),
+    ...(skillNames ? { skillNames } : {}),
+  });
+  if (!result.ok) fail(result.error);
+
+  const plan = result.value;
+  console.log(plan.dryRun ? "Import plan (dry-run)" : "Import result");
+  console.log(`  scope:    ${scope}`);
+  console.log(
+    `  imported: ${plan.imported}  skipped: ${plan.skipped}  failed: ${plan.failed.length}`,
+  );
+  console.log("");
+
+  for (const item of plan.items) {
+    if (item.action === "skip-missing-root") {
+      console.log(`· ${item.harness} (no skills root)`);
+      if (item.reason) console.log(`    ${item.reason}`);
+      continue;
+    }
+    const tag =
+      item.action === "import"
+        ? "+"
+        : item.action === "replace"
+          ? "!"
+          : item.action === "skip-exists"
+            ? "="
+            : "~";
+    console.log(`${tag} ${item.harness} ${item.skillName}`);
+    console.log(`    ${item.sourceDir}`);
+    if (item.reason) console.log(`    ${item.reason}`);
+  }
+
+  if (plan.failed.length > 0) {
+    console.log("");
+    console.log("Failures:");
+    for (const f of plan.failed) {
+      console.log(`  ${f.skillName}: ${f.error}`);
+    }
+  }
+
+  if (plan.dryRun) {
+    console.log("");
+    console.log("No files written. Re-run with --write to install into ~/.kit.");
   }
 }
 
