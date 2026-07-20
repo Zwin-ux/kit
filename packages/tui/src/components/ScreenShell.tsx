@@ -7,21 +7,18 @@ import { useLayoutScale } from "../mascot/useLayoutScale.js";
 export interface ScreenShellProps {
   frames: PixelFrame[];
   mascotVariant?: MascotVariant;
-  /** compact rail (default) or hero splash */
-  mascotSize?: "compact" | "hero" | "full";
   children: React.ReactNode;
-  /** Hide mascot (rare). */
   hideMascot?: boolean;
 }
 
 /**
- * Full-screen-safe row layout: fixed mascot rail + flexible content.
- * Content shrinks/wraps; mascot never gets clipped by menu width.
+ * Full-screen-safe row layout:
+ * fixed small mascot rail + flexible content (gets the rest of the window).
+ * Shell is always compact rail — never hero.
  */
 export function ScreenShell({
   frames,
   mascotVariant = "idle",
-  mascotSize = "compact",
   children,
   hideMascot,
 }: ScreenShellProps): React.ReactElement {
@@ -29,28 +26,40 @@ export function ScreenShell({
 
   if (hideMascot) {
     return (
-      <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        flexShrink={1}
+        minWidth={scale.contentMinCols}
+        width="100%"
+      >
         {children}
       </Box>
     );
   }
 
   return (
-    <Box flexDirection="row" flexGrow={1}>
+    <Box flexDirection="row" flexGrow={1} width="100%">
       <Box
         flexDirection="column"
-        marginRight={2}
+        marginRight={1}
         flexShrink={0}
         width={scale.railCols}
+        overflow="hidden"
       >
         <MascotPlayer
           frames={frames}
           playing
-          size={mascotSize}
+          size="compact"
           variant={mascotVariant}
         />
       </Box>
-      <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={24}>
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        flexShrink={1}
+        minWidth={scale.contentMinCols}
+      >
         {children}
       </Box>
     </Box>

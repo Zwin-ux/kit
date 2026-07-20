@@ -86,15 +86,35 @@ Mascot frames:
 - Missing PNGs → built-in placeholders per variant
 - ~140–180 ms/frame; `KIT_REDUCED_MOTION=1` freezes frame 0
 
+### Scale hierarchy (hard caps)
+
+Art is chrome; the menu is the product. Full-screen grows **content**, not logos.
+
+```
+glyph (1 cell) < pack detail (≤4 rows) < mascot rail (≤10 rows) << content
+```
+
+| Mode / size | Fox rail | Pack detail | Content |
+|-------------|----------|-------------|---------|
+| narrow | 8×8 single `█` | off (glyph only) | dense, truncate |
+| normal 80×24 | **8×8** single | off until `rows ≥ 28` | standard |
+| tall (`rows ≥ 32`) | up to 10×10 single | 4×4 if `rows ≥ 28` | more list items |
+| wide maximized | same art caps | same | more list items |
+
+- Rail **never** double-wide `██` (that bloated full-screen).
+- Splash: single-cell hero ≤12 — no billboard.
+- Full-screen grows **content** (`listMaxItems`), not logos.
+- `layoutScaleFromTerminal` + `ScreenShell` enforce this; screens must not invent sizes.
+
 ### kit-idle (+ variants) in the TUI
 
 Terminals cannot play GIF files inside Ink on all platforms.
 Kit plays pixel frames via `MascotPlayer` (same language as `kit-idle.gif`).
 
-- Splash: full **idle** loop
+- Splash: capped **hero** idle loop
 - Busy work: compact **scan** loop
 - Success moments: compact **success** loop
-- Otherwise: compact **idle** on all main screens
+- Otherwise: compact **idle** on all main screens (fixed rail via ScreenShell)
 
 Keys:
 - Splash: any key → First-run (if needed) or Home · `q` quit
@@ -109,7 +129,7 @@ Keys:
 Motion (restrained — explain or reward, never decorate alone):
 - **Mascot variants**: idle / scan / success by screen state
 - **StatusIcon**: ok · fail · warn · skill · pack · link · agent · spinner (list + doctor)
-- **PackIcon**: pack picker rows + selected 16×16
+- **PackIcon**: list = mini glyph; selected detail = ≤4×4 (or hidden if short)
 - **Enter (↵)** installs the selected toolkit on Home, Packs, Explore (`i` still works)
 - **SelectPulse** (`›`→`»`) on ↑↓ selection change
 - **ActionFlash** (`▸ …`) on every meaningful key (nav, install, link, validate, test)

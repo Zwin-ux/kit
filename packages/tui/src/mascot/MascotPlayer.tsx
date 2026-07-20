@@ -12,44 +12,27 @@ import {
   type PixelFrame,
 } from "./types.js";
 import { useLayoutScale } from "./useLayoutScale.js";
-import { splashMascotFit, type LayoutScale } from "./layoutScale.js";
+import type { LayoutScale } from "./layoutScale.js";
 
 export interface MascotPlayerProps {
   frames: PixelFrame[];
-  /** Play the same loop as assets/pixel/kit-idle.gif (or variant GIFs). */
   playing?: boolean;
-  /** Delay between frames in ms (default matches variant). */
   delayMs?: number;
   /**
-   * compact = side rail (layout-scaled, letterboxed)
-   * full / hero = splash (larger on wide terminals)
-   * auto = compact on rail sizing
+   * compact / auto = side rail (single █, hard-capped)
+   * hero / full = splash only (still capped)
    */
   size?: "full" | "compact" | "hero" | "auto";
-  /**
-   * Optional caption under the animation.
-   * Prefer empty for product UI — avoid asset-path / debug strings.
-   */
   caption?: string;
-  /** Dev-only frame counter (off by default; do not use on product screens). */
   showCounter?: boolean;
-  /** Dev-only label above the art (off by default). */
   label?: string;
-  /**
-   * Visual intent — mainly used for default delay when delayMs omitted.
-   * Frames themselves should already match the variant.
-   */
   variant?: MascotVariant;
-  /** Override layout scale (tests). */
   scale?: LayoutScale;
 }
 
 /**
  * Live terminal playback of the Kit mascot.
- *
- * Every frame is letterboxed into a fixed canvas so tail/ear motion never
- * changes the reserved terminal box (no cut-off, no size jump).
- * KIT_REDUCED_MOTION=1 freezes on frame 0.
+ * Rail never uses double-wide cells. Canvas letterboxed so frames don't jump.
  */
 export function MascotPlayer({
   frames,
@@ -83,23 +66,26 @@ export function MascotPlayer({
   }, [variant, frameCount]);
 
   const frame = frames[enabled ? index : 0] ?? frames[0];
+  const isHero = size === "full" || size === "hero";
 
   const renderOpts: RenderFrameOptions = useMemo(() => {
-    const isHero = size === "full" || size === "hero";
     if (isHero) {
-      const splash = splashMascotFit(scale);
+      const double = scale.splashCell === "double";
       return {
-        cell: splash.cell === "double" ? "██" : "█",
-        empty: splash.cell === "double" ? "  " : " ",
+        cell: double ? "██" : "█",
+        empty: double ? "  " : " ",
         tight: true,
         pad: 0,
-        fit: { width: splash.width, height: splash.height },
+        fit: {
+          width: scale.splashFit.width,
+          height: scale.splashFit.height,
+        },
       };
     }
-    // compact / auto rail — fixed fit from terminal scale
+    // Rail: always single-width, capped fit from layout scale
     return {
-      cell: scale.mascotCell === "double" ? "██" : "█",
-      empty: scale.mascotCell === "double" ? "  " : " ",
+      cell: "█",
+      empty: " ",
       tight: true,
       pad: 0,
       fit: {
@@ -107,7 +93,7 @@ export function MascotPlayer({
         height: scale.mascotFit.height,
       },
     };
-  }, [size, scale]);
+  }, [isHero, scale]);
 
   const lines = useMemo(() => {
     if (!frame) return [] as string[];
@@ -120,6 +106,10 @@ export function MascotPlayer({
   }, [frame, renderOpts]);
 
   const height = lines.length;
+  // Never exceed reserved rail on menus
+  const maxWidth = isHero
+    ? Math.max(width, 1)
+    : Math.min(Math.max(width, 1), scale.railCols);
 
   if (!frame) {
     return (
@@ -130,18 +120,18 @@ export function MascotPlayer({
   }
 
   return (
-    <Box flexDirection="column" flexShrink={0} width={Math.max(width, 1)}>
+    <Box flexDirection="column" flexShrink={0} width={maxWidth}>
       {label ? <Text dimColor>{label}</Text> : null}
       <Box
         flexDirection="column"
-        width={Math.max(width, 1)}
+        width={maxWidth}
         height={height}
         flexShrink={0}
         overflow="hidden"
       >
         {lines.map((line, i) => (
           <Text key={i} wrap="truncate">
-            {line}
+            {line.length > maxWidth ? line.slice(0, maxWidth) : line}
           </Text>
         ))}
       </Box>

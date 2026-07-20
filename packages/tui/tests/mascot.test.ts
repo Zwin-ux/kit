@@ -97,43 +97,72 @@ describe("pack silhouette icons", () => {
     }
   });
 
-  it("detail render is smaller than mascot canvas (8 vs 12)", () => {
+  it("detail render is tiny (4×4) under the fox", () => {
     for (const name of OFFICIAL_PACK_ICONS) {
-      const lines = renderPackIconLines(name, { edge: 8, frame: 0 });
-      expect(lines).toHaveLength(8);
-      expect(lines[0]).toHaveLength(8);
+      const lines = renderPackIconLines(name, { edge: 4, frame: 0 });
+      expect(lines).toHaveLength(4);
+      expect(lines[0]).toHaveLength(4);
     }
   });
 
   it("animation frames stay fixed size", () => {
     for (let f = 0; f < 4; f++) {
-      const bmp = getPackIconAnimBitmap("essentials", f, 8);
-      expect(bmp).toHaveLength(64);
+      const bmp = getPackIconAnimBitmap("essentials", f, 4);
+      expect(bmp).toHaveLength(16);
     }
   });
 });
 
 describe("layout scale", () => {
-  it("keeps pack detail smaller than mascot fit", () => {
-    for (const [cols, rows] of [
-      [60, 20],
-      [80, 24],
-      [120, 40],
-    ] as const) {
+  const sizes = [
+    [60, 20],
+    [80, 24],
+    [120, 40],
+    [200, 60],
+  ] as const;
+
+  it("hard-caps art: mascot ≤10, rail ≤12, pack ≤ half fox", () => {
+    for (const [cols, rows] of sizes) {
       const s = layoutScaleFromTerminal(cols, rows);
-      expect(s.packDetailSize).toBeLessThanOrEqual(s.mascotFit.height);
-      expect(s.packDetailSize).toBeLessThanOrEqual(s.mascotFit.width);
+      expect(s.mascotFit.height).toBeLessThanOrEqual(10);
+      expect(s.mascotFit.width).toBeLessThanOrEqual(10);
+      expect(s.railCols).toBeLessThanOrEqual(12);
+      expect(s.mascotCell).toBe("single");
+      if (s.showPackDetail) {
+        expect(s.packDetailSize).toBeGreaterThan(0);
+        expect(s.packDetailSize).toBeLessThanOrEqual(
+          Math.floor(s.mascotFit.height / 2),
+        );
+        expect(s.packDetailSize).toBeLessThanOrEqual(4);
+      } else {
+        expect(s.packDetailSize).toBe(0);
+      }
     }
   });
 
-  it("grows mascot on full-screen terminals", () => {
+  it("common 80×24 uses 8-row fox and no pack detail billboard", () => {
+    const s = layoutScaleFromTerminal(80, 24);
+    expect(s.mode).toBe("normal");
+    expect(s.mascotFit.height).toBe(8);
+    expect(s.railCols).toBeLessThanOrEqual(9);
+    expect(s.showPackDetail).toBe(false);
+  });
+
+  it("wide uses more content; tall may grow fox to 10 only", () => {
+    const normal = layoutScaleFromTerminal(80, 24);
+    const wideTall = layoutScaleFromTerminal(120, 40);
+    expect(wideTall.mode).toBe("wide");
+    expect(normal.mascotFit.height).toBe(8);
+    expect(wideTall.mascotFit.height).toBe(10);
+    expect(wideTall.mascotCell).toBe("single");
+    expect(wideTall.listMaxItems).toBeGreaterThan(normal.listMaxItems);
+  });
+
+  it("narrow hides pack detail bitmaps", () => {
     const narrow = layoutScaleFromTerminal(60, 20);
-    const wide = layoutScaleFromTerminal(120, 40);
-    expect(wide.mascotFit.height).toBeGreaterThanOrEqual(
-      narrow.mascotFit.height,
-    );
-    expect(wide.mode).toBe("wide");
     expect(narrow.mode).toBe("narrow");
+    expect(narrow.showPackDetail).toBe(false);
+    expect(narrow.mascotFit.height).toBe(8);
   });
 });
 

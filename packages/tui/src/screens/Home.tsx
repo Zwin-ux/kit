@@ -9,6 +9,7 @@ import type {
 } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
 import { StatusIcon } from "../mascot/StatusIcon.js";
+import { useLayoutScale } from "../mascot/useLayoutScale.js";
 import { Footer, Header, StatusLine } from "../components/Chrome.js";
 import { ScreenShell } from "../components/ScreenShell.js";
 import {
@@ -84,6 +85,7 @@ export function Home({
   busy,
   progress,
 }: HomeProps): React.ReactElement {
+  const scale = useLayoutScale();
   const emptyLibrary = skills.length === 0;
   const appliedNames = new Set(applied.map((a) => a.name));
   const selected = packs[selectedPackIndex];
@@ -92,6 +94,7 @@ export function Home({
   const variant =
     mascotVariant ??
     (busy ? "scan" : celebrateCount !== undefined ? "success" : "idle");
+  const skillShow = scale.listMaxItems;
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
@@ -164,7 +167,7 @@ export function Home({
               <Text bold>
                 <StatusIcon id="skill" size="mini" /> Suggested skills
               </Text>
-              {skillRecs.slice(0, 5).map((s) => (
+              {skillRecs.slice(0, skillShow).map((s) => (
                 <Text key={s.skillName} dimColor wrap="truncate">
                   <StatusIcon id="skill" size="mini" dimColor /> {s.skillName}
                   {s.fromPack ? ` · ${s.fromPack}` : ""}
@@ -184,13 +187,15 @@ export function Home({
               </Text>
             ) : (
               <>
-                {skills.slice(0, 4).map((skill) => (
+                {skills.slice(0, skillShow).map((skill) => (
                   <Text key={skill.name} dimColor wrap="truncate">
                     <StatusIcon id="ok" size="mini" dimColor /> {skill.name}
                   </Text>
                 ))}
-                {skills.length > 4 ? (
-                  <Text dimColor>  +{skills.length - 4} more (l)</Text>
+                {skills.length > skillShow ? (
+                  <Text dimColor>
+                    {"  "}+{skills.length - skillShow} more (l)
+                  </Text>
                 ) : null}
               </>
             )}
@@ -199,12 +204,17 @@ export function Home({
           {applied.length > 0 ? (
             <Box marginTop={1} flexDirection="column">
               <Text bold>Applied here</Text>
-              {applied.map((pack) => (
+              {applied.slice(0, skillShow).map((pack) => (
                 <Text key={pack.name} dimColor wrap="truncate">
                   <StatusIcon id="pack" size="mini" dimColor /> {pack.title} (
                   {pack.skills.length})
                 </Text>
               ))}
+              {applied.length > skillShow ? (
+                <Text dimColor>
+                  {"  "}+{applied.length - skillShow} more
+                </Text>
+              ) : null}
             </Box>
           ) : null}
 

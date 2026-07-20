@@ -39,6 +39,9 @@ export {
   type StatusIconId,
 } from "./mascot/statusIcons.js";
 export { PackIcon } from "./mascot/PackIcon.js";
-export { layoutScaleFromTerminal } from "./mascot/layoutScale.js";
+export {
+  layoutScaleFromTerminal,
+  LAYOUT_CAPS,
+} from "./mascot/layoutScale.js";
 export type { LayoutScale, LayoutMode } from "./mascot/layoutScale.js";
 export { Spinner } from "./motion/Spinner.js";

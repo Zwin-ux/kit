@@ -14,13 +14,12 @@ export interface ToolkitPickerProps {
   filter?: string;
   appliedNames?: Set<string>;
   dense?: boolean;
-  /** Show detail silhouette under the selected row. Default true. */
+  /** Show tiny detail silhouette under selection (layout-gated). */
   showSelectedIcon?: boolean;
 }
 
 /**
- * Shared pack/toolkit list with animated silhouette marks + recommendation badges.
- * Detail icons stay smaller than the mascot (layout packDetailSize).
+ * Pack list: animated mini glyphs. Optional 4×4 detail under selection only.
  */
 export function ToolkitPicker({
   packs,
@@ -37,6 +36,8 @@ export function ToolkitPicker({
   const scoreByName = new Map(
     recommended.map((r) => [r.packName, r] as const),
   );
+  const showDetail =
+    showSelectedIcon && scale.showPackDetail && scale.packDetailSize > 0;
 
   const filtered = filter
     ? packs.filter((p) => {
@@ -77,7 +78,7 @@ export function ToolkitPicker({
 
         return (
           <Box key={pack.name} flexDirection="column">
-            <Text>
+            <Text wrap="truncate">
               <SelectPulse selected={selected} tick={selectTick} />{" "}
               <PackIcon packName={pack.name} size="mini" animate />{" "}
               <Text bold={selected}>{pack.title}</Text>
@@ -90,10 +91,10 @@ export function ToolkitPicker({
               {applied ? <Text dimColor> · on</Text> : null}
             </Text>
             {!dense && selected ? (
-              <Box marginLeft={2} marginTop={0} flexDirection="row">
-                {showSelectedIcon ? (
+              <Box marginLeft={2} flexDirection="row">
+                {showDetail ? (
                   <Box
-                    marginRight={2}
+                    marginRight={1}
                     flexShrink={0}
                     width={scale.packDetailSize}
                     height={scale.packDetailSize}
@@ -107,11 +108,13 @@ export function ToolkitPicker({
                   </Box>
                 ) : null}
                 <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-                  <Text dimColor wrap="wrap">
-                    {pack.description}
+                  <Text dimColor wrap="truncate">
+                    {pack.description.length > scale.contentSoftMax
+                      ? `${pack.description.slice(0, scale.contentSoftMax - 1)}…`
+                      : pack.description}
                   </Text>
                   {rec && rec.reasons.length > 0 ? (
-                    <Text dimColor wrap="wrap">
+                    <Text dimColor wrap="truncate">
                       {rec.reasons[0]}
                     </Text>
                   ) : null}

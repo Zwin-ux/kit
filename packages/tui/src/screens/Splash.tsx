@@ -10,8 +10,7 @@ export interface SplashProps {
 }
 
 /**
- * Splash — full kit-idle loop scaled for the terminal (hero on full-screen).
- * No asset-path / debug chrome — product face only.
+ * Splash — capped hero fox (never a full-screen billboard).
  */
 export function Splash({ frames }: SplashProps): React.ReactElement {
   return (
