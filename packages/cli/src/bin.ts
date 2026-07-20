@@ -39,8 +39,9 @@ import {
   type PathScope,
 } from "@mzwin/kit-core";
 import { KIT_PACKAGE_VERSION } from "@mzwin/kit-shared";
+import { normalizeArgv } from "./argv.js";
 
-const args = process.argv.slice(2);
+const args = normalizeArgv(process.argv.slice(2));
 const command = args[0];
 
 /** Exit 1 = user/validation; 2 = unexpected (handled in main catch). */
@@ -173,6 +174,7 @@ function printHelp(): void {
   console.log("  kit                         # your situation + next move");
   console.log("  kit ready --write           # make THIS repo agent-ready");
   console.log("  kit unify --write --link    # clean skill mess → portable library");
+  console.log("  kit tui                     # keyboard console (interactive terminal)");
   console.log("");
   console.log("Everyday:");
   console.log("  kit recommend --dir .");
@@ -182,9 +184,15 @@ function printHelp(): void {
   console.log("  kit import --from claude-code --write");
   console.log("  kit unify [--write] [--link] [--all] [--json]");
   console.log("  kit ready [--write] [--unify] [--pack <name>] [--dir <path>]");
-  console.log("  kit doctor | kit tui | kit list");
+  console.log("  kit doctor | kit list");
   console.log("");
   console.log("Also: validate, install, remove, paths, test, login, explore");
+  console.log("");
+  console.log("From this monorepo:");
+  console.log("  pnpm build");
+  console.log("  pnpm kit tui                # preferred (no extra -- needed)");
+  console.log("  pnpm kit -- tui             # also works (npm-style pass-through)");
+  console.log("  pnpm tui                    # same as kit tui");
   console.log("");
   console.log("Install:  npm i -g @mzwin/kit");
   console.log("Docs:     https://github.com/Zwin-ux/kit");

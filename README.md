@@ -180,11 +180,13 @@ Agents: **Claude Code** · **Codex** · **Grok Build**.
 git clone https://github.com/Zwin-ux/kit.git
 cd kit
 pnpm install && pnpm build
-pnpm kit -- doctor
-pnpm kit -- tui
+pnpm kit doctor
+pnpm kit tui
+# or:  pnpm tui
+# also: pnpm kit -- tui   (npm-style; leading -- is stripped)
 ```
 
-Run builds and local `kit` from the **repo root** (`agent-sandbox/projects/kit`), not your home folder.
+Run from the **repo root**, not your home folder. `kit tui` needs an interactive terminal (real TTY).
 
 ---
 
