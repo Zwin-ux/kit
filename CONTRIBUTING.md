@@ -61,7 +61,7 @@ It is additive and does not deploy. See `.github/README.md`.
 
 ## Rules
 
-- Product surface is CLI + pixel TUI (no separate web app).
+- Product surface is the CLI and pixel TUI.
 - Pure black silhouette mascot in the TUI.
 - Small commits. Update docs when behavior changes.
 - Prefer Simplified Technical English in docs.

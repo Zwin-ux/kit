@@ -1,12 +1,12 @@
 # Kit
 
 <p align="center">
-  <img src="assets/pixel/kit-idle.gif" alt="Kit idle animation — baby fox silhouette" width="200" />
+  <img src="assets/pixel/kit-idle.gif" alt="Kit idle animation" width="200" />
 </p>
 
 <p align="center">
   <strong>Portable agent skills.</strong><br />
-  One library. Many agents. A pixel TUI with soul.
+  Point Kit at a project. Get a toolkit. Wire it into your agents.
 </p>
 
 <p align="center">
@@ -19,9 +19,9 @@
 
 ---
 
-**Kit** is how you install, apply, and wire [Agent Skills](docs/SKILL_SCHEMA.md) so Claude Code, Grok Build, Codex, and friends share the same playbook.
+**Kit** installs and applies [Agent Skills](docs/SKILL_SCHEMA.md) so Claude Code, Grok Build, Codex, and friends share one playbook.
 
-Offline-first engine. Seven starter packs. A black-and-white fox that actually lives in your terminal.
+Seven starter packs. Offline-first library. A pixel fox in the TUI that is not a gimmick — it marks the product.
 
 ```text
 point at a repo  →  ★ auto-recommend  →  ↵ install  →  apply  →  link  →  doctor green
@@ -54,7 +54,7 @@ pnpm build
 **macOS / Linux**
 
 ```bash
-./kit.ps1 recommend --dir .    # or: pnpm kit -- recommend --dir .
+pnpm kit -- recommend --dir .
 pnpm kit -- init --pack essentials
 pnpm kit -- pack apply essentials --dir .
 pnpm kit -- link --to claude-code --write
@@ -62,13 +62,13 @@ pnpm kit -- doctor
 pnpm kit -- tui
 ```
 
-> There is no global `kit` binary yet. Use `.\kit.cmd` / `pnpm kit --` from the repo after build.
+Run commands from the repo root after build (`.\kit.cmd` or `pnpm kit --`).
 
 ---
 
 ## Starter packs
 
-Seven kits for v1. Stack packs **extend essentials** so base skills always install with the stack.
+Seven kits. Stack packs **extend essentials** so dependency skills install with the stack.
 
 | | Pack | Best for |
 |---|------|----------|
@@ -87,21 +87,21 @@ pnpm kit -- pack install web-app
 pnpm kit -- pack apply web-app --dir ../my-app
 ```
 
-Full format: [docs/STARTER_PACKS.md](docs/STARTER_PACKS.md) · icons: [assets/pixel/packs](assets/pixel/packs)
+Format: [docs/STARTER_PACKS.md](docs/STARTER_PACKS.md) · icons: [assets/pixel/packs](assets/pixel/packs)
 
 ---
 
 ## Point → recommend → install
 
-Kit scans the project you point at and suggests a pack **and** individual skills.
+Kit scans the project you point at and ranks packs and skills.
 
 ```bash
 pnpm kit -- recommend --dir ~/code/my-next-app
-# → "my-next-app looks like a web app → web-app"
-# → skills: a11y-pass, ship-checklist, pr-ready, …
+# my-next-app looks like a web app → web-app
+# skills: a11y-pass, ship-checklist, pr-ready, …
 ```
 
-In the TUI: **`o`** types a path, Enter saves it, Home shows ★ summary + suggested skills.
+In the TUI press **`o`**, type a path, Enter — Home shows the ★ summary and suggested skills.
 
 ---
 
@@ -109,8 +109,7 @@ In the TUI: **`o`** types a path, Enter saves it, Home shows ★ summary + sugge
 
 ```bash
 pnpm tui
-# or
-.\kit.cmd tui
+# Windows: .\kit.cmd tui
 ```
 
 | Key | Action |
@@ -118,15 +117,15 @@ pnpm tui
 | `1`–`7` | First-run pack install |
 | `↵` | Install selected toolkit |
 | `a` | Apply pack to pointed project |
-| `o` | Point at a project (auto-recommend) |
-| `k` | Paths — pick harness, **approve folder**, then link |
+| `o` | Point at a project |
+| `k` | Paths — pick harness, approve folder, link |
 | `d` | Doctor |
 | `e` | Explore registry |
 | `l` | Library · `v` validate · `t` test |
 | `q` | Quit |
 
-Personality stays with **kit-idle**. Text motion is restrained (status, success, selection).  
-Reduced motion: `KIT_REDUCED_MOTION=1`.
+kit-idle carries personality. Motion stays short (status, success, selection).  
+`KIT_REDUCED_MOTION=1` for instant final frames.
 
 Screens: [docs/TUI_SCREENS.md](docs/TUI_SCREENS.md)
 
@@ -138,11 +137,11 @@ Screens: [docs/TUI_SCREENS.md](docs/TUI_SCREENS.md)
 |---------|----------------|
 | `init --pack <name>` | First-run install |
 | `pack list` / `install` / `apply` | Starter packs |
-| `recommend --dir <path>` | Auto-suggest pack + skills |
+| `recommend --dir <path>` | Suggest pack + skills |
 | `paths` / `link --to <harness> --write` | Wire skills into agents |
 | `test` / `doctor` | Quality + health |
-| `login` / `whoami` / `logout` | GitHub device flow |
-| `explore packs` / `search` | Public registry catalog |
+| `login` / `whoami` / `logout` | GitHub sign-in |
+| `explore packs` / `search` | Registry catalog |
 | `tui` | Pixel interface |
 
 ---
@@ -167,18 +166,18 @@ Schema: [docs/SKILL_SCHEMA.md](docs/SKILL_SCHEMA.md) · catalog: [skills/](skill
 
 ---
 
-## What ships in Alpha
+## Alpha status
 
 | Area | Status |
 |------|--------|
-| Local engine (validate, library, packs, link, test, doctor) | ✅ |
-| 7 starter packs + silhouette icons | ✅ |
-| Pixel TUI + kit-idle + motion | ✅ |
-| Auto-recommend by project | ✅ |
-| GitHub login + Railway catalog explore | ✅ |
-| Workshop / publish / social | ⏳ next |
+| Local engine (validate, library, packs, link, test, doctor) | Ready |
+| 7 starter packs + silhouette icons | Ready |
+| Pixel TUI + kit-idle + motion | Ready |
+| Auto-recommend by project | Ready |
+| GitHub sign-in + registry explore | Ready |
+| Workshop / publish | Next |
 
-Roadmap: [ROADMAP.md](ROADMAP.md) · Architecture: [ARCHITECTURE.md](ARCHITECTURE.md)
+[ROADMAP.md](ROADMAP.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
@@ -192,17 +191,15 @@ pnpm typecheck
 pnpm kit -- doctor
 ```
 
-Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Agents: [AGENTS.md](AGENTS.md)
-
-Built primarily with [Grok Build](https://x.ai).
+[CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md)
 
 ---
 
 <p align="center">
   <img src="docs/assets/kit-mascot.png" alt="Kit mascot" width="120" /><br />
-  <sub>Kit — a little fox for the tools your agents actually use.</sub>
+  <sub>Kit — skills your agents actually use.</sub>
 </p>
 
 <p align="center">
-  <sub>MIT · <a href="LICENSE">License</a> · <a href="CHANGELOG.md">Changelog</a></sub>
+  <sub>MIT · <a href="LICENSE">License</a></sub>
 </p>

@@ -3,12 +3,12 @@
 You are working on **Kit**.
 
 Kit is a portable Agent Skills platform with a pixel TUI and CLI.
-Offline-first local engine. No separate web product.
+Offline-first local engine.
 
 ## Core Identity
 - Portable skills across Claude Code, Grok Build, Codex, and others
 - Pure black-and-white silhouette visual language
-- Free accounts (GitHub device flow) for registry identity
+- GitHub sign-in for registry identity
 - Offline-first local engine
 - Strict validation
 
