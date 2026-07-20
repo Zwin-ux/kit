@@ -30,7 +30,15 @@ npm i -g @mzwin/kit
 kit --version
 ```
 
-That’s it. Global `kit` command.
+```bash
+# also fine
+npx @mzwin/kit --help
+```
+
+**Package:** [`@mzwin/kit`](https://www.npmjs.com/package/@mzwin/kit) · bin: `kit`  
+**Repo:** [github.com/Zwin-ux/kit](https://github.com/Zwin-ux/kit)
+
+That’s it. Global `kit` command after install.
 
 ---
 

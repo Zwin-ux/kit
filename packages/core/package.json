@@ -36,7 +36,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@mzwin/kit-shared": "0.1.3",
+    "@mzwin/kit-shared": "workspace:*",
     "semver": "^7.7.2",
     "yaml": "^2.8.0"
   },

@@ -1,7 +1,7 @@
 {
   "name": "@mzwin/kit",
   "version": "0.1.3",
-  "description": "Kit CLI — portable agent skills for Claude Code, Grok Build, and Codex",
+  "description": "Portable agent skills for Claude Code, Codex, and Grok. Unify skill dumps, install packs, link every agent.",
   "license": "MIT",
   "type": "module",
   "private": false,
@@ -21,9 +21,12 @@
     "agent-skills",
     "claude-code",
     "codex",
+    "grok",
     "cli",
     "skills",
-    "kit"
+    "kit",
+    "skill-manager",
+    "ai-agents"
   ],
   "bin": {
     "kit": "dist/bin.js"
@@ -37,7 +40,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -46,10 +50,10 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@mzwin/kit-catalog": "0.1.3",
-    "@mzwin/kit-core": "0.1.3",
-    "@mzwin/kit-shared": "0.1.3",
-    "@mzwin/kit-tui": "0.1.3"
+    "@mzwin/kit-catalog": "workspace:*",
+    "@mzwin/kit-core": "workspace:*",
+    "@mzwin/kit-shared": "workspace:*",
+    "@mzwin/kit-tui": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.3"
