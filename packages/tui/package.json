@@ -23,6 +23,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "icons:write": "node scripts/write-pack-icons.mjs",
+    "banner:write": "node scripts/write-readme-banner.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

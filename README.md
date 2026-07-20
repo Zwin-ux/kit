@@ -1,12 +1,25 @@
-# Kit
-
 <p align="center">
-  <img src="assets/pixel/kit-idle.gif" alt="Kit idle animation" width="200" />
+  <img src="docs/assets/readme-banner.png" alt="KIT — Portable Agent Skills" width="520" />
 </p>
 
 <p align="center">
-  <strong>Portable agent skills.</strong><br />
-  Point Kit at a project. Get a toolkit. Wire it into your agents.
+  <img src="assets/pixel/kit-idle.gif" alt="Kit idle animation — pixel fox silhouette" width="280" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/readme-loop.png" alt="Point · Recommend · Install · Link" width="480" />
+</p>
+
+<p align="center">
+  <strong>One library. Many agents.</strong><br />
+  Point Kit at a project. Install a starter pack. Wire skills into Claude Code, Grok Build, and Codex.
+</p>
+
+<p align="center">
+  <a href="#quick-start"><img src="https://img.shields.io/badge/quick_start-black?style=for-the-badge" alt="Quick start" /></a>
+  <a href="#starter-packs"><img src="https://img.shields.io/badge/7_packs-black?style=for-the-badge" alt="7 packs" /></a>
+  <a href="#tui"><img src="https://img.shields.io/badge/pixel_tui-black?style=for-the-badge" alt="Pixel TUI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black?style=for-the-badge" alt="MIT" /></a>
 </p>
 
 <p align="center">
@@ -14,31 +27,40 @@
   <a href="#starter-packs">Packs</a> ·
   <a href="#tui">TUI</a> ·
   <a href="#cli">CLI</a> ·
-  <a href="docs/STARTER_PACKS.md">Docs</a>
+  <a href="docs/STARTER_PACKS.md">Docs</a> ·
+  <a href="https://github.com/Zwin-ux/kit/releases/tag/v0.1.0-alpha">Alpha</a>
 </p>
 
 ---
 
-**Kit** installs and applies [Agent Skills](docs/SKILL_SCHEMA.md) so Claude Code, Grok Build, Codex, and friends share one playbook.
-
-Seven starter packs. Offline-first library. A pixel fox in the TUI that is not a gimmick — it marks the product.
+## What you get
 
 ```text
-point at a repo  →  ★ auto-recommend  →  ↵ install  →  apply  →  link  →  doctor green
+  ★  point at a repo
+  ★  auto-recommend the right pack + skills
+  ★  install with ↵ (or one CLI command)
+  ★  apply into the project
+  ★  link into your agent harness
+  ★  doctor green
 ```
+
+**Kit** is the portable skills layer for coding agents — strict `SKILL.md`, offline library, seven curated packs, and a pixel TUI with kit-idle.
 
 ---
 
 ## Quick start
 
-**Requirements:** Node 20+, [pnpm](https://pnpm.io) 10
+**Need:** Node 20+ · [pnpm](https://pnpm.io) 10
 
 ```bash
 git clone https://github.com/Zwin-ux/kit.git
 cd kit
-pnpm install
-pnpm build
+pnpm install && pnpm build
 ```
+
+<table>
+<tr>
+<td width="50%">
 
 **Windows**
 
@@ -51,6 +73,9 @@ pnpm build
 .\kit.cmd tui
 ```
 
+</td>
+<td width="50%">
+
 **macOS / Linux**
 
 ```bash
@@ -62,83 +87,114 @@ pnpm kit -- doctor
 pnpm kit -- tui
 ```
 
-Run commands from the repo root after build (`.\kit.cmd` or `pnpm kit --`).
+</td>
+</tr>
+</table>
+
+Run from the repo root after build (`.\kit.cmd` or `pnpm kit --`).
 
 ---
 
 ## Starter packs
 
-Seven kits. Stack packs **extend essentials** so dependency skills install with the stack.
+Seven kits. Stack packs **extend essentials** so base skills always ride along.
+
+<p align="center">
+  <img src="docs/assets/packs/essentials.png" width="56" alt="essentials" />
+  &nbsp;
+  <img src="docs/assets/packs/web-app.png" width="56" alt="web-app" />
+  &nbsp;
+  <img src="docs/assets/packs/library.png" width="56" alt="library" />
+  &nbsp;
+  <img src="docs/assets/packs/cli-tool.png" width="56" alt="cli-tool" />
+  &nbsp;
+  <img src="docs/assets/packs/api-service.png" width="56" alt="api-service" />
+  &nbsp;
+  <img src="docs/assets/packs/full-stack.png" width="56" alt="full-stack" />
+  &nbsp;
+  <img src="docs/assets/packs/data-ml.png" width="56" alt="data-ml" />
+</p>
 
 | | Pack | Best for |
 |---|------|----------|
-| <img src="docs/assets/packs/essentials.png" width="48" alt="essentials" /> | **essentials** | Any repo — default first install |
-| <img src="docs/assets/packs/web-app.png" width="48" alt="web-app" /> | **web-app** | Apps and sites |
-| <img src="docs/assets/packs/library.png" width="48" alt="library" /> | **library** | Packages and SDKs |
-| <img src="docs/assets/packs/cli-tool.png" width="48" alt="cli-tool" /> | **cli-tool** | Developer CLIs |
-| <img src="docs/assets/packs/api-service.png" width="48" alt="api-service" /> | **api-service** | HTTP backends |
-| <img src="docs/assets/packs/full-stack.png" width="48" alt="full-stack" /> | **full-stack** | UI + API products |
-| <img src="docs/assets/packs/data-ml.png" width="48" alt="data-ml" /> | **data-ml** | Data and ML work |
+| <img src="docs/assets/packs/essentials.png" width="40" alt="" /> | **essentials** | Any repo — start here |
+| <img src="docs/assets/packs/web-app.png" width="40" alt="" /> | **web-app** | Apps and sites |
+| <img src="docs/assets/packs/library.png" width="40" alt="" /> | **library** | Packages and SDKs |
+| <img src="docs/assets/packs/cli-tool.png" width="40" alt="" /> | **cli-tool** | Developer CLIs |
+| <img src="docs/assets/packs/api-service.png" width="40" alt="" /> | **api-service** | HTTP backends |
+| <img src="docs/assets/packs/full-stack.png" width="40" alt="" /> | **full-stack** | UI + API products |
+| <img src="docs/assets/packs/data-ml.png" width="40" alt="" /> | **data-ml** | Data and ML work |
 
 ```bash
-pnpm kit -- pack list
 pnpm kit -- recommend --dir ../my-app
 pnpm kit -- pack install web-app
 pnpm kit -- pack apply web-app --dir ../my-app
 ```
 
-Format: [docs/STARTER_PACKS.md](docs/STARTER_PACKS.md) · icons: [assets/pixel/packs](assets/pixel/packs)
+→ [docs/STARTER_PACKS.md](docs/STARTER_PACKS.md)
 
 ---
 
 ## Point → recommend → install
 
-Kit scans the project you point at and ranks packs and skills.
-
 ```bash
 pnpm kit -- recommend --dir ~/code/my-next-app
-# my-next-app looks like a web app → web-app
-# skills: a11y-pass, ship-checklist, pr-ready, …
 ```
 
-In the TUI press **`o`**, type a path, Enter — Home shows the ★ summary and suggested skills.
+```text
+my-next-app looks like a web app → web-app
+Signals: package.json, web-framework, tests
+
+Packs
+★ web-app       score 25  Web App
+  essentials    score 8   Essentials
+  …
+
+Skills this project likely wants
+  · a11y-pass · ship-checklist · pr-ready · write-tests
+```
+
+In the TUI: **`o`** → type a path → Enter. Home shows the ★ line and suggested skills.
 
 ---
 
 ## TUI
 
+<p align="center">
+  <img src="assets/pixel/kit-idle.gif" width="160" alt="kit-idle" />
+</p>
+
 ```bash
-pnpm tui
-# Windows: .\kit.cmd tui
+pnpm tui          # or  .\kit.cmd tui
 ```
 
-| Key | Action |
-|-----|--------|
-| `1`–`7` | First-run pack install |
-| `↵` | Install selected toolkit |
-| `a` | Apply pack to pointed project |
-| `o` | Point at a project |
-| `k` | Paths — pick harness, approve folder, link |
-| `d` | Doctor |
-| `e` | Explore registry |
-| `l` | Library · `v` validate · `t` test |
-| `q` | Quit |
+| Key | What happens |
+|-----|----------------|
+| **1–7** | Install a starter pack (first-run) |
+| **↵** | Install the selected toolkit |
+| **a** | Apply pack to the pointed project |
+| **o** | Point Kit at a project folder |
+| **k** | Paths — pick harness, approve the folder, link |
+| **d** | Doctor |
+| **e** | Explore registry |
+| **l** | Library · **v** validate · **t** test |
+| **q** | Quit |
 
-kit-idle carries personality. Motion stays short (status, success, selection).  
-`KIT_REDUCED_MOTION=1` for instant final frames.
+kit-idle is the product face. Motion is short and purposeful.  
+`KIT_REDUCED_MOTION=1` skips delays.
 
-Screens: [docs/TUI_SCREENS.md](docs/TUI_SCREENS.md)
+→ [docs/TUI_SCREENS.md](docs/TUI_SCREENS.md)
 
 ---
 
 ## CLI
 
-| Command | What it does |
-|---------|----------------|
+| Command | Job |
+|---------|-----|
 | `init --pack <name>` | First-run install |
 | `pack list` / `install` / `apply` | Starter packs |
 | `recommend --dir <path>` | Suggest pack + skills |
-| `paths` / `link --to <harness> --write` | Wire skills into agents |
+| `paths` / `link --to <harness> --write` | Wire into agents |
 | `test` / `doctor` | Quality + health |
 | `login` / `whoami` / `logout` | GitHub sign-in |
 | `explore packs` / `search` | Registry catalog |
@@ -147,8 +203,6 @@ Screens: [docs/TUI_SCREENS.md](docs/TUI_SCREENS.md)
 ---
 
 ## Skill format
-
-Each skill is a folder with `SKILL.md` — strict front matter, clear body, multi-agent compatibility.
 
 ```yaml
 ---
@@ -162,47 +216,42 @@ compatibility:
 ---
 ```
 
-Schema: [docs/SKILL_SCHEMA.md](docs/SKILL_SCHEMA.md) · catalog: [skills/](skills/)
+Strict front matter. Clear body. Multi-agent compatibility.  
+→ [docs/SKILL_SCHEMA.md](docs/SKILL_SCHEMA.md) · [skills/](skills/)
 
 ---
 
-## Alpha status
+## Alpha
 
-| Area | Status |
-|------|--------|
-| Local engine (validate, library, packs, link, test, doctor) | Ready |
-| 7 starter packs + silhouette icons | Ready |
-| Pixel TUI + kit-idle + motion | Ready |
-| Auto-recommend by project | Ready |
-| GitHub sign-in + registry explore | Ready |
-| Workshop / publish | Next |
+| Ready now | Next |
+|-----------|------|
+| Engine · 7 packs · silhouettes | Workshop |
+| Pixel TUI · kit-idle · motion | Publish API |
+| Recommend · link · doctor | Durable catalog |
+| GitHub sign-in · explore | Global install |
 
-[ROADMAP.md](ROADMAP.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [CHANGELOG.md](CHANGELOG.md)
+[ROADMAP](ROADMAP.md) · [ARCHITECTURE](ARCHITECTURE.md) · [CHANGELOG](CHANGELOG.md) · [CI](.github/README.md)
 
 ---
 
 ## Develop
 
 ```bash
-pnpm install
-pnpm build
-pnpm test
-pnpm typecheck
+pnpm install && pnpm build
+pnpm test && pnpm typecheck
 pnpm kit -- doctor
 ```
-
-CI is **test-only** (build, typecheck, unit tests, all packs, doctor) — no deploy, no secrets.  
-Details: [.github/README.md](.github/README.md)
 
 [CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md)
 
 ---
 
 <p align="center">
-  <img src="docs/assets/kit-mascot.png" alt="Kit mascot" width="120" /><br />
-  <sub>Kit — skills your agents actually use.</sub>
+  <img src="docs/assets/kit-wordmark.png" alt="KIT" width="200" /><br />
+  <img src="docs/assets/kit-mascot.png" alt="Kit mascot" width="96" /><br />
+  <sub>Skills your agents actually use.</sub>
 </p>
 
 <p align="center">
-  <sub>MIT · <a href="LICENSE">License</a></sub>
+  <sub>MIT · <a href="LICENSE">License</a> · <a href="https://github.com/Zwin-ux/kit/releases/tag/v0.1.0-alpha">v0.1.0-alpha</a></sub>
 </p>
