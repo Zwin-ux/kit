@@ -5,5 +5,9 @@
     "outDir": "dist"
   },
   "include": ["src/**/*"],
-  "references": [{ "path": "../core" }, { "path": "../shared" }]
+  "references": [
+    { "path": "../core" },
+    { "path": "../shared" },
+    { "path": "../tui" }
+  ]
 }

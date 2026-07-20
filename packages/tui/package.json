@@ -4,6 +4,9 @@
   "private": true,
   "description": "Pixel-art terminal interface for Kit",
   "type": "module",
+  "bin": {
+    "kit-tui": "./dist/bin.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -16,14 +19,22 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node -e \"console.log('@kit-skills/tui: no tests yet')\"",
+    "start": "node dist/bin.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
     "@kit-skills/core": "workspace:*",
-    "@kit-skills/shared": "workspace:*"
+    "@kit-skills/shared": "workspace:*",
+    "ink": "^5.2.1",
+    "pngjs": "^7.0.0",
+    "react": "^18.3.1"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "^18.3.20",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
   }
 }

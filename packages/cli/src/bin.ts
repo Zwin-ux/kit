@@ -47,6 +47,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "tui" || command === "ui" || command === "start") {
+    const { startTui } = await import("@kit-skills/tui");
+    startTui();
+    return;
+  }
+
   console.error(`kit: unknown command: ${command}`);
   console.error("Run `kit --help` for usage.");
   process.exit(1);
@@ -60,12 +66,14 @@ function printHelp(): void {
   console.log("Usage:");
   console.log("  kit --version");
   console.log("  kit --help");
+  console.log("  kit tui");
   console.log("  kit validate <skill-dir>");
   console.log("  kit install <skill-dir> [--force]");
   console.log("  kit list");
   console.log("  kit remove <skill-name>");
   console.log("");
   console.log("Library data is stored under ~/.kit (or KIT_HOME).");
+  console.log("Mascot frames load from assets/pixel/kit-frame-1.png … 4.png");
 }
 
 async function runValidate(rest: string[]): Promise<void> {

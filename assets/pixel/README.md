@@ -48,3 +48,8 @@ Master direction is locked: pure black silhouette only.
 Frame 1 (master) is defined.
 Frames 2–4 are described as small controlled changes from the master.
 Once the four PNGs exist, both the TUI and the GitHub GIF can be created from the same source.
+
+## TUI wiring
+The TUI loads these exact names from this folder.
+Missing files fall back to a built-in 16×16 black silhouette (4 frames).
+Run: `kit tui`

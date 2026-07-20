@@ -24,7 +24,8 @@
   },
   "dependencies": {
     "@kit-skills/core": "workspace:*",
-    "@kit-skills/shared": "workspace:*"
+    "@kit-skills/shared": "workspace:*",
+    "@kit-skills/tui": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

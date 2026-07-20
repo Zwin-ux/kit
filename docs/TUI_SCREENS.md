@@ -61,3 +61,23 @@ View version of Kit.
 - Keep high contrast.
 - Show the mascot on Splash and empty states.
 - Use simple status icons.
+
+## Implementation notes (v0 shell)
+
+Start the TUI:
+
+```sh
+kit tui
+# or
+pnpm --filter @kit-skills/tui start
+```
+
+Mascot frames:
+- Prefer `assets/pixel/kit-frame-1.png` … `kit-frame-4.png`
+- Pure black silhouette on white or transparent
+- If PNGs are missing, the TUI uses a built-in placeholder silhouette
+- Cycle delay is about 220 ms per frame
+
+Keys:
+- Splash: any key → Home, `q` → quit
+- Home: `s` → Splash, `q` → quit

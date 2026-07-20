@@ -6,7 +6,7 @@
 - [x] High-quality pixel-art mascot (fox with wrench)
 - [x] Vision + README
 - [x] Architecture document
-- [ ] Pixel-art style guide + asset pipeline
+- [x] Pixel-art style guide + asset pipeline (silhouette rules + frame filenames)
 - [x] Skill schema v0 (strict)
 - [x] Basic repo structure (packages/)
 - [x] Grok Build instructions / AGENTS.md / skills for working on Kit
@@ -16,10 +16,10 @@
 - [x] Local library (install / list / remove)
 - Cross-harness path normalization
 - Simple test runner
-- [x] CLI entrypoint that the TUI will later wrap (`validate`, `install`, `list`, `remove`)
+- [x] CLI entrypoint that the TUI will later wrap (`validate`, `install`, `list`, `remove`, `tui`)
 
 ## Phase 2 — Pixel-Art TUI + Accounts
-- TUI shell with pixel-art rendering
+- [x] TUI shell with pixel-art rendering (splash + home + 4-frame mascot cycle)
 - Home, Explore, Workshop, Library screens
 - Auth flow inside the TUI (device code / browser handoff only when necessary)
 - Railway backend: accounts, basic registry, publish, search
