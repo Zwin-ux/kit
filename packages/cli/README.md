@@ -2,11 +2,12 @@
 
 **One library. Many agents.**
 
-Your Claude Code / Codex / Grok skills are a mess.  
-`kit` unifies them into one portable library — then packs and links them everywhere.
+Built for the vibe-coding boom: you run Claude Code, Codex, maybe Grok —  
+and your skills are scattered, duplicated, and stuck in one tool.
 
 ```bash
 npm i -g @mzwin/kit
+kit                 # tells you YOUR next move
 ```
 
 ---
@@ -20,95 +21,87 @@ kit --version
 
 Requires **Node 20+**.
 
-| Package | Role |
-|---------|------|
-| **`@mzwin/kit`** | CLI (`kit` binary) — install this |
-| `@mzwin/kit-core` | Engine (dependency) |
-| `@mzwin/kit-catalog` | Official packs + skills (dependency) |
-| `@mzwin/kit-tui` | Pixel TUI (dependency) |
-| `@mzwin/kit-shared` | Shared types (dependency) |
-
 ---
 
-## 60-second start
+## Who is this for? (real stories)
 
-### Option A — Clean the pile you already have
+### 1) “I have 200 skills and I trust none of them”
+
+You installed every Claude/Codex skill you saw. Half are `*-automation` junk.  
+Nothing works the same in both agents.
 
 ```bash
-kit unify                 # dry-run: scan Claude/Codex/Grok skill dumps
-kit unify --write         # adopt S/A keepers into ~/.kit (not automation spam)
-kit unify --write --link  # + wire into this project’s agents
+kit unify                 # see mess vs keepers
+kit unify --write         # adopt S/A keepers only
+kit unify --write --link  # + wire into this project
 ```
 
-### Option B — Curated pack
+### 2) “I just opened a repo — make agents useful”
+
+You don’t want a 12-step setup. You want Claude/Codex competent on *this* folder.
+
+```bash
+cd my-app
+kit ready                 # dry-run plan
+kit ready --write         # pack + apply + link + doctor
+kit ready --write --unify # also clean your personal skill pile
+```
+
+### 3) “I bounce between Claude and Codex every day”
+
+Same product, two agents, two skill folders. Kit is the shared library.
 
 ```bash
 kit init --pack essentials
-kit recommend --dir .
-kit pack apply essentials --dir .
-kit link --to claude-code --write
-kit link --to codex --write
-kit doctor
+kit link --to all --write
+kit paths
 ```
 
-### Open the TUI
+### 4) “Brand new install”
 
 ```bash
-kit tui
+npm i -g @mzwin/kit
+kit                       # situation-aware home
+kit init --pack essentials
+# or if you already have skills elsewhere:
+kit unify
 ```
+
+---
+
+## Commands that matter
+
+| Command | When you use it |
+|---------|-----------------|
+| `kit` | Open Kit — reads your setup, names your story, gives next command |
+| `kit ready --write` | One-shot: this repo is agent-ready |
+| `kit unify --write` | Clean chaotic personal skills → portable library |
+| `kit recommend --dir .` | What pack fits this project? |
+| `kit pack apply <name> --dir .` | Land pack skills on a project |
+| `kit link --to all --write` | Broadcast library → Claude/Codex/Grok |
+| `kit import --from claude-code --write` | Pull one harness into Kit |
+| `kit doctor` | Health check |
+| `kit tui` | Pixel terminal UI |
 
 ---
 
 ## `kit unify` (skill OS)
 
-Vibe coders already installed dozens or hundreds of skills. None travel between agents. Most are noise.
-
 ```text
-UNIFY  skill OS  (dry-run)
+Scanned   998 skill folders
+Noise     809 filtered   (automation bulk, stubs)
+Keepers   4              (S/A · multi-agent or real structure)
 
-  Scanned   998 skill folders
-  Noise     809 filtered
-  Keepers   4   (S/A · multi-agent or real structure)
-
-  Safe default: adopt keepers — not bulk *-automation dumps.
+Safe default: adopt keepers — not hundreds of dumps.
 ```
 
 | Flag | Effect |
 |------|--------|
-| *(none)* | Dry-run report |
-| `--write` | Adopt **keepers only** into `~/.kit` |
-| `--link` | With `--write`, copy into project harness folders |
+| *(none)* | Dry-run |
+| `--write` | Adopt keepers into `~/.kit` |
+| `--link` | Also copy into project harness folders |
 | `--all` | Include noise (not recommended) |
-| `--json` | Machine-readable report |
-
----
-
-## Everyday commands
-
-```bash
-kit unify
-kit unify --write --link
-kit init --pack essentials
-kit recommend --dir .
-kit pack list
-kit pack apply <pack> --dir .
-kit link --to claude-code --write
-kit import --from claude-code --write
-kit doctor
-kit tui
-```
-
-| Command | Job |
-|---------|-----|
-| `unify` | Rank + clean skill mess → portable library |
-| `init` / `pack` | Curated starter packs |
-| `recommend` | Suggest pack for a repo |
-| `link` | Kit → Claude / Codex / Grok |
-| `import` | One harness → Kit |
-| `doctor` | Health check |
-| `tui` | Pixel terminal UI |
-
-Harness targets: `claude-code` · `codex` · `grok-build`
+| `--json` | Machine report |
 
 ---
 
@@ -116,39 +109,21 @@ Harness targets: `claude-code` · `codex` · `grok-build`
 
 `essentials` · `web-app` · `library` · `cli-tool` · `api-service` · `full-stack` · `data-ml`
 
-Stack packs extend **essentials**.
-
 ```bash
 kit pack list
-kit pack install web-app
 kit pack apply web-app --dir ../my-app
-```
-
----
-
-## Skill format
-
-```yaml
----
-name: pr-ready
-description: Prepare a clear pull request summary, test plan, and risk notes.
-version: 0.1.0
-compatibility:
-  - claude-code
-  - grok-build
-  - codex
----
 ```
 
 ---
 
 ## Links
 
-- **GitHub:** [github.com/Zwin-ux/kit](https://github.com/Zwin-ux/kit)
-- **npm:** [npmjs.com/package/@mzwin/kit](https://www.npmjs.com/package/@mzwin/kit)
-- **License:** MIT
+- GitHub: [github.com/Zwin-ux/kit](https://github.com/Zwin-ux/kit)
+- npm: [npmjs.com/package/@mzwin/kit](https://www.npmjs.com/package/@mzwin/kit)
+- License: MIT
 
 ```bash
 npm i -g @mzwin/kit
-kit unify
+kit
+kit ready --write
 ```

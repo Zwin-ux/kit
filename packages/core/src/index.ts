@@ -144,6 +144,21 @@ export {
 } from "./unify/mod.js";
 
 export {
+  USER_STORIES,
+  pickStory,
+  detectSituation,
+  runReady,
+  type StoryId,
+  type UserStory,
+  type SituationSnapshot,
+  type KitSituation,
+  type DetectSituationOptions,
+  type ReadyOptions,
+  type ReadyReport,
+  type ReadyResult,
+} from "./product/mod.js";
+
+export {
   DEFAULT_REGISTRY_URL,
   getRegistryUrl,
   getAuthPath,

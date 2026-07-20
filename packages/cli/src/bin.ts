@@ -26,7 +26,9 @@ import {
   recommendToolkits,
   removeSkill,
   runDoctor,
+  runReady,
   runUnify,
+  detectSituation,
   testAllPacks,
   testPack,
   testSkill,
@@ -48,19 +50,24 @@ function fail(message: string, code = 1): never {
 }
 
 async function main(): Promise<void> {
-  if (
-    command === undefined ||
-    command === "--help" ||
-    command === "-h" ||
-    command === "help"
-  ) {
+  if (command === "--help" || command === "-h" || command === "help") {
     printHelp();
     process.exit(0);
+  }
+
+  if (command === undefined || command === "home") {
+    await runHome(args.slice(command === "home" ? 1 : 0));
+    return;
   }
 
   if (command === "--version" || command === "-v" || command === "version") {
     console.log(KIT_PACKAGE_VERSION);
     process.exit(0);
+  }
+
+  if (command === "ready") {
+    await runReadyCmd(args.slice(1));
+    return;
   }
 
   if (command === "init") {
@@ -160,41 +167,27 @@ async function main(): Promise<void> {
 function printHelp(): void {
   console.log(`kit ${KIT_PACKAGE_VERSION}`);
   console.log("");
-  console.log("Terminal-native Agent Skills platform.");
+  console.log("One library. Many agents. Built for the vibe-coding boom.");
   console.log("");
-  console.log("Usage:");
-  console.log("  kit --version");
-  console.log("  kit --help");
-  console.log("  kit init [--pack essentials|web-app|library|cli-tool|api-service|full-stack|data-ml] [--apply] [--dir <path>]");
-  console.log("  kit tui");
-  console.log("  kit validate <skill-dir>");
-  console.log("  kit install <skill-dir> [--force]");
-  console.log("  kit list");
-  console.log("  kit remove <skill-name>");
-  console.log("  kit pack list");
-  console.log("  kit pack show <pack>");
-  console.log("  kit pack validate <pack>");
-  console.log("  kit pack install <pack>");
-  console.log("  kit pack apply <pack> [--dir <project>]");
-  console.log("  kit paths [--dir <project>] [--skill <name>]");
-  console.log("  kit link [--to <harness|all>] [--scope personal|project] [--write] [--force] [--mode symlink|copy] [--dir <project>]");
-  console.log("  kit import [--from <harness|all>] [--scope personal|project] [--write] [--force] [--skill <name>] [--dir <project>]");
-  console.log("  kit unify [--dir <project>] [--write] [--link] [--force] [--top <n>] [--min-score <n>]");
-  console.log("  kit test [skill-dir|pack-name|--all-packs]");
-  console.log("  kit doctor [--dir <project>]");
-  console.log("  kit login");
-  console.log("  kit whoami");
-  console.log("  kit logout");
-  console.log("  kit explore packs");
-  console.log("  kit explore search <query>");
-  console.log("  kit explore show <pack>");
-  console.log("  kit explore skills [--agent <id>]");
-  console.log("  kit recommend [--dir <project>]");
+  console.log("Start here:");
+  console.log("  kit                         # your situation + next move");
+  console.log("  kit ready --write           # make THIS repo agent-ready");
+  console.log("  kit unify --write --link    # clean skill mess → portable library");
   console.log("");
-  console.log("Library:  ~/.kit (or KIT_HOME)");
-  console.log("Packs:    @mzwin/kit-catalog or packs/ in this repo (KIT_PACKS)");
+  console.log("Everyday:");
+  console.log("  kit recommend --dir .");
+  console.log("  kit init --pack essentials");
+  console.log("  kit pack list | install | apply");
+  console.log("  kit link --to claude-code|codex|grok-build|all --write");
+  console.log("  kit import --from claude-code --write");
+  console.log("  kit unify [--write] [--link] [--all] [--json]");
+  console.log("  kit ready [--write] [--unify] [--pack <name>] [--dir <path>]");
+  console.log("  kit doctor | kit tui | kit list");
+  console.log("");
+  console.log("Also: validate, install, remove, paths, test, login, explore");
+  console.log("");
   console.log("Install:  npm i -g @mzwin/kit");
-  console.log("Tip:      kit unify --write --link   # one library, every agent");
+  console.log("Docs:     https://github.com/Zwin-ux/kit");
 }
 
 async function runInit(rest: string[]): Promise<void> {
@@ -773,6 +766,131 @@ async function runImport(rest: string[]): Promise<void> {
   }
 }
 
+async function runHome(rest: string[]): Promise<void> {
+  const dirFlag = rest.indexOf("--dir");
+  let projectDir: string | undefined;
+  if (dirFlag >= 0) {
+    projectDir = rest[dirFlag + 1];
+    if (!projectDir || projectDir.startsWith("-")) {
+      fail("Usage: kit [--dir <project>]");
+    }
+  }
+
+  const sit = await detectSituation({
+    ...(projectDir ? { projectDir } : {}),
+  });
+  const { story, snapshot, headline } = sit;
+
+  console.log("");
+  console.log(`kit ${KIT_PACKAGE_VERSION}  ·  one library, many agents`);
+  console.log("");
+  console.log(`  ${headline}`);
+  console.log("");
+  console.log(`  Story   ${story.title}`);
+  console.log(`  Who     ${story.who}`);
+  console.log(`  Pain    ${story.pain}`);
+  console.log(`  Win     ${story.win}`);
+  console.log("");
+  console.log(
+    `  Library ${snapshot.libraryCount} skills  ·  ~${snapshot.harnessSkillEstimate} in agent folders`,
+  );
+  if (snapshot.recommendedPack) {
+    console.log(`  Project pack hint: ${snapshot.recommendedPack}`);
+  }
+  console.log("");
+  console.log("  Do this next");
+  console.log(`    ${story.primary}`);
+  for (const n of story.next.slice(0, 3)) {
+    console.log(`    ${n}`);
+  }
+  console.log("");
+  console.log("  Or: kit --help   ·   kit tui");
+  console.log("");
+}
+
+async function runReadyCmd(rest: string[]): Promise<void> {
+  if (rest.includes("--help") || rest.includes("-h")) {
+    console.log(
+      "Usage: kit ready [--dir <project>] [--pack <name>] [--write] [--unify] [--force]",
+    );
+    console.log("");
+    console.log("Make THIS repo agent-ready in one shot:");
+    console.log("  recommend pack → install → apply → (optional unify) → link → doctor");
+    console.log("");
+    console.log("  kit ready                # dry-run plan");
+    console.log("  kit ready --write        # do it");
+    console.log("  kit ready --write --unify  # also clean personal skill dumps");
+    return;
+  }
+
+  const write = rest.includes("--write");
+  const unify = rest.includes("--unify");
+  const force = rest.includes("--force");
+
+  const dirFlag = rest.indexOf("--dir");
+  let projectDir: string | undefined;
+  if (dirFlag >= 0) {
+    projectDir = rest[dirFlag + 1];
+    if (!projectDir || projectDir.startsWith("-")) {
+      fail("Usage: kit ready --dir <project>");
+    }
+  }
+
+  const packFlag = rest.indexOf("--pack");
+  let pack: string | undefined;
+  if (packFlag >= 0) {
+    pack = rest[packFlag + 1];
+    if (!pack || pack.startsWith("-")) fail("Usage: kit ready --pack <name>");
+  }
+
+  const result = await runReady({
+    write,
+    unify,
+    force,
+    onProgress: (msg: string) => {
+      process.stderr.write(`  … ${msg}\n`);
+    },
+    ...(projectDir ? { projectDir } : {}),
+    ...(pack ? { pack } : {}),
+  });
+  if (!result.ok) fail(result.error);
+
+  const r = result.value;
+  console.log("");
+  console.log(r.dryRun ? "READY  (dry-run)" : "READY  (applied)");
+  console.log("");
+  console.log(`  Project  ${r.projectDir}`);
+  console.log(`  Story    ${r.story.title}`);
+  console.log(`  Pack     ${r.packName}`);
+  console.log(`  Signal   ${r.recommendSummary}`);
+  console.log("");
+  console.log("  Steps");
+  for (const s of r.steps) {
+    const mark =
+      s.status === "done"
+        ? "✓"
+        : s.status === "planned"
+          ? "·"
+          : s.status === "skipped"
+            ? "-"
+            : "✗";
+    console.log(`  ${mark} ${s.id.padEnd(14)}  ${s.detail}`);
+  }
+  if (r.notes.length) {
+    console.log("");
+    for (const n of r.notes) console.log(`  · ${n}`);
+  }
+  if (r.dryRun) {
+    console.log("");
+    console.log("  Next: kit ready --write");
+    console.log("        kit ready --write --unify   # if you have a huge skill pile");
+  } else if (r.doctorOk) {
+    console.log("");
+    console.log("  Agents are useful on this repo. Open Claude/Codex here, or: kit tui");
+  }
+  console.log("");
+}
+
 async function runUnifyCmd(rest: string[]): Promise<void> {
   if (rest.includes("--help") || rest.includes("-h")) {
     console.log(
@@ -915,14 +1033,21 @@ async function runUnifyCmd(rest: string[]): Promise<void> {
       `  Safe default: adopt up to ${Math.min(top ?? 25, report.adoptReady)} keepers — not ${report.noiseCount} noise skills.`,
     );
     console.log("");
+    console.log("  Why this matters");
+    console.log("    Vibe coders install skills for every tool. They rot in one agent.");
+    console.log("    Unify makes a single library Claude, Codex, and Grok can all share.");
+    console.log("");
     console.log("  Next");
     console.log("    kit unify --write           # one portable library");
     console.log("    kit unify --write --link    # + wire into this project");
+    console.log("    kit ready --write           # pack + link this repo in one shot");
   } else if (report.adoptedNames.length > 0) {
     console.log("");
     console.log(
       `  Adopted (${report.adoptedNames.length}): ${report.adoptedNames.slice(0, 12).join(", ")}${report.adoptedNames.length > 12 ? "…" : ""}`,
     );
+    console.log("");
+    console.log("  Next: kit link --to all --write   ·   kit ready --write   ·   kit list");
   }
   console.log("");
 }

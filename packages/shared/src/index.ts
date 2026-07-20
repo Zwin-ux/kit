@@ -4,7 +4,7 @@
  */
 
 /** Semantic version string of the Kit monorepo packages. */
-export const KIT_PACKAGE_VERSION = "0.1.3" as const;
+export const KIT_PACKAGE_VERSION = "0.1.4" as const;
 
 /** Result of a fallible operation without throwing. */
 export type Result<T, E = string> =

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.4 — Product stories: `kit` home + `kit ready`
+
+### Why
+Vibe coders don’t want a command encyclopedia. They want the next right move for *their* mess.
+
+### Features
+- **`kit` (no args)** — situation-aware home: library size, harness skill estimate, picks a user story, prints exact next commands
+- **`kit ready`** — one-shot make-this-repo-agent-ready: recommend → install pack → apply → optional unify → link → doctor
+- **`kit ready --unify`** — also adopt personal skill keepers while wiring the project
+- User stories baked into product routing: chaos-cleanup, new-repo-agents, multi-agent-sync, empty-start, already-solid
+- npm + GitHub README rewritten around those stories
+
+### Loop
+```bash
+npm i -g @mzwin/kit
+kit
+kit ready --write
+kit unify --write --link
+```
+
 ## 0.1.3 — `kit unify` (skill OS)
 
 ### Feature
