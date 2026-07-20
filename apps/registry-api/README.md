@@ -26,10 +26,11 @@ GITHUB_APP_ID=
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 GITHUB_WEBHOOK_SECRET=
+GITHUB_APP_PRIVATE_KEY_BASE64=   # base64 of the .pem private key
 PUBLIC_BASE_URL=https://kit-registry-production.up.railway.app
 ```
 
-Never commit secrets.
+Never commit secrets or the `.pem` file.
 
 ## Local
 

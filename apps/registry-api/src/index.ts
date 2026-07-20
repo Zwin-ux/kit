@@ -3,7 +3,11 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { randomBytes } from "node:crypto";
 import { SEED_PACKS, SEED_SKILLS } from "./catalog.js";
-import { authConfigured, getConfig } from "./config.js";
+import {
+  appCredentialsConfigured,
+  authConfigured,
+  getConfig,
+} from "./config.js";
 import {
   buildAuthorizeUrl,
   exchangeCodeForToken,
@@ -32,6 +36,7 @@ app.get("/", (c) =>
     name: "kit-registry-api",
     version: "0.2.0",
     authConfigured: authConfigured(),
+    appCredentialsConfigured: appCredentialsConfigured(),
     docs: {
       health: "GET /health",
       packs: "GET /v1/packs",
@@ -58,6 +63,7 @@ app.get("/health", (c) => {
     packs: SEED_PACKS.length,
     skills: SEED_SKILLS.length,
     authConfigured: authConfigured(),
+    appCredentialsConfigured: appCredentialsConfigured(),
     githubAppId: cfg.githubAppId || null,
     githubClientId: cfg.githubClientId
       ? `${cfg.githubClientId.slice(0, 8)}…`
@@ -305,7 +311,7 @@ function escapeHtml(value: string): string {
 
 const port = getConfig().port;
 console.log(
-  `kit-registry-api listening on :${port} (authConfigured=${authConfigured()})`,
+  `kit-registry-api listening on :${port} (authConfigured=${authConfigured()}, appKey=${appCredentialsConfigured()})`,
 );
 
 serve({
