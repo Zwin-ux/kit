@@ -162,6 +162,20 @@ describe("layout scale — menu-first breakpoints", () => {
     expect(s.railCols).toBe(LAYOUT_CAPS.railColsSplit);
     expect(s.railRows).toBe(LAYOUT_CAPS.railRowsSplit);
     expect(s.showPackDetail).toBe(false);
+    expect(s.packDetailSize).toBe(0);
+  });
+
+  it("never enables solid pack detail silhouettes (dark-terminal a11y)", () => {
+    for (const [c, r] of [
+      [60, 20],
+      [80, 24],
+      [120, 40],
+      [200, 60],
+    ] as const) {
+      const s = layoutScaleFromTerminal(c, r);
+      expect(s.showPackDetail).toBe(false);
+      expect(s.packDetailSize).toBe(0);
+    }
   });
 
   it("wide mode densifies lists", () => {
@@ -170,6 +184,15 @@ describe("layout scale — menu-first breakpoints", () => {
     expect(wide.mode).toBe("wide");
     expect(wide.listMaxItems).toBeGreaterThan(split.listMaxItems);
     expect(wide.mascotPlacement).toBe("rail");
+  });
+
+  it("keeps secondary lists short so tools fit viewport", () => {
+    const stack = layoutScaleFromTerminal(60, 20);
+    const split = layoutScaleFromTerminal(80, 24);
+    expect(stack.listMaxItems).toBeLessThanOrEqual(2);
+    expect(split.listMaxItems).toBeLessThanOrEqual(3);
+    expect(split.packListMax).toBeGreaterThan(0);
+    expect(split.packListMax).toBeLessThanOrEqual(8);
   });
 
   it("padSlotLines freezes line count and width", () => {

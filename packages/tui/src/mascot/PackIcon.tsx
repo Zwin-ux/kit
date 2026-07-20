@@ -22,6 +22,9 @@ export interface PackIconProps {
 
 /**
  * Pack logo — list rows are static single-cell ASCII.
+ *
+ * Prefer size="mini" in UI. Detail/full █ blocks invert to unreadable white
+ * masses on dark terminals; ToolkitPicker no longer mounts them.
  */
 export function PackIcon({
   packName,
@@ -34,6 +37,8 @@ export function PackIcon({
     return <Text>{packIconGlyph(packName, 0)}</Text>;
   }
 
+  // Detail/full: keep API for tests/splash-adjacent callers, but dim the
+  // silhouette so dark terminals don't get a solid white blob.
   const anim = animate && motionEnabled();
   const frame = useIntervalFrame(4, 280, anim);
   const edge = Math.max(3, Math.min(LAYOUT_CAPS.packDetailMax, detailEdge));
@@ -45,7 +50,9 @@ export function PackIcon({
   return (
     <Box flexDirection="column" width={edge} height={edge} flexShrink={0}>
       {lines.map((line, i) => (
-        <Text key={i}>{line}</Text>
+        <Text key={i} dimColor>
+          {line}
+        </Text>
       ))}
     </Box>
   );

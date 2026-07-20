@@ -8,7 +8,6 @@ import type {
   ToolkitRecommendation,
 } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
-import { StatusIcon } from "../mascot/StatusIcon.js";
 import { useLayoutScale } from "../mascot/useLayoutScale.js";
 import { Footer, Header, StatusLine } from "../components/Chrome.js";
 import { ScreenShell } from "../components/ScreenShell.js";
@@ -99,13 +98,15 @@ export function Home({
   const emptyLibrary = skills.length === 0;
   const appliedNames = new Set(applied.map((a) => a.name));
   const selected = packs[selectedPackIndex];
-  const topReasons =
-    recommended.find((r) => r.packName === topPick)?.reasons.slice(0, 2) ?? [];
   const variant =
     mascotVariant ??
     (busy ? "scan" : celebrateCount !== undefined ? "success" : "idle");
+  // Cognitive a11y: secondary lists are summaries so tools stay in view
   const skillShow = scale.listMaxItems;
+  const compact = scale.mode === "stack" || scale.rows < 28;
+  const showSecondaryLists = scale.mode === "wide" || scale.rows >= 30;
 
+  // Sticky footer focus only (ToolkitPicker owns the in-list focus line)
   const focusLabel =
     selected && packs.length > 0
       ? `${selectedPackIndex + 1}/${packs.length} ${selected.title}`
@@ -127,12 +128,8 @@ export function Home({
             : { detail: "local" })}
       />
 
-      <Box marginTop={1} width="100%">
-        <ScreenShell
-          frames={frames}
-          mascotVariant={variant}
-          {...(focusLabel !== undefined ? { focusLabel } : {})}
-        >
+      <Box marginTop={compact ? 0 : 1} width="100%">
+        <ScreenShell frames={frames} mascotVariant={variant}>
           <Text bold>Project</Text>
           {pointingProject ? (
             <Text>
@@ -142,30 +139,16 @@ export function Home({
           ) : (
             <Text dimColor wrap="truncate">
               {shortPath(targetProject)}
+              {recommendSummary ? ` · ${recommendSummary}` : ""}
+              {userLogin ? ` · @${userLogin}` : " · local"}
+              {doctorSummary ? ` · ${doctorSummary}` : ""}
+              {agentStatusLine ? ` · agents ${agentStatusLine}` : ""}
             </Text>
           )}
-          {recommendSummary && !pointingProject ? (
-            <Text wrap="truncate">* {recommendSummary}</Text>
-          ) : null}
-          {topReasons.length > 0 &&
-          !pointingProject &&
-          scale.mode !== "stack" ? (
-            <Text dimColor wrap="truncate">
-              · {topReasons[0]}
-            </Text>
-          ) : null}
-          <Text dimColor wrap="truncate">
-            {userLogin ? `@${userLogin}` : "local"}
-            {doctorSummary ? ` · ${doctorSummary}` : ""}
-            {" · o point"}
-          </Text>
-          {agentStatusLine ? (
-            <Text wrap="truncate">agents {agentStatusLine}</Text>
-          ) : null}
 
           <Box marginTop={1} flexDirection="column">
             <Text bold>Toolkits</Text>
-            {topPick && scale.mode !== "stack" ? (
+            {topPick && !compact ? (
               <Text dimColor wrap="truncate">
                 * {topPick} for this project
               </Text>
@@ -180,56 +163,64 @@ export function Home({
                 selectDirection={selectDirection}
                 recommended={recommended}
                 appliedNames={appliedNames}
+                dense={compact}
               />
             )}
           </Box>
 
-          {skillRecs.length > 0 ? (
+          {/* Secondary blocks only when viewport has room — avoid scroll-past-focus */}
+          {showSecondaryLists && skillRecs.length > 0 ? (
             <Box marginTop={1} flexDirection="column">
-              <Text bold>
-                <StatusIcon id="skill" size="mini" /> Suggested skills
-              </Text>
+              <Text bold>Suggested</Text>
               {skillRecs.slice(0, skillShow).map((s) => (
                 <Text key={s.skillName} dimColor wrap="truncate">
-                  <StatusIcon id="skill" size="mini" dimColor /> {s.skillName}
+                  {"  "}+ {s.skillName}
                   {s.fromPack ? ` · ${s.fromPack}` : ""}
                 </Text>
               ))}
             </Box>
           ) : null}
 
-          <Box marginTop={1} flexDirection="column">
-            <Text bold>Installed</Text>
-            {libraryError ? (
-              <Text color="red">{libraryError}</Text>
-            ) : emptyLibrary ? (
-              <Text dimColor>
-                <StatusIcon id="folder" size="mini" dimColor /> None yet · ↵
-                installs ★ selection (+ deps)
-              </Text>
-            ) : (
-              <>
-                {skills.slice(0, skillShow).map((skill) => (
-                  <Text key={skill.name} dimColor wrap="truncate">
-                    <StatusIcon id="ok" size="mini" dimColor /> {skill.name}
-                  </Text>
-                ))}
-                {skills.length > skillShow ? (
-                  <Text dimColor>
-                    {"  "}+{skills.length - skillShow} more (l)
-                  </Text>
-                ) : null}
-              </>
-            )}
-          </Box>
-
-          {applied.length > 0 ? (
+          {showSecondaryLists ? (
             <Box marginTop={1} flexDirection="column">
-              <Text bold>Applied here</Text>
+              <Text bold>Installed</Text>
+              {libraryError ? (
+                <Text color="red">{libraryError}</Text>
+              ) : emptyLibrary ? (
+                <Text dimColor>
+                  none yet · enter installs focus (+ deps)
+                </Text>
+              ) : (
+                <>
+                  {skills.slice(0, skillShow).map((skill) => (
+                    <Text key={skill.name} dimColor wrap="truncate">
+                      {"  "}+ {skill.name}
+                    </Text>
+                  ))}
+                  {skills.length > skillShow ? (
+                    <Text dimColor>
+                      {"  "}+{skills.length - skillShow} more (l)
+                    </Text>
+                  ) : null}
+                </>
+              )}
+            </Box>
+          ) : !emptyLibrary ? (
+            <Text dimColor wrap="truncate">
+              installed {skills.length}
+              {applied.length > 0 ? ` · applied ${applied.length}` : ""}
+              {" · l library"}
+            </Text>
+          ) : (
+            <Text dimColor>none installed · enter installs focus</Text>
+          )}
+
+          {showSecondaryLists && applied.length > 0 ? (
+            <Box marginTop={1} flexDirection="column">
+              <Text bold>Applied</Text>
               {applied.slice(0, skillShow).map((pack) => (
                 <Text key={pack.name} dimColor wrap="truncate">
-                  <StatusIcon id="pack" size="mini" dimColor /> {pack.title} (
-                  {pack.skills.length})
+                  {"  "}+ {pack.title} ({pack.skills.length})
                 </Text>
               ))}
               {applied.length > skillShow ? (
@@ -240,7 +231,7 @@ export function Home({
             </Box>
           ) : null}
 
-          {/* Always 1 action line (pad when empty) — no height jump on selection */}
+          {/* Always 1 action line — no height jump on selection */}
           <Box marginTop={1} flexShrink={0}>
             <Text dimColor>
               {fixedLine(
@@ -254,9 +245,11 @@ export function Home({
             </Text>
           </Box>
 
-          <Box marginTop={1}>
-            <ActionFlash message={actionFlash} nonce={actionNonce} />
-          </Box>
+          {actionFlash ? (
+            <Box marginTop={0}>
+              <ActionFlash message={actionFlash} nonce={actionNonce} />
+            </Box>
+          ) : null}
         </ScreenShell>
       </Box>
 
@@ -290,6 +283,7 @@ export function Home({
         </Box>
       ) : null}
 
+      {/* Sticky focus + counts — stays at bottom even if list scrolls */}
       <StatusLine
         skillCount={skills.length}
         packCount={packs.length}

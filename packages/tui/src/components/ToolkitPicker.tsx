@@ -15,12 +15,22 @@ export interface ToolkitPickerProps {
   recommended?: ToolkitRecommendation[];
   filter?: string;
   appliedNames?: Set<string>;
+  /** One-line description only; skip extra chrome. */
   dense?: boolean;
+  /**
+   * @deprecated Detail █ silhouettes are a11y-hostile on dark terminals.
+   * Kept for API compat; ignored — detail is always text-only.
+   */
   showSelectedIcon?: boolean;
 }
 
 /**
  * Menu-first pack list: geometry stable on ↑↓; density follows layout mode.
+ *
+ * A11y (visual + cognitive):
+ * - No solid █ detail silhouettes (white blobs on dark WT)
+ * - Selection = inverse + bold + fixed ASCII cursor (not color-only)
+ * - Focus readout N/M always visible above the windowed list
  */
 export function ToolkitPicker({
   packs,
@@ -31,18 +41,14 @@ export function ToolkitPicker({
   filter,
   appliedNames,
   dense = false,
-  showSelectedIcon = true,
+  showSelectedIcon: _showSelectedIcon = true,
 }: ToolkitPickerProps): React.ReactElement {
+  void _showSelectedIcon;
   const scale = useLayoutScale();
   const top = recommended[0]?.packName;
   const scoreByName = new Map(
     recommended.map((r) => [r.packName, r] as const),
   );
-  const showDetailIcon =
-    showSelectedIcon &&
-    !dense &&
-    scale.showPackDetail &&
-    scale.packDetailSize > 0;
 
   const filtered = filter
     ? packs.filter((p) => {
@@ -93,17 +99,25 @@ export function ToolkitPicker({
     : undefined;
 
   const metaCols = Math.max(20, Math.min(scale.contentSoftMax, 56));
-  const detailText = fixedLines(selectedPack?.description ?? "", 2, metaCols);
-  const reasonLine = fixedLine(selectedRec?.reasons[0] ?? "", metaCols);
+  // Dense = 1 desc line; normal = 2 + optional reason (still no █ art)
+  const descLines = dense ? 1 : 2;
+  const detailText = fixedLines(
+    selectedPack?.description ?? "",
+    descLines,
+    metaCols,
+  );
+  const reasonLine = dense
+    ? ""
+    : fixedLine(selectedRec?.reasons[0] ?? "", metaCols);
   const focusIdx =
     filtered.findIndex((p) => originalIndex(p) === selectedIndex) + 1;
 
   return (
     <Box flexDirection="column">
-      {/* A11y: stable selection readout */}
+      {/* A11y: stable selection readout — not color-only */}
       <Text bold>
         {focusIdx > 0
-          ? `${focusIdx}/${filtered.length} ${selectedPack?.title ?? ""}`
+          ? `focus ${focusIdx}/${filtered.length} ${selectedPack?.title ?? ""}`
           : `${filtered.length} packs`}
       </Text>
 
@@ -145,30 +159,17 @@ export function ToolkitPicker({
         </Text>
       ) : null}
 
-      {!dense ? (
-        <Box marginTop={1} flexDirection="row" flexShrink={0}>
-          {showDetailIcon && selectedPack ? (
-            <Box
-              marginRight={1}
-              flexShrink={0}
-              width={scale.packDetailSize}
-              height={scale.packDetailSize}
-            >
-              <PackIcon
-                packName={selectedPack.name}
-                size="detail"
-                detailEdge={scale.packDetailSize}
-                animate={false}
-              />
-            </Box>
-          ) : null}
-          <Box flexDirection="column" flexShrink={0}>
-            <Text dimColor>{detailText[0]}</Text>
-            <Text dimColor>{detailText[1]}</Text>
-            <Text dimColor>{reasonLine}</Text>
-          </Box>
-        </Box>
-      ) : null}
+      {/* Text-only detail — never solid █ bitmaps (dark-terminal a11y) */}
+      <Box flexDirection="column" flexShrink={0} marginTop={dense ? 0 : 1}>
+        {detailText.map((line, i) => (
+          <Text key={`d${i}`} dimColor>
+            {line}
+          </Text>
+        ))}
+        {!dense && reasonLine.trim() ? (
+          <Text dimColor>{reasonLine}</Text>
+        ) : null}
+      </Box>
     </Box>
   );
 }

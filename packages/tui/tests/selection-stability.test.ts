@@ -70,3 +70,25 @@ describe("screens forbid wrap under selection", () => {
     }
   });
 });
+
+describe("a11y: no solid pack detail silhouettes in picker UI", () => {
+  it("ToolkitPicker never mounts size=detail PackIcon", () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(
+      path.join(dir, "../src/components/ToolkitPicker.tsx"),
+      "utf8",
+    );
+    expect(src.includes('size="detail"')).toBe(false);
+    expect(src.includes("size=\"detail\"")).toBe(false);
+  });
+
+  it("Home uses dense picker on small layouts and sticky sel", () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const home = readFileSync(
+      path.join(dir, "../src/screens/Home.tsx"),
+      "utf8",
+    );
+    expect(home.includes("dense={compact}")).toBe(true);
+    expect(home.includes("StatusLine")).toBe(true);
+  });
+});

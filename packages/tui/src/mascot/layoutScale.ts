@@ -127,15 +127,17 @@ export function layoutScaleFromTerminal(
     mode === "wide" ? Math.min(96, contentAvail) : Math.min(72, contentAvail);
   const contentMinCols = mode === "stack" ? 20 : 32;
 
-  // Density
-  const listMaxItems = mode === "wide" ? 8 : mode === "split" ? 5 : 3;
-  const packListMax = mode === "wide" ? 0 : mode === "split" ? 8 : 6;
+  // Density — keep tools + focus + footer in one viewport (cognitive a11y)
+  // Secondary lists are summaries, not the main surface.
+  const listMaxItems = mode === "wide" ? 4 : mode === "split" ? 2 : 1;
+  const packListMax =
+    mode === "wide" ? (r >= 36 ? 12 : 8) : mode === "split" ? 6 : 5;
 
-  // Detail silhouettes only when tall enough (don't eat menu)
-  const packDetailSize =
-    mode !== "stack" && r >= 28
-      ? Math.min(LAYOUT_CAPS.packDetailMax, 4)
-      : 0;
+  // Never render solid █ pack detail blocks next to descriptions.
+  // On dark terminals those silhouettes invert to unreadable white blobs
+  // (visual a11y — high contrast + not color/shape-only mass).
+  // Detail is text-only; list rows already use single-cell ASCII glyphs.
+  const packDetailSize = 0;
 
   const splashEdge = Math.min(
     LAYOUT_CAPS.splashFitMax,

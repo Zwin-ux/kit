@@ -159,8 +159,12 @@ export function MascotPlayer({
           {label.padEnd(slotCols, " ").slice(0, slotCols)}
         </Text>
       ) : null}
+      {/* dimColor: solid █ silhouettes invert to white blobs on dark terminals;
+          dim keeps brand shape without blowing out contrast (visual a11y). */}
       {lines.map((line, i) => (
-        <Text key={i}>{line}</Text>
+        <Text key={i} dimColor>
+          {line}
+        </Text>
       ))}
       {showCounter ? (
         <Text dimColor>

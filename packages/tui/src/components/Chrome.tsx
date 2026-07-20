@@ -57,12 +57,17 @@ export function StatusLine(props: {
   skillCount: number;
   packCount: number;
   message?: string;
-  /** e.g. "3/7 web-app" for selection a11y */
+  /** e.g. "3/7 web-app" for selection a11y — sticky, not color-only */
   focus?: string;
 }): React.ReactElement {
   return (
     <Box marginTop={1} flexDirection="column">
-      {props.focus ? <Text bold>sel {props.focus}</Text> : null}
+      {props.focus ? (
+        <Text bold inverse>
+          {" "}
+          sel {props.focus}{" "}
+        </Text>
+      ) : null}
       <Text dimColor>
         {props.skillCount} skills · {props.packCount} packs
       </Text>
