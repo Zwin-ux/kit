@@ -26,9 +26,10 @@
 - [x] First-run + Home pack install/apply (offline)
 - [x] Library + Packs screens (offline)
 - [x] kit-idle live playback in TUI (frame loop = GIF)
-- Home polish, Explore (registry), Workshop screens
+- [x] Railway registry API MVP (public read catalog on Railway)
+- Home polish, Explore (registry client), Workshop screens
 - Auth flow inside the TUI (device code / browser handoff only when necessary)
-- Railway backend: accounts, basic registry, publish, search
+- Railway backend: accounts, durable catalog, publish, search
 - Install + publish from TUI
 
 ## Phase 3 — Social & Delight

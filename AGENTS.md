@@ -32,13 +32,16 @@ There is no web app.
 - Skill/pack test runner: `kit test`
 - Health check: `kit doctor`
 - GitHub Actions CI (build/test/packs/doctor only — no deploy)
+- Railway registry API MVP (public read catalog)
 
 **In Progress**
 - Product polish (Workshop later)
 
 **Next Priority**
-1. Workshop screen (validate / edit later)
-2. Railway accounts + publish (later)
+1. Registry client in CLI/TUI (`kit explore`)
+2. GitHub App / device-code auth for publish
+3. Workshop screen (validate / edit)
+4. Postgres-backed catalog + publish API
 
 ## How to Maintain This File
 When you complete a meaningful piece of work:
@@ -54,6 +57,7 @@ When you complete a meaningful piece of work:
 - docs/STARTER_PACKS.md
 - docs/HARNESS_PATHS.md
 - docs/TESTING.md
+- docs/REGISTRY_API.md
 - docs/PIXEL_ART.md
 - docs/TUI_SCREENS.md
 - assets/pixel/README.md
