@@ -26,6 +26,8 @@ assets/pixel/
 
 ## Rules for Grok Build (TUI)
 - Load the six frames from this folder
+- Play them with `MascotPlayer` (this **is** kit-idle in the terminal)
+- Ink cannot render GIF files portably — do not depend on decoding `kit-idle.gif` at runtime
 - Cycle slowly for splash and idle (≈ 5–6 fps, ~180 ms)
 - Scale cleanly with nearest-neighbor for TUI height (~24 px)
 - Do not add color or effects in code

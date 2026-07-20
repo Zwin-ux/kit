@@ -3,8 +3,11 @@ node_modules/
 
 # Build
 dist/
+**/dist/
 *.tsbuildinfo
+**/*.tsbuildinfo
 coverage/
+**/coverage/
 
 # Local Kit data (user home installs; project apply output may be committed intentionally)
 # Ignore root-level runtime only if created during local runs

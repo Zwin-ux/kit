@@ -1,31 +1,29 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { FIRST_RUN_PACK_OPTIONS } from "@kit-skills/core";
-import { renderFrame } from "../mascot/renderBitmap.js";
-import { Footer, Header } from "../components/Chrome.js";
+import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import type { PixelFrame } from "../mascot/types.js";
+import { Footer, Header } from "../components/Chrome.js";
 
 export interface FirstRunProps {
-  frame: PixelFrame;
+  frames: PixelFrame[];
   busy?: boolean;
   statusMessage?: string;
   errorMessage?: string;
 }
 
 export function FirstRun({
-  frame,
+  frames,
   busy,
   statusMessage,
   errorMessage,
 }: FirstRunProps): React.ReactElement {
-  const art = renderFrame(frame);
-
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
       <Header screen="First run" detail="choose a starter pack" />
 
       <Box marginTop={1}>
-        <Text>{art}</Text>
+        <MascotPlayer frames={frames} playing={!busy} size="compact" />
       </Box>
 
       <Box marginTop={1} flexDirection="column">

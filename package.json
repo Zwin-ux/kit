@@ -11,8 +11,12 @@
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
-    "clean": "pnpm -r run clean"
+    "clean": "pnpm -r run clean",
+    "kit": "pnpm --filter @kit-skills/cli exec node dist/bin.js",
+    "tui": "pnpm --filter @kit-skills/tui start",
+    "init": "pnpm --filter @kit-skills/cli exec node dist/bin.js init"
   },
+
   "devDependencies": {
     "@types/node": "^22.15.21",
     "typescript": "^5.8.3"

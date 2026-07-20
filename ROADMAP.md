@@ -22,7 +22,9 @@
 ## Phase 2 — Pixel-Art TUI + Accounts
 - [x] TUI shell with pixel-art rendering (splash + home + 4-frame mascot cycle)
 - [x] First-run + Home pack install/apply (offline)
-- Home, Explore, Workshop, Library screens
+- [x] Library + Packs screens (offline)
+- [x] kit-idle live playback in TUI (frame loop = GIF)
+- Home polish, Explore (registry), Workshop screens
 - Auth flow inside the TUI (device code / browser handoff only when necessary)
 - Railway backend: accounts, basic registry, publish, search
 - Install + publish from TUI

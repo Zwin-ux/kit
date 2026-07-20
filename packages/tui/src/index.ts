@@ -19,3 +19,5 @@ export {
 } from "./mascot/types.js";
 export { resolvePixelAssetsDir } from "./mascot/resolveAssetsDir.js";
 export { startTui } from "./start.js";
+// MascotPlayer is the in-terminal kit-idle loop (same frames as kit-idle.gif).
+export { MascotPlayer } from "./mascot/MascotPlayer.js";
