@@ -16,13 +16,18 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node -e \"console.log('@kit-skills/core: no tests yet')\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@kit-skills/shared": "workspace:*"
+    "@kit-skills/shared": "workspace:*",
+    "semver": "^7.7.2",
+    "yaml": "^2.8.0"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "@types/semver": "^7.7.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
   }
 }

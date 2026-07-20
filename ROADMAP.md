@@ -7,12 +7,12 @@
 - [x] Vision + README
 - [x] Architecture document
 - [ ] Pixel-art style guide + asset pipeline
-- [ ] Skill schema v0 (strict)
+- [x] Skill schema v0 (strict)
 - [x] Basic repo structure (packages/)
 - [x] Grok Build instructions / AGENTS.md / skills for working on Kit
 
 ## Phase 1 — Local Skills Engine
-- Skill parser + strict validator
+- [x] Skill parser + strict validator
 - Local library (install / list / remove / update)
 - Cross-harness path normalization
 - Simple test runner

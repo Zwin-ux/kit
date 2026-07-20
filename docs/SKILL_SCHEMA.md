@@ -38,6 +38,17 @@ Rules:
 - version must follow semver
 - compatibility must list supported agents
 
+Allowed compatibility agents in schema v0:
+- `claude-code`
+- `grok-build`
+- `codex`
+
+The parser lives in `@kit-skills/core`:
+- `parseSkillMd` — YAML front matter + body
+- `validateSkill` — field rules
+- `loadSkill` — load a skill folder from disk
+- `parseAndValidateSkillMd` — parse and validate from string
+
 ## Body
 The body after the front matter contains the instructions.
 Write clear steps.
