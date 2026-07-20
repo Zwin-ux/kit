@@ -86,7 +86,13 @@ kit pack apply web-app --dir ./my-app
 - Copies skill folders into `.kit/skills/` in the project
 - Does not require a network
 
-Agents and future path-normalization can read `.kit/skills/` as a project skill source.
+Agents can read `.kit/skills/` directly, or you can link into harness folders:
+
+```sh
+kit link --to claude-code --write
+```
+
+See [HARNESS_PATHS.md](./HARNESS_PATHS.md).
 
 ## CLI
 

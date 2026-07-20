@@ -81,3 +81,22 @@ export {
   type FirstRunPackName,
   type FirstRunStatus,
 } from "./config/mod.js";
+
+export {
+  resolveHarnessSkillsRoot,
+  harnessNotes,
+  ALL_HARNESSES,
+  LINKABLE_HARNESSES,
+  describePaths,
+  linkSkills,
+  type DescribePathsOptions,
+  type LinkSkillsOptions,
+  type HarnessId,
+  type PathScope,
+  type HarnessSkillPath,
+  type PathReport,
+  type LinkMode,
+  type LinkPlanItem,
+  type LinkResult,
+  type PathsResult,
+} from "./paths/mod.js";

@@ -2,11 +2,13 @@
 import {
   applyPack,
   completeFirstRun,
+  describePaths,
   formatIssues,
   getFirstRunStatus,
   installPack,
   installSkill,
   isFirstRunPackName,
+  linkSkills,
   listFirstRunPackOptions,
   listPacks,
   listSkills,
@@ -14,6 +16,9 @@ import {
   loadSkill,
   removeSkill,
   validatePack,
+  type HarnessId,
+  type LinkMode,
+  type PathScope,
 } from "@kit-skills/core";
 import { KIT_PACKAGE_VERSION } from "@kit-skills/shared";
 
@@ -72,6 +77,16 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "paths") {
+    await runPaths(args.slice(1));
+    return;
+  }
+
+  if (command === "link") {
+    await runLink(args.slice(1));
+    return;
+  }
+
   if (command === "tui" || command === "ui" || command === "start") {
     const { startTui } = await import("@kit-skills/tui");
     startTui();
@@ -100,10 +115,12 @@ function printHelp(): void {
   console.log("  kit pack validate <pack>");
   console.log("  kit pack install <pack>");
   console.log("  kit pack apply <pack> [--dir <project>]");
+  console.log("  kit paths [--dir <project>] [--skill <name>]");
+  console.log("  kit link [--to <harness|all>] [--scope personal|project] [--write] [--force] [--mode symlink|copy] [--dir <project>]");
   console.log("");
   console.log("Library: ~/.kit (or KIT_HOME)");
   console.log("Packs:   packs/ in the Kit repo (or KIT_PACKS)");
-  console.log("Tip:     kit init  → first-run starter pack");
+  console.log("Tip:     kit init → pack apply → kit link --write");
 }
 
 async function runInit(rest: string[]): Promise<void> {
@@ -225,9 +242,9 @@ function printApplySuccess(value: {
   }
   console.log("");
   console.log("What now");
-  console.log("  Point your agent at .kit/skills (or keep using the global library).");
-  console.log("  kit list");
-  console.log("  kit tui");
+  console.log("  kit paths");
+  console.log("  kit link --to claude-code --write   # dry-run without --write");
+  console.log("  kit list · kit tui");
 }
 
 async function runValidate(rest: string[]): Promise<void> {
@@ -383,6 +400,185 @@ function printPackHelp(): void {
   console.log("  kit pack validate <pack>");
   console.log("  kit pack install <pack>");
   console.log("  kit pack apply <pack> [--dir <project>]");
+}
+
+async function runPaths(rest: string[]): Promise<void> {
+  const dirFlag = rest.indexOf("--dir");
+  let projectDir: string | undefined;
+  if (dirFlag >= 0) {
+    projectDir = rest[dirFlag + 1];
+    if (!projectDir || projectDir.startsWith("-")) {
+      fail("Usage: kit paths [--dir <project>] [--skill <name>]");
+    }
+  }
+
+  const skillFlag = rest.indexOf("--skill");
+  let skillName: string | undefined;
+  if (skillFlag >= 0) {
+    skillName = rest[skillFlag + 1];
+    if (!skillName || skillName.startsWith("-")) {
+      fail("Usage: kit paths [--dir <project>] [--skill <name>]");
+    }
+  }
+
+  const result = await describePaths({
+    ...(projectDir ? { projectDir } : {}),
+    ...(skillName ? { skillName } : {}),
+  });
+  if (!result.ok) fail(result.error);
+
+  const report = result.value;
+  console.log(`Kit home:     ${report.kitHome}`);
+  console.log(`Project:      ${report.projectDir}`);
+  console.log(`Global lib:   ${report.globalLibrary}`);
+  console.log(`Project lib:  ${report.projectLibrary}`);
+  if (report.skillName) {
+    console.log(`Skill focus:  ${report.skillName}`);
+  }
+  console.log(
+    `Installed:    ${
+      report.installedSkillNames.length === 0
+        ? "(none)"
+        : report.installedSkillNames.join(", ")
+    }`,
+  );
+  console.log("");
+  console.log("Harness skill roots");
+  for (const entry of report.entries) {
+    const mark = entry.exists ? "✓" : "·";
+    console.log(
+      `${mark} ${entry.harness.padEnd(12)} ${entry.scope.padEnd(9)} ${entry.skillsRoot}`,
+    );
+    if (entry.skillDir) {
+      console.log(`    skill → ${entry.skillDir}`);
+    }
+    console.log(`    ${entry.notes}`);
+  }
+  console.log("");
+  console.log("Next: kit link --to claude-code          # dry-run");
+  console.log("      kit link --to claude-code --write  # create links");
+}
+
+async function runLink(rest: string[]): Promise<void> {
+  if (rest.includes("--help") || rest.includes("-h")) {
+    console.log(
+      "Usage: kit link [--to claude-code|codex|grok-build|all] [--scope personal|project] [--mode symlink|copy] [--dir <project>] [--write] [--force] [--skill <name>]",
+    );
+    console.log("");
+    console.log("Default is a dry-run. Pass --write to create links or copies.");
+    return;
+  }
+
+  const write = rest.includes("--write");
+  const force = rest.includes("--force");
+  const toFlag = rest.indexOf("--to");
+  let harnesses: HarnessId[] | undefined;
+  if (toFlag >= 0) {
+    const value = rest[toFlag + 1];
+    if (!value || value.startsWith("-")) {
+      fail("Usage: kit link --to <claude-code|codex|grok-build|all>");
+    }
+    if (value === "all") {
+      harnesses = ["claude-code", "codex", "grok-build"];
+    } else if (
+      value === "claude-code" ||
+      value === "codex" ||
+      value === "grok-build"
+    ) {
+      harnesses = [value];
+    } else {
+      fail(`Unknown harness "${value}". Use claude-code, codex, grok-build, or all.`);
+    }
+  }
+
+  const scopeFlag = rest.indexOf("--scope");
+  let scope: PathScope = "project";
+  if (scopeFlag >= 0) {
+    const value = rest[scopeFlag + 1];
+    if (value !== "personal" && value !== "project") {
+      fail("Usage: kit link --scope personal|project");
+    }
+    scope = value;
+  }
+
+  const modeFlag = rest.indexOf("--mode");
+  let mode: LinkMode = "symlink";
+  if (modeFlag >= 0) {
+    const value = rest[modeFlag + 1];
+    if (value !== "symlink" && value !== "copy") {
+      fail("Usage: kit link --mode symlink|copy");
+    }
+    mode = value;
+  }
+
+  const dirFlag = rest.indexOf("--dir");
+  let projectDir: string | undefined;
+  if (dirFlag >= 0) {
+    projectDir = rest[dirFlag + 1];
+    if (!projectDir || projectDir.startsWith("-")) {
+      fail("Usage: kit link --dir <project>");
+    }
+  }
+
+  const skillFlag = rest.indexOf("--skill");
+  let skillNames: string[] | undefined;
+  if (skillFlag >= 0) {
+    const value = rest[skillFlag + 1];
+    if (!value || value.startsWith("-")) {
+      fail("Usage: kit link --skill <name>");
+    }
+    skillNames = [value];
+  }
+
+  const result = await linkSkills({
+    write,
+    force,
+    scope,
+    mode,
+    ...(harnesses ? { harnesses } : {}),
+    ...(projectDir ? { projectDir } : {}),
+    ...(skillNames ? { skillNames } : {}),
+  });
+  if (!result.ok) fail(result.error);
+
+  const plan = result.value;
+  console.log(plan.dryRun ? "Link plan (dry-run)" : "Link result");
+  console.log(`  scope:  ${scope}`);
+  console.log(`  mode:   ${mode}`);
+  console.log(`  linked: ${plan.linked}  skipped: ${plan.skipped}  failed: ${plan.failed.length}`);
+  console.log("");
+
+  for (const item of plan.items) {
+    const tag =
+      item.action === "create"
+        ? "+"
+        : item.action === "replace"
+          ? "!"
+          : item.action === "skip-same"
+            ? "="
+            : "~";
+    console.log(
+      `${tag} ${item.harness} ${item.skillName}`,
+    );
+    console.log(`    ${item.sourceDir}`);
+    console.log(`    → ${item.targetDir}`);
+    if (item.reason) {
+      console.log(`    ${item.reason}`);
+    }
+  }
+
+  if (plan.failed.length > 0) {
+    console.log("");
+    console.log("Failures:");
+    for (const f of plan.failed) {
+      console.log(`  ${f.skillName}: ${f.error}`);
+    }
+  }
+
+  if (plan.dryRun) {
+    console.log("");
+    console.log("No files written. Re-run with --write to apply.");
+  }
 }
 
 main().catch((error: unknown) => {

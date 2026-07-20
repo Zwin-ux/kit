@@ -49,4 +49,9 @@ kit pack install essentials
 kit pack apply essentials --dir .
 ```
 
-See also [STARTER_PACKS.md](./STARTER_PACKS.md).
+See also [STARTER_PACKS.md](./STARTER_PACKS.md) and [HARNESS_PATHS.md](./HARNESS_PATHS.md).
+
+```sh
+kit paths
+kit link --to claude-code --write
+```

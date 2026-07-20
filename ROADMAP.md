@@ -15,7 +15,7 @@
 - [x] Skill parser + strict validator
 - [x] Local library (install / list / remove)
 - [x] Starter packs (schema, catalog skills, install / apply)
-- Cross-harness path normalization
+- [x] Cross-harness path normalization (`kit paths` / `kit link`)
 - Simple test runner
 - [x] CLI entrypoint that the TUI will later wrap (`validate`, `install`, `list`, `remove`, `pack`, `tui`)
 

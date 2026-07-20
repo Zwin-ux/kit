@@ -47,6 +47,8 @@ kit pack list
 kit pack install essentials      # install into ~/.kit
 kit pack apply web-app --dir .   # also copy into ./.kit/skills
 kit tui                          # first-run + Home actions
+kit paths                        # where agents look for skills
+kit link --to claude-code --write
 ```
 
 | Pack | Best for |

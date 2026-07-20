@@ -27,12 +27,15 @@ There is no web app.
 - Alpha 1 mascot assets + kit-idle.gif
 - Basic docs and architecture
 
+**Done (also)**
+- Cross-harness path map: `kit paths` + `kit link --write`
+
 **In Progress**
-- Full-stack quality polish (paths, tests, DX)
+- Full-stack quality polish (tests, DX)
 
 **Next Priority**
-1. Cross-harness path normalization (`kit paths`)
-2. Skill test runner
+1. Skill test runner (`kit test`)
+2. `kit doctor` health check
 3. Workshop screen (validate / edit later)
 4. Railway accounts + publish (later)
 
@@ -48,6 +51,7 @@ When you complete a meaningful piece of work:
 - docs/SKILL_SCHEMA.md
 - docs/LOCAL_LIBRARY.md
 - docs/STARTER_PACKS.md
+- docs/HARNESS_PATHS.md
 - docs/PIXEL_ART.md
 - docs/TUI_SCREENS.md
 - assets/pixel/README.md

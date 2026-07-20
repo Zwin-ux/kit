@@ -15,6 +15,8 @@ pnpm tui                 # pixel TUI (kit-idle animation on splash)
 pnpm kit -- --help
 pnpm kit -- init --pack essentials
 pnpm kit -- pack list
+pnpm kit -- paths
+pnpm kit -- link --to claude-code          # dry-run
 ```
 
 ## Layout
