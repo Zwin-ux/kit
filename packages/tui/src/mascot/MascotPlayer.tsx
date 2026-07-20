@@ -69,12 +69,13 @@ export function MascotPlayer({
   const enabled = motionEnabled();
   const isHero = size === "full" || size === "hero";
 
+  // Slot tracks layout scale exactly so fullscreen rail growth is visible
   const slotCols = isHero
     ? Math.min(scale.splashFit.width, LAYOUT_CAPS.splashFitMax)
-    : scale.railCols;
+    : Math.max(1, scale.railCols);
   const slotRows = isHero
     ? Math.min(scale.splashFit.height, LAYOUT_CAPS.splashFitMax)
-    : scale.railRows;
+    : Math.max(1, scale.railRows);
 
   const effectiveDelay =
     delayMs ??

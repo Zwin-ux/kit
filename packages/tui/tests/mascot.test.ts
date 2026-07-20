@@ -178,21 +178,37 @@ describe("layout scale — menu-first breakpoints", () => {
     }
   });
 
-  it("wide mode densifies lists", () => {
+  it("wide mode densifies lists and grows rail past postage-stamp size", () => {
     const split = layoutScaleFromTerminal(80, 24);
     const wide = layoutScaleFromTerminal(120, 40);
     expect(wide.mode).toBe("wide");
     expect(wide.listMaxItems).toBeGreaterThan(split.listMaxItems);
     expect(wide.mascotPlacement).toBe("rail");
+    expect(wide.railCols).toBeGreaterThan(split.railCols);
+    expect(wide.railRows).toBeGreaterThan(split.railRows);
+    expect(wide.contentSoftMax).toBeGreaterThan(split.contentSoftMax);
   });
 
-  it("keeps secondary lists short so tools fit viewport", () => {
+  it("fullscreen grows mascot + menu further than mid-size wide", () => {
+    const mid = layoutScaleFromTerminal(120, 40);
+    const full = layoutScaleFromTerminal(180, 55);
+    expect(full.mode).toBe("wide");
+    expect(full.railCols).toBeGreaterThanOrEqual(mid.railCols);
+    expect(full.railRows).toBeGreaterThan(mid.railRows);
+    expect(full.packListMax).toBeGreaterThanOrEqual(mid.packListMax);
+    expect(full.contentSoftMax).toBeGreaterThan(mid.contentSoftMax);
+    // Still leaves room for the menu
+    expect(full.railCols).toBeLessThan(full.columns * 0.3);
+    expect(full.railRows).toBeLessThan(full.rows * 0.5);
+  });
+
+  it("keeps secondary lists short on small viewports", () => {
     const stack = layoutScaleFromTerminal(60, 20);
     const split = layoutScaleFromTerminal(80, 24);
     expect(stack.listMaxItems).toBeLessThanOrEqual(2);
     expect(split.listMaxItems).toBeLessThanOrEqual(3);
     expect(split.packListMax).toBeGreaterThan(0);
-    expect(split.packListMax).toBeLessThanOrEqual(8);
+    expect(split.packListMax).toBeLessThanOrEqual(12);
   });
 
   it("padSlotLines freezes line count and width", () => {

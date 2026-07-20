@@ -79,12 +79,13 @@ export function ScreenShell({
     );
   }
 
-  // --- split / wide: compact rail + menu ---
+  // --- split / wide: fluid rail (grows on fullscreen) + primary menu ---
+  const railGap = scale.mode === "wide" ? 3 : 2;
   return (
     <Box flexDirection="row" flexGrow={1} width="100%">
       <Box
         flexDirection="column"
-        marginRight={2}
+        marginRight={railGap}
         flexShrink={0}
         width={scale.railCols}
         height={scale.railRows}

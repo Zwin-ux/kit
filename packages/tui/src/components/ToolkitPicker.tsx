@@ -98,7 +98,8 @@ export function ToolkitPicker({
     ? scoreByName.get(selectedPack.name)
     : undefined;
 
-  const metaCols = Math.max(20, Math.min(scale.contentSoftMax, 56));
+  // Use full content width — old 56-col cap left fullscreen descriptions tiny
+  const metaCols = Math.max(24, scale.contentSoftMax);
   // Dense = 1 desc line; normal = 2 + optional reason (still no █ art)
   const descLines = dense ? 1 : 2;
   const detailText = fixedLines(

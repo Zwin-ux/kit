@@ -101,10 +101,12 @@ export function Home({
   const variant =
     mascotVariant ??
     (busy ? "scan" : celebrateCount !== undefined ? "success" : "idle");
-  // Cognitive a11y: secondary lists are summaries so tools stay in view
+  // Cognitive a11y: secondary lists are summaries so tools stay in view.
+  // Fullscreen (wide / tall) opens them up; small windows stay dense.
   const skillShow = scale.listMaxItems;
-  const compact = scale.mode === "stack" || scale.rows < 28;
-  const showSecondaryLists = scale.mode === "wide" || scale.rows >= 30;
+  const compact = scale.mode === "stack" || scale.rows < 26;
+  const showSecondaryLists =
+    scale.mode === "wide" || (scale.mode === "split" && scale.rows >= 32);
 
   // Sticky footer focus only (ToolkitPicker owns the in-list focus line)
   const focusLabel =
@@ -240,7 +242,7 @@ export function Home({
                   : pointingProject
                     ? "Enter set path · Esc cancel"
                     : " ",
-                Math.min(scale.contentSoftMax, 64),
+                Math.max(32, scale.contentSoftMax),
               )}
             </Text>
           </Box>
