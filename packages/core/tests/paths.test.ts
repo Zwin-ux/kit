@@ -26,9 +26,10 @@ afterEach(async () => {
 
 describe("resolveHarnessSkillsRoot", () => {
   it("maps claude-code personal and project roots", () => {
-    const home = "C:\\Users\\demo";
-    const project = "C:\\work\\app";
-    const kitHome = "C:\\Users\\demo\\.kit";
+    // Use absolute paths so path.resolve is OS-stable in CI (Linux + Windows).
+    const home = path.resolve(os.tmpdir(), "kit-harness-home-claude");
+    const project = path.resolve(os.tmpdir(), "kit-harness-proj-claude");
+    const kitHome = path.join(home, ".kit");
 
     expect(
       resolveHarnessSkillsRoot("claude-code", "personal", {
@@ -48,8 +49,8 @@ describe("resolveHarnessSkillsRoot", () => {
   });
 
   it("maps codex and grok-build roots", () => {
-    const home = path.join("Users", "demo");
-    const project = path.join("work", "app");
+    const home = path.resolve(os.tmpdir(), "kit-harness-home-codex");
+    const project = path.resolve(os.tmpdir(), "kit-harness-proj-codex");
     const kitHome = path.join(home, ".kit");
 
     expect(
@@ -66,7 +67,7 @@ describe("resolveHarnessSkillsRoot", () => {
         kitHome,
         homeDir: home,
       }),
-    ).toBe(path.join(path.resolve(project), ".grok", "skills"));
+    ).toBe(path.join(project, ".grok", "skills"));
   });
 });
 
