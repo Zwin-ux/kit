@@ -91,12 +91,17 @@ Agents and future path-normalization can read `.kit/skills/` as a project skill 
 ## CLI
 
 ```sh
+kit init --pack essentials          # first-run install into library
+kit init --pack web-app --apply     # install + apply to project
+kit init --skip                     # skip first-run nag
 kit pack list
 kit pack show essentials
 kit pack install essentials
 kit pack apply essentials --dir .
 kit pack validate essentials
 ```
+
+First-run state lives in `~/.kit/config.json`.
 
 ## Official packs (v0)
 

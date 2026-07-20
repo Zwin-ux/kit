@@ -28,6 +28,7 @@ export {
   getKitHome,
   getSkillsDir,
   getLibraryIndexPath,
+  getConfigPath,
   installSkill,
   listSkills,
   removeSkill,
@@ -50,6 +51,8 @@ export {
   validatePack,
   installPack,
   applyPack,
+  detectMissingGitRoot,
+  readProjectAppliedPacks,
   type PackLoadOptions,
   type InstallPackOptions,
   type ApplyPackOptions,
@@ -60,4 +63,21 @@ export {
   type PackListItem,
   type InstallPackResult,
   type ApplyPackResult,
+  type AppliedPackRecord,
+  type AppliedPacksFile,
 } from "./pack/mod.js";
+
+export {
+  DEFAULT_KIT_CONFIG,
+  FIRST_RUN_PACK_OPTIONS,
+  readConfig,
+  writeConfig,
+  updateConfig,
+  getFirstRunStatus,
+  completeFirstRun,
+  isFirstRunPackName,
+  listFirstRunPackOptions,
+  type KitConfig,
+  type FirstRunPackName,
+  type FirstRunStatus,
+} from "./config/mod.js";

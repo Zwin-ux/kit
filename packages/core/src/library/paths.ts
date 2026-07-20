@@ -22,3 +22,8 @@ export function getSkillsDir(kitHome: string = getKitHome()): string {
 export function getLibraryIndexPath(kitHome: string = getKitHome()): string {
   return path.join(kitHome, "library.json");
 }
+
+/** User config file. */
+export function getConfigPath(kitHome: string = getKitHome()): string {
+  return path.join(kitHome, "config.json");
+}

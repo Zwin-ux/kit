@@ -57,4 +57,10 @@ export interface ApplyPackResult {
   installed: InstalledSkill[];
   projectSkillsDir: string;
   appliedPath: string;
+  /** Soft warning when no git root is nearby. */
+  gitWarning?: string;
+  /** True when this pack was already applied to the project. */
+  reapplied?: boolean;
+  /** True when reapply changed pack version. */
+  versionChanged?: boolean;
 }

@@ -22,6 +22,10 @@ export {
 export {
   installPack,
   applyPack,
+  detectMissingGitRoot,
+  readProjectAppliedPacks,
   type InstallPackOptions,
   type ApplyPackOptions,
+  type AppliedPackRecord,
+  type AppliedPacksFile,
 } from "./installPack.js";

@@ -2,6 +2,7 @@ export {
   getKitHome,
   getSkillsDir,
   getLibraryIndexPath,
+  getConfigPath,
 } from "./paths.js";
 export {
   installSkill,

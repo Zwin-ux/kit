@@ -10,7 +10,9 @@ Default home:
 
 ```
 ~/.kit/
+  config.json           # first-run + preferences
   library.json
+  installed-packs.json
   skills/
     <skill-name>/
       SKILL.md

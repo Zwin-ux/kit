@@ -29,7 +29,7 @@ export function Splash({
           {usingFiles ? " · assets/pixel" : " · placeholder silhouette"}
         </Text>
         <Box marginTop={1}>
-          <Text>Press any key for Home · q to quit</Text>
+          <Text>Press any key to continue · q to quit</Text>
         </Box>
       </Box>
     </Box>

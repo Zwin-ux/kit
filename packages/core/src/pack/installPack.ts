@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, cp } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile, cp } from "node:fs/promises";
 import path from "node:path";
 import { installSkill } from "../library/library.js";
 import { getKitHome } from "../library/paths.js";
@@ -22,6 +22,25 @@ export interface InstallPackOptions extends PackLoadOptions {
 export interface ApplyPackOptions extends InstallPackOptions {
   /** Project directory to receive the pack. Default: cwd. */
   projectDir?: string;
+}
+
+/** Soft warning when applying outside a git work tree. */
+export async function detectMissingGitRoot(
+  projectDir: string,
+): Promise<string | undefined> {
+  let current = path.resolve(projectDir);
+  for (let i = 0; i < 12; i++) {
+    try {
+      await access(path.join(current, ".git"));
+      return undefined;
+    } catch {
+      // keep walking
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return `No .git found near ${projectDir}. Apply still works; commit .kit/ if you want the pack in version control.`;
 }
 
 /**
@@ -87,6 +106,8 @@ export async function applyPack(
   const loaded = await loadPack(packDirOrName, options);
   if (!loaded.ok) return loaded;
 
+  const gitWarning = await detectMissingGitRoot(projectDir);
+
   const installed = await installPack(packDirOrName, {
     ...options,
     force: options.force ?? true,
@@ -110,7 +131,10 @@ export async function applyPack(
   }
 
   const appliedPath = path.join(kitDir, "applied-packs.json");
-  const applied = await readAppliedPacks(appliedPath);
+  const applied = await readAppliedPacksFile(appliedPath);
+  const previous = applied.packs[loaded.value.pack.name];
+  const nextVersion = loaded.value.pack.version;
+
   applied.packs[loaded.value.pack.name] = {
     name: loaded.value.pack.name,
     version: loaded.value.pack.version,
@@ -124,36 +148,57 @@ export async function applyPack(
     "utf8",
   );
 
+  const result: ApplyPackResult = {
+    pack: loaded.value.pack,
+    projectDir,
+    installed: installed.value.installed,
+    projectSkillsDir,
+    appliedPath,
+    reapplied: previous !== undefined,
+    versionChanged: previous !== undefined && previous.version !== nextVersion,
+  };
+
+  if (gitWarning !== undefined) {
+    result.gitWarning = gitWarning;
+  }
+
   return {
     ok: true,
-    value: {
-      pack: loaded.value.pack,
-      projectDir,
-      installed: installed.value.installed,
-      projectSkillsDir,
-      appliedPath,
-    },
+    value: result,
   };
 }
 
-interface AppliedFile {
-  version: 1;
-  packs: Record<
-    string,
-    {
-      name: string;
-      version: string;
-      title: string;
-      skills: string[];
-      appliedAt: string;
-    }
-  >;
+export interface AppliedPackRecord {
+  name: string;
+  version: string;
+  title: string;
+  skills: string[];
+  appliedAt: string;
 }
 
-async function readAppliedPacks(filePath: string): Promise<AppliedFile> {
+export interface AppliedPacksFile {
+  version: 1;
+  packs: Record<string, AppliedPackRecord>;
+}
+
+/**
+ * Read project applied packs from `.kit/applied-packs.json`.
+ */
+export async function readProjectAppliedPacks(
+  projectDir: string = process.cwd(),
+): Promise<AppliedPacksFile> {
+  const filePath = path.join(
+    path.resolve(projectDir),
+    ".kit",
+    "applied-packs.json",
+  );
+  return readAppliedPacksFile(filePath);
+}
+
+async function readAppliedPacksFile(filePath: string): Promise<AppliedPacksFile> {
   try {
     const raw = await readFile(filePath, "utf8");
-    const parsed = JSON.parse(raw) as AppliedFile;
+    const parsed = JSON.parse(raw) as AppliedPacksFile;
     if (!parsed.packs || typeof parsed.packs !== "object") {
       return { version: 1, packs: {} };
     }

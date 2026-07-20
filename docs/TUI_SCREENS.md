@@ -72,12 +72,20 @@ kit tui
 pnpm --filter @kit-skills/tui start
 ```
 
+First-run (empty library):
+```sh
+kit init --pack essentials
+# or open the TUI and press 1 / 2 / 3 after Splash
+```
+
 Mascot frames:
 - Prefer `assets/pixel/kit-frame-1.png` … `kit-frame-4.png`
 - Pure black silhouette on white or transparent
 - If PNGs are missing, the TUI uses a built-in placeholder silhouette
 - Cycle delay is about 220 ms per frame
+- Animate mascot on Splash and First-run only (Home stays calm)
 
 Keys:
-- Splash: any key → Home, `q` → quit
-- Home: `s` → Splash, `q` → quit
+- Splash: any key → First-run (if needed) or Home · `q` quit
+- First-run: `1` essentials · `2` web-app · `3` library · `s` skip · `q` quit
+- Home: `↑↓` select pack · `i` install · `a` apply to cwd · `1–3` quick install · `s` splash · `q` quit

@@ -21,16 +21,19 @@ There is no web app.
 - Local skill library (install / list / remove)
 - TUI shell + mascot frame cycle
 - Starter packs: essentials, web-app, library + pack CLI/API
+- First-run (`kit init` + TUI pack picker) and config.json
+- Home shows packs, skills, apply/install actions
 - Basic docs and architecture
 
 **In Progress**
 - Pixel mascot PNG assets (separate track)
 
 **Next Priority**
-1. First-run experience (offer to install essentials pack)
-2. Home screen: show packs + installed skills
-3. Cross-harness path normalization
-4. Railway accounts + publish (later)
+1. Library screen + remove confirm in TUI
+2. Offline Packs screen (explore lite)
+3. Cross-harness path normalization (`kit paths`)
+4. Skill test runner
+5. Railway accounts + publish (later)
 
 ## How to Maintain This File
 When you complete a meaningful piece of work:
