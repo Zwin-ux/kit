@@ -49,11 +49,28 @@ Checks:
 Exit code `1` when any check fails.
 Warnings alone still exit `0`.
 
-## CI suggestion
+## CI
+
+GitHub Actions: `.github/workflows/ci.yml`
+
+On every push/PR to `main`:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+pnpm test
+pnpm typecheck
+node packages/cli/dist/bin.js test --all-packs
+node packages/cli/dist/bin.js doctor
+```
+
+Local equivalent:
 
 ```sh
 pnpm build
 pnpm test
-pnpm kit -- test --all-packs
-pnpm kit -- doctor
+pnpm test:packs
+pnpm doctor
 ```
+
+This workflow is **test-only**. It does not deploy or change repository settings.

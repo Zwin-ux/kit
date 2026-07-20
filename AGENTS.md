@@ -31,14 +31,14 @@ There is no web app.
 - Cross-harness path map: `kit paths` + `kit link --write`
 - Skill/pack test runner: `kit test`
 - Health check: `kit doctor`
+- GitHub Actions CI (build/test/packs/doctor only — no deploy)
 
 **In Progress**
-- Full-stack quality polish / CI
+- Product polish (Workshop later)
 
 **Next Priority**
-1. GitHub Actions CI (test + doctor + pack gate)
-2. Workshop screen (validate / edit later)
-3. Railway accounts + publish (later)
+1. Workshop screen (validate / edit later)
+2. Railway accounts + publish (later)
 
 ## How to Maintain This File
 When you complete a meaningful piece of work:

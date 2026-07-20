@@ -18,6 +18,7 @@
 - [x] Cross-harness path normalization (`kit paths` / `kit link`)
 - [x] Simple test runner (`kit test`)
 - [x] Health check (`kit doctor`)
+- [x] GitHub Actions CI (test/packs/doctor, no deploy)
 - [x] CLI entrypoint that the TUI will later wrap (`validate`, `install`, `list`, `remove`, `pack`, `paths`, `link`, `test`, `doctor`, `tui`)
 
 ## Phase 2 — Pixel-Art TUI + Accounts

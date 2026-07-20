@@ -1,0 +1,60 @@
+# Kit continuous integration
+# Additive only: test + doctor. No deploy, no secrets, no force-push.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Only cancel overlapping runs of THIS workflow on the same ref.
+# Does not affect other workflows or repositories.
+concurrency:
+  group: kit-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Build, test, packs, doctor
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Validate all official packs
+        run: pnpm exec node packages/cli/dist/bin.js test --all-packs
+
+      - name: Doctor (repo health)
+        run: pnpm exec node packages/cli/dist/bin.js doctor
+        env:
+          # Isolate CI home so doctor does not depend on a developer machine.
+          KIT_HOME: ${{ runner.temp }}/kit-home

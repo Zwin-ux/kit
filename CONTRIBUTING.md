@@ -21,6 +21,11 @@ pnpm kit -- test --all-packs
 pnpm kit -- doctor
 ```
 
+## CI
+
+`.github/workflows/ci.yml` runs build + unit tests + pack tests + doctor on `main`.  
+It is additive and does not deploy. See `.github/README.md`.
+
 ## Layout
 
 | Path | Job |
