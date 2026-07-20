@@ -39,8 +39,39 @@ kit explore search "readme"
 kit explore install essentials --from registry
 ```
 
+## GitHub App (Kit-skills)
+
+| Setting | Value |
+|---------|--------|
+| App name | Kit-skills |
+| App ID | `4343273` |
+| Client ID | `Iv23liinXwHgamjhILSP` |
+| Homepage | https://github.com/Zwin-ux/kit |
+| Callback | `https://kit-registry-production.up.railway.app/auth/github/callback` |
+| Webhook | `https://kit-registry-production.up.railway.app/webhooks/github` |
+
+Railway env (never commit):
+
+```text
+GITHUB_APP_ID=4343273
+GITHUB_CLIENT_ID=Iv23liinXwHgamjhILSP
+GITHUB_CLIENT_SECRET=...
+GITHUB_WEBHOOK_SECRET=...
+PUBLIC_BASE_URL=https://kit-registry-production.up.railway.app
+```
+
+**Enable Device Flow** in the GitHub App settings (required for CLI/TUI login).
+
+Auth endpoints:
+
+- `POST /auth/github/device/start`
+- `POST /auth/github/device/poll` body: `{ "device_code": "..." }`
+- `GET /auth/github/login` (browser)
+- `GET /auth/github/callback`
+- `POST /webhooks/github`
+
 ## Safety
 
-- Public GET only for now
-- No secrets in the client for read endpoints
-- CI for monorepo stays local/test-only and does not deploy Railway automatically
+- Catalog GET is public
+- Secrets only on Railway
+- CI for monorepo stays test-only and does not deploy Railway automatically
