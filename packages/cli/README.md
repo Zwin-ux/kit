@@ -2,17 +2,7 @@
 
 **One library. Many agents.**
 
-Built for the vibe-coding boom: you run Claude Code, Codex, maybe Grok —  
-and your skills are scattered, duplicated, and stuck in one tool.
-
-```bash
-npm i -g @mzwin/kit
-kit                 # tells you YOUR next move
-```
-
----
-
-## Install
+Install skills once. Use them in Claude Code, Codex, and Grok.
 
 ```bash
 npm i -g @mzwin/kit
@@ -23,96 +13,89 @@ Requires **Node 20+**.
 
 ---
 
-## Who is this for? (real stories)
-
-### 1) “I have 200 skills and I trust none of them”
-
-You installed every Claude/Codex skill you saw. Half are `*-automation` junk.  
-Nothing works the same in both agents.
+## Quick start
 
 ```bash
-kit unify                 # see mess vs keepers
-kit unify --write         # adopt S/A keepers only
-kit unify --write --link  # + wire into this project
-```
-
-### 2) “I just opened a repo — make agents useful”
-
-You don’t want a 12-step setup. You want Claude/Codex competent on *this* folder.
-
-```bash
-cd my-app
-kit ready                 # dry-run plan
-kit ready --write         # pack + apply + link + doctor
-kit ready --write --unify # also clean your personal skill pile
-```
-
-### 3) “I bounce between Claude and Codex every day”
-
-Same product, two agents, two skill folders. Kit is the shared library.
-
-```bash
-kit init --pack essentials
-kit link --to all --write
-kit paths
-```
-
-### 4) “Brand new install”
-
-```bash
-npm i -g @mzwin/kit
-kit                       # situation-aware home
-kit init --pack essentials
-# or if you already have skills elsewhere:
-kit unify
+kit                       # status and next step
+kit ready --write         # set up this project for agents
+kit unify --write --link  # clean agent skill folders into one library
 ```
 
 ---
 
-## Commands that matter
+## Packs
 
-| Command | When you use it |
-|---------|-----------------|
-| `kit` | Open Kit — reads your setup, names your story, gives next command |
-| `kit ready --write` | One-shot: this repo is agent-ready |
-| `kit unify --write` | Clean chaotic personal skills → portable library |
-| `kit recommend --dir .` | What pack fits this project? |
-| `kit pack apply <name> --dir .` | Land pack skills on a project |
-| `kit link --to all --write` | Broadcast library → Claude/Codex/Grok |
-| `kit import --from claude-code --write` | Pull one harness into Kit |
-| `kit doctor` | Health check |
-| `kit tui` | Pixel terminal UI |
+A pack is a set of skills for one project type.  
+Most packs include **essentials**, then add more skills.
 
----
-
-## `kit unify` (skill OS)
-
-```text
-Scanned   998 skill folders
-Noise     809 filtered   (automation bulk, stubs)
-Keepers   4              (S/A · multi-agent or real structure)
-
-Safe default: adopt keepers — not hundreds of dumps.
-```
-
-| Flag | Effect |
-|------|--------|
-| *(none)* | Dry-run |
-| `--write` | Adopt keepers into `~/.kit` |
-| `--link` | Also copy into project harness folders |
-| `--all` | Include noise (not recommended) |
-| `--json` | Machine report |
-
----
-
-## Starter packs
-
-`essentials` · `web-app` · `library` · `cli-tool` · `api-service` · `full-stack` · `data-ml`
+| Pack | Use when | Adds (on top of essentials) |
+|------|----------|-----------------------------|
+| **essentials** | Any project. Start here. | base set only |
+| **web-app** | Sites and UI apps | ship-checklist, a11y-pass, pr-ready |
+| **library** | Packages and SDKs | api-docs, changelog, pr-ready |
+| **cli-tool** | Command-line tools | cli-help, pr-ready |
+| **api-service** | HTTP APIs | api-docs, ship-checklist, pr-ready |
+| **full-stack** | UI + API products | ship-checklist, a11y-pass, api-docs, pr-ready |
+| **data-ml** | Data and ML work | data-check, write-tests, pr-ready |
 
 ```bash
 kit pack list
-kit pack apply web-app --dir ../my-app
+kit recommend --dir .
+kit pack apply essentials --dir .
 ```
+
+---
+
+## Skills
+
+Each skill is a short instruction file for a common task.
+
+| Skill | Purpose |
+|-------|---------|
+| **add-readme** | Write a clear project README |
+| **project-setup** | Set a clean project baseline |
+| **workspace-setup** | Set monorepo / multi-package layout |
+| **code-review** | Review a change for correctness and risk |
+| **write-tests** | Add tests for important behavior |
+| **fix-bug** | Find root cause and fix a bug |
+| **pr-ready** | Write PR summary, test plan, and risks |
+| **ship-checklist** | Run a pre-ship checklist |
+| **a11y-pass** | Improve basic UI accessibility |
+| **api-docs** | Document a library or service API |
+| **changelog** | Write a clear changelog entry |
+| **cli-help** | Improve CLI help and usage text |
+| **data-check** | Review data scripts and notebooks |
+
+```bash
+kit list
+kit pack show web-app
+```
+
+---
+
+## Commands
+
+| Command | Purpose |
+|---------|---------|
+| `kit` | Show status and a next command |
+| `kit ready --write` | Install pack, apply to project, link agents, run doctor |
+| `kit unify --write` | Import good skills from Claude/Codex/Grok; skip noise |
+| `kit unify --write --link` | Same, then link into this project |
+| `kit recommend --dir .` | Suggest a pack from project files |
+| `kit pack apply <name> --dir .` | Apply a pack to a project |
+| `kit link --to all --write` | Link library skills to all agents |
+| `kit import --from claude-code --write` | Copy skills from one agent into Kit |
+| `kit doctor` | Check health |
+| `kit tui` | Open the pixel terminal UI |
+
+---
+
+## How it works
+
+1. Kit stores skills in `~/.kit`.
+2. Packs install groups of skills.
+3. `link` makes skills available to each agent.
+4. `unify` imports and cleans skills that already exist in agent folders.
 
 ---
 
@@ -124,6 +107,5 @@ kit pack apply web-app --dir ../my-app
 
 ```bash
 npm i -g @mzwin/kit
-kit
-kit ready --write
+kit pack list
 ```

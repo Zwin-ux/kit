@@ -3,18 +3,16 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/kit-idle.gif" alt="Kit idle — pixel fox mascot" width="200" />
+  <img src="docs/assets/kit-idle.gif" alt="Kit idle" width="180" />
 </p>
 
 <p align="center">
   <strong>One library. Many agents.</strong><br />
-  Built for the vibe-coding boom — when you already have too many skills<br />
-  and zero portability between Claude Code, Codex, and Grok.
+  Install skills once. Use them in Claude Code, Codex, and Grok.
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@mzwin/kit"><img src="https://img.shields.io/npm/v/@mzwin/kit?style=for-the-badge&label=npm&color=1a1a1a" alt="npm" /></a>
-  <a href="#user-stories"><img src="https://img.shields.io/badge/stories-ready_·_unify-c45c2a?style=for-the-badge" alt="stories" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1a1a1a?style=for-the-badge" alt="MIT" /></a>
 </p>
 
@@ -24,115 +22,98 @@
 
 ```bash
 npm i -g @mzwin/kit
-kit                 # situation-aware home — tells you what to run
+kit --version
 ```
 
-**Package:** [@mzwin/kit](https://www.npmjs.com/package/@mzwin/kit) · **Node 20+**
-
----
-
-## User stories
-
-### 1. Clean the skill pile
-
-**Who:** You’ve installed every Claude/Codex skill you saw.  
-**Pain:** 200 folders, half automation spam, nothing shared across agents.  
-**Win:**
+- Node 20 or later
+- Package: [@mzwin/kit](https://www.npmjs.com/package/@mzwin/kit)
+- Command name: `kit`
 
 ```bash
-kit unify
-kit unify --write
-kit unify --write --link
-```
-
-Ranks keepers, filters noise, builds one portable library.
-
-### 2. Make this repo agent-ready
-
-**Who:** You just opened a project and want agents useful *now*.  
-**Pain:** Don’t want a 12-step ritual every new repo.  
-**Win:**
-
-```bash
-cd my-app
-kit ready              # plan
-kit ready --write      # pack + apply + link + doctor
-kit ready --write --unify   # also clean personal skill dumps
-```
-
-### 3. Same skills in every agent
-
-**Who:** Claude by day, Codex by night, same codebase.  
-**Pain:** Skills only live where you installed them.  
-**Win:**
-
-```bash
-kit init --pack essentials
-kit link --to all --write
-kit paths
-```
-
-### 4. Brand new
-
-```bash
-npm i -g @mzwin/kit
-kit
-kit init --pack essentials
-# or: kit unify   if you already have skills elsewhere
+kit                       # show status and next step
+kit ready --write         # set up this project
+kit unify --write --link  # clean agent skill folders into one library
 ```
 
 ---
 
-## Why Kit (not another skill dump)
+## What you get
 
-| Default world | With Kit |
-|---------------|----------|
-| Skills stuck in one agent | One library → Claude + Codex + Grok |
-| Install more skills | **Curate** the ones you already have |
-| Guess the pack | `recommend` from real project signals |
-| Manual folder copy | `link` / `ready` / `unify --link` |
+### Starter packs
 
----
+A pack is a set of skills for one project type.  
+Most packs include **essentials**, then add extra skills.
 
-## Commands
-
-| Command | Job |
-|---------|-----|
-| `kit` | Home — your story + next command |
-| `kit ready --write` | One-shot: this repo is agent-ready |
-| `kit unify --write` | Skill OS: mess → keepers → library |
-| `kit recommend --dir .` | Best starter pack for this project |
-| `kit pack apply …` | Land a pack on a project |
-| `kit link --to all --write` | Broadcast library to agents |
-| `kit import --from claude-code --write` | Pull one harness in |
-| `kit doctor` / `kit tui` | Health + pixel UI |
-
----
-
-## Starter packs
-
-Seven official packs (stack packs extend **essentials**):
-
-`essentials` · `web-app` · `library` · `cli-tool` · `api-service` · `full-stack` · `data-ml`
+| Pack | Use when | Extra skills (beyond essentials) |
+|------|----------|-----------------------------------|
+| **essentials** | Any project. Install this first. | — |
+| **web-app** | Sites and UI apps | ship-checklist, a11y-pass, pr-ready |
+| **library** | Packages and SDKs | api-docs, changelog, pr-ready |
+| **cli-tool** | Command-line tools | cli-help, pr-ready |
+| **api-service** | HTTP APIs and backends | api-docs, ship-checklist, pr-ready |
+| **full-stack** | UI + API products | ship-checklist, a11y-pass, api-docs, pr-ready |
+| **data-ml** | Data and ML work | data-check, write-tests, pr-ready |
 
 ```bash
 kit pack list
-kit pack apply web-app --dir ../my-app
+kit recommend --dir .
+kit pack apply essentials --dir .
 ```
 
-→ [docs/packs.md](docs/packs.md)
+### Skills (built-in catalog)
+
+Each skill is a short instruction file. Agents load it when the task matches.
+
+| Skill | What it does |
+|-------|----------------|
+| **add-readme** | Write a clear project README |
+| **project-setup** | Set a clean project baseline for agents and humans |
+| **workspace-setup** | Set monorepo and multi-package layout |
+| **code-review** | Review a change for correctness, risk, and clarity |
+| **write-tests** | Add tests for important behavior |
+| **fix-bug** | Find root cause and fix a bug without extra refactors |
+| **pr-ready** | Write PR summary, test plan, and risk notes |
+| **ship-checklist** | Run a pre-ship checklist for an app release |
+| **a11y-pass** | Improve basic accessibility for UI and web flows |
+| **api-docs** | Document a library or service API with examples |
+| **changelog** | Write a clear changelog entry |
+| **cli-help** | Improve CLI help text, usage, and flags |
+| **data-check** | Review data scripts and notebooks for clarity and reuse |
+
+```bash
+kit list
+kit pack show essentials
+```
+
+Full pack notes: [docs/packs.md](docs/packs.md)
 
 ---
 
-## Demo (presentation)
+## Main commands
 
-```bash
-npm i -g @mzwin/kit
-kit                          # “here’s your situation”
-kit unify                    # gasp: 900 scanned, noise filtered
-kit ready --write            # this repo is done
-kit doctor
-```
+| Command | Purpose |
+|---------|---------|
+| `kit` | Show library status and a next command |
+| `kit ready --write` | Recommend pack, install, apply, link agents, run doctor |
+| `kit unify --write` | Scan Claude/Codex/Grok skills, keep good ones, drop noise |
+| `kit unify --write --link` | Same, then link skills into this project |
+| `kit recommend --dir .` | Suggest a pack from project files |
+| `kit pack apply <name> --dir .` | Copy pack skills into a project |
+| `kit link --to all --write` | Link library skills to Claude, Codex, and Grok |
+| `kit import --from claude-code --write` | Copy skills from one agent into Kit |
+| `kit doctor` | Check install health |
+| `kit tui` | Open the pixel terminal UI |
+
+---
+
+## How Kit works
+
+1. Skills live in a local library (`~/.kit`).
+2. Packs install groups of skills into that library.
+3. `link` makes those skills available to each agent.
+4. `unify` imports and cleans skills that already exist in agent folders.
+
+Agents supported: **Claude Code**, **Codex**, **Grok Build**.
 
 ---
 
@@ -142,21 +123,21 @@ kit doctor
 git clone https://github.com/Zwin-ux/kit.git
 cd kit
 pnpm install && pnpm build
-pnpm kit -- ready
+pnpm kit -- doctor
 ```
 
 ---
 
 <p align="center">
   <img src="docs/assets/kit-wordmark.png" alt="KIT" width="140" /><br />
-  <img src="docs/assets/kit-mascot.png" alt="Kit mascot" width="100" /><br />
-  <sub>Skills your agents actually use.</sub>
+  <img src="docs/assets/kit-mascot.png" alt="Kit mascot" width="96" /><br />
+  <sub>Skills your agents use.</sub>
 </p>
 
 <p align="center">
   <sub>
     <a href="LICENSE">MIT</a> ·
-    <a href="https://www.npmjs.com/package/@mzwin/kit">npm @mzwin/kit</a> ·
+    <a href="https://www.npmjs.com/package/@mzwin/kit">npm</a> ·
     <a href="CHANGELOG.md">Changelog</a>
   </sub>
 </p>
