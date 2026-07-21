@@ -13,6 +13,17 @@
 - **Refuse writes into home/Desktop/Downloads** unless `--force`
 - **Publish gate** — `publish.mjs` runs prepare-publish and aborts if any `workspace:*` remains
 - **CLI argv** — leading `--` stripped (`pnpm kit -- tui` works)
+- **`kit status`** — agent wiring strip (claude/codex/grok)
+
+### TUI
+- **Menu-first layout** — stack / split / wide; mascot never steals narrow windows
+- **Selection stable** — fixed geometry on ↑↓; ASCII cursor; no list reflow
+- **A11y (dark terminals)** — no solid █ pack detail blobs; inverse + sticky `sel` focus; denser Home on small viewports
+- **Fluid fullscreen** — rail + content width grow with terminal size (no postage-stamp fox on maximize)
+- **Click-to-select** — optional mouse SGR; keyboard still primary
+
+### Catalog
+- **`deps-hygiene` skill** promoted from queue (keep-alive)
 
 ### Version
 - All packages + `KIT_PACKAGE_VERSION` → **0.1.5**
