@@ -42,6 +42,9 @@ sandbox path.
   filtering, idempotent re-run, `--write --link`, `--link` guard.
 - `kit doctor` fresh sandbox, KIT_HOME reporting, post-`ready` health, `--dir`.
 - `--version` (matches package.json), `--help`, unknown-command exit codes.
+- JSON contract (schemaVersion "1" envelope) for `doctor --json` and
+  `ready --json`: pure-JSON stdout, exact envelope keys, typed error codes,
+  `--no-color`, and non-regression of the raw `status`/`unify --json` shapes.
 
 The same suite runs on Ubuntu, macOS, and Windows in CI (junction links on
 Windows need no admin rights; path assertions normalize separators).

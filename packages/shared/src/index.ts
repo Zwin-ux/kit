@@ -6,6 +6,8 @@
 /** Semantic version string of the Kit monorepo packages. */
 export const KIT_PACKAGE_VERSION = "0.1.5" as const;
 
+export * from "./contract.js";
+
 /** Result of a fallible operation without throwing. */
 export type Result<T, E = string> =
   | { ok: true; value: T }
