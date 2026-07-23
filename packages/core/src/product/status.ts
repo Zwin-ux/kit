@@ -175,7 +175,11 @@ async function listSkillDirs(root: string): Promise<string[]> {
   try {
     const entries = await readdir(root, { withFileTypes: true });
     return entries
-      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .filter(
+        // Linked skills are symlinks (junctions on Windows), not plain
+        // directories — count both, like import/unify scanners do.
+        (e) => (e.isDirectory() || e.isSymbolicLink()) && !e.name.startsWith("."),
+      )
       .map((e) => e.name)
       .sort();
   } catch {

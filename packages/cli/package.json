@@ -46,7 +46,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node tests/argv.test.mjs",
+    "test": "node tests/argv.test.mjs && vitest run",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
@@ -56,6 +56,7 @@
     "@mzwin/kit-tui": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
   }
 }

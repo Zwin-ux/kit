@@ -39,11 +39,25 @@ import {
   type LinkMode,
   type PathScope,
 } from "@mzwin/kit-core";
-import { KIT_PACKAGE_VERSION } from "@mzwin/kit-shared";
+import {
+  KIT_ERROR_CODES,
+  KIT_PACKAGE_VERSION,
+  makeKitEnvelope,
+  type KitJsonError,
+} from "@mzwin/kit-shared";
 import { normalizeArgv } from "./argv.js";
 
-const args = normalizeArgv(process.argv.slice(2));
+const rawArgs = normalizeArgv(process.argv.slice(2));
+// Global flag: strip --no-color anywhere and export NO_COLOR for downstream
+// consumers (the TUI). Plain CLI output never emits ANSI colors.
+if (rawArgs.includes("--no-color")) {
+  process.env.NO_COLOR = "1";
+}
+const args = rawArgs.filter((arg) => arg !== "--no-color");
 const command = args[0];
+
+/** True once a command opted into --json envelope output (doctor/ready). */
+let jsonMode = false;
 
 /** Exit 1 = user/validation; 2 = unexpected (handled in main catch). */
 function fail(message: string, code = 1): never {
@@ -897,7 +911,7 @@ async function runStatusCmd(rest: string[]): Promise<void> {
 async function runReadyCmd(rest: string[]): Promise<void> {
   if (rest.includes("--help") || rest.includes("-h")) {
     console.log(
-      "Usage: kit ready [--dir <project>] [--pack <name>] [--write] [--unify] [--force]",
+      "Usage: kit ready [--dir <project>] [--pack <name>] [--write] [--unify] [--force] [--json]",
     );
     console.log("");
     console.log("Make THIS repo agent-ready in one shot:");
@@ -912,6 +926,8 @@ async function runReadyCmd(rest: string[]): Promise<void> {
   const write = rest.includes("--write");
   const unify = rest.includes("--unify");
   const force = rest.includes("--force");
+  const asJson = rest.includes("--json");
+  if (asJson) jsonMode = true;
 
   const dirFlag = rest.indexOf("--dir");
   let projectDir: string | undefined;
@@ -933,9 +949,13 @@ async function runReadyCmd(rest: string[]): Promise<void> {
     write,
     unify,
     force,
-    onProgress: (msg: string) => {
-      process.stderr.write(`  … ${msg}\n`);
-    },
+    ...(asJson
+      ? {}
+      : {
+          onProgress: (msg: string) => {
+            process.stderr.write(`  … ${msg}\n`);
+          },
+        }),
     ...(projectDir ? { projectDir } : {}),
     ...(pack ? { pack } : {}),
   });
@@ -945,6 +965,32 @@ async function runReadyCmd(rest: string[]): Promise<void> {
     : "value" in result && result.value
       ? result.value
       : null;
+
+  if (asJson) {
+    const errors: KitJsonError[] = [];
+    if (!result.ok) {
+      const code = result.error.startsWith("Refusing to write")
+        ? KIT_ERROR_CODES.GUARD_REFUSED
+        : r
+          ? KIT_ERROR_CODES.INCOMPLETE
+          : KIT_ERROR_CODES.STEP_FAILED;
+      errors.push({ code, message: result.error });
+    } else if (r && !r.dryRun && !r.complete) {
+      errors.push({
+        code: KIT_ERROR_CODES.INCOMPLETE,
+        message: "Ready did not complete successfully.",
+      });
+    }
+    const envelope = makeKitEnvelope({
+      command: "ready",
+      ok: errors.length === 0,
+      data: r,
+      warnings: r?.notes ?? [],
+      errors,
+    });
+    console.log(JSON.stringify(envelope, null, 2));
+    process.exit(errors.length === 0 ? 0 : 1);
+  }
 
   if (!result.ok && !r) {
     fail(result.error);
@@ -1337,18 +1383,39 @@ function printPackTestFail(
 }
 
 async function runDoctorCmd(rest: string[]): Promise<void> {
+  const asJson = rest.includes("--json");
+  if (asJson) jsonMode = true;
   const dirFlag = rest.indexOf("--dir");
   let projectDir: string | undefined;
   if (dirFlag >= 0) {
     projectDir = rest[dirFlag + 1];
     if (!projectDir || projectDir.startsWith("-")) {
-      fail("Usage: kit doctor [--dir <project>]");
+      fail("Usage: kit doctor [--dir <project>] [--json]");
     }
   }
 
   const report = await runDoctor({
     ...(projectDir ? { projectDir } : {}),
   });
+
+  if (asJson) {
+    const warnings = report.checks
+      .filter((c) => c.level === "warn")
+      .map((c) => c.message);
+    const errors: KitJsonError[] = report.checks
+      .filter((c) => c.level === "fail")
+      .map((c) => ({ code: KIT_ERROR_CODES.CHECK_FAILED, message: c.message }));
+    const envelope = makeKitEnvelope({
+      command: "doctor",
+      ok: report.ok,
+      data: report,
+      warnings,
+      errors,
+    });
+    console.log(JSON.stringify(envelope, null, 2));
+    if (!report.ok) process.exit(1);
+    return;
+  }
 
   console.log(`kit doctor  v${report.version}`);
   console.log(`  home:    ${report.kitHome}`);
@@ -1602,6 +1669,21 @@ async function runRecommend(rest: string[]): Promise<void> {
 
 main().catch((error: unknown) => {
   const detail = error instanceof Error ? error.message : String(error);
+  if (jsonMode) {
+    const envelope = makeKitEnvelope({
+      command: command ?? "",
+      ok: false,
+      data: null,
+      errors: [
+        {
+          code: KIT_ERROR_CODES.UNEXPECTED,
+          message: `kit: unexpected error: ${detail}`,
+        },
+      ],
+    });
+    console.log(JSON.stringify(envelope, null, 2));
+    process.exit(2);
+  }
   console.error(`kit: unexpected error: ${detail}`);
   process.exit(2);
 });
