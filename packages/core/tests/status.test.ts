@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -70,5 +70,33 @@ describe("runStatus", () => {
     const claude = result.value.rows.find((r) => r.harness === "claude-code");
     expect(claude?.state).toBe("ok");
     expect(claude?.linkedNames).toContain("add-readme");
+  });
+
+  it("counts symlinked skills — what kit link/ready actually create", async () => {
+    const kitHome = await tempDir("kit-status-home3-");
+    const projectDir = await tempDir("kit-status-proj3-");
+    const installed = await installSkill(skillFixture, { kitHome, force: true });
+    expect(installed.ok).toBe(true);
+    if (!installed.ok) return;
+
+    const claudeRoot = path.join(projectDir, ".claude", "skills");
+    await mkdir(claudeRoot, { recursive: true });
+    await symlink(
+      installed.value.installPath,
+      path.join(claudeRoot, "add-readme"),
+      "junction",
+    );
+
+    const result = await runStatus({
+      kitHome,
+      projectDir,
+      harnesses: ["claude-code"],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const claude = result.value.rows.find((r) => r.harness === "claude-code");
+    expect(claude?.state).toBe("ok");
+    expect(claude?.linkedNames).toContain("add-readme");
+    expect(result.value.allOk).toBe(true);
   });
 });
