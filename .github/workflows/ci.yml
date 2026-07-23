@@ -63,3 +63,6 @@ jobs:
         env:
           # Isolate CI home so doctor does not depend on a developer machine.
           KIT_HOME: ${{ runner.temp }}/kit-home
+
+      - name: Package integrity smoke (pack → install → run)
+        run: node scripts/pack-smoke.mjs
