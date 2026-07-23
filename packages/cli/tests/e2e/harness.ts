@@ -9,7 +9,7 @@
  * stdout, stderr, and sandbox path (per tests/e2e/README.md).
  */
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,7 +81,10 @@ export async function createSandbox(
 ): Promise<Sandbox> {
   await assertCliBuilt();
 
-  const root = await mkdtemp(path.join(os.tmpdir(), "kit-e2e-"));
+  // realpath: macOS os.tmpdir() is a symlink (/var/folders -> /private/var),
+  // and the CLI resolves cwd to the real path, so HOME must match it or the
+  // home-guard comparison never fires.
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "kit-e2e-")));
   const home = path.join(root, "home");
   const kitHome = path.join(home, ".kit");
   const projectDir = path.join(root, options.projectDirName ?? "project");
