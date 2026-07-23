@@ -204,7 +204,7 @@ for (const name of PACKAGES) {
       n.startsWith("package/src/") ||
       n.startsWith("package/tests/") ||
       n.endsWith(".tsbuildinfo") ||
-      n.endsWith(".env") ||
+      /(^|\/)\.env(\.|$)/.test(n) ||
       n.endsWith("auth.json"),
   );
   if (leaks.length > 0) {
