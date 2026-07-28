@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {
   applyPack,
+  addPlugin,
   completeFirstRun,
   describePaths,
   exploreListPacks,
@@ -14,19 +15,23 @@ import {
   installPack,
   installSkill,
   isFirstRunPackName,
+  doctorPlugin,
   importSkillsFromHarness,
   linkSkills,
   listFirstRunPackOptions,
   listPacks,
+  listPlugins,
   listSkills,
   loadPack,
   loadSkill,
   loginWithDeviceFlow,
   logout,
   recommendToolkits,
+  removePlugin,
   removeSkill,
   runDoctor,
   runReady,
+  runPlugin,
   runStatus,
   runUnify,
   detectSituation,
@@ -104,6 +109,11 @@ async function main(): Promise<void> {
 
   if (command === "pack") {
     await runPack(args.slice(1));
+    return;
+  }
+
+  if (command === "plugin") {
+    await runPluginCmd(args.slice(1));
     return;
   }
 
@@ -187,6 +197,7 @@ function printHelp(): void {
   console.log("  kit recommend --dir .");
   console.log("  kit init --pack essentials");
   console.log("  kit pack list | install | apply");
+  console.log("  kit plugin add | list | doctor | run");
   console.log("  kit link --to claude-code|codex|grok-build|all --write");
   console.log("  kit import --from claude-code --write");
   console.log("  kit unify [--write] [--link] [--all] [--json]");
@@ -484,6 +495,126 @@ function printPackHelp(): void {
   console.log("  kit pack validate <pack>");
   console.log("  kit pack install <pack>");
   console.log("  kit pack apply <pack> [--dir <project>]");
+}
+
+async function runPluginCmd(rest: string[]): Promise<void> {
+  const sub = rest[0];
+  if (!sub || sub === "--help" || sub === "-h") {
+    printPluginHelp();
+    return;
+  }
+
+  if (sub === "add") {
+    const source = rest.slice(1).find((arg) => !arg.startsWith("-"));
+    if (!source) fail("Usage: kit plugin add <path> [--write] [--force]");
+    const result = await addPlugin(source, {
+      write: rest.includes("--write"),
+      force: rest.includes("--force"),
+    });
+    if (!result.ok) fail(result.error);
+    const report = result.value;
+    console.log(report.dryRun ? "Plugin plan (dry-run)" : "Plugin registered");
+    console.log(`  name:       ${report.manifest.name}`);
+    console.log(`  version:    ${report.manifest.version}`);
+    console.log(`  root:       ${report.root}`);
+    console.log(
+      `  executable: ${report.executable ?? "missing"} (${report.executableSource})`,
+    );
+    if (report.dryRun) {
+      console.log("");
+      console.log("No files changed. Add --write to register this plugin.");
+    } else {
+      console.log("");
+      console.log(`Next: kit plugin doctor ${report.manifest.name}`);
+    }
+    return;
+  }
+
+  if (sub === "list" || sub === "ls") {
+    const result = await listPlugins();
+    if (!result.ok) fail(result.error);
+    if (result.value.length === 0) {
+      console.log("No CLI plugins registered.");
+      console.log("Next: kit plugin add <path> --write");
+      return;
+    }
+    for (const plugin of result.value) {
+      console.log(
+        `${plugin.manifest.name}@${plugin.manifest.version}  ${plugin.manifest.displayName}`,
+      );
+      console.log(`  ${plugin.manifest.description}`);
+      console.log(`  ${plugin.entry.root}`);
+    }
+    return;
+  }
+
+  if (sub === "doctor") {
+    const name = rest[1];
+    if (!name) fail("Usage: kit plugin doctor <name>");
+    const result = await doctorPlugin(name);
+    if (!result.ok) fail(result.error);
+    const report = result.value;
+    console.log(`Plugin ${report.name}`);
+    console.log(`  status:     ${report.ready ? "ready" : "missing executable"}`);
+    console.log(
+      `  executable: ${report.executable ?? "not found"} (${report.executableSource})`,
+    );
+    console.log(
+      `  manifest:   ${report.manifestChanged ? "changed after registration" : "unchanged"}`,
+    );
+    if (report.healthArgs.length > 0) {
+      console.log(`  health:     ${report.healthArgs.join(" ")}`);
+    }
+    if (report.safetySummary) {
+      console.log(`  safety:     ${report.safetySummary}`);
+    }
+    if (report.confirmationToken) {
+      console.log(`  confirm:    ${report.confirmationToken}`);
+    }
+    if (!report.ready) process.exitCode = 1;
+    return;
+  }
+
+  if (sub === "remove") {
+    const name = rest[1];
+    if (!name) fail("Usage: kit plugin remove <name> [--write]");
+    const result = await removePlugin(name, {
+      write: rest.includes("--write"),
+    });
+    if (!result.ok) fail(result.error);
+    console.log(
+      result.value.dryRun
+        ? `Would remove plugin ${name}. Add --write to continue.`
+        : `Removed plugin ${name}.`,
+    );
+    return;
+  }
+
+  if (sub === "run") {
+    const name = rest[1];
+    if (!name) fail("Usage: kit plugin run <name> -- <arguments>");
+    const separator = rest.indexOf("--");
+    const passThrough =
+      separator >= 0 ? rest.slice(separator + 1) : rest.slice(2);
+    const result = await runPlugin(name, passThrough);
+    if (!result.ok) fail(result.error);
+    process.exitCode = result.value.exitCode;
+    return;
+  }
+
+  fail(`kit plugin: unknown command: ${sub}`);
+}
+
+function printPluginHelp(): void {
+  console.log("Usage:");
+  console.log("  kit plugin add <path> [--write] [--force]");
+  console.log("  kit plugin list");
+  console.log("  kit plugin doctor <name>");
+  console.log("  kit plugin run <name> -- <arguments>");
+  console.log("  kit plugin remove <name> [--write]");
+  console.log("");
+  console.log("Add and remove use a dry-run unless you pass --write.");
+  console.log("Kit passes plugin arguments without a shell.");
 }
 
 async function runPaths(rest: string[]): Promise<void> {

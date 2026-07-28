@@ -89,6 +89,32 @@ kit import --from claude-code --write
 
 ---
 
+## Plug in a CLI
+
+<p align="center">
+  <img src="docs/assets/demo-plugin-trenchwire.gif" alt="Kit registers and runs the Trenchwire CLI with real offline market data" width="720" />
+</p>
+
+Kit can run a local CLI from its own checkout. The plugin supplies one small
+manifest.
+
+```bash
+kit plugin add ../trenchwire --write
+kit plugin doctor trenchwire
+kit plugin run trenchwire -- check
+```
+
+Kit stores the plugin path and manifest digest. It does not copy the binary.
+Kit passes arguments without a shell. The plugin keeps its own safety rules.
+Kit stops if the manifest changes after registration.
+
+The proof above comes from the compiled Trenchwire binary. It uses recorded
+market data. It does not connect a wallet or submit a trade.
+
+Read the [plugin contract](docs/plugins.md).
+
+---
+
 ## Starter packs
 
 <p align="center">
@@ -156,6 +182,9 @@ More: [docs/packs.md](docs/packs.md)
 | `kit pack apply <name> --dir .` | Apply pack skills |
 | `kit link --to all --write` | Link library to agents |
 | `kit import --from claude-code --write` | Import from one agent |
+| `kit plugin add <path> --write` | Register a local CLI |
+| `kit plugin doctor <name>` | Check its binary and manifest |
+| `kit plugin run <name> -- <args>` | Run it without a shell |
 | `kit doctor` | Install health |
 | `kit tui` | Terminal UI |
 

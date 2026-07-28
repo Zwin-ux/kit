@@ -200,3 +200,22 @@ export {
   type RecommendReport,
   type RecommendResult,
 } from "./recommend/mod.js";
+
+export {
+  getPluginsIndexPath,
+  addPlugin,
+  doctorPlugin,
+  listPlugins,
+  removePlugin,
+  runPlugin,
+  type AddPluginOptions,
+  type AddPluginReport,
+  type KitPluginManifest,
+  type PluginDoctorReport,
+  type PluginRegistry,
+  type PluginRegistryEntry,
+  type PluginResult,
+  type PluginRunReport,
+  type RegisteredPlugin,
+  type RunPluginOptions,
+} from "./plugin/mod.js";

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add a local CLI plugin contract.
+- Keep plugin add and remove in dry-run mode by default.
+- Store a SHA-256 manifest digest and block changed manifests.
+- Start plugin executables without a shell.
+- Add a real Kit and Trenchwire proof capture.
+
 ## 0.1.5 — Honest ready & safe writes
 
 ### Functions (trust cut)
