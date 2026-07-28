@@ -2,7 +2,7 @@
   "name": "kit",
   "version": "0.1.0",
   "private": true,
-  "description": "Portable agent skills for Claude Code, Grok Build, and Codex",
+  "description": "Local workbench for coding runners, agent skills, and CLI services",
   "packageManager": "pnpm@10.12.4",
   "engines": {
     "node": ">=20"

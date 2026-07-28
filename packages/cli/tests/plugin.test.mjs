@@ -46,6 +46,14 @@ try {
         command: "node",
         versionArgs: ["--version"],
         healthArgs: ["--version"],
+        tasks: [
+          {
+            name: "version",
+            description: "Print the local Node version.",
+            args: ["--version"],
+            access: "read-only",
+          },
+        ],
         safety: {
           summary: "The test command writes no external state.",
         },
@@ -65,8 +73,12 @@ try {
   const doctor = run(["plugin", "doctor", "proof-cli"]);
   assert.match(doctor, /status:\s+ready/);
   assert.match(doctor, /manifest:\s+unchanged/);
+  assert.match(doctor, /tasks:\s+version/);
 
-  const version = run(["plugin", "run", "proof-cli", "--", "--version"]);
+  const tasks = run(["plugin", "task", "proof-cli"]);
+  assert.match(tasks, /version\s+Print the local Node version/);
+
+  const version = run(["plugin", "task", "proof-cli", "version"]);
   assert.match(version.trim(), /^v\d+/);
 
   const removed = run(["plugin", "remove", "proof-cli", "--write"]);

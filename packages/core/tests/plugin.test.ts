@@ -10,6 +10,7 @@ import {
   listPlugins,
   removePlugin,
   runPlugin,
+  runPluginTask,
 } from "../src/plugin/mod.js";
 
 
@@ -37,6 +38,14 @@ async function writeManifest(
         command: "node",
         versionArgs: ["--version"],
         healthArgs: ["--version"],
+        tasks: [
+          {
+            name: "version",
+            description: "Print the local Node version.",
+            args: ["--version"],
+            access: "read-only",
+          },
+        ],
         safety: {
           summary: "The test command writes no external state.",
         },
@@ -90,8 +99,9 @@ describe("Kit CLI plugins", () => {
     expect(doctor.value.ready).toBe(true);
     expect(doctor.value.executableSource).toBe("path");
     expect(doctor.value.manifestChanged).toBe(false);
+    expect(doctor.value.tasks.map((task) => task.name)).toEqual(["version"]);
 
-    const run = await runPlugin("test-cli", ["--version"], {
+    const run = await runPluginTask("test-cli", "version", {
       kitHome,
       stdio: "pipe",
     });
@@ -100,6 +110,35 @@ describe("Kit CLI plugins", () => {
     expect(run.value.exitCode).toBe(0);
     expect(run.value.stdout.trim()).toMatch(/^v\d+/);
     expect(run.value.stderr).toBe("");
+  });
+
+  it("rejects duplicate, write-capable, and unknown tasks", async () => {
+    const kitHome = await tempDir("kit-plugin-home-");
+    const pluginRoot = await tempDir("kit-plugin-source-");
+    await writeManifest(pluginRoot, {
+      tasks: [
+        {
+          name: "change",
+          description: "Change a file.",
+          args: ["change"],
+          access: "write",
+        },
+      ],
+    });
+    const unsafe = await addPlugin(pluginRoot, { kitHome, write: true });
+    expect(unsafe.ok).toBe(false);
+    if (unsafe.ok) return;
+    expect(unsafe.error).toContain("access must be read-only");
+
+    await writeManifest(pluginRoot);
+    await addPlugin(pluginRoot, { kitHome, write: true });
+    const missing = await runPluginTask("test-cli", "missing", {
+      kitHome,
+      stdio: "pipe",
+    });
+    expect(missing.ok).toBe(false);
+    if (missing.ok) return;
+    expect(missing.error).toContain("Available tasks: version");
   });
 
   it("reports a changed manifest and removes only with write", async () => {
@@ -113,6 +152,7 @@ describe("Kit CLI plugins", () => {
     });
     const doctor = await doctorPlugin("test-cli", kitHome);
     expect(doctor.ok && doctor.value.manifestChanged).toBe(true);
+    expect(doctor.ok && doctor.value.ready).toBe(false);
 
     const blockedRun = await runPlugin("test-cli", ["--version"], {
       kitHome,

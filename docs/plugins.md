@@ -17,6 +17,8 @@ kit plugin add <path>
 kit plugin add <path> --write
 kit plugin list
 kit plugin doctor <name>
+kit plugin task <name>
+kit plugin task <name> <task>
 kit plugin run <name> -- <arguments>
 kit plugin remove <name> --write
 ```
@@ -42,6 +44,20 @@ Put `kit.plugin.json` in the plugin root.
   },
   "versionArgs": ["--version"],
   "healthArgs": ["check", "--json"],
+  "tasks": [
+    {
+      "name": "health",
+      "description": "Check local providers.",
+      "args": ["check", "--json"],
+      "access": "read-only"
+    },
+    {
+      "name": "market",
+      "description": "Show public Solana market facts.",
+      "args": ["find"],
+      "access": "read-only"
+    }
+  ],
   "safety": {
     "summary": "Phantom owns trade approval.",
     "confirmationToken": "SEND"
@@ -53,8 +69,12 @@ Put `kit.plugin.json` in the plugin root.
 must stay inside the plugin root. Kit uses `command` from `PATH` when the local
 executable does not exist.
 
-`versionArgs`, `healthArgs`, and `safety` document the plugin contract. Kit
-shows these fields in `plugin doctor`. Kit does not claim authority over them.
+`versionArgs`, `healthArgs`, `tasks`, and `safety` document the plugin
+contract. Kit shows these fields in `plugin doctor`.
+
+A task has fixed arguments and `read-only` access. Kit stops a task after 30
+seconds. The task list is a small safe surface for the TUI. It is not a copy of
+the plugin help. Kit does not infer what the arguments mean.
 
 ## Trust boundary
 

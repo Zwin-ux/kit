@@ -2,6 +2,13 @@ import type { StdioOptions } from "node:child_process";
 
 import type { LibraryResult } from "../library/types.js";
 
+export interface KitPluginTask {
+  name: string;
+  description: string;
+  args: string[];
+  access: "read-only";
+}
+
 export interface KitPluginManifest {
   schemaVersion: 1;
   name: string;
@@ -15,6 +22,7 @@ export interface KitPluginManifest {
   >;
   versionArgs?: string[];
   healthArgs?: string[];
+  tasks?: KitPluginTask[];
   safety?: {
     summary: string;
     confirmationToken?: string;
@@ -60,6 +68,7 @@ export interface PluginDoctorReport {
   executable: string | null;
   executableSource: "local" | "path" | "missing";
   healthArgs: string[];
+  tasks: KitPluginTask[];
   safetySummary?: string;
   confirmationToken?: string;
 }
@@ -67,6 +76,7 @@ export interface PluginDoctorReport {
 export interface RunPluginOptions {
   kitHome?: string;
   stdio?: StdioOptions;
+  timeoutMs?: number;
 }
 
 export interface PluginRunReport {
@@ -76,6 +86,11 @@ export interface PluginRunReport {
   exitCode: number;
   stdout: string;
   stderr: string;
+}
+
+export interface PluginTaskRunReport extends PluginRunReport {
+  task: string;
+  access: "read-only";
 }
 
 export type PluginResult<T> = LibraryResult<T>;

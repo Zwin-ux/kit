@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the Kit/Trenchwire link and render its real output as a README GIF."""
+"""Capture Kit Workbench and Trenchwire output as a README proof GIF."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 REPO = Path(__file__).resolve().parents[1]
-OUT = REPO / "docs" / "assets" / "demo-plugin-trenchwire.gif"
+OUT = REPO / "docs" / "assets" / "demo-workbench-trenchwire.gif"
 KIT_BIN = REPO / "packages" / "cli" / "dist" / "bin.js"
 
 PAPER = "#F5F0E6"
@@ -83,6 +83,23 @@ def run_kit(
         )
     return result.stdout.strip()
 
+def detect_runners() -> list[dict[str, object]]:
+    source = (
+        "import {detectCodingRunners} from './packages/core/dist/index.js';"
+        "console.log(JSON.stringify(await detectCodingRunners()));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", source],
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+        shell=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"runner detection failed:\n{result.stderr}")
+    return json.loads(result.stdout)
+
 
 def sanitize(text: str, trenchwire: Path, kit_home: Path, data_home: Path) -> str:
     replacements = [
@@ -111,11 +128,16 @@ def terminal_frame(
 
     draw.rectangle((0, 0, 960, 76), fill=INK)
     draw.text((34, 20), "KIT", font=TITLE, fill=CREAM)
-    draw.text((122, 31), "// LOCAL CLI LINK", font=LABEL, fill=ORANGE)
-    draw.text((766, 31), f"0{index} / 04", font=LABEL, fill=CREAM)
+    draw.text((122, 31), "// LOCAL WORKBENCH", font=LABEL, fill=ORANGE)
+    draw.text((766, 31), f"0{index} / 05", font=LABEL, fill=CREAM)
 
     draw.text((34, 100), step, font=LABEL, fill=ORANGE)
-    draw.text((34, 128), "Kit > Trenchwire", font=TITLE, fill=INK)
+    draw.text(
+        (34, 128),
+        "Kit Workbench" if step == "RUNNERS" else "Kit > Trenchwire",
+        font=TITLE,
+        fill=INK,
+    )
 
     draw.rounded_rectangle(
         (34, 184, 926, 482),
@@ -135,7 +157,7 @@ def terminal_frame(
         draw.text((58, y), text, font=MONO, fill=color)
         y += 31
 
-    for dot in range(4):
+    for dot in range(5):
         x = 34 + dot * 20
         fill = ORANGE if dot + 1 == index else "#D4CCC0"
         draw.rounded_rectangle((x, 505, x + 12, 512), radius=3, fill=fill)
@@ -173,27 +195,28 @@ def main() -> None:
         doctor = run_kit(
             trenchwire, kit_home, data_home, "plugin", "doctor", "trenchwire"
         )
+        tasks = run_kit(
+            trenchwire, kit_home, data_home, "plugin", "task", "trenchwire"
+        )
         check = run_kit(
             trenchwire,
             kit_home,
             data_home,
             "plugin",
-            "run",
+            "task",
             "trenchwire",
-            "--",
-            "check",
-            "--json",
+            "health",
         )
         find = run_kit(
             trenchwire,
             kit_home,
             data_home,
             "plugin",
-            "run",
+            "task",
             "trenchwire",
-            "--",
-            "find",
+            "market",
         )
+        runners = detect_runners()
 
         add_clean = sanitize(add, trenchwire, kit_home, data_home)
         doctor_clean = sanitize(doctor, trenchwire, kit_home, data_home)
@@ -206,7 +229,25 @@ def main() -> None:
 
         frames = [
             terminal_frame(
-                "REGISTER",
+                "RUNNERS",
+                "$ kit tui workbench",
+                [
+                    (
+                        f"> {runner['label']:<14} "
+                        f"{'ready' if runner['available'] else 'missing'}",
+                        GREEN if runner["available"] else MUTED,
+                    )
+                    for runner in runners
+                ]
+                + [
+                    ("", CREAM),
+                    ("inspect: provider read-only mode", CREAM),
+                    ("build:   explicit confirmation", VIOLET),
+                ],
+                1,
+            ),
+            terminal_frame(
+                "ATTACH",
                 "$ kit plugin add . --write",
                 [
                     ("Plugin registered", GREEN),
@@ -215,24 +256,23 @@ def main() -> None:
                     ("executable: <release-binary> (local)", MUTED),
                     ("manifest:   kit.plugin.json", MUTED),
                 ],
-                1,
-            ),
-            terminal_frame(
-                "VERIFY",
-                "$ kit plugin doctor trenchwire",
-                [
-                    ("status:     ready", GREEN),
-                    ("manifest:   unchanged", CREAM),
-                    ("health:     check --json", CREAM),
-                    ("safety:     Trenchwire keeps wallet login,", MUTED),
-                    ("            signing, and submission inside Phantom.", MUTED),
-                    ("confirm:    SEND", VIOLET),
-                ],
                 2,
             ),
             terminal_frame(
+                "SERVICE TASKS",
+                "$ kit plugin task trenchwire",
+                [
+                    ("health       Check local market and Phantom providers.", GREEN),
+                    ("market       Show public Solana market facts.", GREEN),
+                    ("", CREAM),
+                    ("fixed args / read-only / 30 second limit", MUTED),
+                    ("wallet + SEND stay inside Trenchwire", VIOLET),
+                ],
+                3,
+            ),
+            terminal_frame(
                 "HEALTH",
-                "$ kit plugin run trenchwire -- check --json",
+                "$ kit plugin task trenchwire health",
                 [
                     ("schema_version: 1", CREAM),
                     (f"market: {check_data['market']['provider']}", GREEN),
@@ -240,11 +280,11 @@ def main() -> None:
                     (f"wallet: {check_data['wallet']['provider']}", VIOLET),
                     ("private key required: false", CREAM),
                 ],
-                3,
+                4,
             ),
             terminal_frame(
                 "MARKET",
-                "$ kit plugin run trenchwire -- find",
+                "$ kit plugin task trenchwire market",
                 [
                     (find_lines[0][:82], VIOLET),
                     (find_lines[1][:82], MUTED),
@@ -253,7 +293,7 @@ def main() -> None:
                     (find_lines[-2][:82], GREEN),
                     (find_lines[-1][:82], MUTED),
                 ],
-                4,
+                5,
             ),
         ]
 
@@ -262,6 +302,8 @@ def main() -> None:
             raise RuntimeError("Registration proof did not contain the expected status.")
         if "status:     ready" not in doctor_clean:
             raise RuntimeError("Doctor proof did not contain the ready status.")
+        if "health" not in tasks or "market" not in tasks:
+            raise RuntimeError("Task proof did not contain both service tasks.")
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     palette = [frame.convert("P", palette=Image.Palette.ADAPTIVE, colors=96) for frame in frames]
@@ -269,7 +311,7 @@ def main() -> None:
         OUT,
         save_all=True,
         append_images=palette[1:] + [palette[-1]],
-        duration=[900, 1100, 1200, 1800, 1000],
+        duration=[1200, 1000, 1300, 1200, 1800, 1000],
         loop=0,
         optimize=True,
     )

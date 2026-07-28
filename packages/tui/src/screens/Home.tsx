@@ -298,8 +298,8 @@ export function Home({
       <Footer
         keys={
           scale.mode === "stack"
-            ? "o point · up/down · enter install · a apply · k link · q quit"
-            : "o point · up/down · enter install · a apply · k paths · d doctor · e explore · l library · q quit"
+            ? "w workbench · o point · up/down · enter install · q quit"
+            : "w workbench · o point · enter install · k paths · d doctor · e explore · l library · q quit"
         }
       />
     </Box>

@@ -15,11 +15,13 @@ import type {
   AddPluginOptions,
   AddPluginReport,
   KitPluginManifest,
+  KitPluginTask,
   PluginDoctorReport,
   PluginRegistry,
   PluginRegistryEntry,
   PluginResult,
   PluginRunReport,
+  PluginTaskRunReport,
   RegisteredPlugin,
   RunPluginOptions,
 } from "./types.js";
@@ -27,6 +29,7 @@ import type {
 const MANIFEST_NAME = "kit.plugin.json";
 const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
 const COMMAND_PATTERN = /^[A-Za-z0-9._-]+$/;
+const TASK_TIMEOUT_MS = 30_000;
 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -48,6 +51,56 @@ function stringArray(value: unknown): string[] | undefined {
     return undefined;
   }
   return value;
+}
+
+function validateTasks(value: unknown): PluginResult<KitPluginTask[]> {
+  if (!Array.isArray(value)) {
+    return { ok: false, error: "Plugin tasks must be an array." };
+  }
+  const tasks: KitPluginTask[] = [];
+  const names = new Set<string>();
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return { ok: false, error: "Each plugin task must be an object." };
+    }
+    const task = item as Record<string, unknown>;
+    if (typeof task.name !== "string" || !NAME_PATTERN.test(task.name)) {
+      return {
+        ok: false,
+        error: "Plugin task names must use lowercase letters, numbers, and hyphens.",
+      };
+    }
+    if (names.has(task.name)) {
+      return { ok: false, error: `Plugin task ${task.name} is duplicated.` };
+    }
+    if (typeof task.description !== "string" || !task.description.trim()) {
+      return {
+        ok: false,
+        error: `Plugin task ${task.name} needs a description.`,
+      };
+    }
+    const args = stringArray(task.args);
+    if (!args || args.length === 0) {
+      return {
+        ok: false,
+        error: `Plugin task ${task.name} needs at least one argument.`,
+      };
+    }
+    if (task.access !== "read-only") {
+      return {
+        ok: false,
+        error: `Plugin task ${task.name} access must be read-only.`,
+      };
+    }
+    names.add(task.name);
+    tasks.push({
+      name: task.name,
+      description: task.description.trim(),
+      args,
+      access: "read-only",
+    });
+  }
+  return { ok: true, value: tasks };
 }
 
 function validateManifest(
@@ -85,6 +138,8 @@ function validateManifest(
   const defaultArgs = stringArray(row.defaultArgs);
   const versionArgs = stringArray(row.versionArgs);
   const healthArgs = stringArray(row.healthArgs);
+  const tasks =
+    row.tasks === undefined ? undefined : validateTasks(row.tasks);
   if (row.defaultArgs !== undefined && !defaultArgs) {
     return { ok: false, error: "Plugin defaultArgs must be a string array." };
   }
@@ -94,6 +149,7 @@ function validateManifest(
   if (row.healthArgs !== undefined && !healthArgs) {
     return { ok: false, error: "Plugin healthArgs must be a string array." };
   }
+  if (tasks && !tasks.ok) return tasks;
 
   let localExecutables:
     | KitPluginManifest["localExecutables"]
@@ -176,6 +232,7 @@ function validateManifest(
       ...(localExecutables ? { localExecutables } : {}),
       ...(versionArgs ? { versionArgs } : {}),
       ...(healthArgs ? { healthArgs } : {}),
+      ...(tasks?.ok ? { tasks: tasks.value } : {}),
       ...(safety ? { safety } : {}),
     },
   };
@@ -415,16 +472,18 @@ export async function doctorPlugin(
     plugin.value.entry.root,
     plugin.value.manifest,
   );
+  const manifestChanged =
+    digest(plugin.value.raw) !== plugin.value.entry.manifestDigest;
   return {
     ok: true,
     value: {
       name,
-      ready: resolved.executable !== null,
-      manifestChanged:
-        digest(plugin.value.raw) !== plugin.value.entry.manifestDigest,
+      ready: resolved.executable !== null && !manifestChanged,
+      manifestChanged,
       executable: resolved.executable,
       executableSource: resolved.source,
       healthArgs: plugin.value.manifest.healthArgs ?? [],
+      tasks: plugin.value.manifest.tasks ?? [],
       ...(plugin.value.manifest.safety
         ? { safetySummary: plugin.value.manifest.safety.summary }
         : {}),
@@ -483,16 +542,41 @@ export async function runPlugin(
     ...(plugin.value.manifest.defaultArgs ?? []),
     ...args,
   ];
+  return runResolvedPlugin(
+    name,
+    resolved.executable,
+    plugin.value.entry.root,
+    commandArgs,
+    options,
+  );
+}
+
+async function runResolvedPlugin(
+  name: string,
+  executable: string,
+  root: string,
+  args: string[],
+  options: RunPluginOptions,
+): Promise<PluginResult<PluginRunReport>> {
   const stdio = options.stdio ?? "inherit";
   return await new Promise((resolve) => {
-    const child = spawn(resolved.executable as string, commandArgs, {
-      cwd: plugin.value.entry.root,
+    const child = spawn(executable, args, {
+      cwd: root,
       shell: false,
       stdio,
       windowsHide: true,
     });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    const timer =
+      options.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            child.kill();
+          }, options.timeoutMs);
+    timer?.unref();
     if (child.stdout) {
       child.stdout.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
@@ -506,15 +590,24 @@ export async function runPlugin(
       });
     }
     child.on("error", (error) => {
+      if (timer) clearTimeout(timer);
       resolve({ ok: false, error: `Cannot run plugin ${name}: ${error.message}` });
     });
     child.on("close", (code) => {
+      if (timer) clearTimeout(timer);
+      if (timedOut) {
+        resolve({
+          ok: false,
+          error: `Plugin ${name} timed out after ${options.timeoutMs} ms.`,
+        });
+        return;
+      }
       resolve({
         ok: true,
         value: {
           name,
-          command: resolved.executable as string,
-          args: commandArgs,
+          command: executable,
+          args,
           exitCode: code ?? 1,
           stdout,
           stderr,
@@ -522,4 +615,62 @@ export async function runPlugin(
       });
     });
   });
+}
+
+export async function runPluginTask(
+  name: string,
+  taskName: string,
+  options: RunPluginOptions = {},
+): Promise<PluginResult<PluginTaskRunReport>> {
+  const kitHome = options.kitHome ?? getKitHome();
+  const plugin = await registeredPlugin(name, kitHome);
+  if (!plugin.ok) return plugin;
+  if (digest(plugin.value.raw) !== plugin.value.entry.manifestDigest) {
+    return {
+      ok: false,
+      error: `Plugin ${name} changed after registration. Review it, then run kit plugin add ${plugin.value.entry.root} --write.`,
+    };
+  }
+  const task = plugin.value.manifest.tasks?.find(
+    (candidate) => candidate.name === taskName,
+  );
+  if (!task) {
+    const names = plugin.value.manifest.tasks?.map((item) => item.name) ?? [];
+    return {
+      ok: false,
+      error:
+        names.length > 0
+          ? `Plugin ${name} has no task named ${taskName}. Available tasks: ${names.join(", ")}.`
+          : `Plugin ${name} has no fixed tasks.`,
+    };
+  }
+  const resolved = await resolveExecutable(
+    plugin.value.entry.root,
+    plugin.value.manifest,
+  );
+  if (!resolved.executable) {
+    return {
+      ok: false,
+      error: `Plugin ${name} has no executable. Build it or add ${plugin.value.manifest.command} to PATH.`,
+    };
+  }
+  const run = await runResolvedPlugin(
+    name,
+    resolved.executable,
+    plugin.value.entry.root,
+    [...(plugin.value.manifest.defaultArgs ?? []), ...task.args],
+    {
+      ...options,
+      timeoutMs: options.timeoutMs ?? TASK_TIMEOUT_MS,
+    },
+  );
+  if (!run.ok) return run;
+  return {
+    ok: true,
+    value: {
+      ...run.value,
+      task: task.name,
+      access: task.access,
+    },
+  };
 }

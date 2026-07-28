@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <strong>One skill library. Claude, Codex, and Grok.</strong><br />
-  Install once. Link everywhere. Clean the mess when agents pile up.
+  <strong>A local workbench for Codex, Claude, Grok, and the tools beside your code.</strong><br />
+  Point at a repo. Run one bounded job. Keep the proof.
 </p>
 
 <p align="center">
@@ -32,7 +32,39 @@ kit                  # status + next command
 kit ready --write    # pack → install → apply → link → doctor
 kit unify --write --link
 kit tui              # keyboard console + calm side mascot
+kit tui workbench    # coding runners + attached CLI services
 ```
+
+---
+
+## Workbench
+
+<p align="center">
+  <img src="docs/assets/demo-workbench-trenchwire.gif" alt="Kit Workbench detects local coding runners and runs fixed Trenchwire service tasks with offline market data" width="720" />
+</p>
+
+Workbench puts two local lanes in one terminal:
+
+- **Runners:** Codex, Claude Code, and Grok Build.
+- **Services:** fixed read-only tasks from registered CLI plugins.
+
+Write one job in the TUI. `inspect` uses the provider's read-only or plan mode.
+`build` can edit the selected repo and needs a separate confirmation. Kit uses
+the provider's existing login. It does not store model API keys.
+
+Trenchwire is the first attached service. Its `health` and `market` tasks use
+fixed arguments. Wallet login, signing, submission, and the literal `SEND`
+gate stay inside Trenchwire.
+
+```bash
+kit plugin add ../trenchwire --write
+kit tui workbench
+```
+
+The proof above uses the compiled Trenchwire binary, recorded market data, and
+live runner detection. It does not connect a wallet or submit a trade.
+
+Read the [Workbench architecture](docs/dev/WORKBENCH_ARCHITECTURE.md).
 
 ---
 
@@ -89,11 +121,7 @@ kit import --from claude-code --write
 
 ---
 
-## Plug in a CLI
-
-<p align="center">
-  <img src="docs/assets/demo-plugin-trenchwire.gif" alt="Kit registers and runs the Trenchwire CLI with real offline market data" width="720" />
-</p>
+## Attach a CLI service
 
 Kit can run a local CLI from its own checkout. The plugin supplies one small
 manifest.
@@ -101,15 +129,14 @@ manifest.
 ```bash
 kit plugin add ../trenchwire --write
 kit plugin doctor trenchwire
-kit plugin run trenchwire -- check
+kit plugin task trenchwire
+kit plugin task trenchwire health
+kit plugin task trenchwire market
 ```
 
 Kit stores the plugin path and manifest digest. It does not copy the binary.
 Kit passes arguments without a shell. The plugin keeps its own safety rules.
 Kit stops if the manifest changes after registration.
-
-The proof above comes from the compiled Trenchwire binary. It uses recorded
-market data. It does not connect a wallet or submit a trade.
 
 Read the [plugin contract](docs/plugins.md).
 
@@ -184,18 +211,21 @@ More: [docs/packs.md](docs/packs.md)
 | `kit import --from claude-code --write` | Import from one agent |
 | `kit plugin add <path> --write` | Register a local CLI |
 | `kit plugin doctor <name>` | Check its binary and manifest |
+| `kit plugin task <name> [task]` | List or run a fixed read-only task |
 | `kit plugin run <name> -- <args>` | Run it without a shell |
 | `kit doctor` | Install health |
 | `kit tui` | Terminal UI |
+| `kit tui workbench` | Coding runners and attached services |
 
 ---
 
 ## How it works
 
-1. Skills live in `~/.kit`.
-2. Packs install groups into that library.
-3. `link` exposes them to each agent.
-4. `unify` imports and cleans skills already in agent folders.
+1. Skills and plugin registrations live in `~/.kit`.
+2. Packs install groups into the skill library.
+3. `link` exposes skills to each coding runner.
+4. Workbench starts provider CLIs and service tasks without a shell.
+5. `unify` imports and cleans skills already in agent folders.
 
 **TUI:** fixed side rail for the mascot (animation does not resize the menu). ↑↓ shows direction. `KIT_REDUCED_MOTION=1` freezes motion.
 

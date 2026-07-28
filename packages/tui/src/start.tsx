@@ -7,7 +7,7 @@ import { disableMouse, installMouseCleanup } from "./mouse/enableMouse.js";
  * Start the interactive Kit TUI.
  * Requires a real TTY. Mouse click-to-select enabled when supported.
  */
-export function startTui(): void {
+export function startTui(options: { initialScreen?: "workbench" } = {}): void {
   if (!process.stdin.isTTY) {
     console.error("kit tui needs an interactive terminal (stdin is not a TTY).");
     console.error("");
@@ -23,7 +23,13 @@ export function startTui(): void {
   }
 
   installMouseCleanup();
-  const instance = render(<App />);
+  const instance = render(
+    <App
+      {...(options.initialScreen !== undefined
+        ? { initialScreen: options.initialScreen }
+        : {})}
+    />,
+  );
   const cleanup = () => {
     disableMouse();
   };

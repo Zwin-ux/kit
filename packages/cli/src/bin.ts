@@ -32,6 +32,7 @@ import {
   runDoctor,
   runReady,
   runPlugin,
+  runPluginTask,
   runStatus,
   runUnify,
   detectSituation,
@@ -174,7 +175,11 @@ async function main(): Promise<void> {
 
   if (command === "tui" || command === "ui" || command === "start") {
     const { startTui } = await import("@mzwin/kit-tui");
-    startTui();
+    const target = args[1];
+    if (target && target !== "workbench") {
+      fail("Usage: kit tui [workbench]");
+    }
+    startTui(target === "workbench" ? { initialScreen: "workbench" } : {});
     return;
   }
 
@@ -192,12 +197,13 @@ function printHelp(): void {
   console.log("  kit status                  # are agents actually wired?");
   console.log("  kit unify --write --link    # clean skill mess → portable library");
   console.log("  kit tui                     # keyboard + click console");
+  console.log("  kit tui workbench           # coding runners + CLI services");
   console.log("");
   console.log("Everyday:");
   console.log("  kit recommend --dir .");
   console.log("  kit init --pack essentials");
   console.log("  kit pack list | install | apply");
-  console.log("  kit plugin add | list | doctor | run");
+  console.log("  kit plugin add | list | doctor | task | run");
   console.log("  kit link --to claude-code|codex|grok-build|all --write");
   console.log("  kit import --from claude-code --write");
   console.log("  kit unify [--write] [--link] [--all] [--json]");
@@ -565,6 +571,9 @@ async function runPluginCmd(rest: string[]): Promise<void> {
     if (report.healthArgs.length > 0) {
       console.log(`  health:     ${report.healthArgs.join(" ")}`);
     }
+    if (report.tasks.length > 0) {
+      console.log(`  tasks:      ${report.tasks.map((task) => task.name).join(", ")}`);
+    }
     if (report.safetySummary) {
       console.log(`  safety:     ${report.safetySummary}`);
     }
@@ -572,6 +581,31 @@ async function runPluginCmd(rest: string[]): Promise<void> {
       console.log(`  confirm:    ${report.confirmationToken}`);
     }
     if (!report.ready) process.exitCode = 1;
+    return;
+  }
+
+  if (sub === "task") {
+    const name = rest[1];
+    if (!name) fail("Usage: kit plugin task <name> [task]");
+    const taskName = rest[2];
+    if (!taskName) {
+      const result = await doctorPlugin(name);
+      if (!result.ok) fail(result.error);
+      if (result.value.tasks.length === 0) {
+        console.log(`Plugin ${name} has no fixed tasks.`);
+        return;
+      }
+      console.log(`Tasks for ${name}`);
+      for (const task of result.value.tasks) {
+        console.log(`  ${task.name.padEnd(12)} ${task.description}`);
+      }
+      console.log("");
+      console.log(`Run: kit plugin task ${name} <task>`);
+      return;
+    }
+    const result = await runPluginTask(name, taskName);
+    if (!result.ok) fail(result.error);
+    process.exitCode = result.value.exitCode;
     return;
   }
 
@@ -610,10 +644,12 @@ function printPluginHelp(): void {
   console.log("  kit plugin add <path> [--write] [--force]");
   console.log("  kit plugin list");
   console.log("  kit plugin doctor <name>");
+  console.log("  kit plugin task <name> [task]");
   console.log("  kit plugin run <name> -- <arguments>");
   console.log("  kit plugin remove <name> [--write]");
   console.log("");
   console.log("Add and remove use a dry-run unless you pass --write.");
+  console.log("Tasks use fixed read-only arguments from the plugin manifest.");
   console.log("Kit passes plugin arguments without a shell.");
 }
 
