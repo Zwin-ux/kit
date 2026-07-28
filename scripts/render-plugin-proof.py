@@ -75,6 +75,8 @@ def run_kit(
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         shell=False,
     )
     if result.returncode != 0:
@@ -94,6 +96,8 @@ def detect_runners() -> list[dict[str, object]]:
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         shell=False,
     )
     if result.returncode != 0:

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useInput, useApp, Box, Text } from "ink";
 import path from "node:path";
 import {
@@ -158,6 +158,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     "runner",
   );
   const [selectedRunnerIndex, setSelectedRunnerIndex] = useState(0);
+  const [selectedModelIndex, setSelectedModelIndex] = useState(0);
   const [selectedTaskIndex, setSelectedTaskIndex] = useState(0);
   const [jobMode, setJobMode] = useState<CodingJobMode>("inspect");
   const [jobPrompt, setJobPrompt] = useState("");
@@ -165,6 +166,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
   const [confirmBuildJob, setConfirmBuildJob] = useState(false);
   const [workbenchOutput, setWorkbenchOutput] = useState<string | undefined>();
   const [workbenchError, setWorkbenchError] = useState<string | undefined>();
+  const workbenchAbort = useRef<AbortController | null>(null);
 
   const clearFlash = useCallback(() => {
     setErrorMessage(undefined);
@@ -382,6 +384,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       listPlugins(),
     ]);
     setCodingRunners(runners);
+    setSelectedModelIndex(0);
     if (plugins.ok) {
       setWorkbenchPlugins(plugins.value);
       const reports = await Promise.all(
@@ -433,14 +436,33 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       setConfirmBuildJob(false);
       setWorkbenchError(undefined);
       setWorkbenchOutput(undefined);
+      const controller = new AbortController();
+      workbenchAbort.current = controller;
+      let liveOutput = "";
       try {
-        const result = await runCodingJob({
-          runner: runner.id,
-          mode: jobMode,
-          projectDir: targetProject,
-          prompt: jobPrompt,
-          confirmBuild: confirmed,
-        });
+        const model = runner.models?.[
+          Math.min(
+            selectedModelIndex,
+            Math.max(0, runner.models.length - 1),
+          )
+        ];
+        const result = await runCodingJob(
+          {
+            runner: runner.id,
+            mode: jobMode,
+            projectDir: targetProject,
+            prompt: jobPrompt,
+            ...(model ? { model: model.name } : {}),
+            confirmBuild: confirmed,
+          },
+          {
+            signal: controller.signal,
+            onOutput: (chunk) => {
+              liveOutput = `${liveOutput}${chunk}`.slice(-64 * 1024);
+              setWorkbenchOutput(liveOutput);
+            },
+          },
+        );
         if (!result.ok) {
           setWorkbenchError(result.error);
           return;
@@ -455,12 +477,17 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         );
         if (report.timedOut) {
           setWorkbenchError(`${runner.label} timed out.`);
+        } else if (report.cancelled) {
+          setWorkbenchError(`${runner.label} stopped.`);
         } else if (report.exitCode !== 0) {
           setWorkbenchError(
             `${runner.label} exited with code ${report.exitCode}.`,
           );
         }
       } finally {
+        if (workbenchAbort.current === controller) {
+          workbenchAbort.current = null;
+        }
         setBusy(false);
       }
     },
@@ -469,6 +496,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       jobMode,
       jobPrompt,
       selectedRunnerIndex,
+      selectedModelIndex,
       targetProject,
     ],
   );
@@ -833,7 +861,16 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
 
   useInput((input, key) => {
     if (input === "q" || (key.ctrl && input === "c")) {
+      workbenchAbort.current?.abort();
       exit();
+      return;
+    }
+
+    if (screen === "workbench" && busy) {
+      if (key.escape || input === "x") {
+        workbenchAbort.current?.abort();
+        flash("stopping job");
+      }
       return;
     }
 
@@ -1285,6 +1322,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
               ? 0
               : (index - 1 + codingRunners.length) % codingRunners.length,
           );
+          setSelectedModelIndex(0);
         } else {
           setSelectedTaskIndex((index) =>
             workbenchTasks.length === 0
@@ -1302,6 +1340,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
               ? 0
               : (index + 1) % codingRunners.length,
           );
+          setSelectedModelIndex(0);
         } else {
           setSelectedTaskIndex((index) =>
             workbenchTasks.length === 0
@@ -1322,6 +1361,21 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         setJobMode((mode) => (mode === "inspect" ? "build" : "inspect"));
         setConfirmBuildJob(false);
         flash(jobMode === "inspect" ? "mode: build" : "mode: inspect");
+        return;
+      }
+      if (
+        workbenchLane === "runner" &&
+        (key.leftArrow || key.rightArrow)
+      ) {
+        const models = codingRunners[selectedRunnerIndex]?.models ?? [];
+        if (models.length > 0) {
+          setSelectedModelIndex((index) =>
+            key.leftArrow
+              ? (index - 1 + models.length) % models.length
+              : (index + 1) % models.length,
+          );
+          flash("local model");
+        }
         return;
       }
       if (key.return) {
@@ -1432,20 +1486,15 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
   }
 
   if (screen === "workbench") {
-    const m = pickMascot("auto", {
-      busy,
-      ok: Boolean(workbenchOutput && !workbenchError),
-    });
     return (
       <Workbench
-        frames={m.frames}
-        mascotVariant={m.variant}
         projectDir={targetProject}
         runners={codingRunners}
         serviceTasks={workbenchTasks}
         lane={workbenchLane}
         selectedRunnerIndex={selectedRunnerIndex}
         selectedTaskIndex={selectedTaskIndex}
+        selectedModelIndex={selectedModelIndex}
         mode={jobMode}
         prompt={jobPrompt}
         editingPrompt={editingJobPrompt}

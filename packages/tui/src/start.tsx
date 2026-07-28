@@ -2,6 +2,7 @@ import React from "react";
 import { render } from "ink";
 import { App } from "./App.js";
 import { disableMouse, installMouseCleanup } from "./mouse/enableMouse.js";
+import { enterAlternateScreen } from "./terminal/alternateScreen.js";
 
 /**
  * Start the interactive Kit TUI.
@@ -22,16 +23,23 @@ export function startTui(options: { initialScreen?: "workbench" } = {}): void {
     process.exit(1);
   }
 
+  const leaveAlternateScreen = enterAlternateScreen();
   installMouseCleanup();
-  const instance = render(
-    <App
-      {...(options.initialScreen !== undefined
-        ? { initialScreen: options.initialScreen }
-        : {})}
-    />,
-  );
   const cleanup = () => {
     disableMouse();
+    leaveAlternateScreen();
   };
-  instance.waitUntilExit().then(cleanup).catch(cleanup);
+  try {
+    const instance = render(
+      <App
+        {...(options.initialScreen !== undefined
+          ? { initialScreen: options.initialScreen }
+          : {})}
+      />,
+    );
+    instance.waitUntilExit().then(cleanup).catch(cleanup);
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
 }

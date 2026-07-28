@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <strong>A local workbench for Codex, Claude, Grok, and the tools beside your code.</strong><br />
+  <strong>A local workbench for Codex, Claude, Grok, Ollama, and the tools beside your code.</strong><br />
   Point at a repo. Run one bounded job. Keep the proof.
 </p>
 
@@ -43,14 +43,33 @@ kit tui workbench    # coding runners + attached CLI services
   <img src="docs/assets/demo-workbench-trenchwire.gif" alt="Kit Workbench detects local coding runners and runs fixed Trenchwire service tasks with offline market data" width="720" />
 </p>
 
-Workbench puts two local lanes in one terminal:
+Workbench takes over the terminal while it runs. Your shell and scrollback return
+when Kit exits. The layout has compact, standard, and wide modes, so the job and
+live output stay readable from 60x18 through a maximized terminal.
 
-- **Runners:** Codex, Claude Code, and Grok Build.
+- **Runners:** Codex, Claude Code, Grok Build, and local Ollama models.
 - **Services:** fixed read-only tasks from registered CLI plugins.
 
 Write one job in the TUI. `inspect` uses the provider's read-only or plan mode.
 `build` can edit the selected repo and needs a separate confirmation. Kit uses
-the provider's existing login. It does not store model API keys.
+the provider's existing login. It does not store model API keys. Output streams
+inside the Workbench, and `Esc` stops a running job.
+
+Ollama runs through its official Codex launch bridge. This gives the local
+model the same repository tools and sandbox as a normal Codex job. Kit isolates
+the local run from unrelated global connectors so they do not consume the
+model's context.
+
+```bash
+ollama serve
+ollama pull <model>
+kit tui workbench
+```
+
+Select **Ollama · Codex**, then use left and right to choose an installed model.
+Kit reads the model list from the local Ollama service. It does not send project
+content to a hosted model. Set `KIT_NO_ALT_SCREEN=1` only when you need inline
+terminal output for debugging or capture.
 
 Trenchwire is the first attached service. Its `health` and `market` tasks use
 fixed arguments. Wallet login, signing, submission, and the literal `SEND`

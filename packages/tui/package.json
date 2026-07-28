@@ -1,7 +1,7 @@
 {
   "name": "@mzwin/kit-tui",
   "version": "0.1.5",
-  "description": "Terminal workbench for coding runners, agent skills, and CLI services",
+  "description": "Full-terminal workbench for hosted and local coding runners",
   "license": "MIT",
   "type": "module",
   "private": false,

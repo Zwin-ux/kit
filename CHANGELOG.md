@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add local Ollama model discovery through `GET /api/tags`.
+- Run Ollama models through its official Codex bridge with the existing
+  inspect/build sandbox.
+- Move the TUI into an alternate terminal screen and restore the shell on exit.
+- Add compact, standard, and wide Workbench layouts.
+- Stream runner output and let `Esc` stop a running job.
+- Upgrade the Hono Node adapter to the patched 2.0.12 release.
 - Add a local CLI plugin contract.
 - Keep plugin add and remove in dry-run mode by default.
 - Store a SHA-256 manifest digest and block changed manifests.

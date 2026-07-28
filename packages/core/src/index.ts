@@ -225,6 +225,7 @@ export {
 
 export {
   detectCodingRunners,
+  listOllamaModels,
   planCodingJob,
   runCodingJob,
   type CodingInvocation,
@@ -233,6 +234,8 @@ export {
   type CodingJobRequest,
   type CodingRunnerId,
   type CodingRunnerStatus,
+  type LocalModel,
+  type OllamaDiscoveryOptions,
   type RunnerCommand,
   type RunCodingJobOptions,
   type WorkbenchResult,

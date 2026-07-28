@@ -1,5 +1,6 @@
 export {
   detectCodingRunners,
+  listOllamaModels,
   planCodingJob,
   runCodingJob,
 } from "./workbench.js";
@@ -10,8 +11,9 @@ export type {
   CodingJobRequest,
   CodingRunnerId,
   CodingRunnerStatus,
+  LocalModel,
+  OllamaDiscoveryOptions,
   RunnerCommand,
   RunCodingJobOptions,
   WorkbenchResult,
 } from "./types.js";
-

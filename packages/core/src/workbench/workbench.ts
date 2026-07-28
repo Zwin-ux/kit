@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { access, stat } from "node:fs/promises";
+import { access, mkdir, stat } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import type {
@@ -8,6 +9,8 @@ import type {
   CodingJobRequest,
   CodingRunnerId,
   CodingRunnerStatus,
+  LocalModel,
+  OllamaDiscoveryOptions,
   RunnerCommand,
   RunCodingJobOptions,
   WorkbenchResult,
@@ -16,6 +19,8 @@ import type {
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 256 * 1024;
 const MAX_PROMPT_LENGTH = 8_000;
+const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434";
+const DEFAULT_OLLAMA_TIMEOUT_MS = 800;
 
 const RUNNERS: Record<
   CodingRunnerId,
@@ -24,6 +29,7 @@ const RUNNERS: Record<
   codex: { label: "Codex", command: "codex" },
   "claude-code": { label: "Claude Code", command: "claude" },
   "grok-build": { label: "Grok Build", command: "grok" },
+  ollama: { label: "Ollama · Codex", command: "ollama" },
 };
 
 async function isFile(candidate: string): Promise<boolean> {
@@ -83,9 +89,98 @@ async function resolveRunnerCommand(
   return null;
 }
 
-export async function detectCodingRunners(): Promise<CodingRunnerStatus[]> {
+function ollamaBaseUrl(value?: string): WorkbenchResult<string> {
+  try {
+    const parsed = new URL(
+      value ?? process.env.KIT_OLLAMA_HOST ?? DEFAULT_OLLAMA_URL,
+    );
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return { ok: false, error: "Ollama host must use HTTP or HTTPS." };
+    }
+    if (parsed.username || parsed.password) {
+      return { ok: false, error: "Ollama host must not include credentials." };
+    }
+    return { ok: true, value: parsed.origin };
+  } catch {
+    return { ok: false, error: "Ollama host is not a valid URL." };
+  }
+}
+
+export async function listOllamaModels(
+  options: OllamaDiscoveryOptions = {},
+): Promise<WorkbenchResult<LocalModel[]>> {
+  const baseUrl = ollamaBaseUrl(options.baseUrl);
+  if (!baseUrl.ok) return baseUrl;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    options.timeoutMs ?? DEFAULT_OLLAMA_TIMEOUT_MS,
+  );
+  timeout.unref();
+  try {
+    const response = await (options.fetchImpl ?? fetch)(
+      `${baseUrl.value}/api/tags`,
+      {
+        method: "GET",
+        headers: { accept: "application/json" },
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: `Ollama returned HTTP ${response.status}.`,
+      };
+    }
+    const data = (await response.json()) as {
+      models?: Array<{
+        name?: unknown;
+        size?: unknown;
+        details?: {
+          parameter_size?: unknown;
+          quantization_level?: unknown;
+        };
+      }>;
+    };
+    const models = (data.models ?? [])
+      .filter(
+        (model): model is {
+          name: string;
+          size: number;
+          details?: {
+            parameter_size?: unknown;
+            quantization_level?: unknown;
+          };
+        } => typeof model.name === "string" && typeof model.size === "number",
+      )
+      .map((model) => ({
+        name: model.name,
+        size: model.size,
+        ...(typeof model.details?.parameter_size === "string"
+          ? { parameterSize: model.details.parameter_size }
+          : {}),
+        ...(typeof model.details?.quantization_level === "string"
+          ? { quantization: model.details.quantization_level }
+          : {}),
+      }));
+    return { ok: true, value: models };
+  } catch (error) {
+    const message =
+      error instanceof Error && error.name !== "AbortError"
+        ? error.message
+        : "connection timed out";
+    return { ok: false, error: `Cannot reach Ollama: ${message}.` };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function detectCodingRunners(
+  ollamaOptions: OllamaDiscoveryOptions = {},
+): Promise<CodingRunnerStatus[]> {
   const rows: CodingRunnerStatus[] = [];
-  for (const id of Object.keys(RUNNERS) as CodingRunnerId[]) {
+  for (const id of ["codex", "claude-code", "grok-build"] as const) {
     const command = await resolveRunnerCommand(id);
     rows.push({
       id,
@@ -94,6 +189,33 @@ export async function detectCodingRunners(): Promise<CodingRunnerStatus[]> {
       executable: command?.executable ?? null,
     });
   }
+  const [command, codexCommand, models] = await Promise.all([
+    resolveRunnerCommand("ollama"),
+    resolveRunnerCommand("codex"),
+    listOllamaModels(ollamaOptions),
+  ]);
+  const available =
+    command !== null &&
+    codexCommand !== null &&
+    models.ok &&
+    models.value.length > 0;
+  rows.push({
+    id: "ollama",
+    label: RUNNERS.ollama.label,
+    available,
+    executable: command?.executable ?? null,
+    detail:
+      command === null
+        ? "needs Ollama"
+        : codexCommand === null
+          ? "needs Codex"
+          : !models.ok
+            ? "service offline"
+            : models.value.length === 0
+              ? "no models"
+              : `${models.value.length} local model${models.value.length === 1 ? "" : "s"}`,
+    ...(models.ok ? { models: models.value } : {}),
+  });
   return rows;
 }
 
@@ -102,6 +224,26 @@ function runnerArgs(
   command: RunnerCommand,
 ): string[] {
   const { mode, projectDir, prompt } = request;
+  if (request.runner === "ollama") {
+    return [
+      ...command.prefixArgs,
+      "launch",
+      "codex",
+      "--model",
+      request.model ?? "",
+      "--yes",
+      "--",
+      "exec",
+      "--cd",
+      projectDir,
+      "--sandbox",
+      mode === "inspect" ? "read-only" : "workspace-write",
+      "--ephemeral",
+      "--color",
+      "never",
+      prompt,
+    ];
+  }
   if (request.runner === "codex") {
     return [
       ...command.prefixArgs,
@@ -162,6 +304,12 @@ export async function planCodingJob(
       error: "Build mode needs explicit confirmation.",
     };
   }
+  if (request.runner === "ollama" && !request.model?.trim()) {
+    return {
+      ok: false,
+      error: "Choose an installed Ollama model before the run.",
+    };
+  }
   try {
     if (!(await stat(request.projectDir)).isDirectory()) {
       return { ok: false, error: "Workbench project path is not a directory." };
@@ -189,6 +337,7 @@ export async function planCodingJob(
       executable: command.executable,
       args: runnerArgs(normalizedRequest, command),
       cwd: path.resolve(request.projectDir),
+      ...(request.model ? { model: request.model } : {}),
     },
   };
 }
@@ -198,20 +347,33 @@ function appendBounded(
   chunk: Buffer,
   state: { bytes: number; truncated: boolean },
   limit: number,
-): void {
+): Buffer | null {
   if (state.bytes >= limit) {
     state.truncated = true;
-    return;
+    return null;
   }
   const remaining = limit - state.bytes;
   if (chunk.length > remaining) {
-    parts.push(chunk.subarray(0, remaining));
+    const accepted = chunk.subarray(0, remaining);
+    parts.push(accepted);
     state.bytes = limit;
     state.truncated = true;
-    return;
+    return accepted;
   }
   parts.push(chunk);
   state.bytes += chunk.length;
+  return chunk;
+}
+
+async function isolatedOllamaCodexHome(): Promise<string> {
+  const kitHome = process.env.KIT_HOME
+    ? path.resolve(process.env.KIT_HOME)
+    : path.join(os.homedir(), ".kit");
+  const directory =
+    process.env.KIT_OLLAMA_CODEX_HOME ??
+    path.join(kitHome, "runtime", "codex-ollama");
+  await mkdir(directory, { recursive: true });
+  return directory;
 }
 
 export async function runCodingJob(
@@ -233,6 +395,16 @@ export async function runCodingJob(
       error: "Workbench output limit must be greater than zero.",
     };
   }
+  let childEnvironment = process.env;
+  if (request.runner === "ollama") {
+    const host = ollamaBaseUrl();
+    if (!host.ok) return host;
+    childEnvironment = {
+      ...process.env,
+      CODEX_HOME: await isolatedOllamaCodexHome(),
+      OLLAMA_HOST: host.value,
+    };
+  }
 
   return await new Promise((resolve) => {
     const started = Date.now();
@@ -240,6 +412,7 @@ export async function runCodingJob(
     const stderr: Buffer[] = [];
     const outputState = { bytes: 0, truncated: false };
     let timedOut = false;
+    let cancelled = false;
     let settled = false;
 
     const finish = (result: WorkbenchResult<CodingJobReport>): void => {
@@ -253,21 +426,44 @@ export async function runCodingJob(
       shell: false,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
+      env: childEnvironment,
     });
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
     }, timeoutMs);
     timer.unref();
+    const onAbort = () => {
+      cancelled = true;
+      child.kill();
+    };
+    if (options.signal?.aborted) {
+      onAbort();
+    } else {
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+    }
 
     child.stdout.on("data", (chunk: Buffer) => {
-      appendBounded(stdout, chunk, outputState, maxOutputBytes);
+      const accepted = appendBounded(
+        stdout,
+        chunk,
+        outputState,
+        maxOutputBytes,
+      );
+      if (accepted) options.onOutput?.(accepted.toString("utf8"), "stdout");
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      appendBounded(stderr, chunk, outputState, maxOutputBytes);
+      const accepted = appendBounded(
+        stderr,
+        chunk,
+        outputState,
+        maxOutputBytes,
+      );
+      if (accepted) options.onOutput?.(accepted.toString("utf8"), "stderr");
     });
     child.on("error", (error) => {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
       finish({
         ok: false,
         error: `Cannot start ${RUNNERS[request.runner].label}: ${error.message}`,
@@ -275,6 +471,7 @@ export async function runCodingJob(
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
       finish({
         ok: true,
         value: {
@@ -284,6 +481,7 @@ export async function runCodingJob(
           stderr: Buffer.concat(stderr).toString("utf8"),
           durationMs: Date.now() - started,
           timedOut,
+          cancelled,
           truncated: outputState.truncated,
         },
       });

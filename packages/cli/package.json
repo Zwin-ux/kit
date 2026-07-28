@@ -1,7 +1,7 @@
 {
   "name": "@mzwin/kit",
   "version": "0.1.5",
-  "description": "Local workbench for Codex, Claude Code, Grok Build, agent skills, and CLI services.",
+  "description": "Local workbench for Codex, Claude Code, Grok Build, Ollama, agent skills, and CLI services.",
   "license": "MIT",
   "type": "module",
   "private": false,
