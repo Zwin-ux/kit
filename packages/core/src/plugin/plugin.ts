@@ -30,6 +30,7 @@ const MANIFEST_NAME = "kit.plugin.json";
 const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
 const COMMAND_PATTERN = /^[A-Za-z0-9._-]+$/;
 const TASK_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024;
 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -559,7 +560,16 @@ async function runResolvedPlugin(
   options: RunPluginOptions,
 ): Promise<PluginResult<PluginRunReport>> {
   const stdio = options.stdio ?? "inherit";
+  const maxOutputBytes =
+    options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+  if (maxOutputBytes <= 0) {
+    return {
+      ok: false,
+      error: "Plugin output limit must be greater than zero.",
+    };
+  }
   return await new Promise((resolve) => {
+    const started = Date.now();
     const child = spawn(executable, args, {
       cwd: root,
       shell: false,
@@ -568,7 +578,32 @@ async function runResolvedPlugin(
     });
     let stdout = "";
     let stderr = "";
+    let outputBytes = 0;
+    let truncated = false;
     let timedOut = false;
+    let cancelled = false;
+    let settled = false;
+    const finish = (result: PluginResult<PluginRunReport>): void => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    const appendOutput = (
+      value: string,
+      stream: "stdout" | "stderr",
+    ): string => {
+      if (outputBytes >= maxOutputBytes) {
+        truncated = true;
+        return "";
+      }
+      const buffer = Buffer.from(value);
+      const remaining = maxOutputBytes - outputBytes;
+      const accepted = buffer.subarray(0, remaining).toString("utf8");
+      outputBytes += Buffer.byteLength(accepted);
+      if (buffer.length > remaining) truncated = true;
+      if (accepted) options.onOutput?.(accepted, stream);
+      return accepted;
+    };
     const timer =
       options.timeoutMs === undefined
         ? undefined
@@ -577,32 +612,46 @@ async function runResolvedPlugin(
             child.kill();
           }, options.timeoutMs);
     timer?.unref();
+    const onAbort = () => {
+      cancelled = true;
+      child.kill();
+    };
+    if (options.signal?.aborted) {
+      onAbort();
+    } else {
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+    }
     if (child.stdout) {
       child.stdout.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
-        stdout += chunk;
+        stdout += appendOutput(chunk, "stdout");
       });
     }
     if (child.stderr) {
       child.stderr.setEncoding("utf8");
       child.stderr.on("data", (chunk: string) => {
-        stderr += chunk;
+        stderr += appendOutput(chunk, "stderr");
       });
     }
     child.on("error", (error) => {
       if (timer) clearTimeout(timer);
-      resolve({ ok: false, error: `Cannot run plugin ${name}: ${error.message}` });
+      options.signal?.removeEventListener("abort", onAbort);
+      finish({
+        ok: false,
+        error: `Cannot run plugin ${name}: ${error.message}`,
+      });
     });
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
       if (timedOut) {
-        resolve({
+        finish({
           ok: false,
           error: `Plugin ${name} timed out after ${options.timeoutMs} ms.`,
         });
         return;
       }
-      resolve({
+      finish({
         ok: true,
         value: {
           name,
@@ -611,6 +660,9 @@ async function runResolvedPlugin(
           exitCode: code ?? 1,
           stdout,
           stderr,
+          durationMs: Date.now() - started,
+          cancelled,
+          truncated,
         },
       });
     });

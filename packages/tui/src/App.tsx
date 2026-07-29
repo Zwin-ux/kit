@@ -49,6 +49,7 @@ import type { MascotVariant, PixelFrame } from "./mascot/types.js";
 import { useLayoutScale } from "./mascot/useLayoutScale.js";
 import { useMouseClick } from "./mouse/useMouse.js";
 import type { HitRegion } from "./mouse/HitMap.js";
+import { shouldQuitWithQ } from "./input/quitShortcut.js";
 import { Spinner } from "./components/Motion.js";
 import { Splash } from "./screens/Splash.js";
 import { Home } from "./screens/Home.js";
@@ -59,6 +60,7 @@ import { Explore } from "./screens/Explore.js";
 import { Doctor } from "./screens/Doctor.js";
 import {
   Workbench,
+  type WorkbenchRunStatus,
   type WorkbenchServiceTask,
 } from "./screens/Workbench.js";
 import {
@@ -166,6 +168,10 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
   const [confirmBuildJob, setConfirmBuildJob] = useState(false);
   const [workbenchOutput, setWorkbenchOutput] = useState<string | undefined>();
   const [workbenchError, setWorkbenchError] = useState<string | undefined>();
+  const [workbenchRunStatus, setWorkbenchRunStatus] =
+    useState<WorkbenchRunStatus>("idle");
+  const [workbenchRunLabel, setWorkbenchRunLabel] =
+    useState<string | undefined>();
   const workbenchAbort = useRef<AbortController | null>(null);
 
   const clearFlash = useCallback(() => {
@@ -427,6 +433,33 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     async (confirmed: boolean) => {
       const runner = codingRunners[selectedRunnerIndex];
       if (!runner) return;
+      const model = runner.models?.[
+        Math.min(
+          selectedModelIndex,
+          Math.max(0, runner.models.length - 1),
+        )
+      ];
+      if (!runner.available) {
+        setWorkbenchOutput(undefined);
+        setWorkbenchRunLabel(runner.label);
+        setWorkbenchRunStatus("failed");
+        setWorkbenchError(`${runner.label} is offline.`);
+        return;
+      }
+      if (!jobPrompt.trim()) {
+        setWorkbenchOutput(undefined);
+        setWorkbenchRunLabel(runner.label);
+        setWorkbenchRunStatus("failed");
+        setWorkbenchError("Write a job first. Press e.");
+        return;
+      }
+      if (runner.id === "ollama" && !model) {
+        setWorkbenchOutput(undefined);
+        setWorkbenchRunLabel(runner.label);
+        setWorkbenchRunStatus("failed");
+        setWorkbenchError("Install or select an Ollama model first.");
+        return;
+      }
       if (jobMode === "build" && !confirmed) {
         setConfirmBuildJob(true);
         setWorkbenchError(undefined);
@@ -436,16 +469,14 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       setConfirmBuildJob(false);
       setWorkbenchError(undefined);
       setWorkbenchOutput(undefined);
+      setWorkbenchRunLabel(
+        model ? `${runner.label} / ${model.name}` : runner.label,
+      );
+      setWorkbenchRunStatus("running");
       const controller = new AbortController();
       workbenchAbort.current = controller;
       let liveOutput = "";
       try {
-        const model = runner.models?.[
-          Math.min(
-            selectedModelIndex,
-            Math.max(0, runner.models.length - 1),
-          )
-        ];
         const result = await runCodingJob(
           {
             runner: runner.id,
@@ -465,10 +496,17 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         );
         if (!result.ok) {
           setWorkbenchError(result.error);
+          setWorkbenchRunStatus("failed");
           return;
         }
         const report = result.value;
-        const output = [report.stdout.trim(), report.stderr.trim()]
+        const output = [
+          report.stdout.trim(),
+          report.stderr.trim(),
+          report.truncated
+            ? "[Kit stopped capturing output at the size limit.]"
+            : "",
+        ]
           .filter(Boolean)
           .join("\n");
         setWorkbenchOutput(
@@ -477,13 +515,21 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         );
         if (report.timedOut) {
           setWorkbenchError(`${runner.label} timed out.`);
+          setWorkbenchRunStatus("failed");
         } else if (report.cancelled) {
-          setWorkbenchError(`${runner.label} stopped.`);
+          setWorkbenchRunStatus("cancelled");
         } else if (report.exitCode !== 0) {
           setWorkbenchError(
             `${runner.label} exited with code ${report.exitCode}.`,
           );
+          setWorkbenchRunStatus("failed");
+        } else {
+          setWorkbenchRunStatus("succeeded");
         }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        setWorkbenchError(detail);
+        setWorkbenchRunStatus("failed");
       } finally {
         if (workbenchAbort.current === controller) {
           workbenchAbort.current = null;
@@ -504,30 +550,70 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
   const runWorkbenchService = useCallback(async () => {
     const task = workbenchTasks[selectedTaskIndex];
     if (!task) return;
+    if (task.status !== "ready") {
+      setWorkbenchOutput(undefined);
+      setWorkbenchRunLabel(`${task.displayName} / ${task.task}`);
+      setWorkbenchRunStatus("failed");
+      setWorkbenchError(
+        task.status === "review"
+          ? "Review the changed plugin before this task can run."
+          : "This task is not ready.",
+      );
+      return;
+    }
     setBusy(true);
     setWorkbenchError(undefined);
     setWorkbenchOutput(undefined);
+    setWorkbenchRunLabel(`${task.displayName} / ${task.task}`);
+    setWorkbenchRunStatus("running");
+    const controller = new AbortController();
+    workbenchAbort.current = controller;
+    let liveOutput = "";
     try {
       const result = await runPluginTask(task.plugin, task.task, {
         stdio: "pipe",
+        signal: controller.signal,
+        onOutput: (chunk) => {
+          liveOutput = `${liveOutput}${chunk}`.slice(-64 * 1024);
+          setWorkbenchOutput(liveOutput);
+        },
       });
       if (!result.ok) {
         setWorkbenchError(result.error);
+        setWorkbenchRunStatus("failed");
         return;
       }
-      const output = [result.value.stdout.trim(), result.value.stderr.trim()]
+      const output = [
+        result.value.stdout.trim(),
+        result.value.stderr.trim(),
+        result.value.truncated
+          ? "[Kit stopped capturing output at the size limit.]"
+          : "",
+      ]
         .filter(Boolean)
         .join("\n");
       setWorkbenchOutput(
         output ||
           `${task.displayName}/${task.task} finished with exit code ${result.value.exitCode}.`,
       );
-      if (result.value.exitCode !== 0) {
+      if (result.value.cancelled) {
+        setWorkbenchRunStatus("cancelled");
+      } else if (result.value.exitCode !== 0) {
         setWorkbenchError(
           `${task.displayName}/${task.task} exited with code ${result.value.exitCode}.`,
         );
+        setWorkbenchRunStatus("failed");
+      } else {
+        setWorkbenchRunStatus("succeeded");
       }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setWorkbenchError(detail);
+      setWorkbenchRunStatus("failed");
     } finally {
+      if (workbenchAbort.current === controller) {
+        workbenchAbort.current = null;
+      }
       setBusy(false);
     }
   }, [selectedTaskIndex, workbenchTasks]);
@@ -860,16 +946,38 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
   }, [busy, clearFlash, refreshData, selectedSkillIndex, skills, flash]);
 
   useInput((input, key) => {
-    if (input === "q" || (key.ctrl && input === "c")) {
+    if (key.ctrl && input === "c") {
       workbenchAbort.current?.abort();
+      exit();
+      return;
+    }
+
+    const enteringText =
+      pointingProject ||
+      filteringPacks ||
+      (screen === "explore" && exploreQuery.startsWith("/")) ||
+      (screen === "workbench" && editingJobPrompt);
+    const awaitingChoice =
+      confirmRemove || confirmLinkWrite || confirmBuildJob;
+    if (
+      shouldQuitWithQ({
+        input,
+        busy,
+        enteringText,
+        awaitingChoice,
+      })
+    ) {
       exit();
       return;
     }
 
     if (screen === "workbench" && busy) {
       if (key.escape || input === "x") {
-        workbenchAbort.current?.abort();
-        flash("stopping job");
+        if (workbenchAbort.current) {
+          setWorkbenchRunStatus("stopping");
+          workbenchAbort.current.abort();
+          flash("stopping run");
+        }
       }
       return;
     }
@@ -1308,6 +1416,11 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         }
         return;
       }
+      if (key.escape) {
+        setScreen("home");
+        flash("home");
+        return;
+      }
       if (key.tab) {
         setWorkbenchLane((lane) =>
           lane === "runner" ? "service" : "runner",
@@ -1500,6 +1613,10 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         editingPrompt={editingJobPrompt}
         confirmBuild={confirmBuildJob}
         busy={busy}
+        runStatus={workbenchRunStatus}
+        {...(workbenchRunLabel !== undefined
+          ? { runLabel: workbenchRunLabel }
+          : {})}
         {...(workbenchOutput !== undefined
           ? { output: workbenchOutput }
           : {})}

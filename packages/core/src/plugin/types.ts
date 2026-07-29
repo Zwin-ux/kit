@@ -77,6 +77,9 @@ export interface RunPluginOptions {
   kitHome?: string;
   stdio?: StdioOptions;
   timeoutMs?: number;
+  maxOutputBytes?: number;
+  signal?: AbortSignal;
+  onOutput?: (chunk: string, stream: "stdout" | "stderr") => void;
 }
 
 export interface PluginRunReport {
@@ -86,6 +89,9 @@ export interface PluginRunReport {
   exitCode: number;
   stdout: string;
   stderr: string;
+  durationMs: number;
+  cancelled: boolean;
+  truncated: boolean;
 }
 
 export interface PluginTaskRunReport extends PluginRunReport {

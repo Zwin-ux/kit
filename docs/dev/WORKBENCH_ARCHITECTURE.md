@@ -34,6 +34,9 @@ Kit does not send wallet commands, score markets, or approve trades.
 - Keep the current project path visible.
 - Use the terminal's alternate screen and restore the shell on exit.
 - Stream bounded runner output and let the user stop a running job.
+- Stream bounded service output and let the user stop a running task.
+- Keep the selected lane and the main panel mapped to the same action.
+- Keep `Q` available to prompt input while the prompt editor is active.
 
 ### Non-functional
 
@@ -84,6 +87,9 @@ flowchart LR
 - Owns the full alternate terminal screen while Kit runs.
 - Uses compact, standard, and wide layouts for 60x18, 80x24, and large terminals.
 - Streams bounded output and restores the original shell on exit.
+- Uses a context footer for navigation, prompt editing, confirmation, and stop.
+- Shows status with text as well as color.
+- Keeps the last run label beside its output when selection changes.
 - It is a focused coding control surface, not a general-purpose PTY emulator.
 
 ### Workbench core
@@ -111,6 +117,7 @@ flowchart LR
 - A task has a name, description, fixed arguments, and `read-only` access.
 - Kit verifies the registered manifest digest before each run.
 - Kit stops the task after 30 seconds.
+- Kit streams at most 1 MiB from a task and supports `AbortSignal` cancellation.
 - A task declaration is not a sandbox. The plugin still owns domain safety.
 
 ## Failure modes
@@ -126,6 +133,7 @@ flowchart LR
 | Output floods the TUI | Screen becomes unusable | Stop capture at 256 KiB and report truncation |
 | Manifest changes | Service trust is stale | Block the task until the user registers it again |
 | Service binary is missing | Task cannot start | Show the build or PATH repair step |
+| User stops a service task | Task process exits | Show `STOPPED`, not an error |
 | Trenchwire task fails | Market task returns an error | Keep the error inside the service lane; do not infer a trade action |
 
 ## Technology choices

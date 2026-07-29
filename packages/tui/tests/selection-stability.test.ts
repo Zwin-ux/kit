@@ -87,7 +87,7 @@ describe("Workbench safety copy", () => {
     expect(source).toContain("Build can edit this project.");
     expect(source).toContain("RUNNERS");
     expect(source).toContain("SERVICES");
-    expect(source).toContain("tab services");
+    expect(source).toContain("Tab services");
   });
 });
 

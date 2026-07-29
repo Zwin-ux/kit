@@ -53,7 +53,14 @@ live output stay readable from 60x18 through a maximized terminal.
 Write one job in the TUI. `inspect` uses the provider's read-only or plan mode.
 `build` can edit the selected repo and needs a separate confirmation. Kit uses
 the provider's existing login. It does not store model API keys. Output streams
-inside the Workbench, and `Esc` stops a running job.
+inside the Workbench, and `Esc` stops a running job or service task.
+
+`Tab` switches between Runners and Services. The main panel always describes
+the selected lane. The footer changes with the current action, so prompt,
+confirmation, run, and stop keys stay visible on small terminals. Run state
+uses words such as `RUNNING`, `STOPPING`, `DONE`, and `FAILED`; color is not
+required. `Q` quits from navigation, but it remains normal text while you edit
+a prompt. `Ctrl+C` always exits.
 
 Ollama runs through its official Codex launch bridge. This gives the local
 model the same repository tools and sandbox as a normal Codex job. Kit isolates
@@ -246,7 +253,8 @@ More: [docs/packs.md](docs/packs.md)
 4. Workbench starts provider CLIs and service tasks without a shell.
 5. `unify` imports and cleans skills already in agent folders.
 
-**TUI:** fixed side rail for the mascot (animation does not resize the menu). ↑↓ shows direction. `KIT_REDUCED_MOTION=1` freezes motion.
+**TUI:** menu screens keep the mascot in a fixed rail. Workbench gives the job
+and output the full terminal. `KIT_REDUCED_MOTION=1` freezes motion.
 
 Agents: **Claude Code** · **Codex** · **Grok Build**.
 

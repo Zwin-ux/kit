@@ -7,6 +7,7 @@ export interface WorkbenchLayout {
   paddingX: number;
   sidebarWidth: number;
   outputRows: number;
+  runnerRows: number;
   serviceRows: number;
   showProjectPath: boolean;
 }
@@ -49,6 +50,8 @@ export function workbenchLayoutFromTerminal(
     mode === "compact" ? 3 : 5,
     mode === "wide" ? 28 : 16,
   );
+  const runnerRows =
+    mode === "compact" ? clamp(safeRows - 16, 1, 3) : 4;
   const serviceRows = clamp(
     safeRows - 11,
     mode === "compact" ? 2 : 3,
@@ -62,6 +65,7 @@ export function workbenchLayoutFromTerminal(
     paddingX,
     sidebarWidth,
     outputRows,
+    runnerRows,
     serviceRows,
     showProjectPath: safeColumns >= 64 && safeRows >= 18,
   };

@@ -94,6 +94,8 @@ describe("Workbench rendered terminal frames", () => {
         selectedModelIndex: 0,
         mode: "inspect",
         prompt: "Inspect the workbench tests.",
+        runStatus: "succeeded",
+        runLabel: "Ollama · Codex / gemma4:e2b",
         output: "reading files\nrunning tests\nall checks passed",
       }),
       {
@@ -116,6 +118,117 @@ describe("Workbench rendered terminal frames", () => {
     );
     expect(clean).toContain("KIT / WORKBENCH");
     expect(clean).toContain("Ollama");
-    expect(clean).toContain("LIVE OUTPUT");
+    expect(clean).toContain("RUN /");
+    expect(clean).toContain("Tab tools");
+    expect(clean).toContain("Enter run");
+    expect(clean).toContain("Q quit");
+  });
+
+  it.each([
+    [60, 18],
+    [80, 24],
+  ] as const)(
+    "maps the Services lane to the selected read-only task at %ix%i",
+    async (columns, rows) => {
+      const terminal = terminalStream(columns, rows);
+      const instance = render(
+        React.createElement(Workbench, {
+          projectDir: "C:\\work\\kit",
+          runners: [
+            {
+              id: "codex",
+              label: "Codex",
+              available: true,
+              executable: "codex",
+            },
+          ],
+          serviceTasks: [
+            {
+              plugin: "trenchwire",
+              displayName: "Trenchwire",
+              task: "market",
+              description: "Read recorded market data.",
+              status: "ready",
+            },
+          ],
+          lane: "service",
+          selectedRunnerIndex: 0,
+          selectedTaskIndex: 0,
+          selectedModelIndex: 0,
+          mode: "inspect",
+          prompt: "This prompt must not own the Services lane.",
+          runStatus: "idle",
+        }),
+        {
+          stdout: terminal.stream,
+          stdin: inputStream(),
+          exitOnCtrlC: false,
+          patchConsole: false,
+          debug: true,
+        },
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const frame = terminal.read();
+      instance.unmount();
+
+      const clean = frame.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "");
+      const lines = clean.split(/\r?\n/);
+      expect(lines.length).toBeLessThanOrEqual(rows);
+      expect(
+        Math.max(...lines.map((line) => [...line].length)),
+      ).toBeLessThanOrEqual(columns);
+      expect(clean).toContain("TASK / READ-ONLY");
+      expect(clean).toContain("Trenchwire");
+      expect(clean).toContain("market");
+      expect(clean).toContain("Read recorded market data.");
+      expect(clean).not.toContain("PROMPT");
+      expect(clean).toContain("Tab runners");
+    },
+  );
+
+  it("keeps prompt controls visible with reduced motion", async () => {
+    const previous = process.env.KIT_REDUCED_MOTION;
+    process.env.KIT_REDUCED_MOTION = "1";
+    const terminal = terminalStream(60, 18);
+    const instance = render(
+      React.createElement(Workbench, {
+        projectDir: "C:\\work\\kit",
+        runners: [
+          {
+            id: "codex",
+            label: "Codex",
+            available: true,
+            executable: "codex",
+          },
+        ],
+        serviceTasks: [],
+        lane: "runner",
+        selectedRunnerIndex: 0,
+        selectedTaskIndex: 0,
+        selectedModelIndex: 0,
+        mode: "inspect",
+        prompt: "Explain q behavior",
+        editingPrompt: true,
+        runStatus: "idle",
+      }),
+      {
+        stdout: terminal.stream,
+        stdin: inputStream(),
+        exitOnCtrlC: false,
+        patchConsole: false,
+        debug: true,
+      },
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const frame = terminal.read();
+    instance.unmount();
+    if (previous === undefined) delete process.env.KIT_REDUCED_MOTION;
+    else process.env.KIT_REDUCED_MOTION = previous;
+
+    const clean = frame.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "");
+    expect(clean).toContain("EDIT PROMPT");
+    expect(clean).toContain("Enter save");
+    expect(clean).toContain("Esc cancel");
+    expect(clean).not.toContain("Q quit");
   });
 });

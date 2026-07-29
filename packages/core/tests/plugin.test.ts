@@ -112,6 +112,45 @@ describe("Kit CLI plugins", () => {
     expect(run.value.stderr).toBe("");
   });
 
+  it("streams task output and stops the child on request", async () => {
+    const kitHome = await tempDir("kit-plugin-home-");
+    const pluginRoot = await tempDir("kit-plugin-source-");
+    await writeManifest(pluginRoot, {
+      tasks: [
+        {
+          name: "watch",
+          description: "Print output until stopped.",
+          args: [
+            "-e",
+            "process.stdout.write('ready\\n');setInterval(()=>process.stdout.write('tick\\n'),25)",
+          ],
+          access: "read-only",
+        },
+      ],
+    });
+    await addPlugin(pluginRoot, { kitHome, write: true });
+
+    const controller = new AbortController();
+    let streamed = "";
+    const run = await runPluginTask("test-cli", "watch", {
+      kitHome,
+      stdio: "pipe",
+      timeoutMs: 5_000,
+      signal: controller.signal,
+      onOutput(chunk) {
+        streamed += chunk;
+        if (streamed.includes("ready")) controller.abort();
+      },
+    });
+
+    expect(run.ok).toBe(true);
+    if (!run.ok) return;
+    expect(streamed).toContain("ready");
+    expect(run.value.stdout).toContain("ready");
+    expect(run.value.cancelled).toBe(true);
+    expect(run.value.durationMs).toBeLessThan(5_000);
+  });
+
   it("rejects duplicate, write-capable, and unknown tasks", async () => {
     const kitHome = await tempDir("kit-plugin-home-");
     const pluginRoot = await tempDir("kit-plugin-source-");

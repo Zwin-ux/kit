@@ -13,6 +13,7 @@ describe("Workbench terminal layout", () => {
     const layout = workbenchLayoutFromTerminal(columns, rows);
     expect(layout.mode).toBe(mode);
     expect(layout.outputRows).toBeGreaterThanOrEqual(3);
+    expect(layout.runnerRows).toBeGreaterThanOrEqual(1);
     expect(layout.serviceRows).toBeGreaterThanOrEqual(2);
     expect(layout.sidebarWidth).toBeLessThan(columns / 2);
   });
@@ -22,5 +23,10 @@ describe("Workbench terminal layout", () => {
     const full = workbenchLayoutFromTerminal(180, 55);
     expect(full.outputRows).toBeGreaterThan(small.outputRows);
     expect(full.serviceRows).toBeGreaterThan(small.serviceRows);
+  });
+
+  it("uses fewer runner rows when compact controls need two lines", () => {
+    const compact = workbenchLayoutFromTerminal(60, 18);
+    expect(compact.runnerRows).toBe(2);
   });
 });
