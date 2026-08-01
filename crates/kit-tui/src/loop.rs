@@ -51,6 +51,12 @@ async fn run_with_terminal(
     terminal.draw(|f| ui::draw(f, &app))?;
     app.clear_dirty();
 
+    // A closed `mpsc::Receiver` yields `None` immediately and forever, so the
+    // branch must be disabled once it ends. Without this guard `select!` picks
+    // the always-ready arm every iteration and the loop spins at 100% CPU —
+    // which would defeat the M0 idle-CPU criterion outright.
+    let mut runs_open = true;
+
     loop {
         let event = tokio::select! {
             maybe = term_events.next() => {
@@ -61,9 +67,11 @@ async fn run_with_terminal(
                 }
             }
             _ = tick.tick() => Some(AppEvent::AnimationTick),
-            // Channel closed → None: keep the UI alive; user can still quit.
-            item = run_rx.recv() => {
-                item.map(|(id, delta)| AppEvent::RunUpdate(id, delta))
+            // Channel closed → keep the UI alive, but stop polling this arm.
+            item = run_rx.recv(), if runs_open => {
+                let (event, still_open) = map_run_item(item);
+                runs_open = still_open;
+                event
             }
         };
 
@@ -84,6 +92,16 @@ async fn run_with_terminal(
     }
 
     Ok(())
+}
+
+/// Map one run-channel receive into an event, reporting whether the channel is
+/// still open. `None` means every sender has been dropped, and the caller must
+/// stop polling that `select!` arm — see `runs_open` in [`run_with_terminal`].
+fn map_run_item(item: Option<(RunId, RunDelta)>) -> (Option<AppEvent>, bool) {
+    match item {
+        Some((id, delta)) => (Some(AppEvent::RunUpdate(id, delta)), true),
+        None => (None, false),
+    }
 }
 
 fn map_crossterm(ev: Event) -> Option<AppEvent> {
@@ -164,5 +182,40 @@ mod tests {
             map_crossterm(Event::Resize(100, 40)),
             Some(AppEvent::Resize(100, 40))
         ));
+    }
+
+    #[test]
+    fn a_live_run_item_keeps_the_arm_open() {
+        let (event, still_open) = map_run_item(Some((
+            RunId::new(),
+            RunDelta::State(kit_core::RunState::Running),
+        )));
+        assert!(matches!(event, Some(AppEvent::RunUpdate(..))));
+        assert!(still_open);
+    }
+
+    /// Regression: a closed run channel must disable its `select!` arm.
+    ///
+    /// `mpsc::Receiver::recv` yields `None` immediately and forever once every
+    /// sender is dropped. If the arm stays enabled, `select!` picks it on every
+    /// iteration and the loop busy-spins at 100% CPU.
+    #[test]
+    fn a_closed_run_channel_closes_the_arm() {
+        let (event, still_open) = map_run_item(None);
+        assert!(event.is_none());
+        assert!(!still_open, "closed channel must disable the select arm");
+    }
+
+    #[tokio::test]
+    async fn recv_on_a_closed_channel_is_immediately_ready_forever() {
+        let (tx, mut rx) = mpsc::channel::<(RunId, RunDelta)>(4);
+        drop(tx);
+        // Both calls return without ever pending — the exact behaviour that
+        // makes an unguarded select arm spin.
+        for _ in 0..2 {
+            let got = rx.recv().await;
+            assert!(got.is_none());
+            assert!(!map_run_item(got).1);
+        }
     }
 }
