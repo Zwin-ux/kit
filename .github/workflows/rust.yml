@@ -1,0 +1,91 @@
+name: Rust
+
+on:
+  push:
+    branches: [main]
+    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/rust.yml']
+  pull_request:
+    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/rust.yml']
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # Windows is required from M0, not M5. Cross-platform TUIs die on Windows,
+  # and finding out at release is finding out too late.
+  quality:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+  # M0 kill criterion: cold start under budget. If this fails, the stack choice
+  # is wrong and we stop rather than push through. See docs/dev/PRD-1.0.md §8.
+  #
+  # Windows is measured too, and it is the reading that matters — process
+  # creation there is inherently heavier, so it binds first. Measuring only on
+  # Linux would watch the platform that was never at risk.
+  startup:
+    name: startup budget (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            bin: ./target/release/kit
+            budget_ms: 100
+          - os: windows-latest
+            bin: ./target/release/kit.exe
+            budget_ms: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release -p kit-cli
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: hyperfine
+
+      - name: Measure cold start
+        shell: bash
+        env:
+          BIN: ${{ matrix.bin }}
+          BUDGET_MS: ${{ matrix.budget_ms }}
+        run: |
+          # -N spawns the binary directly instead of via a shell. Required on
+          # Windows, where hyperfine would otherwise route through cmd.exe and
+          # fail to resolve ./target/... — and correct everywhere, since shell
+          # startup does not belong in a binary startup measurement.
+          hyperfine -N --warmup 3 --runs 50 --export-json startup.json "$BIN --version"
+          python3 - <<'PY'
+          import json, os, sys
+          mean_ms = json.load(open('startup.json'))['results'][0]['mean'] * 1000
+          budget = float(os.environ['BUDGET_MS'])
+          print(f"cold start: {mean_ms:.1f}ms (budget {budget:.0f}ms)")
+          if mean_ms > budget:
+              sys.exit(f"FAIL: exceeds the M0 startup budget by {mean_ms - budget:.1f}ms")
+          PY

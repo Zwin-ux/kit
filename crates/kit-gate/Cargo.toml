@@ -1,0 +1,16 @@
+[package]
+name = "kit-gate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Definition-of-done gate and blast-radius firewall for Kit"
+
+[dependencies]
+kit-core.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
