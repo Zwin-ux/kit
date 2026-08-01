@@ -12,8 +12,14 @@ export function useLayoutScale(): LayoutScale {
   );
 
   useEffect(() => {
-    const read = () =>
-      setScale(layoutScaleFromTerminal(stdout?.columns, stdout?.rows));
+    const read = () => {
+      const next = layoutScaleFromTerminal(stdout?.columns, stdout?.rows);
+      setScale((current) =>
+        current.columns === next.columns && current.rows === next.rows
+          ? current
+          : next,
+      );
+    };
 
     read();
     if (!stdout || typeof stdout.on !== "function") return;

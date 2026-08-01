@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useInput, useApp, Box, Text } from "ink";
 import path from "node:path";
 import {
   completeFirstRun,
+  detectCodingRunners,
+  doctorPlugin,
   describePaths,
   getFirstRunStatus,
   getLoggedInUser,
@@ -11,6 +13,7 @@ import {
   applyPack,
   linkSkills,
   listPacks,
+  listPlugins,
   listSkills,
   loadSkill,
   readConfig,
@@ -18,6 +21,8 @@ import {
   removeSkill,
   recommendToolkits,
   runDoctor,
+  runCodingJob,
+  runPluginTask,
   runStatus,
   testSkill,
   updateConfig,
@@ -25,6 +30,8 @@ import {
   exploreSearch,
   type AppliedPackRecord,
   type CheckResult,
+  type CodingJobMode,
+  type CodingRunnerStatus,
   type DoctorReport,
   type HarnessId,
   type InstalledSkill,
@@ -35,12 +42,14 @@ import {
   type SkillRecommendation,
   type ToolkitRecommendation,
   type RegistryPackSummary,
+  type RegisteredPlugin,
 } from "@mzwin/kit-core";
 import { loadAllMascotFrames } from "./mascot/loadFrames.js";
 import type { MascotVariant, PixelFrame } from "./mascot/types.js";
 import { useLayoutScale } from "./mascot/useLayoutScale.js";
 import { useMouseClick } from "./mouse/useMouse.js";
 import type { HitRegion } from "./mouse/HitMap.js";
+import { shouldQuitWithQ } from "./input/quitShortcut.js";
 import { Spinner } from "./components/Motion.js";
 import { Splash } from "./screens/Splash.js";
 import { Home } from "./screens/Home.js";
@@ -49,6 +58,11 @@ import { Library } from "./screens/Library.js";
 import { Packs } from "./screens/Packs.js";
 import { Explore } from "./screens/Explore.js";
 import { Doctor } from "./screens/Doctor.js";
+import {
+  Workbench,
+  type WorkbenchRunStatus,
+  type WorkbenchServiceTask,
+} from "./screens/Workbench.js";
 import {
   Paths,
   PATHS_LINKABLE_HARNESSES,
@@ -63,7 +77,8 @@ type Screen =
   | "packs"
   | "explore"
   | "doctor"
-  | "paths";
+  | "paths"
+  | "workbench";
 
 const FIRST_RUN_BY_KEY: Record<string, string> = {
   "1": "essentials",
@@ -75,7 +90,11 @@ const FIRST_RUN_BY_KEY: Record<string, string> = {
   "7": "data-ml",
 };
 
-export function App(): React.ReactElement {
+export interface AppProps {
+  initialScreen?: "workbench";
+}
+
+export function App({ initialScreen }: AppProps = {}): React.ReactElement {
   const { exit } = useApp();
   const scale = useLayoutScale();
   const [screen, setScreen] = useState<Screen>("loading");
@@ -132,6 +151,28 @@ export function App(): React.ReactElement {
   const [pathScope, setPathScope] = useState<PathScope>("project");
   const [confirmLinkWrite, setConfirmLinkWrite] = useState(false);
   const [lastChecks, setLastChecks] = useState<CheckResult[] | undefined>();
+  const [codingRunners, setCodingRunners] = useState<CodingRunnerStatus[]>([]);
+  const [workbenchPlugins, setWorkbenchPlugins] = useState<RegisteredPlugin[]>([]);
+  const [workbenchPluginStatus, setWorkbenchPluginStatus] = useState<
+    Record<string, "ready" | "review" | "missing">
+  >({});
+  const [workbenchLane, setWorkbenchLane] = useState<"runner" | "service">(
+    "runner",
+  );
+  const [selectedRunnerIndex, setSelectedRunnerIndex] = useState(0);
+  const [selectedModelIndex, setSelectedModelIndex] = useState(0);
+  const [selectedTaskIndex, setSelectedTaskIndex] = useState(0);
+  const [jobMode, setJobMode] = useState<CodingJobMode>("inspect");
+  const [jobPrompt, setJobPrompt] = useState("");
+  const [editingJobPrompt, setEditingJobPrompt] = useState(false);
+  const [confirmBuildJob, setConfirmBuildJob] = useState(false);
+  const [workbenchOutput, setWorkbenchOutput] = useState<string | undefined>();
+  const [workbenchError, setWorkbenchError] = useState<string | undefined>();
+  const [workbenchRunStatus, setWorkbenchRunStatus] =
+    useState<WorkbenchRunStatus>("idle");
+  const [workbenchRunLabel, setWorkbenchRunLabel] =
+    useState<string | undefined>();
+  const workbenchAbort = useRef<AbortController | null>(null);
 
   const clearFlash = useCallback(() => {
     setErrorMessage(undefined);
@@ -342,6 +383,240 @@ export function App(): React.ReactElement {
       setAgentStatusLine(undefined);
     }
   }, [resolveTarget]);
+
+  const refreshWorkbench = useCallback(async () => {
+    const [runners, plugins] = await Promise.all([
+      detectCodingRunners(),
+      listPlugins(),
+    ]);
+    setCodingRunners(runners);
+    setSelectedModelIndex(0);
+    if (plugins.ok) {
+      setWorkbenchPlugins(plugins.value);
+      const reports = await Promise.all(
+        plugins.value.map(async (plugin) => ({
+          name: plugin.manifest.name,
+          report: await doctorPlugin(plugin.manifest.name),
+        })),
+      );
+      setWorkbenchPluginStatus(
+        Object.fromEntries(
+          reports.map(({ name, report }) => [
+            name,
+            !report.ok || !report.value.executable
+              ? "missing"
+              : report.value.manifestChanged
+                ? "review"
+                : "ready",
+          ]),
+        ),
+      );
+    } else {
+      setWorkbenchPlugins([]);
+      setWorkbenchPluginStatus({});
+      setWorkbenchError(plugins.error);
+    }
+  }, []);
+
+  const workbenchTasks: WorkbenchServiceTask[] = workbenchPlugins.flatMap(
+    (plugin) =>
+      (plugin.manifest.tasks ?? []).map((task) => ({
+        plugin: plugin.manifest.name,
+        displayName: plugin.manifest.displayName,
+        task: task.name,
+        description: task.description,
+        status: workbenchPluginStatus[plugin.manifest.name] ?? "missing",
+      })),
+  );
+
+  const runWorkbenchJob = useCallback(
+    async (confirmed: boolean) => {
+      const runner = codingRunners[selectedRunnerIndex];
+      if (!runner) return;
+      const model = runner.models?.[
+        Math.min(
+          selectedModelIndex,
+          Math.max(0, runner.models.length - 1),
+        )
+      ];
+      if (!runner.available) {
+        setWorkbenchOutput(undefined);
+        setWorkbenchRunLabel(runner.label);
+        setWorkbenchRunStatus("failed");
+        setWorkbenchError(`${runner.label} is offline.`);
+        return;
+      }
+      if (!jobPrompt.trim()) {
+        setWorkbenchOutput(undefined);
+        setWorkbenchRunLabel(runner.label);
+        setWorkbenchRunStatus("failed");
+        setWorkbenchError("Write a job first. Press e.");
+        return;
+      }
+      if (runner.id === "ollama" && !model) {
+        setWorkbenchOutput(undefined);
+        setWorkbenchRunLabel(runner.label);
+        setWorkbenchRunStatus("failed");
+        setWorkbenchError("Install or select an Ollama model first.");
+        return;
+      }
+      if (jobMode === "build" && !confirmed) {
+        setConfirmBuildJob(true);
+        setWorkbenchError(undefined);
+        return;
+      }
+      setBusy(true);
+      setConfirmBuildJob(false);
+      setWorkbenchError(undefined);
+      setWorkbenchOutput(undefined);
+      setWorkbenchRunLabel(
+        model ? `${runner.label} / ${model.name}` : runner.label,
+      );
+      setWorkbenchRunStatus("running");
+      const controller = new AbortController();
+      workbenchAbort.current = controller;
+      let liveOutput = "";
+      try {
+        const result = await runCodingJob(
+          {
+            runner: runner.id,
+            mode: jobMode,
+            projectDir: targetProject,
+            prompt: jobPrompt,
+            ...(model ? { model: model.name } : {}),
+            confirmBuild: confirmed,
+          },
+          {
+            signal: controller.signal,
+            onOutput: (chunk) => {
+              liveOutput = `${liveOutput}${chunk}`.slice(-64 * 1024);
+              setWorkbenchOutput(liveOutput);
+            },
+          },
+        );
+        if (!result.ok) {
+          setWorkbenchError(result.error);
+          setWorkbenchRunStatus("failed");
+          return;
+        }
+        const report = result.value;
+        const output = [
+          report.stdout.trim(),
+          report.stderr.trim(),
+          report.truncated
+            ? "[Kit stopped capturing output at the size limit.]"
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+        setWorkbenchOutput(
+          output ||
+            `${runner.label} finished with exit code ${report.exitCode}.`,
+        );
+        if (report.timedOut) {
+          setWorkbenchError(`${runner.label} timed out.`);
+          setWorkbenchRunStatus("failed");
+        } else if (report.cancelled) {
+          setWorkbenchRunStatus("cancelled");
+        } else if (report.exitCode !== 0) {
+          setWorkbenchError(
+            `${runner.label} exited with code ${report.exitCode}.`,
+          );
+          setWorkbenchRunStatus("failed");
+        } else {
+          setWorkbenchRunStatus("succeeded");
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        setWorkbenchError(detail);
+        setWorkbenchRunStatus("failed");
+      } finally {
+        if (workbenchAbort.current === controller) {
+          workbenchAbort.current = null;
+        }
+        setBusy(false);
+      }
+    },
+    [
+      codingRunners,
+      jobMode,
+      jobPrompt,
+      selectedRunnerIndex,
+      selectedModelIndex,
+      targetProject,
+    ],
+  );
+
+  const runWorkbenchService = useCallback(async () => {
+    const task = workbenchTasks[selectedTaskIndex];
+    if (!task) return;
+    if (task.status !== "ready") {
+      setWorkbenchOutput(undefined);
+      setWorkbenchRunLabel(`${task.displayName} / ${task.task}`);
+      setWorkbenchRunStatus("failed");
+      setWorkbenchError(
+        task.status === "review"
+          ? "Review the changed plugin before this task can run."
+          : "This task is not ready.",
+      );
+      return;
+    }
+    setBusy(true);
+    setWorkbenchError(undefined);
+    setWorkbenchOutput(undefined);
+    setWorkbenchRunLabel(`${task.displayName} / ${task.task}`);
+    setWorkbenchRunStatus("running");
+    const controller = new AbortController();
+    workbenchAbort.current = controller;
+    let liveOutput = "";
+    try {
+      const result = await runPluginTask(task.plugin, task.task, {
+        stdio: "pipe",
+        signal: controller.signal,
+        onOutput: (chunk) => {
+          liveOutput = `${liveOutput}${chunk}`.slice(-64 * 1024);
+          setWorkbenchOutput(liveOutput);
+        },
+      });
+      if (!result.ok) {
+        setWorkbenchError(result.error);
+        setWorkbenchRunStatus("failed");
+        return;
+      }
+      const output = [
+        result.value.stdout.trim(),
+        result.value.stderr.trim(),
+        result.value.truncated
+          ? "[Kit stopped capturing output at the size limit.]"
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      setWorkbenchOutput(
+        output ||
+          `${task.displayName}/${task.task} finished with exit code ${result.value.exitCode}.`,
+      );
+      if (result.value.cancelled) {
+        setWorkbenchRunStatus("cancelled");
+      } else if (result.value.exitCode !== 0) {
+        setWorkbenchError(
+          `${task.displayName}/${task.task} exited with code ${result.value.exitCode}.`,
+        );
+        setWorkbenchRunStatus("failed");
+      } else {
+        setWorkbenchRunStatus("succeeded");
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setWorkbenchError(detail);
+      setWorkbenchRunStatus("failed");
+    } finally {
+      if (workbenchAbort.current === controller) {
+        workbenchAbort.current = null;
+      }
+      setBusy(false);
+    }
+  }, [selectedTaskIndex, workbenchTasks]);
 
   const pointAtProject = useCallback(
     async (raw: string) => {
@@ -554,13 +829,19 @@ export function App(): React.ReactElement {
       await refreshData();
       if (cancelled) return;
 
-      setScreen("splash");
+      if (initialScreen === "workbench") {
+        await refreshWorkbench();
+        if (cancelled) return;
+        setScreen("workbench");
+      } else {
+        setScreen("splash");
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [refreshData]);
+  }, [initialScreen, refreshData, refreshWorkbench]);
 
   const leaveSplash = useCallback(() => {
     flash("welcome");
@@ -665,8 +946,39 @@ export function App(): React.ReactElement {
   }, [busy, clearFlash, refreshData, selectedSkillIndex, skills, flash]);
 
   useInput((input, key) => {
-    if (input === "q" || (key.ctrl && input === "c")) {
+    if (key.ctrl && input === "c") {
+      workbenchAbort.current?.abort();
       exit();
+      return;
+    }
+
+    const enteringText =
+      pointingProject ||
+      filteringPacks ||
+      (screen === "explore" && exploreQuery.startsWith("/")) ||
+      (screen === "workbench" && editingJobPrompt);
+    const awaitingChoice =
+      confirmRemove || confirmLinkWrite || confirmBuildJob;
+    if (
+      shouldQuitWithQ({
+        input,
+        busy,
+        enteringText,
+        awaitingChoice,
+      })
+    ) {
+      exit();
+      return;
+    }
+
+    if (screen === "workbench" && busy) {
+      if (key.escape || input === "x") {
+        if (workbenchAbort.current) {
+          setWorkbenchRunStatus("stopping");
+          workbenchAbort.current.abort();
+          flash("stopping run");
+        }
+      }
       return;
     }
 
@@ -714,6 +1026,29 @@ export function App(): React.ReactElement {
       }
       if (input && input.length === 1 && !key.ctrl) {
         setPointDraft((d) => d + input);
+        return;
+      }
+      return;
+    }
+
+    if (screen === "workbench" && editingJobPrompt) {
+      if (key.escape) {
+        setEditingJobPrompt(false);
+        flash("job edit cancelled");
+        return;
+      }
+      if (key.return) {
+        setEditingJobPrompt(false);
+        flash("job ready");
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setJobPrompt((value) => value.slice(0, -1));
+        return;
+      }
+      if (input && !key.ctrl) {
+        const clean = input.replace(/\s+/g, " ");
+        setJobPrompt((value) => `${value}${clean}`.slice(0, 8_000));
         return;
       }
       return;
@@ -773,6 +1108,7 @@ export function App(): React.ReactElement {
       "explore",
       "doctor",
       "paths",
+      "workbench",
     ];
     if (mainScreens.includes(screen)) {
       if (input === "s") {
@@ -806,7 +1142,7 @@ export function App(): React.ReactElement {
           return;
         }
       }
-      if (input === "e") {
+      if (input === "e" && screen !== "workbench") {
         setConfirmRemove(false);
         setFilteringPacks(false);
         flash("explore");
@@ -828,6 +1164,16 @@ export function App(): React.ReactElement {
         flash("paths");
         setScreen("paths");
         void loadPaths();
+        return;
+      }
+      if (input === "w") {
+        setConfirmRemove(false);
+        setFilteringPacks(false);
+        setConfirmBuildJob(false);
+        setWorkbenchError(undefined);
+        flash("workbench");
+        setScreen("workbench");
+        void refreshWorkbench();
         return;
       }
     }
@@ -1054,6 +1400,104 @@ export function App(): React.ReactElement {
       if (input === "r") {
         void loadPaths();
       }
+      return;
+    }
+
+    if (screen === "workbench") {
+      if (confirmBuildJob) {
+        if (input === "y") {
+          void runWorkbenchJob(true);
+          return;
+        }
+        if (input === "n" || key.escape) {
+          setConfirmBuildJob(false);
+          flash("build cancelled");
+          return;
+        }
+        return;
+      }
+      if (key.escape) {
+        setScreen("home");
+        flash("home");
+        return;
+      }
+      if (key.tab) {
+        setWorkbenchLane((lane) =>
+          lane === "runner" ? "service" : "runner",
+        );
+        flash(workbenchLane === "runner" ? "services" : "runners");
+        return;
+      }
+      if (key.upArrow) {
+        if (workbenchLane === "runner") {
+          setSelectedRunnerIndex((index) =>
+            codingRunners.length === 0
+              ? 0
+              : (index - 1 + codingRunners.length) % codingRunners.length,
+          );
+          setSelectedModelIndex(0);
+        } else {
+          setSelectedTaskIndex((index) =>
+            workbenchTasks.length === 0
+              ? 0
+              : (index - 1 + workbenchTasks.length) % workbenchTasks.length,
+          );
+        }
+        bumpSelect("up");
+        return;
+      }
+      if (key.downArrow) {
+        if (workbenchLane === "runner") {
+          setSelectedRunnerIndex((index) =>
+            codingRunners.length === 0
+              ? 0
+              : (index + 1) % codingRunners.length,
+          );
+          setSelectedModelIndex(0);
+        } else {
+          setSelectedTaskIndex((index) =>
+            workbenchTasks.length === 0
+              ? 0
+              : (index + 1) % workbenchTasks.length,
+          );
+        }
+        bumpSelect("down");
+        return;
+      }
+      if (workbenchLane === "runner" && input === "e") {
+        setEditingJobPrompt(true);
+        setWorkbenchError(undefined);
+        flash("edit job");
+        return;
+      }
+      if (workbenchLane === "runner" && input === "m") {
+        setJobMode((mode) => (mode === "inspect" ? "build" : "inspect"));
+        setConfirmBuildJob(false);
+        flash(jobMode === "inspect" ? "mode: build" : "mode: inspect");
+        return;
+      }
+      if (
+        workbenchLane === "runner" &&
+        (key.leftArrow || key.rightArrow)
+      ) {
+        const models = codingRunners[selectedRunnerIndex]?.models ?? [];
+        if (models.length > 0) {
+          setSelectedModelIndex((index) =>
+            key.leftArrow
+              ? (index - 1 + models.length) % models.length
+              : (index + 1) % models.length,
+          );
+          flash("local model");
+        }
+        return;
+      }
+      if (key.return) {
+        if (workbenchLane === "runner") {
+          void runWorkbenchJob(false);
+        } else {
+          void runWorkbenchService();
+        }
+      }
     }
   });
 
@@ -1150,6 +1594,35 @@ export function App(): React.ReactElement {
         {...(statusMessage !== undefined ? { statusMessage } : {})}
         {...(errorMessage !== undefined ? { errorMessage } : {})}
         {...(actionFlash !== undefined ? { actionFlash } : {})}
+      />
+    );
+  }
+
+  if (screen === "workbench") {
+    return (
+      <Workbench
+        projectDir={targetProject}
+        runners={codingRunners}
+        serviceTasks={workbenchTasks}
+        lane={workbenchLane}
+        selectedRunnerIndex={selectedRunnerIndex}
+        selectedTaskIndex={selectedTaskIndex}
+        selectedModelIndex={selectedModelIndex}
+        mode={jobMode}
+        prompt={jobPrompt}
+        editingPrompt={editingJobPrompt}
+        confirmBuild={confirmBuildJob}
+        busy={busy}
+        runStatus={workbenchRunStatus}
+        {...(workbenchRunLabel !== undefined
+          ? { runLabel: workbenchRunLabel }
+          : {})}
+        {...(workbenchOutput !== undefined
+          ? { output: workbenchOutput }
+          : {})}
+        {...(workbenchError !== undefined
+          ? { errorMessage: workbenchError }
+          : {})}
       />
     );
   }

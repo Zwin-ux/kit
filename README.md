@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <strong>One skill library. Claude, Codex, and Grok.</strong><br />
-  Install once. Link everywhere. Clean the mess when agents pile up.
+  <strong>A local workbench for Codex, Claude, Grok, Ollama, and the tools beside your code.</strong><br />
+  Point at a repo. Run one bounded job. Keep the proof.
 </p>
 
 <p align="center">
@@ -32,7 +32,65 @@ kit                  # status + next command
 kit ready --write    # pack → install → apply → link → doctor
 kit unify --write --link
 kit tui              # keyboard console + calm side mascot
+kit tui workbench    # coding runners + attached CLI services
 ```
+
+---
+
+## Workbench
+
+<p align="center">
+  <img src="docs/assets/demo-workbench-trenchwire.gif" alt="Kit Workbench detects local coding runners and runs fixed Trenchwire service tasks with offline market data" width="720" />
+</p>
+
+Workbench takes over the terminal while it runs. Your shell and scrollback return
+when Kit exits. The layout has compact, standard, and wide modes, so the job and
+live output stay readable from 60x18 through a maximized terminal.
+
+- **Runners:** Codex, Claude Code, Grok Build, and local Ollama models.
+- **Services:** fixed read-only tasks from registered CLI plugins.
+
+Write one job in the TUI. `inspect` uses the provider's read-only or plan mode.
+`build` can edit the selected repo and needs a separate confirmation. Kit uses
+the provider's existing login. It does not store model API keys. Output streams
+inside the Workbench, and `Esc` stops a running job or service task.
+
+`Tab` switches between Runners and Services. The main panel always describes
+the selected lane. The footer changes with the current action, so prompt,
+confirmation, run, and stop keys stay visible on small terminals. Run state
+uses words such as `RUNNING`, `STOPPING`, `DONE`, and `FAILED`; color is not
+required. `Q` quits from navigation, but it remains normal text while you edit
+a prompt. `Ctrl+C` always exits.
+
+Ollama runs through its official Codex launch bridge. This gives the local
+model the same repository tools and sandbox as a normal Codex job. Kit isolates
+the local run from unrelated global connectors so they do not consume the
+model's context.
+
+```bash
+ollama serve
+ollama pull <model>
+kit tui workbench
+```
+
+Select **Ollama · Codex**, then use left and right to choose an installed model.
+Kit reads the model list from the local Ollama service. It does not send project
+content to a hosted model. Set `KIT_NO_ALT_SCREEN=1` only when you need inline
+terminal output for debugging or capture.
+
+Trenchwire is the first attached service. Its `health` and `market` tasks use
+fixed arguments. Wallet login, signing, submission, and the literal `SEND`
+gate stay inside Trenchwire.
+
+```bash
+kit plugin add ../trenchwire --write
+kit tui workbench
+```
+
+The proof above uses the compiled Trenchwire binary, recorded market data, and
+live runner detection. It does not connect a wallet or submit a trade.
+
+Read the [Workbench architecture](docs/dev/WORKBENCH_ARCHITECTURE.md).
 
 ---
 
@@ -86,6 +144,27 @@ kit ready --write --unify
 kit link --to all --write
 kit import --from claude-code --write
 ```
+
+---
+
+## Attach a CLI service
+
+Kit can run a local CLI from its own checkout. The plugin supplies one small
+manifest.
+
+```bash
+kit plugin add ../trenchwire --write
+kit plugin doctor trenchwire
+kit plugin task trenchwire
+kit plugin task trenchwire health
+kit plugin task trenchwire market
+```
+
+Kit stores the plugin path and manifest digest. It does not copy the binary.
+Kit passes arguments without a shell. The plugin keeps its own safety rules.
+Kit stops if the manifest changes after registration.
+
+Read the [plugin contract](docs/plugins.md).
 
 ---
 
@@ -156,19 +235,26 @@ More: [docs/packs.md](docs/packs.md)
 | `kit pack apply <name> --dir .` | Apply pack skills |
 | `kit link --to all --write` | Link library to agents |
 | `kit import --from claude-code --write` | Import from one agent |
+| `kit plugin add <path> --write` | Register a local CLI |
+| `kit plugin doctor <name>` | Check its binary and manifest |
+| `kit plugin task <name> [task]` | List or run a fixed read-only task |
+| `kit plugin run <name> -- <args>` | Run it without a shell |
 | `kit doctor` | Install health |
 | `kit tui` | Terminal UI |
+| `kit tui workbench` | Coding runners and attached services |
 
 ---
 
 ## How it works
 
-1. Skills live in `~/.kit`.
-2. Packs install groups into that library.
-3. `link` exposes them to each agent.
-4. `unify` imports and cleans skills already in agent folders.
+1. Skills and plugin registrations live in `~/.kit`.
+2. Packs install groups into the skill library.
+3. `link` exposes skills to each coding runner.
+4. Workbench starts provider CLIs and service tasks without a shell.
+5. `unify` imports and cleans skills already in agent folders.
 
-**TUI:** fixed side rail for the mascot (animation does not resize the menu). ↑↓ shows direction. `KIT_REDUCED_MOTION=1` freezes motion.
+**TUI:** menu screens keep the mascot in a fixed rail. Workbench gives the job
+and output the full terminal. `KIT_REDUCED_MOTION=1` freezes motion.
 
 Agents: **Claude Code** · **Codex** · **Grok Build**.
 

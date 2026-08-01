@@ -1,0 +1,232 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+import {
+  addPlugin,
+  doctorPlugin,
+  getPluginsIndexPath,
+  listPlugins,
+  removePlugin,
+  runPlugin,
+  runPluginTask,
+} from "../src/plugin/mod.js";
+
+
+const tempDirs: string[] = [];
+
+async function tempDir(prefix: string): Promise<string> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+async function writeManifest(
+  root: string,
+  overrides: Record<string, unknown> = {},
+): Promise<void> {
+  await writeFile(
+    path.join(root, "kit.plugin.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        name: "test-cli",
+        displayName: "Test CLI",
+        description: "Runs a controlled test command.",
+        version: "1.0.0",
+        command: "node",
+        versionArgs: ["--version"],
+        healthArgs: ["--version"],
+        tasks: [
+          {
+            name: "version",
+            description: "Print the local Node version.",
+            args: ["--version"],
+            access: "read-only",
+          },
+        ],
+        safety: {
+          summary: "The test command writes no external state.",
+        },
+        ...overrides,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
+
+afterEach(async () => {
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir) await rm(dir, { recursive: true, force: true });
+  }
+});
+
+describe("Kit CLI plugins", () => {
+  it("keeps add as a dry-run until write is explicit", async () => {
+    const kitHome = await tempDir("kit-plugin-home-");
+    const pluginRoot = await tempDir("kit-plugin-source-");
+    await writeManifest(pluginRoot);
+
+    const result = await addPlugin(pluginRoot, { kitHome });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.dryRun).toBe(true);
+    await expect(readFile(getPluginsIndexPath(kitHome), "utf8")).rejects.toThrow();
+  });
+
+  it("registers, checks, and runs a CLI without a shell", async () => {
+    const kitHome = await tempDir("kit-plugin-home-");
+    const pluginRoot = await tempDir("kit-plugin-source-");
+    await writeManifest(pluginRoot);
+
+    const added = await addPlugin(pluginRoot, { kitHome, write: true });
+    expect(added.ok).toBe(true);
+
+    const listed = await listPlugins(kitHome);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.value.map((plugin) => plugin.manifest.name)).toEqual([
+      "test-cli",
+    ]);
+
+    const doctor = await doctorPlugin("test-cli", kitHome);
+    expect(doctor.ok).toBe(true);
+    if (!doctor.ok) return;
+    expect(doctor.value.ready).toBe(true);
+    expect(doctor.value.executableSource).toBe("path");
+    expect(doctor.value.manifestChanged).toBe(false);
+    expect(doctor.value.tasks.map((task) => task.name)).toEqual(["version"]);
+
+    const run = await runPluginTask("test-cli", "version", {
+      kitHome,
+      stdio: "pipe",
+    });
+    expect(run.ok).toBe(true);
+    if (!run.ok) return;
+    expect(run.value.exitCode).toBe(0);
+    expect(run.value.stdout.trim()).toMatch(/^v\d+/);
+    expect(run.value.stderr).toBe("");
+  });
+
+  it("streams task output and stops the child on request", async () => {
+    const kitHome = await tempDir("kit-plugin-home-");
+    const pluginRoot = await tempDir("kit-plugin-source-");
+    await writeManifest(pluginRoot, {
+      tasks: [
+        {
+          name: "watch",
+          description: "Print output until stopped.",
+          args: [
+            "-e",
+            "process.stdout.write('ready\\n');setInterval(()=>process.stdout.write('tick\\n'),25)",
+          ],
+          access: "read-only",
+        },
+      ],
+    });
+    await addPlugin(pluginRoot, { kitHome, write: true });
+
+    const controller = new AbortController();
+    let streamed = "";
+    const run = await runPluginTask("test-cli", "watch", {
+      kitHome,
+      stdio: "pipe",
+      timeoutMs: 5_000,
+      signal: controller.signal,
+      onOutput(chunk) {
+        streamed += chunk;
+        if (streamed.includes("ready")) controller.abort();
+      },
+    });
+
+    expect(run.ok).toBe(true);
+    if (!run.ok) return;
+    expect(streamed).toContain("ready");
+    expect(run.value.stdout).toContain("ready");
+    expect(run.value.cancelled).toBe(true);
+    expect(run.value.durationMs).toBeLessThan(5_000);
+  });
+
+  it("rejects duplicate, write-capable, and unknown tasks", async () => {
+    const kitHome = await tempDir("kit-plugin-home-");
+    const pluginRoot = await tempDir("kit-plugin-source-");
+    await writeManifest(pluginRoot, {
+      tasks: [
+        {
+          name: "change",
+          description: "Change a file.",
+          args: ["change"],
+          access: "write",
+        },
+      ],
+    });
+    const unsafe = await addPlugin(pluginRoot, { kitHome, write: true });
+    expect(unsafe.ok).toBe(false);
+    if (unsafe.ok) return;
+    expect(unsafe.error).toContain("access must be read-only");
+
+    await writeManifest(pluginRoot);
+    await addPlugin(pluginRoot, { kitHome, write: true });
+    const missing = await runPluginTask("test-cli", "missing", {
+      kitHome,
+      stdio: "pipe",
+    });
+    expect(missing.ok).toBe(false);
+    if (missing.ok) return;
+    expect(missing.error).toContain("Available tasks: version");
+  });
+
+  it("reports a changed manifest and removes only with write", async () => {
+    const kitHome = await tempDir("kit-plugin-home-");
+    const pluginRoot = await tempDir("kit-plugin-source-");
+    await writeManifest(pluginRoot);
+    await addPlugin(pluginRoot, { kitHome, write: true });
+
+    await writeManifest(pluginRoot, {
+      description: "The description changed after registration.",
+    });
+    const doctor = await doctorPlugin("test-cli", kitHome);
+    expect(doctor.ok && doctor.value.manifestChanged).toBe(true);
+    expect(doctor.ok && doctor.value.ready).toBe(false);
+
+    const blockedRun = await runPlugin("test-cli", ["--version"], {
+      kitHome,
+      stdio: "pipe",
+    });
+    expect(blockedRun.ok).toBe(false);
+    if (blockedRun.ok) return;
+    expect(blockedRun.error).toContain("changed after registration");
+
+    const planned = await removePlugin("test-cli", { kitHome });
+    expect(planned.ok && planned.value.dryRun).toBe(true);
+    const beforeWrite = await listPlugins(kitHome);
+    expect(beforeWrite.ok && beforeWrite.value).toHaveLength(1);
+
+    const removed = await removePlugin("test-cli", {
+      kitHome,
+      write: true,
+    });
+    expect(removed.ok && removed.value.dryRun).toBe(false);
+    const afterWrite = await listPlugins(kitHome);
+    expect(afterWrite.ok && afterWrite.value).toHaveLength(0);
+  });
+
+  it("rejects a local executable outside the plugin root", async () => {
+    const kitHome = await tempDir("kit-plugin-home-");
+    const pluginRoot = await tempDir("kit-plugin-source-");
+    await writeManifest(pluginRoot, {
+      localExecutables: {
+        default: "../outside",
+      },
+    });
+
+    const result = await addPlugin(pluginRoot, { kitHome, write: true });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("inside the plugin root");
+  });
+});

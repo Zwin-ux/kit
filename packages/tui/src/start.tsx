@@ -2,12 +2,13 @@ import React from "react";
 import { render } from "ink";
 import { App } from "./App.js";
 import { disableMouse, installMouseCleanup } from "./mouse/enableMouse.js";
+import { enterAlternateScreen } from "./terminal/alternateScreen.js";
 
 /**
  * Start the interactive Kit TUI.
  * Requires a real TTY. Mouse click-to-select enabled when supported.
  */
-export function startTui(): void {
+export function startTui(options: { initialScreen?: "workbench" } = {}): void {
   if (!process.stdin.isTTY) {
     console.error("kit tui needs an interactive terminal (stdin is not a TTY).");
     console.error("");
@@ -22,10 +23,23 @@ export function startTui(): void {
     process.exit(1);
   }
 
+  const leaveAlternateScreen = enterAlternateScreen();
   installMouseCleanup();
-  const instance = render(<App />);
   const cleanup = () => {
     disableMouse();
+    leaveAlternateScreen();
   };
-  instance.waitUntilExit().then(cleanup).catch(cleanup);
+  try {
+    const instance = render(
+      <App
+        {...(options.initialScreen !== undefined
+          ? { initialScreen: options.initialScreen }
+          : {})}
+      />,
+    );
+    instance.waitUntilExit().then(cleanup).catch(cleanup);
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
 }

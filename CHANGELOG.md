@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- Add local Ollama model discovery through `GET /api/tags`.
+- Run Ollama models through its official Codex bridge with the existing
+  inspect/build sandbox.
+- Move the TUI into an alternate terminal screen and restore the shell on exit.
+- Add compact, standard, and wide Workbench layouts.
+- Stream runner output and let `Esc` stop a running job.
+- Map the Services lane to its selected read-only task.
+- Stream and stop service tasks with the same run controls.
+- Add explicit run states and context controls that fit small terminals.
+- Keep `Q` as text while a prompt or path field is active.
+- Upgrade the Hono Node adapter to the patched 2.0.12 release.
+- Add a local CLI plugin contract.
+- Keep plugin add and remove in dry-run mode by default.
+- Store a SHA-256 manifest digest and block changed manifests.
+- Start plugin executables without a shell.
+- Add a real Kit and Trenchwire proof capture.
+
 ## 0.1.5 — Honest ready & safe writes
 
 ### Functions (trust cut)

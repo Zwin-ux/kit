@@ -200,3 +200,43 @@ export {
   type RecommendReport,
   type RecommendResult,
 } from "./recommend/mod.js";
+
+export {
+  getPluginsIndexPath,
+  addPlugin,
+  doctorPlugin,
+  listPlugins,
+  removePlugin,
+  runPlugin,
+  runPluginTask,
+  type AddPluginOptions,
+  type AddPluginReport,
+  type KitPluginManifest,
+  type KitPluginTask,
+  type PluginDoctorReport,
+  type PluginRegistry,
+  type PluginRegistryEntry,
+  type PluginResult,
+  type PluginRunReport,
+  type PluginTaskRunReport,
+  type RegisteredPlugin,
+  type RunPluginOptions,
+} from "./plugin/mod.js";
+
+export {
+  detectCodingRunners,
+  listOllamaModels,
+  planCodingJob,
+  runCodingJob,
+  type CodingInvocation,
+  type CodingJobMode,
+  type CodingJobReport,
+  type CodingJobRequest,
+  type CodingRunnerId,
+  type CodingRunnerStatus,
+  type LocalModel,
+  type OllamaDiscoveryOptions,
+  type RunnerCommand,
+  type RunCodingJobOptions,
+  type WorkbenchResult,
+} from "./workbench/mod.js";

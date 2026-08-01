@@ -60,7 +60,13 @@ describe("packIconGlyph", () => {
 describe("screens forbid wrap under selection", () => {
   it("Library and Explore do not use wrap=wrap", () => {
     const dir = path.dirname(fileURLToPath(import.meta.url));
-    const screens = ["Library.tsx", "Explore.tsx", "Home.tsx", "Packs.tsx"];
+    const screens = [
+      "Library.tsx",
+      "Explore.tsx",
+      "Home.tsx",
+      "Packs.tsx",
+      "Workbench.tsx",
+    ];
     for (const file of screens) {
       const src = readFileSync(
         path.join(dir, "../src/screens", file),
@@ -68,6 +74,20 @@ describe("screens forbid wrap under selection", () => {
       );
       expect(src.includes('wrap="wrap"')).toBe(false);
     }
+  });
+});
+
+describe("Workbench safety copy", () => {
+  it("keeps build confirmation and local service lanes visible", () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(
+      path.join(dir, "../src/screens/Workbench.tsx"),
+      "utf8",
+    );
+    expect(source).toContain("Build can edit this project.");
+    expect(source).toContain("RUNNERS");
+    expect(source).toContain("SERVICES");
+    expect(source).toContain("Tab services");
   });
 });
 

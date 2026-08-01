@@ -23,6 +23,9 @@ Offline-first local engine.
 - kit-idle 6-frame loop; motion primitives; Enter install; path write approval
 - Point project (`o` / `KIT_PROJECT_DIR` / config) → auto-recommend
 - GitHub login + Railway explore
+- Workbench: Codex, Claude Code, Grok Build, and local Ollama models
+- Full-terminal alternate screen with compact, standard, and wide layouts
+- Live bounded runner output, cancellation, and fixed read-only CLI services
 - CI, README, LICENSE, CHANGELOG for public alpha
 
 **Next**
