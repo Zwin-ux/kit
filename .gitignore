@@ -36,3 +36,11 @@ Thumbs.db
 npm-debug.log*
 pnpm-debug.log*
 .gstack/
+
+# Rust
+/target/
+
+# Kit link output in the project (runtime, not source)
+/.claude/
+/.codex/
+/.grok/

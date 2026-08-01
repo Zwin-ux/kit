@@ -1,0 +1,43 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/kit-core",
+    "crates/kit-agents",
+    "crates/kit-gate",
+    "crates/kit-tui",
+    "crates/kit-cli",
+]
+
+[workspace.package]
+version = "1.0.0-alpha.1"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+repository = "https://github.com/Zwin-ux/kit"
+homepage = "https://github.com/Zwin-ux/kit#readme"
+
+[workspace.dependencies]
+kit-core = { path = "crates/kit-core" }
+kit-agents = { path = "crates/kit-agents" }
+kit-gate = { path = "crates/kit-gate" }
+kit-tui = { path = "crates/kit-tui" }
+
+anyhow = "1"
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "sync", "time", "io-util", "fs"] }
+toml = "0.9"
+ulid = { version = "1", features = ["serde"] }
+
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
+futures = "0.3"
+
+insta = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

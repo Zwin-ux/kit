@@ -1,0 +1,14 @@
+[package]
+name = "kit-agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Agent adapters for Codex, Claude Code, Grok Build, and Ollama"
+
+[dependencies]
+kit-core.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tokio.workspace = true

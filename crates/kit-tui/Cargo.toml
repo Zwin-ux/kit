@@ -1,0 +1,21 @@
+[package]
+name = "kit-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Kit Control Room — the terminal surface"
+
+[dependencies]
+kit-core.workspace = true
+kit-agents.workspace = true
+kit-gate.workspace = true
+anyhow.workspace = true
+crossterm.workspace = true
+futures.workspace = true
+ratatui.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
