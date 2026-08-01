@@ -39,11 +39,25 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
-  # M0 kill criterion: cold start under 100ms. If this fails, the stack choice
+  # M0 kill criterion: cold start under budget. If this fails, the stack choice
   # is wrong and we stop rather than push through. See docs/dev/PRD-1.0.md §8.
+  #
+  # Windows is measured too, and it is the reading that matters — process
+  # creation there is inherently heavier, so it binds first. Measuring only on
+  # Linux would watch the platform that was never at risk.
   startup:
-    name: startup budget
-    runs-on: ubuntu-latest
+    name: startup budget (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            bin: ./target/release/kit
+            budget_ms: 100
+          - os: windows-latest
+            bin: ./target/release/kit.exe
+            budget_ms: 100
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -52,19 +66,21 @@ jobs:
       - name: Build release
         run: cargo build --release -p kit-cli
 
-      - name: Install hyperfine
-        run: |
-          wget -q https://github.com/sharkdp/hyperfine/releases/download/v1.19.0/hyperfine_1.19.0_amd64.deb
-          sudo dpkg -i hyperfine_1.19.0_amd64.deb
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: hyperfine
 
       - name: Measure cold start
+        shell: bash
+        env:
+          BIN: ${{ matrix.bin }}
+          BUDGET_MS: ${{ matrix.budget_ms }}
         run: |
-          hyperfine --warmup 3 --runs 50 --export-json startup.json \
-            './target/release/kit --version'
+          hyperfine --warmup 3 --runs 50 --export-json startup.json "$BIN --version"
           python3 - <<'PY'
-          import json, sys
+          import json, os, sys
           mean_ms = json.load(open('startup.json'))['results'][0]['mean'] * 1000
-          budget = 100.0
+          budget = float(os.environ['BUDGET_MS'])
           print(f"cold start: {mean_ms:.1f}ms (budget {budget:.0f}ms)")
           if mean_ms > budget:
               sys.exit(f"FAIL: exceeds the M0 startup budget by {mean_ms - budget:.1f}ms")
