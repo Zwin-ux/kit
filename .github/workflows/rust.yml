@@ -76,7 +76,11 @@ jobs:
           BIN: ${{ matrix.bin }}
           BUDGET_MS: ${{ matrix.budget_ms }}
         run: |
-          hyperfine --warmup 3 --runs 50 --export-json startup.json "$BIN --version"
+          # -N spawns the binary directly instead of via a shell. Required on
+          # Windows, where hyperfine would otherwise route through cmd.exe and
+          # fail to resolve ./target/... — and correct everywhere, since shell
+          # startup does not belong in a binary startup measurement.
+          hyperfine -N --warmup 3 --runs 50 --export-json startup.json "$BIN --version"
           python3 - <<'PY'
           import json, os, sys
           mean_ms = json.load(open('startup.json'))['results'][0]['mean'] * 1000
