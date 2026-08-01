@@ -11,8 +11,7 @@ import { isPrimaryClick, parseSgrMouseChunk } from "./parseSgrMouse.js";
 export type MouseClickHandler = (region: HitRegion) => void;
 
 /**
- * Enable SGR mouse tracking and invoke handler when a registered hit is clicked.
- * Hit map is mutated via the returned HitMap ref each render (caller rebuilds).
+ * SGR mouse tracking. Uses prependListener so we see clicks before Ink.
  */
 export function useMouseClick(
   onClick: MouseClickHandler,
@@ -28,19 +27,34 @@ export function useMouseClick(
     enableMouse();
     installMouseCleanup();
 
+    // Debounce press+release into one click (Windows Terminal sends both).
+    let lastFire = 0;
     const onData = (buf: Buffer | string) => {
       const text = typeof buf === "string" ? buf : buf.toString("utf8");
       const ev = parseSgrMouseChunk(text);
       if (!ev || !isPrimaryClick(ev)) return;
+      // Prefer release edge when present; always debounce 80ms
+      const now = Date.now();
+      if (now - lastFire < 80) return;
+      lastFire = now;
       const hit = mapRef.current.hit(ev.x, ev.y);
-      if (hit) handlerRef.current(hit);
+      if (hit) {
+        handlerRef.current(hit);
+      }
     };
 
-    // Ink also reads stdin; append listener carefully
-    process.stdin.on("data", onData);
+    // Prefer prepend so our handler runs first on Windows Terminal
+    const stdin = process.stdin as NodeJS.ReadStream & {
+      prependListener?: typeof process.stdin.on;
+    };
+    if (typeof stdin.prependListener === "function") {
+      stdin.prependListener("data", onData);
+    } else {
+      stdin.on("data", onData);
+    }
 
     return () => {
-      process.stdin.off("data", onData);
+      stdin.off("data", onData);
       disableMouse();
     };
   }, [enabled]);

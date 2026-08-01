@@ -176,10 +176,24 @@ async function main(): Promise<void> {
   if (command === "tui" || command === "ui" || command === "start") {
     const { startTui } = await import("@mzwin/kit-tui");
     const target = args[1];
-    if (target && target !== "workbench") {
-      fail("Usage: kit tui [workbench]");
+    if (
+      target &&
+      target !== "workbench" &&
+      target !== "terminal" &&
+      target !== "home" &&
+      target !== "setup"
+    ) {
+      fail("Usage: kit tui [setup|workbench|home]");
     }
-    startTui(target === "workbench" ? { initialScreen: "workbench" } : {});
+    // Bare `kit tui` → Setup wizard (install skills + link agents)
+    startTui({
+      initialScreen:
+        target === "home"
+          ? "home"
+          : target === "workbench" || target === "terminal"
+            ? "workbench"
+            : "setup",
+    });
     return;
   }
 
@@ -196,8 +210,9 @@ function printHelp(): void {
   console.log("  kit ready --write           # make THIS repo agent-ready");
   console.log("  kit status                  # are agents actually wired?");
   console.log("  kit unify --write --link    # clean skill mess → portable library");
-  console.log("  kit tui                     # keyboard + click console");
-  console.log("  kit tui workbench           # coding runners + CLI services");
+  console.log("  kit tui                     # setup this project (install + link)");
+  console.log("  kit tui workbench           # advanced multi-lane menu");
+  console.log("  kit tui home                # classic home");
   console.log("");
   console.log("Everyday:");
   console.log("  kit recommend --dir .");

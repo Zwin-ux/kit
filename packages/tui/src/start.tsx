@@ -6,9 +6,12 @@ import { enterAlternateScreen } from "./terminal/alternateScreen.js";
 
 /**
  * Start the interactive Kit TUI.
- * Requires a real TTY. Mouse click-to-select enabled when supported.
+ * Default: Setup wizard (install skills + link agents for this repo).
+ * Advanced multi-lane: kit tui workbench
  */
-export function startTui(options: { initialScreen?: "workbench" } = {}): void {
+export function startTui(
+  options: { initialScreen?: "setup" | "workbench" | "home" } = {},
+): void {
   if (!process.stdin.isTTY) {
     console.error("kit tui needs an interactive terminal (stdin is not a TTY).");
     console.error("");
@@ -19,9 +22,12 @@ export function startTui(options: { initialScreen?: "workbench" } = {}): void {
     console.error("Global install:");
     console.error("  kit tui");
     console.error("");
-    console.error("Disable mouse: KIT_NO_MOUSE=1");
+    console.error("Advanced: kit tui workbench");
     process.exit(1);
   }
+
+  // Default: Setup wizard — one job, not a multi-lane hub
+  const initialScreen = options.initialScreen ?? "setup";
 
   const leaveAlternateScreen = enterAlternateScreen();
   installMouseCleanup();
@@ -30,13 +36,7 @@ export function startTui(options: { initialScreen?: "workbench" } = {}): void {
     leaveAlternateScreen();
   };
   try {
-    const instance = render(
-      <App
-        {...(options.initialScreen !== undefined
-          ? { initialScreen: options.initialScreen }
-          : {})}
-      />,
-    );
+    const instance = render(<App initialScreen={initialScreen} />);
     instance.waitUntilExit().then(cleanup).catch(cleanup);
   } catch (error) {
     cleanup();

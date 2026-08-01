@@ -31,8 +31,10 @@ export class HitMap {
     startRow: number;
     col0: number;
     col1: number;
+    /** Optional data action for each row (e.g. activate). */
+    action?: string;
   }): void {
-    const { idPrefix, count, startRow, col0, col1 } = options;
+    const { idPrefix, count, startRow, col0, col1, action } = options;
     for (let i = 0; i < count; i++) {
       const row = startRow + i;
       this.add({
@@ -41,7 +43,64 @@ export class HitMap {
         row1: row,
         col0,
         col1,
-        data: { index: i },
+        data: {
+          index: i,
+          ...(action !== undefined ? { action } : {}),
+        },
+      });
+    }
+  }
+
+  /**
+   * Register a single button (game UI control).
+   * row/col are 1-based inclusive terminal cells.
+   */
+  addButton(options: {
+    id: string;
+    row: number;
+    col0: number;
+    col1: number;
+    action: string;
+    index?: number;
+  }): void {
+    this.add({
+      id: options.id,
+      row0: options.row,
+      row1: options.row,
+      col0: options.col0,
+      col1: options.col1,
+      data: {
+        action: options.action,
+        ...(options.index !== undefined ? { index: options.index } : {}),
+      },
+    });
+  }
+
+  /**
+   * Register horizontal chips on one row (lane tabs).
+   * Each chip has equal width from col0.
+   */
+  addChipRow(options: {
+    idPrefix: string;
+    count: number;
+    row: number;
+    col0: number;
+    chipWidth: number;
+    actions: string[];
+  }): void {
+    const { idPrefix, count, row, col0, chipWidth, actions } = options;
+    for (let i = 0; i < count; i++) {
+      const c0 = col0 + i * chipWidth;
+      this.add({
+        id: `${idPrefix}:${i}`,
+        row0: row,
+        row1: row,
+        col0: c0,
+        col1: c0 + chipWidth - 1,
+        data: {
+          index: i,
+          action: actions[i] ?? `${idPrefix}-select`,
+        },
       });
     }
   }

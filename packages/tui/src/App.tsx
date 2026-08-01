@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   completeFirstRun,
   detectCodingRunners,
+  detectSituation,
   doctorPlugin,
   describePaths,
   getFirstRunStatus,
@@ -23,7 +24,16 @@ import {
   runDoctor,
   runCodingJob,
   runPluginTask,
+  runReady,
   runStatus,
+  runUnify,
+  probeOllamaService,
+  startOllamaServe,
+  stopOllamaServe,
+  pullOllamaModel,
+  saveRun,
+  listRuns,
+  loadRun,
   testSkill,
   updateConfig,
   exploreListPacks,
@@ -43,7 +53,16 @@ import {
   type ToolkitRecommendation,
   type RegistryPackSummary,
   type RegisteredPlugin,
+  type OllamaServiceReport,
+  type SavedRunSummary,
+  type UserStory,
 } from "@mzwin/kit-core";
+import {
+  formatReadyStatus,
+  formatReadySteps,
+  formatUnifyPreview,
+  formatUnifyStatus,
+} from "./product/formatReports.js";
 import { loadAllMascotFrames } from "./mascot/loadFrames.js";
 import type { MascotVariant, PixelFrame } from "./mascot/types.js";
 import { useLayoutScale } from "./mascot/useLayoutScale.js";
@@ -52,17 +71,32 @@ import type { HitRegion } from "./mouse/HitMap.js";
 import { shouldQuitWithQ } from "./input/quitShortcut.js";
 import { Spinner } from "./components/Motion.js";
 import { Splash } from "./screens/Splash.js";
-import { Home } from "./screens/Home.js";
+import { mascotVisible, splashEnabled } from "./brand/mascotPolicy.js";
+import { fillWorkbenchHits } from "./screens/workbenchHits.js";
+import {
+  windowSlice,
+  workbenchGeometry,
+} from "./screens/workbenchGeometry.js";
+import { Home, type HomeConfirm } from "./screens/Home.js";
 import { FirstRun } from "./screens/FirstRun.js";
 import { Library } from "./screens/Library.js";
 import { Packs } from "./screens/Packs.js";
 import { Explore } from "./screens/Explore.js";
 import { Doctor } from "./screens/Doctor.js";
+import { Help } from "./screens/Help.js";
 import {
   Workbench,
+  TERMINAL_LANES,
+  type TerminalLane,
   type WorkbenchRunStatus,
   type WorkbenchServiceTask,
 } from "./screens/Workbench.js";
+import {
+  Setup,
+  defaultSetupSteps,
+  type SetupPhase,
+  type SetupStep,
+} from "./screens/Setup.js";
 import {
   Paths,
   PATHS_LINKABLE_HARNESSES,
@@ -72,13 +106,15 @@ type Screen =
   | "loading"
   | "splash"
   | "first-run"
+  | "setup"
   | "home"
   | "library"
   | "packs"
   | "explore"
   | "doctor"
   | "paths"
-  | "workbench";
+  | "workbench"
+  | "help";
 
 const FIRST_RUN_BY_KEY: Record<string, string> = {
   "1": "essentials",
@@ -91,7 +127,12 @@ const FIRST_RUN_BY_KEY: Record<string, string> = {
 };
 
 export interface AppProps {
-  initialScreen?: "workbench";
+  /**
+   * setup = default developer quickstart (recommended).
+   * workbench = advanced multi-lane menu.
+   * home = classic home.
+   */
+  initialScreen?: "setup" | "workbench" | "home";
 }
 
 export function App({ initialScreen }: AppProps = {}): React.ReactElement {
@@ -156,15 +197,17 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
   const [workbenchPluginStatus, setWorkbenchPluginStatus] = useState<
     Record<string, "ready" | "review" | "missing">
   >({});
-  const [workbenchLane, setWorkbenchLane] = useState<"runner" | "service">(
-    "runner",
-  );
+  const [workbenchLane, setWorkbenchLane] = useState<TerminalLane>("skills");
   const [selectedRunnerIndex, setSelectedRunnerIndex] = useState(0);
   const [selectedModelIndex, setSelectedModelIndex] = useState(0);
   const [selectedTaskIndex, setSelectedTaskIndex] = useState(0);
+  const [selectedOpsIndex, setSelectedOpsIndex] = useState(0);
   const [jobMode, setJobMode] = useState<CodingJobMode>("inspect");
   const [jobPrompt, setJobPrompt] = useState("");
   const [editingJobPrompt, setEditingJobPrompt] = useState(false);
+  const [terminalInputMode, setTerminalInputMode] = useState<
+    "prompt" | "pull" | "point"
+  >("prompt");
   const [confirmBuildJob, setConfirmBuildJob] = useState(false);
   const [workbenchOutput, setWorkbenchOutput] = useState<string | undefined>();
   const [workbenchError, setWorkbenchError] = useState<string | undefined>();
@@ -172,7 +215,70 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     useState<WorkbenchRunStatus>("idle");
   const [workbenchRunLabel, setWorkbenchRunLabel] =
     useState<string | undefined>();
+  const [workbenchOutputScroll, setWorkbenchOutputScroll] = useState(0);
+  const [ollamaService, setOllamaService] = useState<
+    OllamaServiceReport | undefined
+  >();
+  const [story, setStory] = useState<UserStory | undefined>();
+  const [homeConfirm, setHomeConfirm] = useState<HomeConfirm>("none");
+  /** Ops write confirm stays inside the Action Terminal. */
+  const [terminalOpsConfirm, setTerminalOpsConfirm] = useState<
+    "none" | "ready-write" | "unify-write"
+  >("none");
+  const [planLines, setPlanLines] = useState<string[] | undefined>();
+  const [helpFrom, setHelpFrom] = useState<Screen>("home");
+  const [recentRuns, setRecentRuns] = useState<SavedRunSummary[]>([]);
+  const [historyMode, setHistoryMode] = useState(false);
+  const [selectedRunIndex, setSelectedRunIndex] = useState(0);
+  const [pressedId, setPressedId] = useState<string | undefined>();
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workbenchAbort = useRef<AbortController | null>(null);
+  /** Default Setup wizard state (simple path). */
+  const [setupPhase, setSetupPhase] = useState<SetupPhase>("ready");
+  const [setupSteps, setSetupSteps] = useState<SetupStep[]>(() =>
+    defaultSetupSteps("Essentials"),
+  );
+  const [setupLog, setSetupLog] = useState<string[]>([]);
+  const [setupPackName, setSetupPackName] = useState("essentials");
+  const [setupCompleteNote, setSetupCompleteNote] = useState<
+    string | undefined
+  >();
+
+  const appendSetupLog = useCallback((line: string) => {
+    setSetupLog((prev) => [...prev, line].slice(-48));
+  }, []);
+
+  const appendTerminalLog = useCallback((line: string) => {
+    setWorkbenchOutput((prev) => {
+      const next = prev ? `${prev}\n${line}` : line;
+      return next.slice(-64 * 1024);
+    });
+  }, []);
+
+  const refreshRecentRuns = useCallback(async () => {
+    const listed = await listRuns({ limit: 20 });
+    if (listed.ok) {
+      setRecentRuns(listed.value);
+      setSelectedRunIndex((i) =>
+        listed.value.length === 0
+          ? 0
+          : Math.min(i, listed.value.length - 1),
+      );
+    }
+  }, []);
+
+  const persistProof = useCallback(
+    async (input: Parameters<typeof saveRun>[0]) => {
+      const saved = await saveRun(input);
+      if (saved.ok) {
+        appendTerminalLog(`saved ${saved.value.logPath}`);
+        await refreshRecentRuns();
+      } else {
+        appendTerminalLog(`! save proof: ${saved.error}`);
+      }
+    },
+    [appendTerminalLog, refreshRecentRuns],
+  );
 
   const clearFlash = useCallback(() => {
     setErrorMessage(undefined);
@@ -184,58 +290,360 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     setActionFlash(message);
   }, []);
 
+  /** Brief ★ press state on menu buttons (game-engine feel). */
+  const markPress = useCallback((id: string) => {
+    setPressedId(id);
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = setTimeout(() => setPressedId(undefined), 180);
+  }, []);
+
+  /**
+   * Every control must leave a visible effect: flash + LOG line.
+   * Developers use the log as the audit trail.
+   */
+  const feedback = useCallback(
+    (message: string, options?: { pressId?: string; log?: boolean }) => {
+      flash(message);
+      if (options?.pressId) markPress(options.pressId);
+      if (options?.log !== false) {
+        appendTerminalLog(`▸ ${message}`);
+      }
+    },
+    [flash, markPress, appendTerminalLog],
+  );
+
+  const openSavedRun = useCallback(
+    async (id: string) => {
+      const loaded = await loadRun(id);
+      if (!loaded.ok) {
+        appendTerminalLog(`! ${loaded.error}`);
+        setWorkbenchError(loaded.error);
+        return;
+      }
+      setWorkbenchOutput(loaded.value.transcript || "(empty log)");
+      setWorkbenchRunLabel(loaded.value.label);
+      setWorkbenchRunStatus(
+        loaded.value.status === "succeeded"
+          ? "succeeded"
+          : loaded.value.status === "cancelled"
+            ? "cancelled"
+            : "failed",
+      );
+      setWorkbenchError(loaded.value.error);
+      appendTerminalLog(`opened ${loaded.value.logPath}`);
+      flash("opened run");
+    },
+    [appendTerminalLog, flash],
+  );
+
   const bumpSelect = useCallback((direction: "up" | "down" | "none" = "none") => {
     setSelectDirection(direction);
     setSelectTick((t) => t + 1);
   }, []);
 
-  /** Click-to-select (mouse). Keyboard still primary. */
-  const onMouseClick = useCallback(
-    (region: HitRegion) => {
-      const idx = region.data?.index;
-      if (typeof idx !== "number") return;
-      if (region.id.startsWith("pack:")) {
+  /** Double-click tracking for game-menu activate. */
+  const lastClickRef = useRef<{ id: string; at: number } | null>(null);
+
+  /**
+   * Late-bound actions for mouse (defined later in the component).
+   * Avoids temporal-dead-zone on install/run handlers.
+   */
+  const mouseCtxRef = useRef<{
+    screen: Screen;
+    packs: PackListItem[];
+    skillsLen: number;
+    remoteLen: number;
+    selectedPackIndex: number;
+    selectedTaskIndex: number;
+    selectedOpsIndex: number;
+    runnersLen: number;
+    tasksLen: number;
+    bumpSelect: (d?: "up" | "down" | "none") => void;
+    flash: (m: string) => void;
+    feedback: (
+      m: string,
+      o?: { pressId?: string; log?: boolean },
+    ) => void;
+    installPack: (name: string, mode: "install" | "apply") => void;
+    runJob: (confirmed: boolean) => void;
+    runService: () => void;
+    runOps: (id: string) => void;
+    startOllama: () => void;
+    openHelp: () => void;
+    openHistory?: () => void;
+    runSetup?: (write: boolean) => void;
+    cycleSetupPack?: () => void;
+  } | null>(null);
+
+  /** Click buttons and list rows (mouse). Keyboard still works. */
+  const onMouseClick = useCallback((region: HitRegion) => {
+    const c = mouseCtxRef.current;
+    if (!c) return;
+    const action =
+      typeof region.data?.action === "string" ? region.data.action : undefined;
+    const idx =
+      typeof region.data?.index === "number" ? region.data.index : undefined;
+
+    if (c.screen === "setup") {
+      if (action === "setup-plan") {
+        c.feedback?.("setup plan", { pressId: "setup-primary" });
+        c.runSetup?.(false);
+        return;
+      }
+      if (action === "setup-write") {
+        c.feedback?.("setup write", { pressId: "setup-primary" });
+        c.runSetup?.(true);
+        return;
+      }
+      if (action === "setup-pack") {
+        c.cycleSetupPack?.();
+        return;
+      }
+      if (action === "setup-done") {
+        exit();
+        return;
+      }
+      return;
+    }
+
+    if (c.screen === "workbench") {
+      const fb = c.feedback ?? ((m: string) => c.flash(m));
+      if (action?.startsWith("lane:")) {
+        const lane = action.slice(5) as TerminalLane;
+        if (TERMINAL_LANES.includes(lane)) {
+          setWorkbenchLane(lane);
+          fb(`lane ${lane}`, { pressId: `lane:${lane}` });
+        }
+        return;
+      }
+      if (region.id.startsWith("term-pack:") && idx !== undefined) {
+        const already = idx === c.selectedPackIndex;
         setSelectedPackIndex(
-          Math.max(0, Math.min(idx, Math.max(0, packs.length - 1))),
+          Math.max(0, Math.min(idx, Math.max(0, c.packs.length - 1))),
         );
-        bumpSelect("none");
+        c.bumpSelect("none");
+        const pack = c.packs[idx];
+        fb(`focus ${pack?.title ?? "pack"}`, {
+          pressId: pack ? `pack:${pack.name}` : "term-pack",
+        });
+        const now = Date.now();
+        const prev = lastClickRef.current;
+        const dbl = already && prev?.id === region.id && now - prev.at < 400;
+        lastClickRef.current = { id: region.id, at: now };
+        if (dbl && pack) {
+          fb(`install ${pack.title}`, { pressId: "bar:install" });
+          c.installPack(pack.name, "install");
+        }
         return;
       }
-      if (region.id.startsWith("skill:")) {
-        setSelectedSkillIndex(
-          Math.max(0, Math.min(idx, Math.max(0, skills.length - 1))),
+      if (region.id.startsWith("term-runner:") && idx !== undefined) {
+        setSelectedRunnerIndex(
+          Math.max(0, Math.min(idx, Math.max(0, c.runnersLen - 1))),
         );
-        bumpSelect("none");
+        setSelectedModelIndex(0);
+        c.bumpSelect("none");
+        fb("focus runner", { pressId: "term-runner" });
         return;
       }
-      if (region.id.startsWith("remote:")) {
-        setSelectedRemoteIndex(
-          Math.max(0, Math.min(idx, Math.max(0, remotePacks.length - 1))),
+      if (region.id.startsWith("term-task:") && idx !== undefined) {
+        const already = idx === c.selectedTaskIndex;
+        setSelectedTaskIndex(
+          Math.max(0, Math.min(idx, Math.max(0, c.tasksLen - 1))),
         );
-        bumpSelect("none");
+        c.bumpSelect("none");
+        fb("focus service task", { pressId: "term-task" });
+        const now = Date.now();
+        const prev = lastClickRef.current;
+        const dbl = already && prev?.id === region.id && now - prev.at < 400;
+        lastClickRef.current = { id: region.id, at: now };
+        if (dbl) {
+          fb("run service", { pressId: "bar:run-service" });
+          c.runService();
+        }
         return;
       }
-      if (region.id.startsWith("harness:")) {
-        setSelectedHarnessIndex(
-          Math.max(
-            0,
-            Math.min(idx, Math.max(0, PATHS_LINKABLE_HARNESSES.length - 1)),
-          ),
-        );
-        bumpSelect("none");
+      if (region.id.startsWith("term-ops:") && idx !== undefined) {
+        const already = idx === c.selectedOpsIndex;
+        setSelectedOpsIndex(Math.max(0, Math.min(idx, 4)));
+        c.bumpSelect("none");
+        const ops = ["ready", "unify", "doctor", "paths", "refresh"] as const;
+        const op = ops[idx] ?? "ready";
+        fb(`focus ${op === "ready" ? "quickstart" : op}`, {
+          pressId: `ops:${op}`,
+        });
+        const now = Date.now();
+        const prev = lastClickRef.current;
+        const dbl = already && prev?.id === region.id && now - prev.at < 400;
+        lastClickRef.current = { id: region.id, at: now };
+        if (dbl) {
+          fb(`run ${op === "ready" ? "quickstart" : op}`, {
+            pressId: "bar:run-ops",
+          });
+          c.runOps(op);
+        }
+        return;
       }
-    },
-    [packs.length, skills.length, remotePacks.length, bumpSelect],
-  );
+      if (action === "install") {
+        const pack = c.packs[c.selectedPackIndex];
+        if (pack) {
+          fb(`install ${pack.title}`, { pressId: "bar:install" });
+          c.installPack(pack.name, "install");
+        }
+        return;
+      }
+      if (action === "apply") {
+        const pack = c.packs[c.selectedPackIndex];
+        if (pack) {
+          fb(`apply ${pack.title}`, { pressId: "bar:apply" });
+          c.installPack(pack.name, "apply");
+        }
+        return;
+      }
+      if (action === "run") {
+        fb("run agent job", { pressId: "bar:run" });
+        c.runJob(false);
+        return;
+      }
+      if (action === "run-service") {
+        fb("run service", { pressId: "bar:run-service" });
+        c.runService();
+        return;
+      }
+      if (action === "run-ops") {
+        const ops = ["ready", "unify", "doctor", "paths", "refresh"] as const;
+        const op = ops[c.selectedOpsIndex] ?? "ready";
+        fb(`run ${op === "ready" ? "quickstart" : op}`, {
+          pressId: "bar:run-ops",
+        });
+        c.runOps(op);
+        return;
+      }
+      if (action === "ollama-start") {
+        fb("start ollama", { pressId: "bar:ollama" });
+        c.startOllama();
+        return;
+      }
+      if (action === "history") {
+        fb("open history", { pressId: "bar:history" });
+        c.openHistory?.();
+        return;
+      }
+      if (action === "ollama-pull") {
+        setTerminalInputMode("pull");
+        setEditingJobPrompt(true);
+        setJobPrompt("");
+        fb("pull model — type name", { pressId: "bar:pull" });
+        return;
+      }
+      if (action === "toggle-mode") {
+        setJobMode((m) => (m === "inspect" ? "build" : "inspect"));
+        fb("toggle mode", { pressId: "bar:mode" });
+        return;
+      }
+      if (action === "help") {
+        fb("open help", { pressId: "bar:help" });
+        c.openHelp();
+      }
+      return;
+    }
+
+    if (typeof idx !== "number") return;
+    if (region.id.startsWith("pack:")) {
+      setSelectedPackIndex(
+        Math.max(0, Math.min(idx, Math.max(0, c.packs.length - 1))),
+      );
+      c.bumpSelect("none");
+      return;
+    }
+    if (region.id.startsWith("skill:")) {
+      setSelectedSkillIndex(
+        Math.max(0, Math.min(idx, Math.max(0, c.skillsLen - 1))),
+      );
+      c.bumpSelect("none");
+      return;
+    }
+    if (region.id.startsWith("remote:")) {
+      setSelectedRemoteIndex(
+        Math.max(0, Math.min(idx, Math.max(0, c.remoteLen - 1))),
+      );
+      c.bumpSelect("none");
+      return;
+    }
+    if (region.id.startsWith("harness:")) {
+      setSelectedHarnessIndex(
+        Math.max(
+          0,
+          Math.min(idx, Math.max(0, PATHS_LINKABLE_HARNESSES.length - 1)),
+        ),
+      );
+      c.bumpSelect("none");
+    }
+  }, []);
 
   const hitMap = useMouseClick(onMouseClick, screen !== "loading");
 
-  // Rebuild hit regions for current list (approximate rows from layout hint)
+  // Rebuild hit regions (lists + game-menu buttons)
   useEffect(() => {
     hitMap.clear();
     const start = scale.listStartRowHint;
-    const col0 = scale.mascotPlacement === "rail" ? scale.railCols + 4 : 2;
+    const col0 = 2;
     const col1 = Math.max(col0 + 20, scale.columns - 2);
+    if (screen === "setup") {
+      // Full-width primary button near bottom
+      const row = Math.max(8, scale.rows - 4);
+      hitMap.addButton({
+        id: "setup-primary",
+        row,
+        col0: 2,
+        col1: Math.max(20, scale.columns - 2),
+        action:
+          setupPhase === "confirm"
+            ? "setup-write"
+            : setupPhase === "ready" || setupPhase === "failed"
+              ? "setup-plan"
+              : "setup-done",
+      });
+      hitMap.addButton({
+        id: "setup-pack",
+        row: Math.max(6, scale.rows - 5),
+        col0: 2,
+        col1: Math.max(20, scale.columns - 2),
+        action: "setup-pack",
+      });
+      return;
+    }
+    if (screen === "workbench") {
+      const geo = workbenchGeometry(scale.columns, scale.rows);
+      const taskCount = workbenchPlugins.reduce(
+        (n, p) => n + (p.manifest.tasks?.length ?? 0),
+        0,
+      );
+      let itemCount = packs.length;
+      let selected = selectedPackIndex;
+      if (workbenchLane === "agents") {
+        itemCount = historyMode ? recentRuns.length : codingRunners.length;
+        selected = historyMode ? selectedRunIndex : selectedRunnerIndex;
+      } else if (workbenchLane === "services") {
+        itemCount = taskCount;
+        selected = selectedTaskIndex;
+      } else if (workbenchLane === "ops") {
+        itemCount = 5;
+        selected = selectedOpsIndex;
+      }
+      const { offset, items } = windowSlice(
+        Array.from({ length: itemCount }),
+        selected,
+        geo.listRows,
+      );
+      fillWorkbenchHits(hitMap, {
+        geo,
+        lane: workbenchLane,
+        itemCount,
+        listOffset: offset,
+        visibleCount: items.length,
+      });
+      return;
+    }
     if (screen === "home" || screen === "packs") {
       hitMap.addListRows({
         idPrefix: "pack",
@@ -275,10 +683,19 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     packs.length,
     skills.length,
     remotePacks.length,
-    scale.listStartRowHint,
-    scale.mascotPlacement,
-    scale.railCols,
+    codingRunners.length,
+    workbenchPlugins,
+    workbenchLane,
+    historyMode,
+    recentRuns.length,
+    selectedPackIndex,
+    selectedRunnerIndex,
+    selectedTaskIndex,
+    selectedOpsIndex,
+    selectedRunIndex,
+    setupPhase,
     scale.columns,
+    scale.rows,
   ]);
 
   const resolveTarget = useCallback(async (): Promise<string> => {
@@ -382,14 +799,23 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     } catch {
       setAgentStatusLine(undefined);
     }
+
+    try {
+      const situation = await detectSituation({ projectDir });
+      setStory(situation.story);
+    } catch {
+      setStory(undefined);
+    }
   }, [resolveTarget]);
 
   const refreshWorkbench = useCallback(async () => {
-    const [runners, plugins] = await Promise.all([
+    const [runners, plugins, ollama] = await Promise.all([
       detectCodingRunners(),
       listPlugins(),
+      probeOllamaService(),
     ]);
     setCodingRunners(runners);
+    setOllamaService(ollama);
     setSelectedModelIndex(0);
     if (plugins.ok) {
       setWorkbenchPlugins(plugins.value);
@@ -417,6 +843,124 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       setWorkbenchError(plugins.error);
     }
   }, []);
+
+  const startLocalOllama = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    setWorkbenchError(undefined);
+    setWorkbenchRunLabel("Ollama");
+    setWorkbenchRunStatus("running");
+    setWorkbenchOutputScroll(0);
+    appendTerminalLog("→ start ollama serve");
+    try {
+      const result = await startOllamaServe({
+        onProgress: (msg) => appendTerminalLog(msg),
+      });
+      if (!result.ok) {
+        setWorkbenchError(result.error);
+        setWorkbenchRunStatus("failed");
+        appendTerminalLog(`! ${result.error}`);
+        return;
+      }
+      setOllamaService(result.value);
+      appendTerminalLog(`✓ ${result.value.detail}`);
+      setWorkbenchRunStatus("succeeded");
+      await refreshWorkbench();
+      flash("ollama online");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setWorkbenchError(detail);
+      setWorkbenchRunStatus("failed");
+      appendTerminalLog(`! ${detail}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [appendTerminalLog, busy, flash, refreshWorkbench]);
+
+  const stopLocalOllama = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    setWorkbenchError(undefined);
+    setWorkbenchRunLabel("Ollama");
+    setWorkbenchRunStatus("running");
+    appendTerminalLog("→ stop kit-managed ollama");
+    try {
+      const result = await stopOllamaServe({
+        onProgress: (msg) => appendTerminalLog(msg),
+      });
+      if (!result.ok) {
+        setWorkbenchError(result.error);
+        setWorkbenchRunStatus("failed");
+        appendTerminalLog(`! ${result.error}`);
+        const probe = await probeOllamaService();
+        setOllamaService(probe);
+        return;
+      }
+      setOllamaService(result.value);
+      appendTerminalLog(`✓ ${result.value.detail}`);
+      setWorkbenchRunStatus("succeeded");
+      await refreshWorkbench();
+      flash("ollama stopped");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setWorkbenchError(detail);
+      setWorkbenchRunStatus("failed");
+    } finally {
+      setBusy(false);
+    }
+  }, [appendTerminalLog, busy, flash, refreshWorkbench]);
+
+  const pullLocalModel = useCallback(
+    async (modelName: string) => {
+      if (busy) return;
+      const name = modelName.trim();
+      if (!name) {
+        setWorkbenchError("Type a model name, then Enter.");
+        return;
+      }
+      setBusy(true);
+      setTerminalInputMode("prompt");
+      setWorkbenchError(undefined);
+      setWorkbenchRunLabel(`pull ${name}`);
+      setWorkbenchRunStatus("running");
+      setWorkbenchOutputScroll(0);
+      appendTerminalLog(`→ ollama pull ${name}`);
+      const controller = new AbortController();
+      workbenchAbort.current = controller;
+      try {
+        const result = await pullOllamaModel(name, {
+          signal: controller.signal,
+          onProgress: (msg) => appendTerminalLog(msg),
+          onOutput: (chunk) => {
+            const line = chunk.replace(/\r/g, "\n").trim();
+            if (line) appendTerminalLog(line.slice(0, 200));
+          },
+        });
+        if (!result.ok) {
+          setWorkbenchError(result.error);
+          setWorkbenchRunStatus("failed");
+          appendTerminalLog(`! ${result.error}`);
+          return;
+        }
+        appendTerminalLog(
+          `✓ pulled ${result.value.model} · ${result.value.models.length} models now`,
+        );
+        setWorkbenchRunStatus("succeeded");
+        await refreshWorkbench();
+        flash(`pulled ${name}`);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        setWorkbenchError(detail);
+        setWorkbenchRunStatus("failed");
+      } finally {
+        if (workbenchAbort.current === controller) {
+          workbenchAbort.current = null;
+        }
+        setBusy(false);
+      }
+    },
+    [appendTerminalLog, busy, flash, refreshWorkbench],
+  );
 
   const workbenchTasks: WorkbenchServiceTask[] = workbenchPlugins.flatMap(
     (plugin) =>
@@ -509,23 +1053,43 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         ]
           .filter(Boolean)
           .join("\n");
-        setWorkbenchOutput(
+        const finalOut =
           output ||
-            `${runner.label} finished with exit code ${report.exitCode}.`,
-        );
+          `${runner.label} finished with exit code ${report.exitCode}.`;
+        setWorkbenchOutput(finalOut);
+        let status: "succeeded" | "failed" | "cancelled" | "timed_out" =
+          "succeeded";
         if (report.timedOut) {
           setWorkbenchError(`${runner.label} timed out.`);
           setWorkbenchRunStatus("failed");
+          status = "timed_out";
         } else if (report.cancelled) {
           setWorkbenchRunStatus("cancelled");
+          status = "cancelled";
         } else if (report.exitCode !== 0) {
           setWorkbenchError(
             `${runner.label} exited with code ${report.exitCode}.`,
           );
           setWorkbenchRunStatus("failed");
+          status = "failed";
         } else {
           setWorkbenchRunStatus("succeeded");
         }
+        await persistProof({
+          kind: "coding",
+          label: model
+            ? `${runner.label} / ${model.name}`
+            : runner.label,
+          projectDir: targetProject,
+          status,
+          transcript: finalOut,
+          runner: runner.id,
+          mode: jobMode,
+          prompt: jobPrompt,
+          ...(model ? { model: model.name } : {}),
+          exitCode: report.exitCode,
+          durationMs: report.durationMs,
+        });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         setWorkbenchError(detail);
@@ -544,6 +1108,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       selectedRunnerIndex,
       selectedModelIndex,
       targetProject,
+      persistProof,
     ],
   );
 
@@ -592,20 +1157,33 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       ]
         .filter(Boolean)
         .join("\n");
-      setWorkbenchOutput(
+      const finalOut =
         output ||
-          `${task.displayName}/${task.task} finished with exit code ${result.value.exitCode}.`,
-      );
+        `${task.displayName}/${task.task} finished with exit code ${result.value.exitCode}.`;
+      setWorkbenchOutput(finalOut);
+      let status: "succeeded" | "failed" | "cancelled" = "succeeded";
       if (result.value.cancelled) {
         setWorkbenchRunStatus("cancelled");
+        status = "cancelled";
       } else if (result.value.exitCode !== 0) {
         setWorkbenchError(
           `${task.displayName}/${task.task} exited with code ${result.value.exitCode}.`,
         );
         setWorkbenchRunStatus("failed");
+        status = "failed";
       } else {
         setWorkbenchRunStatus("succeeded");
       }
+      await persistProof({
+        kind: "service",
+        label: `${task.displayName}/${task.task}`,
+        projectDir: targetProject,
+        status,
+        transcript: finalOut,
+        plugin: task.plugin,
+        task: task.task,
+        exitCode: result.value.exitCode,
+      });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       setWorkbenchError(detail);
@@ -616,7 +1194,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       }
       setBusy(false);
     }
-  }, [selectedTaskIndex, workbenchTasks]);
+  }, [selectedTaskIndex, workbenchTasks, targetProject, persistProof]);
 
   const pointAtProject = useCallback(
     async (raw: string) => {
@@ -810,18 +1388,6 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     let cancelled = false;
 
     (async () => {
-      try {
-        const loaded = await loadAllMascotFrames();
-        if (cancelled) return;
-        setFrames(loaded.idle);
-        setScanFrames(loaded.scan);
-        setSuccessFrames(loaded.success);
-      } catch (error) {
-        if (cancelled) return;
-        const detail = error instanceof Error ? error.message : String(error);
-        setLoadError(detail);
-      }
-
       const firstRun = await getFirstRunStatus();
       if (cancelled) return;
       setOfferFirstRun(firstRun.shouldOffer);
@@ -829,25 +1395,172 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       await refreshData();
       if (cancelled) return;
 
-      if (initialScreen === "workbench") {
+      const projectDir = await resolveTarget();
+      const sit = await detectSituation({ projectDir });
+      if (cancelled) return;
+      setStory(sit.story);
+
+      const wantSplash = splashEnabled();
+      const wantHome = initialScreen === "home";
+      const wantAdvanced = initialScreen === "workbench";
+
+      if (firstRun.shouldOffer && !wantHome && !wantAdvanced) {
+        setScreen("first-run");
+      } else if (wantSplash && !wantHome && !wantAdvanced) {
+        setScreen("splash");
+      } else if (wantHome) {
+        setScreen("home");
+      } else if (wantAdvanced) {
         await refreshWorkbench();
         if (cancelled) return;
         setScreen("workbench");
       } else {
-        setScreen("splash");
+        // DEFAULT: simple Setup wizard (not multi-lane hub)
+        const packList = await listPacks();
+        const recName =
+          sit.snapshot.recommendedPack?.trim() || "essentials";
+        const packItem = packList.ok
+          ? packList.value.find((p) => p.name === recName) ??
+            packList.value.find((p) => p.name === "essentials") ??
+            packList.value[0]
+          : undefined;
+        const name = packItem?.name ?? recName;
+        const title = packItem?.title ?? name;
+        setSetupPackName(name);
+        setSetupSteps(defaultSetupSteps(title));
+        setSetupPhase("ready");
+        setSetupCompleteNote(undefined);
+        setSetupLog([
+          `Project ${path.basename(projectDir)}`,
+          `Pack ${title} (${name})`,
+          sit.story.win,
+          "Press Enter to plan. Press y to install and link.",
+        ]);
+        setScreen("setup");
+      }
+
+      if (mascotVisible() || wantSplash) {
+        try {
+          const loaded = await loadAllMascotFrames();
+          if (cancelled) return;
+          setFrames(loaded.idle);
+          setScanFrames(loaded.scan);
+          setSuccessFrames(loaded.success);
+        } catch (error) {
+          if (cancelled) return;
+          const detail =
+            error instanceof Error ? error.message : String(error);
+          setLoadError(detail);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [initialScreen, refreshData, refreshWorkbench]);
+  }, [initialScreen, refreshData, refreshWorkbench, resolveTarget]);
 
   const leaveSplash = useCallback(() => {
-    flash("welcome");
+    flash("open");
     if (offerFirstRun) setScreen("first-run");
-    else setScreen("home");
+    else setScreen("setup");
   }, [offerFirstRun, flash]);
+
+  /** Setup wizard: plan or write via runReady. */
+  const runSetup = useCallback(
+    async (write: boolean) => {
+      if (busy) return;
+      setBusy(true);
+      setSetupPhase("running");
+      setErrorMessage(undefined);
+      setSetupCompleteNote(undefined);
+      appendSetupLog(write ? "→ Writing setup…" : "→ Planning setup…");
+      flash(write ? "setup write" : "setup plan");
+      try {
+        const result = await runReady({
+          projectDir: targetProject,
+          pack: setupPackName,
+          write,
+          onProgress: (msg) => appendSetupLog(msg),
+        });
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          appendSetupLog(`! ${result.error}`);
+          setSetupPhase("failed");
+          flash("setup failed");
+          return;
+        }
+        const report = result.value;
+        setSetupSteps(
+          report.steps.map((s) => ({
+            id: s.id,
+            label: s.detail,
+            status:
+              s.status === "done"
+                ? "done"
+                : s.status === "failed"
+                  ? "failed"
+                  : s.status === "skipped"
+                    ? "skipped"
+                    : s.status === "planned"
+                      ? "pending"
+                      : "pending",
+          })),
+        );
+        for (const s of report.steps) {
+          appendSetupLog(`${s.status} · ${s.detail}`);
+        }
+        if (report.dryRun) {
+          appendSetupLog("Plan ready. Press y to install and link.");
+          setSetupPhase("confirm");
+          flash("press y to write");
+        } else if (report.complete) {
+          appendSetupLog("Setup complete. Agents can use these skills.");
+          setSetupCompleteNote(
+            "Done. Open Claude, Codex, or Grok in this project.",
+          );
+          setSetupPhase("done");
+          flash("setup complete");
+          await completeFirstRun("installed", {
+            preferredPack: setupPackName,
+          });
+          setOfferFirstRun(false);
+          await refreshData();
+        } else {
+          appendSetupLog("Setup partial. Press d for doctor or retry.");
+          setSetupPhase("failed");
+          flash("setup partial");
+          await refreshData();
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        setErrorMessage(detail);
+        appendSetupLog(`! ${detail}`);
+        setSetupPhase("failed");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [
+      busy,
+      targetProject,
+      setupPackName,
+      appendSetupLog,
+      flash,
+      refreshData,
+    ],
+  );
+
+  const cycleSetupPack = useCallback(() => {
+    if (packs.length === 0) return;
+    const idx = packs.findIndex((p) => p.name === setupPackName);
+    const next = packs[(idx + 1 + packs.length) % packs.length] ?? packs[0]!;
+    setSetupPackName(next.name);
+    setSetupSteps(defaultSetupSteps(next.title));
+    setSetupPhase("ready");
+    appendSetupLog(`Pack → ${next.title}`);
+    flash(`pack ${next.title}`);
+  }, [packs, setupPackName, appendSetupLog, flash]);
 
   const installSelectedPack = useCallback(
     async (packName: string, mode: "install" | "apply") => {
@@ -915,13 +1628,30 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         }
 
         await refreshData();
-        setScreen("home");
+        // Land in Action Terminal (not splash/home theater)
+        if (screen === "first-run" || screen === "workbench") {
+          await refreshWorkbench();
+          appendTerminalLog(`✓ pack ${packName} ready`);
+          setScreen("workbench");
+        } else {
+          setScreen("home");
+        }
       } finally {
         setBusy(false);
         setProgress(undefined);
       }
     },
-    [busy, clearFlash, offerFirstRun, refreshData, screen, flash, targetProject],
+    [
+      busy,
+      clearFlash,
+      offerFirstRun,
+      refreshData,
+      refreshWorkbench,
+      appendTerminalLog,
+      screen,
+      flash,
+      targetProject,
+    ],
   );
 
   const removeSelectedSkill = useCallback(async () => {
@@ -945,6 +1675,329 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     }
   }, [busy, clearFlash, refreshData, selectedSkillIndex, skills, flash]);
 
+  /** Dry-run or write: recommend → install → apply → link → doctor. */
+  const executeReady = useCallback(
+    async (write: boolean) => {
+      if (busy) return;
+      setBusy(true);
+      clearFlash();
+      setHomeConfirm("none");
+      setErrorMessage(undefined);
+      flash(write ? "ready write…" : "ready plan…");
+      setStatusMessage(
+        write
+          ? "Running Ready (write)…"
+          : "Planning Ready (dry-run)…",
+      );
+      try {
+        const result = await runReady({
+          projectDir: targetProject,
+          write,
+          onProgress: (msg) => setStatusMessage(msg),
+        });
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          setStatusMessage(undefined);
+          setPlanLines(undefined);
+          if (result.value) {
+            setPlanLines(formatReadySteps(result.value));
+          }
+          return;
+        }
+        const report = result.value;
+        setPlanLines(formatReadySteps(report));
+        setStatusMessage(formatReadyStatus(report));
+        if (report.dryRun) {
+          setHomeConfirm("ready-write");
+          flash("ready plan · y write");
+        } else if (report.complete) {
+          setCelebrateCount(
+            report.steps.filter((s) => s.status === "done").length,
+          );
+          flash("ready complete");
+          await refreshData();
+        } else {
+          flash("ready partial");
+          await refreshData();
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        setErrorMessage(detail);
+        setStatusMessage(undefined);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, clearFlash, flash, refreshData, targetProject],
+  );
+
+  /** Dry-run or write: scan agent skill dumps → rank keepers → adopt. */
+  const executeUnify = useCallback(
+    async (write: boolean) => {
+      if (busy) return;
+      setBusy(true);
+      clearFlash();
+      setHomeConfirm("none");
+      setErrorMessage(undefined);
+      flash(write ? "unify write…" : "unify plan…");
+      setStatusMessage(
+        write ? "Running Unify (write)…" : "Planning Unify (dry-run)…",
+      );
+      try {
+        const result = await runUnify({
+          projectDir: targetProject,
+          write,
+          link: write,
+          onProgress: (msg) => setStatusMessage(msg),
+        });
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          setStatusMessage(undefined);
+          setPlanLines(undefined);
+          return;
+        }
+        const report = result.value;
+        setPlanLines(formatUnifyPreview(report));
+        setStatusMessage(formatUnifyStatus(report));
+        if (report.dryRun) {
+          setHomeConfirm("unify-write");
+          flash("unify plan · y write");
+        } else {
+          if (report.adopted > 0) {
+            setCelebrateCount(report.adopted);
+          }
+          flash(report.adopted > 0 ? "unify adopted" : "unify done");
+          await refreshData();
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        setErrorMessage(detail);
+        setStatusMessage(undefined);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, clearFlash, flash, refreshData, targetProject],
+  );
+
+  const openHelp = useCallback(() => {
+    if (screen === "help" || screen === "loading" || screen === "splash") {
+      return;
+    }
+    setHelpFrom(screen);
+    flash("help");
+    setScreen("help");
+  }, [flash, screen]);
+
+  /** Ops lane: plan → confirm y/n in this terminal → write. */
+  const runTerminalOps = useCallback(
+    async (opId: string, write = false) => {
+      if (busy) return;
+      setWorkbenchOutputScroll(0);
+      setWorkbenchError(undefined);
+      setWorkbenchRunLabel(opId);
+      if (opId === "ready") {
+        appendTerminalLog(
+          write ? "→ ready write" : "→ ready plan (dry-run)",
+        );
+        setWorkbenchRunStatus("running");
+        setBusy(true);
+        setTerminalOpsConfirm("none");
+        try {
+          const result = await runReady({
+            projectDir: targetProject,
+            write,
+            onProgress: (msg) => appendTerminalLog(msg),
+          });
+          if (!result.ok) {
+            setWorkbenchError(result.error);
+            appendTerminalLog(`! ${result.error}`);
+            setWorkbenchRunStatus("failed");
+            return;
+          }
+          for (const line of formatReadySteps(result.value)) {
+            appendTerminalLog(line);
+          }
+          appendTerminalLog(formatReadyStatus(result.value));
+          setPlanLines(formatReadySteps(result.value));
+          setStatusMessage(formatReadyStatus(result.value));
+          if (result.value.dryRun) {
+            appendTerminalLog("Press y to write. Press n to cancel.");
+            setTerminalOpsConfirm("ready-write");
+            setWorkbenchRunStatus("succeeded");
+            flash("ready plan · y write");
+          } else {
+            setWorkbenchRunStatus(
+              result.value.complete ? "succeeded" : "failed",
+            );
+            flash(
+              result.value.complete ? "ready complete" : "ready partial",
+            );
+            await refreshData();
+            await persistProof({
+              kind: "ops",
+              label: "ready write",
+              projectDir: targetProject,
+              status: result.value.complete ? "succeeded" : "failed",
+              transcript: formatReadySteps(result.value).join("\n"),
+            });
+          }
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+      if (opId === "unify") {
+        appendTerminalLog(
+          write ? "→ unify write" : "→ unify plan (dry-run)",
+        );
+        setWorkbenchRunStatus("running");
+        setBusy(true);
+        setTerminalOpsConfirm("none");
+        try {
+          const result = await runUnify({
+            projectDir: targetProject,
+            write,
+            link: write,
+            onProgress: (msg) => appendTerminalLog(msg),
+          });
+          if (!result.ok) {
+            setWorkbenchError(result.error);
+            appendTerminalLog(`! ${result.error}`);
+            setWorkbenchRunStatus("failed");
+            return;
+          }
+          for (const line of formatUnifyPreview(result.value)) {
+            appendTerminalLog(line);
+          }
+          appendTerminalLog(formatUnifyStatus(result.value));
+          setPlanLines(formatUnifyPreview(result.value));
+          setStatusMessage(formatUnifyStatus(result.value));
+          if (result.value.dryRun) {
+            appendTerminalLog("Press y to write. Press n to cancel.");
+            setTerminalOpsConfirm("unify-write");
+            setWorkbenchRunStatus("succeeded");
+            flash("unify plan · y write");
+          } else {
+            setWorkbenchRunStatus("succeeded");
+            flash("unify wrote");
+            await refreshData();
+            await persistProof({
+              kind: "ops",
+              label: "unify write",
+              projectDir: targetProject,
+              status: "succeeded",
+              transcript: formatUnifyPreview(result.value).join("\n"),
+            });
+          }
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+      if (opId === "doctor") {
+        appendTerminalLog("→ doctor");
+        setWorkbenchRunStatus("running");
+        setBusy(true);
+        try {
+          const doc = await runDoctor({ projectDir: targetProject });
+          setDoctorReport(doc);
+          appendTerminalLog(
+            doc.ok
+              ? `✓ doctor ok · ${doc.summary.passed} pass`
+              : `! doctor ${doc.summary.failed} fail / ${doc.summary.warnings} warn`,
+          );
+          for (const check of doc.checks.slice(0, 14)) {
+            appendTerminalLog(
+              `  ${check.level === "pass" ? "+" : check.level === "fail" ? "!" : "~"} ${check.message}`,
+            );
+          }
+          setWorkbenchRunStatus(doc.ok ? "succeeded" : "failed");
+          if (!doc.ok) {
+            setWorkbenchError(
+              `${doc.summary.failed} failed · ${doc.summary.warnings} warnings`,
+            );
+          }
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+      if (opId === "paths") {
+        flash("paths");
+        setScreen("paths");
+        void loadPaths();
+        return;
+      }
+      if (opId === "refresh") {
+        appendTerminalLog("→ refresh discovery");
+        setBusy(true);
+        setWorkbenchRunStatus("running");
+        try {
+          await refreshData();
+          await refreshWorkbench();
+          appendTerminalLog("✓ runners · plugins · packs · ollama");
+          setWorkbenchRunStatus("succeeded");
+          flash("refreshed");
+        } finally {
+          setBusy(false);
+        }
+      }
+    },
+    [
+      busy,
+      appendTerminalLog,
+      flash,
+      targetProject,
+      refreshData,
+      refreshWorkbench,
+      loadPaths,
+      persistProof,
+    ],
+  );
+
+  // Keep mouse handler in sync with latest actions (game-menu clicks).
+  mouseCtxRef.current = {
+    screen,
+    packs,
+    skillsLen: skills.length,
+    remoteLen: remotePacks.length,
+    selectedPackIndex,
+    selectedTaskIndex,
+    selectedOpsIndex,
+    runnersLen: codingRunners.length,
+    tasksLen: workbenchTasks.length,
+    bumpSelect,
+    flash,
+    feedback,
+    installPack: (name, mode) => {
+      void installSelectedPack(name, mode);
+    },
+    runJob: (confirmed) => {
+      void runWorkbenchJob(confirmed);
+    },
+    runService: () => {
+      void runWorkbenchService();
+    },
+    runOps: (id) => {
+      void runTerminalOps(id, false);
+    },
+    startOllama: () => {
+      void startLocalOllama();
+    },
+    openHelp,
+    openHistory: () => {
+      void refreshRecentRuns().then(() => {
+        setHistoryMode(true);
+        feedback("open history", { pressId: "bar:history" });
+      });
+    },
+    runSetup: (write) => {
+      void runSetup(write);
+    },
+    cycleSetupPack,
+  };
+
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
       workbenchAbort.current?.abort();
@@ -956,9 +2009,14 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       pointingProject ||
       filteringPacks ||
       (screen === "explore" && exploreQuery.startsWith("/")) ||
-      (screen === "workbench" && editingJobPrompt);
+      (screen === "workbench" &&
+        (editingJobPrompt || terminalInputMode === "pull"));
     const awaitingChoice =
-      confirmRemove || confirmLinkWrite || confirmBuildJob;
+      confirmRemove ||
+      confirmLinkWrite ||
+      confirmBuildJob ||
+      homeConfirm !== "none" ||
+      terminalOpsConfirm !== "none";
     if (
       shouldQuitWithQ({
         input,
@@ -978,11 +2036,29 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
           workbenchAbort.current.abort();
           flash("stopping run");
         }
+        return;
+      }
+      // Allow scroll while a job is running
+      if (key.pageUp) {
+        setWorkbenchOutputScroll((n) => n + 8);
+        return;
+      }
+      if (key.pageDown) {
+        setWorkbenchOutputScroll((n) => Math.max(0, n - 8));
+        return;
       }
       return;
     }
 
     if (screen === "loading" || busy) return;
+
+    if (screen === "help") {
+      if (key.escape || input === "h" || input === "?") {
+        setScreen(helpFrom === "help" ? "home" : helpFrom);
+        flash("back");
+      }
+      return;
+    }
 
     if (screen === "splash") {
       leaveSplash();
@@ -994,16 +2070,65 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         void (async () => {
           await completeFirstRun("skipped");
           setOfferFirstRun(false);
-          setStatusMessage("Skipped first-run. Pick a toolkit anytime.");
-          flash("skipped");
-          setScreen("home");
+          flash("skipped · open setup");
+          setScreen("setup");
         })();
         return;
       }
       const packName = FIRST_RUN_BY_KEY[input];
       if (packName) {
-        flash(`install ${packName}`);
-        void installSelectedPack(packName, "install");
+        setSetupPackName(packName);
+        const title =
+          packs.find((p) => p.name === packName)?.title ?? packName;
+        setSetupSteps(defaultSetupSteps(title));
+        flash(`pack ${title}`);
+        setScreen("setup");
+        void runSetup(false);
+      }
+      return;
+    }
+
+    // DEFAULT: simple setup wizard
+    if (screen === "setup") {
+      if (input === "a") {
+        feedback("advanced menu");
+        void refreshWorkbench().then(() => setScreen("workbench"));
+        return;
+      }
+      if (input === "p") {
+        cycleSetupPack();
+        return;
+      }
+      if (setupPhase === "confirm") {
+        if (input === "y") {
+          void runSetup(true);
+          return;
+        }
+        if (input === "n" || key.escape) {
+          setSetupPhase("ready");
+          appendSetupLog("Write cancelled.");
+          flash("cancelled");
+          return;
+        }
+        return;
+      }
+      if (setupPhase === "done") {
+        if (key.return || input === "q") {
+          exit();
+          return;
+        }
+        return;
+      }
+      if (setupPhase === "failed") {
+        if (key.return) {
+          void runSetup(false);
+          return;
+        }
+        return;
+      }
+      if (key.return) {
+        void runSetup(false);
+        return;
       }
       return;
     }
@@ -1031,13 +2156,23 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       return;
     }
 
-    if (screen === "workbench" && editingJobPrompt) {
+    if (
+      screen === "workbench" &&
+      (editingJobPrompt || terminalInputMode === "pull")
+    ) {
       if (key.escape) {
         setEditingJobPrompt(false);
-        flash("job edit cancelled");
+        setTerminalInputMode("prompt");
+        flash("cancelled");
         return;
       }
       if (key.return) {
+        if (terminalInputMode === "pull") {
+          const name = jobPrompt.trim();
+          setEditingJobPrompt(false);
+          void pullLocalModel(name);
+          return;
+        }
         setEditingJobPrompt(false);
         flash("job ready");
         return;
@@ -1047,7 +2182,10 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         return;
       }
       if (input && !key.ctrl) {
-        const clean = input.replace(/\s+/g, " ");
+        const clean =
+          terminalInputMode === "pull"
+            ? input.replace(/\s+/g, "")
+            : input.replace(/\s+/g, " ");
         setJobPrompt((value) => `${value}${clean}`.slice(0, 8_000));
         return;
       }
@@ -1111,9 +2249,14 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       "workbench",
     ];
     if (mainScreens.includes(screen)) {
-      if (input === "s") {
+      if (input === "?") {
+        openHelp();
+        return;
+      }
+      if (input === "s" && splashEnabled()) {
         setConfirmRemove(false);
         setFilteringPacks(false);
+        setHomeConfirm("none");
         flash("splash");
         setScreen("splash");
         return;
@@ -1121,6 +2264,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       if (input === "h") {
         setConfirmRemove(false);
         setFilteringPacks(false);
+        setHomeConfirm("none");
         flash("home");
         setScreen("home");
         return;
@@ -1128,6 +2272,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       if (input === "l") {
         setConfirmRemove(false);
         setFilteringPacks(false);
+        setHomeConfirm("none");
         flash("library");
         setScreen("library");
         return;
@@ -1137,6 +2282,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         if (screen !== "doctor") {
           setConfirmRemove(false);
           setFilteringPacks(false);
+          setHomeConfirm("none");
           flash("packs");
           setScreen("packs");
           return;
@@ -1145,6 +2291,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       if (input === "e" && screen !== "workbench") {
         setConfirmRemove(false);
         setFilteringPacks(false);
+        setHomeConfirm("none");
         flash("explore");
         setScreen("explore");
         void loadExplore(exploreQuery || undefined);
@@ -1153,6 +2300,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       if (input === "d") {
         setConfirmRemove(false);
         setFilteringPacks(false);
+        setHomeConfirm("none");
         flash("doctor");
         setScreen("doctor");
         void loadDoctor();
@@ -1161,6 +2309,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       if (input === "k") {
         setConfirmRemove(false);
         setFilteringPacks(false);
+        setHomeConfirm("none");
         flash("paths");
         setScreen("paths");
         void loadPaths();
@@ -1169,8 +2318,10 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       if (input === "w") {
         setConfirmRemove(false);
         setFilteringPacks(false);
+        setHomeConfirm("none");
         setConfirmBuildJob(false);
         setWorkbenchError(undefined);
+        setWorkbenchOutputScroll(0);
         flash("workbench");
         setScreen("workbench");
         void refreshWorkbench();
@@ -1179,6 +2330,30 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     }
 
     if (screen === "home") {
+      if (homeConfirm !== "none") {
+        if (input === "y") {
+          if (homeConfirm === "ready-write") {
+            void executeReady(true);
+          } else {
+            void executeUnify(true);
+          }
+          return;
+        }
+        if (input === "n" || key.escape) {
+          setHomeConfirm("none");
+          flash("write cancelled");
+          return;
+        }
+        return;
+      }
+      if (input === "r") {
+        void executeReady(false);
+        return;
+      }
+      if (input === "u") {
+        void executeUnify(false);
+        return;
+      }
       if (input === "o") {
         setPointingProject(true);
         setPointDraft(targetProject);
@@ -1404,8 +2579,24 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     }
 
     if (screen === "workbench") {
+      if (terminalOpsConfirm !== "none") {
+        if (input === "y") {
+          const op =
+            terminalOpsConfirm === "ready-write" ? "ready" : "unify";
+          void runTerminalOps(op, true);
+          return;
+        }
+        if (input === "n" || key.escape) {
+          setTerminalOpsConfirm("none");
+          appendTerminalLog("write cancelled");
+          flash("cancelled");
+          return;
+        }
+        return;
+      }
       if (confirmBuildJob) {
         if (input === "y") {
+          setWorkbenchOutputScroll(0);
           void runWorkbenchJob(true);
           return;
         }
@@ -1416,86 +2607,246 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         }
         return;
       }
+      if (key.pageUp) {
+        setWorkbenchOutputScroll((n) => n + 8);
+        return;
+      }
+      if (key.pageDown) {
+        setWorkbenchOutputScroll((n) => Math.max(0, n - 8));
+        return;
+      }
       if (key.escape) {
+        if (historyMode) {
+          setHistoryMode(false);
+          flash("runners");
+          return;
+        }
         setScreen("home");
         flash("home");
         return;
       }
+      // Lane jump 1–4 — always flash + log
+      if (input === "1") {
+        setWorkbenchLane("skills");
+        feedback("lane skills", { pressId: "lane:skills" });
+        return;
+      }
+      if (input === "2") {
+        setWorkbenchLane("agents");
+        feedback("lane agents", { pressId: "lane:agents" });
+        return;
+      }
+      if (input === "3") {
+        setWorkbenchLane("services");
+        feedback("lane services", { pressId: "lane:services" });
+        return;
+      }
+      if (input === "4") {
+        setWorkbenchLane("ops");
+        feedback("lane ops · quickstart", { pressId: "lane:ops" });
+        return;
+      }
       if (key.tab) {
-        setWorkbenchLane((lane) =>
-          lane === "runner" ? "service" : "runner",
-        );
-        flash(workbenchLane === "runner" ? "services" : "runners");
+        setWorkbenchLane((lane) => {
+          const i = TERMINAL_LANES.indexOf(lane);
+          const next = TERMINAL_LANES[(i + 1) % TERMINAL_LANES.length]!;
+          feedback(`lane ${next}`, { pressId: `lane:${next}` });
+          return next;
+        });
         return;
       }
       if (key.upArrow) {
-        if (workbenchLane === "runner") {
+        if (workbenchLane === "skills") {
+          setSelectedPackIndex((i) =>
+            packs.length === 0 ? 0 : (i - 1 + packs.length) % packs.length,
+          );
+        } else if (workbenchLane === "agents") {
           setSelectedRunnerIndex((index) =>
             codingRunners.length === 0
               ? 0
               : (index - 1 + codingRunners.length) % codingRunners.length,
           );
           setSelectedModelIndex(0);
-        } else {
+        } else if (workbenchLane === "services") {
           setSelectedTaskIndex((index) =>
             workbenchTasks.length === 0
               ? 0
               : (index - 1 + workbenchTasks.length) % workbenchTasks.length,
           );
+        } else {
+          setSelectedOpsIndex((index) => (index - 1 + 5) % 5);
         }
         bumpSelect("up");
         return;
       }
       if (key.downArrow) {
-        if (workbenchLane === "runner") {
+        if (workbenchLane === "skills") {
+          setSelectedPackIndex((i) =>
+            packs.length === 0 ? 0 : (i + 1) % packs.length,
+          );
+        } else if (workbenchLane === "agents") {
           setSelectedRunnerIndex((index) =>
             codingRunners.length === 0
               ? 0
               : (index + 1) % codingRunners.length,
           );
           setSelectedModelIndex(0);
-        } else {
+        } else if (workbenchLane === "services") {
           setSelectedTaskIndex((index) =>
             workbenchTasks.length === 0
               ? 0
               : (index + 1) % workbenchTasks.length,
           );
+        } else {
+          setSelectedOpsIndex((index) => (index + 1) % 5);
         }
         bumpSelect("down");
         return;
       }
-      if (workbenchLane === "runner" && input === "e") {
-        setEditingJobPrompt(true);
-        setWorkbenchError(undefined);
-        flash("edit job");
-        return;
-      }
-      if (workbenchLane === "runner" && input === "m") {
-        setJobMode((mode) => (mode === "inspect" ? "build" : "inspect"));
-        setConfirmBuildJob(false);
-        flash(jobMode === "inspect" ? "mode: build" : "mode: inspect");
-        return;
-      }
-      if (
-        workbenchLane === "runner" &&
-        (key.leftArrow || key.rightArrow)
-      ) {
-        const models = codingRunners[selectedRunnerIndex]?.models ?? [];
-        if (models.length > 0) {
-          setSelectedModelIndex((index) =>
-            key.leftArrow
-              ? (index - 1 + models.length) % models.length
-              : (index + 1) % models.length,
+
+      // Agents: Ollama lifecycle + job controls + proof vault
+      if (workbenchLane === "agents") {
+        if (historyMode) {
+          if (key.upArrow) {
+            setSelectedRunIndex((i) =>
+              recentRuns.length === 0
+                ? 0
+                : (i - 1 + recentRuns.length) % recentRuns.length,
+            );
+            bumpSelect("up");
+            return;
+          }
+          if (key.downArrow) {
+            setSelectedRunIndex((i) =>
+              recentRuns.length === 0
+                ? 0
+                : (i + 1) % recentRuns.length,
+            );
+            bumpSelect("down");
+            return;
+          }
+          if (key.return) {
+            const run = recentRuns[selectedRunIndex];
+            if (run) void openSavedRun(run.id);
+            return;
+          }
+          if (input === "H") {
+            setHistoryMode(false);
+            flash("runners");
+            return;
+          }
+          return;
+        }
+        if (input === "H") {
+          void refreshRecentRuns().then(() => {
+            setHistoryMode(true);
+            feedback("open history", { pressId: "bar:history" });
+          });
+          return;
+        }
+        if (input === "o") {
+          feedback("start ollama", { pressId: "bar:ollama" });
+          void startLocalOllama();
+          return;
+        }
+        if (input === "O") {
+          feedback("stop ollama", { pressId: "bar:ollama" });
+          void stopLocalOllama();
+          return;
+        }
+        if (input === "p") {
+          setTerminalInputMode("pull");
+          setEditingJobPrompt(true);
+          setJobPrompt("");
+          setWorkbenchError(undefined);
+          feedback("pull model — type name", { pressId: "bar:pull" });
+          return;
+        }
+        if (input === "e") {
+          setTerminalInputMode("prompt");
+          setEditingJobPrompt(true);
+          setWorkbenchError(undefined);
+          feedback("edit job prompt", { pressId: "bar:edit" });
+          return;
+        }
+        if (input === "m") {
+          setJobMode((mode) => (mode === "inspect" ? "build" : "inspect"));
+          setConfirmBuildJob(false);
+          feedback(
+            jobMode === "inspect" ? "mode build" : "mode inspect",
+            { pressId: "bar:mode" },
           );
-          flash("local model");
+          return;
+        }
+        if (key.leftArrow || key.rightArrow) {
+          const models =
+            codingRunners[selectedRunnerIndex]?.models ??
+            ollamaService?.models ??
+            [];
+          if (models.length > 0) {
+            setSelectedModelIndex((index) =>
+              key.leftArrow
+                ? (index - 1 + models.length) % models.length
+                : (index + 1) % models.length,
+            );
+            feedback("select model", { pressId: "bar:model" });
+          }
+          return;
+        }
+        if (key.return) {
+          setWorkbenchOutputScroll(0);
+          feedback("run agent job", { pressId: "bar:run" });
+          void runWorkbenchJob(false);
+          return;
         }
         return;
       }
-      if (key.return) {
-        if (workbenchLane === "runner") {
-          void runWorkbenchJob(false);
-        } else {
+
+      if (workbenchLane === "skills") {
+        if (key.return || input === "i") {
+          const pack = packs[selectedPackIndex];
+          if (!pack) return;
+          setWorkbenchOutputScroll(0);
+          setWorkbenchRunLabel(`install ${pack.name}`);
+          feedback(`install ${pack.title}`, { pressId: "bar:install" });
+          void installSelectedPack(pack.name, "install").then(() => {
+            appendTerminalLog("✓ install finished");
+            feedback("install done", { log: false });
+          });
+          return;
+        }
+        if (input === "a") {
+          const pack = packs[selectedPackIndex];
+          if (!pack) return;
+          setWorkbenchOutputScroll(0);
+          setWorkbenchRunLabel(`apply ${pack.name}`);
+          feedback(`apply ${pack.title}`, { pressId: "bar:apply" });
+          void installSelectedPack(pack.name, "apply").then(() => {
+            appendTerminalLog("✓ apply finished");
+          });
+          return;
+        }
+        return;
+      }
+
+      if (workbenchLane === "services") {
+        if (key.return) {
+          setWorkbenchOutputScroll(0);
+          feedback("run service", { pressId: "bar:run-service" });
           void runWorkbenchService();
+        }
+        return;
+      }
+
+      if (workbenchLane === "ops") {
+        if (key.return) {
+          const ops = ["ready", "unify", "doctor", "paths", "refresh"] as const;
+          const op = ops[selectedOpsIndex] ?? "ready";
+          feedback(
+            `run ${op === "ready" ? "quickstart" : op}`,
+            { pressId: "bar:run-ops" },
+          );
+          void runTerminalOps(op);
         }
       }
     }
@@ -1525,17 +2876,21 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     return { frames: set, variant };
   };
 
-  if (screen === "loading" || frames.length === 0) {
+  if (screen === "loading") {
     return (
-      <Box padding={1} flexDirection="column">
-        <Spinner label="Loading Kit" active style="icon" />
+      <Box paddingX={1} paddingY={0} flexDirection="column">
+        <Text bold inverse>
+          {" "}
+          KIT{" "}
+        </Text>
+        <Text dimColor>Starting…</Text>
         {loadError ? <Text color="red">{loadError}</Text> : null}
       </Box>
     );
   }
 
   if (screen === "splash") {
-    return <Splash frames={frames} />;
+    return <Splash frames={frames.length > 0 ? frames : []} />;
   }
 
   if (screen === "first-run") {
@@ -1550,6 +2905,38 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
         busy={busy}
         {...(statusMessage !== undefined ? { statusMessage } : {})}
         {...(errorMessage !== undefined ? { errorMessage } : {})}
+      />
+    );
+  }
+
+  if (screen === "setup") {
+    const packItem =
+      packs.find((p) => p.name === setupPackName) ?? packs[0];
+    const packTitle = packItem?.title ?? setupPackName;
+    const packReason =
+      recommended.find((r) => r.packName === setupPackName)?.reasons[0] ??
+      story?.win ??
+      "Best match for this project.";
+    return (
+      <Setup
+        projectDir={targetProject}
+        projectName={path.basename(targetProject)}
+        packName={setupPackName}
+        packTitle={packTitle}
+        packReason={packReason}
+        skillCount={skills.length}
+        phase={setupPhase}
+        steps={setupSteps}
+        logLines={setupLog}
+        actionNonce={actionNonce}
+        {...(agentStatusLine !== undefined
+          ? { agentLine: agentStatusLine }
+          : {})}
+        {...(actionFlash !== undefined ? { actionFlash } : {})}
+        {...(errorMessage !== undefined ? { errorMessage } : {})}
+        {...(setupCompleteNote !== undefined
+          ? { completeNote: setupCompleteNote }
+          : {})}
       />
     );
   }
@@ -1598,22 +2985,78 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
     );
   }
 
+  if (screen === "help") {
+    const m = pickMascot("idle");
+    return (
+      <Help
+        frames={m.frames}
+        mascotVariant={m.variant}
+        fromScreen={helpFrom}
+      />
+    );
+  }
+
   if (screen === "workbench") {
     return (
       <Workbench
         projectDir={targetProject}
+        lane={workbenchLane}
+        packs={packs}
+        selectedPackIndex={selectedPackIndex}
+        recommended={recommended}
+        appliedNames={new Set(applied.map((a) => a.name))}
         runners={codingRunners}
         serviceTasks={workbenchTasks}
-        lane={workbenchLane}
         selectedRunnerIndex={selectedRunnerIndex}
         selectedTaskIndex={selectedTaskIndex}
         selectedModelIndex={selectedModelIndex}
+        selectedOpsIndex={selectedOpsIndex}
         mode={jobMode}
         prompt={jobPrompt}
         editingPrompt={editingJobPrompt}
+        inputMode={terminalInputMode}
         confirmBuild={confirmBuildJob}
         busy={busy}
         runStatus={workbenchRunStatus}
+        outputScroll={workbenchOutputScroll}
+        opsConfirm={terminalOpsConfirm}
+        historyMode={historyMode}
+        recentRuns={recentRuns}
+        selectedRunIndex={selectedRunIndex}
+        actionNonce={actionNonce}
+        skillCount={skills.length}
+        {...(actionFlash !== undefined ? { actionFlash } : {})}
+        {...(errorMessage
+          ? { actionIsError: true }
+          : {})}
+        {...(pressedId !== undefined ? { pressedId } : {})}
+        {...(agentStatusLine || doctorSummary
+          ? {
+              setupLine: [
+                path.basename(targetProject),
+                agentStatusLine ? `agents ${agentStatusLine}` : null,
+                doctorSummary ?? null,
+                `${skills.length} skills`,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            }
+          : {
+              setupLine: `${path.basename(targetProject)} · ${skills.length} skills`,
+            })}
+        {...(story
+          ? {
+              nextLine:
+                story.id === "chaos-cleanup"
+                  ? "Unify — clean skill dumps"
+                  : story.id === "multi-agent-sync"
+                    ? "Link agents — same skills in every agent"
+                    : story.id === "already-solid"
+                      ? "Doctor or run an agent job"
+                      : "Quickstart — install · apply · link",
+              storyTitle: story.title,
+            }
+          : {})}
         {...(workbenchRunLabel !== undefined
           ? { runLabel: workbenchRunLabel }
           : {})}
@@ -1726,6 +3169,7 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
       pointDraft={pointDraft}
       busy={busy}
       statusIsError={Boolean(errorMessage)}
+      confirmAction={homeConfirm}
       {...(recommendSummary !== undefined ? { recommendSummary } : {})}
       {...(userLogin !== undefined ? { userLogin } : {})}
       {...(doctorSummary !== undefined ? { doctorSummary } : {})}
@@ -1741,6 +3185,8 @@ export function App({ initialScreen }: AppProps = {}): React.ReactElement {
           ? { statusMessage: errorMessage }
           : {})}
       {...(agentStatusLine !== undefined ? { agentStatusLine } : {})}
+      {...(story !== undefined ? { story } : {})}
+      {...(planLines !== undefined ? { planLines } : {})}
     />
   );
 }

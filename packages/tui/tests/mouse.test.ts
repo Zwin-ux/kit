@@ -14,10 +14,10 @@ describe("parseSgrMouseChunk", () => {
     expect(isPrimaryClick(ev!)).toBe(true);
   });
 
-  it("ignores release", () => {
+  it("accepts release as a click too (Windows)", () => {
     const ev = parseSgrMouseChunk("\x1b[<0;12;8m");
     expect(ev).not.toBeNull();
-    expect(isPrimaryClick(ev!)).toBe(false);
+    expect(isPrimaryClick(ev!)).toBe(true);
   });
 });
 

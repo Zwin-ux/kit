@@ -2,17 +2,19 @@
 
 ## Goal
 
-Kit Workbench is a local control desk for coding runners and project tools.
+Kit Action Terminal (Workbench) is a multi-purpose local control desk — not a coding IDE.
 
 A user can:
 
 - point Kit at one project;
-- see which coding runners are installed;
+- **Skills** — install and apply packs from the same surface;
+- **Agents** — run Codex, Claude Code, Grok Build, or local Ollama jobs;
+- **start / stop a kit-managed Ollama serve** and pull models;
 - select a model from the local Ollama service;
-- send one bounded job to a runner;
-- choose read-only inspection or an explicit build run;
-- see attached CLI services and their fixed read-only tasks;
-- run a service task without learning raw command arguments.
+- send one bounded job to a runner (inspect or confirmed build);
+- **Services** — run attached CLI plugin tasks (e.g. trading tools read-only);
+- **Ops** — Ready plan, Unify plan, Doctor, Paths, Refresh;
+- stream everything into one shared action log.
 
 Trenchwire is the first attached service. It keeps all wallet and trade rules.
 Kit does not send wallet commands, score markets, or approve trades.

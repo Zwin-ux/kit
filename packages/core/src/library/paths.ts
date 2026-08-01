@@ -32,3 +32,8 @@ export function getConfigPath(kitHome: string = getKitHome()): string {
 export function getAuthPath(kitHome: string = getKitHome()): string {
   return path.join(kitHome, "auth.json");
 }
+
+/** Directory for saved job proofs (transcripts + metadata). */
+export function getRunsDir(kitHome: string = getKitHome()): string {
+  return path.join(kitHome, "runs");
+}

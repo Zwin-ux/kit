@@ -31,24 +31,26 @@ Node 20+. Command name: `kit`.
 kit                  # status + next command
 kit ready --write    # pack → install → apply → link → doctor
 kit unify --write --link
-kit tui              # keyboard console + calm side mascot
-kit tui workbench    # coding runners + attached CLI services
+kit tui              # setup this project (install skills + link agents)
+kit tui workbench    # advanced multi-lane menu
 ```
 
 ---
 
-## Workbench
+## Action Terminal
 
 <p align="center">
-  <img src="docs/assets/demo-workbench-trenchwire.gif" alt="Kit Workbench detects local coding runners and runs fixed Trenchwire service tasks with offline market data" width="720" />
+  <img src="docs/assets/demo-workbench-trenchwire.gif" alt="Kit Action Terminal — multi-lane control for skills, agents, services, and ops" width="720" />
 </p>
 
-Workbench takes over the terminal while it runs. Your shell and scrollback return
-when Kit exits. The layout has compact, standard, and wide modes, so the job and
-live output stay readable from 60x18 through a maximized terminal.
+The Action Terminal takes over the terminal while it runs. Your shell and
+scrollback return when Kit exits. Dense layouts stay readable from 60x18 through
+a maximized window.
 
-- **Runners:** Codex, Claude Code, Grok Build, and local Ollama models.
-- **Services:** fixed read-only tasks from registered CLI plugins.
+- **Skills** — install and apply packs without leaving the log.
+- **Agents** — Codex, Claude Code, Grok Build, and local Ollama (start serve, pull models, run jobs).
+- **Services** — fixed read-only tasks from registered CLI plugins (e.g. market/health).
+- **Ops** — Ready plan, Unify plan, Doctor, Paths, Refresh.
 
 Write one job in the TUI. `inspect` uses the provider's read-only or plan mode.
 `build` can edit the selected repo and needs a separate confirmation. Kit uses
@@ -68,15 +70,22 @@ the local run from unrelated global connectors so they do not consume the
 model's context.
 
 ```bash
+kit tui terminal
+# Agents lane (2): press o to start Ollama if offline, p to pull a model
+```
+
+Or start Ollama yourself, then open the terminal:
+
+```bash
 ollama serve
 ollama pull <model>
-kit tui workbench
+kit tui terminal
 ```
 
 Select **Ollama · Codex**, then use left and right to choose an installed model.
-Kit reads the model list from the local Ollama service. It does not send project
-content to a hosted model. Set `KIT_NO_ALT_SCREEN=1` only when you need inline
-terminal output for debugging or capture.
+Kit can start a kit-managed `ollama serve` (`o`) and stop only what it started
+(`O`). It does not send project content to a hosted model for local runs.
+Set `KIT_NO_ALT_SCREEN=1` only when you need inline terminal output for debugging.
 
 Trenchwire is the first attached service. Its `health` and `market` tasks use
 fixed arguments. Wallet login, signing, submission, and the literal `SEND`

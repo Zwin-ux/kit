@@ -41,7 +41,9 @@ export function parseSgrMouseChunk(data: string): MouseEvent | null {
   return last;
 }
 
-/** Left button press (not release, not motion). */
+/**
+ * Left button (press or release). Caller should debounce to one action per click.
+ */
 export function isPrimaryClick(ev: MouseEvent): boolean {
-  return !ev.release && !ev.motion && ev.button === 0;
+  return !ev.motion && ev.button === 0;
 }

@@ -194,11 +194,11 @@ export async function detectCodingRunners(
     resolveRunnerCommand("codex"),
     listOllamaModels(ollamaOptions),
   ]);
+  // Ollama runner is "available" when CLI + Codex exist and the service is up.
+  // Models can be empty (user still needs to pull); kit can start serve for them.
+  const serviceUp = models.ok;
   const available =
-    command !== null &&
-    codexCommand !== null &&
-    models.ok &&
-    models.value.length > 0;
+    command !== null && codexCommand !== null && serviceUp;
   rows.push({
     id: "ollama",
     label: RUNNERS.ollama.label,
@@ -206,13 +206,13 @@ export async function detectCodingRunners(
     executable: command?.executable ?? null,
     detail:
       command === null
-        ? "needs Ollama"
+        ? "needs Ollama CLI"
         : codexCommand === null
           ? "needs Codex"
           : !models.ok
-            ? "service offline"
+            ? "offline · press o to start"
             : models.value.length === 0
-              ? "no models"
+              ? "online · no models · pull one"
               : `${models.value.length} local model${models.value.length === 1 ? "" : "s"}`,
     ...(models.ok ? { models: models.value } : {}),
   });

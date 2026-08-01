@@ -62,29 +62,46 @@ View version of Kit.
 - Show the mascot on Splash and empty states.
 - Use simple status icons.
 
-## Implementation notes (v0 shell)
+## Implementation notes
 
-Start the TUI:
+### Open like Claude / Grok / Codex
 
 ```sh
-kit tui
-# or
-pnpm --filter @kit-skills/tui start
+kit tui                 # Action Terminal immediately (no splash GIF)
+kit tui home            # optional classic home
+kit tui terminal        # same as bare kit tui
 ```
 
-First-run (empty library):
+**Default path:** loading chrome (`KIT` + Starting…) → Action Terminal  
+(or FirstRun if starter pack not chosen yet).
+
+**Not default:** Splash, typewriter, continuous fox loop.
+
+| Env | Effect |
+|-----|--------|
+| `KIT_TUI_SPLASH=1` | Optional static splash gate |
+| `KIT_SHOW_MASCOT=1` | Show static brand art on menu shells |
+| `KIT_MASCOT_ANIM=1` | Allow idle fox loop (implies show) |
+| `KIT_NO_MASCOT=1` | Force hide brand art |
+| `KIT_REDUCED_MOTION=1` | Freeze residual motion |
+
+### Motion policy
+
+- Allowed: busy spinner, inverse selection, action flash, progress bar
+- Forbidden by default: splash hero loop, boot typewriter, animated list icons, rail fox during menus
+
+### First-run
+
 ```sh
 kit init --pack essentials
-# or open the TUI and press 1 / 2 / 3 after Splash
+# or kit tui → FirstRun → 1–7 install
 ```
 
-Mascot frames:
-- **idle** — `kit-frame-1..6.png` (tail wag) · default menus + splash
-- **scan** — `kit-scan-1..4.png` (ear tilt) · load / install / doctor run / explore
-- **success** — `kit-success-1..4.png` (bob) · healthy doctor, install done, link wrote
-- Pure black silhouette; no wrench; NN downscale for terminal
-- Missing PNGs → built-in placeholders per variant
-- ~140–180 ms/frame; `KIT_REDUCED_MOTION=1` freezes frame 0
+### Mascot frames (opt-in only)
+
+- **idle** — `kit-frame-1..6.png` · only if `KIT_MASCOT_ANIM=1`
+- **scan** / **success** — same gate
+- Missing PNGs → placeholders; load is **lazy** and never blocks open
 
 ### Selection stability (P0)
 
@@ -134,12 +151,20 @@ Kit plays pixel frames via `MascotPlayer` (same language as `kit-idle.gif`).
 Keys:
 - Splash: any key → First-run (if needed) or Home · `q` quit
 - First-run: `1` essentials · `2` web · `3` library · `4` cli · `5` api · `s` skip · `q` quit
-- Home: `↑↓` · `↵`/`i` install · `a` apply · `k` paths · `d` doctor · `e` explore · `l` library · `p` packs · `q` quit
+- Help (`?`): full key map · Esc back
+- Home: situation story + action rail · `r` Ready plan · `u` Unify plan · `y` confirm write · `w` workbench · `o` point · `↑↓` · `↵`/`i` install · `a` apply · `k` paths · `d` doctor · `e` explore · `l` library · `p` packs · `q` quit
 - Packs: filter by typing · `★ recommended` · progress on install · stack packs show `+essentials`
 - Explore: remote catalog · `/` search · `↵` install · `r` refresh
 - Library: `↑↓` · `v` validate · `t` test · `r` remove · `k` paths
 - Doctor: `r` re-run health checks
 - Paths: `↑↓` harness · `↵` link write · `p` plan · `r` refresh
+- Action Terminal (`w` or `kit tui terminal`):
+  - `1–4` / `Tab` — Skills · Agents · Services · Ops
+  - Skills: `Enter` install · `a` apply
+  - Agents: `o` start Ollama · `O` stop kit-managed · `p` pull · `e` job · `m` mode · `Enter` run
+  - Services: `Enter` run read-only plugin task
+  - Ops: `Enter` Ready / Unify / Doctor / Paths / Refresh
+  - `PgUp`/`PgDn` scroll shared log · `Esc` stop or home
 
 Motion (restrained — explain or reward, never decorate alone):
 - **Mascot variants**: idle / scan / success by screen state

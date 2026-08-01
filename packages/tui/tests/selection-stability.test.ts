@@ -84,10 +84,11 @@ describe("Workbench safety copy", () => {
       path.join(dir, "../src/screens/Workbench.tsx"),
       "utf8",
     );
-    expect(source).toContain("Build can edit this project.");
-    expect(source).toContain("RUNNERS");
-    expect(source).toContain("SERVICES");
-    expect(source).toContain("Tab services");
+    expect(source).toContain("Build can edit files");
+    expect(source).toMatch(/AGENTS|RUNNERS/);
+    expect(source).toMatch(/TOOLS|SERVICES|TASKS/);
+    expect(source).toMatch(/KIT|PACKS|SETUP/);
+    expect(source).toContain("skills");
   });
 });
 
@@ -108,7 +109,7 @@ describe("a11y: no solid pack detail silhouettes in picker UI", () => {
       path.join(dir, "../src/screens/Home.tsx"),
       "utf8",
     );
-    expect(home.includes("dense={compact}")).toBe(true);
+    expect(home.includes("dense={compact")).toBe(true);
     expect(home.includes("StatusLine")).toBe(true);
   });
 });

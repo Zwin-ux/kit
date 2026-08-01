@@ -6,11 +6,14 @@ import type {
   PackListItem,
   SkillRecommendation,
   ToolkitRecommendation,
+  UserStory,
 } from "@mzwin/kit-core";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
 import { useLayoutScale } from "../mascot/useLayoutScale.js";
 import { Footer, Header, StatusLine } from "../components/Chrome.js";
 import { ScreenShell } from "../components/ScreenShell.js";
+import { ActionRail } from "../components/ActionRail.js";
+import { MenuButton } from "../components/MenuButton.js";
 import {
   CountUp,
   ErrorLine,
@@ -25,6 +28,11 @@ import {
   fixedLine,
   type SelectDirection,
 } from "../motion/index.js";
+
+export type HomeConfirm =
+  | "none"
+  | "ready-write"
+  | "unify-write";
 
 export interface HomeProps {
   frames: PixelFrame[];
@@ -55,6 +63,12 @@ export interface HomeProps {
   progress?: { current: number; total: number; skillName: string };
   /** e.g. claude:ok · codex:x · grok:ok */
   agentStatusLine?: string;
+  /** Product story for this project (from detectSituation). */
+  story?: UserStory;
+  /** Pending write confirmation after a dry-run plan. */
+  confirmAction?: HomeConfirm;
+  /** Multi-line plan preview (ready/unify steps). */
+  planLines?: string[];
 }
 
 function shortPath(p: string): string {
@@ -63,6 +77,16 @@ function shortPath(p: string): string {
     return `~${p.slice(home.length).replace(/\\/g, "/")}`;
   }
   return p.replace(/\\/g, "/");
+}
+
+function storyPrimaryKey(story: UserStory | undefined): "r" | "u" | "w" {
+  if (!story) return "r";
+  if (story.id === "chaos-cleanup") return "u";
+  if (story.primary.includes("workbench") || story.primary.includes("tui")) {
+    return "w";
+  }
+  if (story.primary.includes("unify")) return "u";
+  return "r";
 }
 
 export function Home({
@@ -93,6 +117,9 @@ export function Home({
   busy,
   progress,
   agentStatusLine,
+  story,
+  confirmAction = "none",
+  planLines,
 }: HomeProps): React.ReactElement {
   const scale = useLayoutScale();
   const emptyLibrary = skills.length === 0;
@@ -101,18 +128,59 @@ export function Home({
   const variant =
     mascotVariant ??
     (busy ? "scan" : celebrateCount !== undefined ? "success" : "idle");
-  // Cognitive a11y: secondary lists are summaries so tools stay in view.
-  // Fullscreen (wide / tall) opens them up; small windows stay dense.
   const skillShow = scale.listMaxItems;
   const compact = scale.mode === "stack" || scale.rows < 26;
   const showSecondaryLists =
     scale.mode === "wide" || (scale.mode === "split" && scale.rows >= 32);
+  const primaryKey = storyPrimaryKey(story);
 
-  // Sticky footer focus only (ToolkitPicker owns the in-list focus line)
   const focusLabel =
     selected && packs.length > 0
       ? `${selectedPackIndex + 1}/${packs.length} ${selected.title}`
       : undefined;
+
+  const storyLine = story
+    ? `${story.title} — ${story.win}`
+    : recommendSummary
+      ? `Recommend: ${recommendSummary}`
+      : "Point at a project, then Ready or Workbench.";
+
+  const railItems: Array<{
+    key: string;
+    label: string;
+    primary?: boolean;
+    disabled?: boolean;
+  }> = [
+    {
+      key: "r",
+      label: "Ready",
+      primary: primaryKey === "r" && confirmAction === "none",
+      disabled: Boolean(busy),
+    },
+    {
+      key: "u",
+      label: "Unify",
+      primary: primaryKey === "u" && confirmAction === "none",
+      disabled: Boolean(busy),
+    },
+    {
+      key: "w",
+      label: "Main menu",
+      primary: primaryKey === "w" && confirmAction === "none",
+    },
+    { key: "o", label: "Point" },
+    { key: "k", label: "Paths" },
+    { key: "?", label: "Help" },
+  ];
+
+  const menuIcons: Record<string, string> = {
+    r: "ready",
+    u: "unify",
+    w: "kit",
+    o: "point",
+    k: "paths",
+    "?": "help",
+  };
 
   return (
     <Box
@@ -124,7 +192,7 @@ export function Home({
       <Header
         screen="Home"
         {...(busy
-          ? { detail: "installing…" }
+          ? { detail: "working…" }
           : userLogin
             ? { detail: `@${userLogin}` }
             : { detail: "local" })}
@@ -132,6 +200,7 @@ export function Home({
 
       <Box marginTop={compact ? 0 : 1} width="100%">
         <ScreenShell frames={frames} mascotVariant={variant}>
+          {/* Project identity — one dense strip, not three status lines */}
           <Text bold>Project</Text>
           {pointingProject ? (
             <Text>
@@ -141,12 +210,56 @@ export function Home({
           ) : (
             <Text dimColor wrap="truncate">
               {shortPath(targetProject)}
-              {recommendSummary ? ` · ${recommendSummary}` : ""}
-              {userLogin ? ` · @${userLogin}` : " · local"}
+              {topPick ? ` · pack *${topPick}` : ""}
               {doctorSummary ? ` · ${doctorSummary}` : ""}
-              {agentStatusLine ? ` · agents ${agentStatusLine}` : ""}
+              {userLogin ? ` · @${userLogin}` : ""}
             </Text>
           )}
+
+          {confirmAction === "none" ? (
+            <Box flexDirection="column" marginTop={1}>
+              <Text bold wrap="truncate">
+                {fixedLine(storyLine, Math.max(40, scale.contentSoftMax)).trimEnd()}
+              </Text>
+              <Box flexDirection="column" marginTop={0}>
+                {railItems.map((item) => (
+                  <MenuButton
+                    key={item.key}
+                    icon={menuIcons[item.key] ?? "kit"}
+                    label={item.label}
+                    hotkey={item.key}
+                    selected={Boolean(item.primary)}
+                    disabled={Boolean(item.disabled)}
+                    variant="list"
+                  />
+                ))}
+              </Box>
+              <Text dimColor>Click a row or press the key.</Text>
+            </Box>
+          ) : (
+            <Box marginTop={1} flexDirection="column">
+              <Text bold color="yellow">
+                {confirmAction === "ready-write"
+                  ? "Write Ready? installs pack, applies, links agents, runs doctor."
+                  : "Write Unify? adopts keepers into ~/.kit (optional link after)."}
+              </Text>
+              <Text bold inverse>
+                {" "}
+                y write · n cancel{" "}
+              </Text>
+            </Box>
+          )}
+
+          {planLines && planLines.length > 0 ? (
+            <Box marginTop={1} flexDirection="column">
+              <Text bold>Plan</Text>
+              {planLines.slice(0, compact ? 3 : 5).map((line, i) => (
+                <Text key={`plan-${i}`} dimColor wrap="truncate">
+                  {line}
+                </Text>
+              ))}
+            </Box>
+          ) : null}
 
           <Box marginTop={1} flexDirection="column">
             <Text bold>Toolkits</Text>
@@ -165,12 +278,11 @@ export function Home({
                 selectDirection={selectDirection}
                 recommended={recommended}
                 appliedNames={appliedNames}
-                dense={compact}
+                dense={compact || confirmAction !== "none"}
               />
             )}
           </Box>
 
-          {/* Secondary blocks only when viewport has room — avoid scroll-past-focus */}
           {showSecondaryLists && skillRecs.length > 0 ? (
             <Box marginTop={1} flexDirection="column">
               <Text bold>Suggested</Text>
@@ -190,7 +302,7 @@ export function Home({
                 <Text color="red">{libraryError}</Text>
               ) : emptyLibrary ? (
                 <Text dimColor>
-                  none yet · enter installs focus (+ deps)
+                  none yet · r ready or enter installs focus
                 </Text>
               ) : (
                 <>
@@ -214,7 +326,7 @@ export function Home({
               {" · l library"}
             </Text>
           ) : (
-            <Text dimColor>none installed · enter installs focus</Text>
+            <Text dimColor>none installed · r ready · enter installs focus</Text>
           )}
 
           {showSecondaryLists && applied.length > 0 ? (
@@ -225,23 +337,19 @@ export function Home({
                   {"  "}+ {pack.title} ({pack.skills.length})
                 </Text>
               ))}
-              {applied.length > skillShow ? (
-                <Text dimColor>
-                  {"  "}+{applied.length - skillShow} more
-                </Text>
-              ) : null}
             </Box>
           ) : null}
 
-          {/* Always 1 action line — no height jump on selection */}
           <Box marginTop={1} flexShrink={0}>
             <Text dimColor>
               {fixedLine(
-                selected && !busy && !pointingProject
-                  ? `enter install ${selected.title} · a apply · k link`
+                selected && !busy && !pointingProject && confirmAction === "none"
+                  ? `enter install ${selected.title} · a apply · r ready · ? help`
                   : pointingProject
                     ? "Enter set path · Esc cancel"
-                    : " ",
+                    : confirmAction !== "none"
+                      ? "y write · n cancel"
+                      : " ",
                 Math.max(32, scale.contentSoftMax),
               )}
             </Text>
@@ -285,11 +393,11 @@ export function Home({
         </Box>
       ) : null}
 
-      {/* Sticky focus + counts — stays at bottom even if list scrolls */}
       <StatusLine
         skillCount={skills.length}
         packCount={packs.length}
         {...(focusLabel !== undefined ? { focus: focusLabel } : {})}
+        {...(agentStatusLine !== undefined ? { agents: agentStatusLine } : {})}
         {...(statusMessage !== undefined && busy
           ? { message: statusMessage }
           : {})}
@@ -297,9 +405,11 @@ export function Home({
 
       <Footer
         keys={
-          scale.mode === "stack"
-            ? "w workbench · o point · up/down · enter install · q quit"
-            : "w workbench · o point · enter install · k paths · d doctor · e explore · l library · q quit"
+          confirmAction !== "none"
+            ? "y write · n cancel · q quit"
+            : scale.mode === "stack"
+              ? "r ready · u unify · w terminal · enter install · ? help · q"
+              : "r ready · u unify · w terminal · o point · enter install · ? help · q quit"
         }
       />
     </Box>

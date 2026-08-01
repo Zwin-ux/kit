@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-
+import { workbenchGeometry, windowOffset } from "../src/screens/workbenchGeometry.js";
 import { workbenchLayoutFromTerminal } from "../src/screens/workbenchLayout.js";
 
-describe("Workbench terminal layout", () => {
+describe("Workbench geometry", () => {
   it.each([
     [60, 18, "compact"],
     [80, 24, "standard"],
@@ -10,23 +10,28 @@ describe("Workbench terminal layout", () => {
     [120, 32, "wide"],
     [180, 55, "wide"],
   ] as const)("maps %ix%i to %s", (columns, rows, mode) => {
-    const layout = workbenchLayoutFromTerminal(columns, rows);
-    expect(layout.mode).toBe(mode);
-    expect(layout.outputRows).toBeGreaterThanOrEqual(3);
-    expect(layout.runnerRows).toBeGreaterThanOrEqual(1);
-    expect(layout.serviceRows).toBeGreaterThanOrEqual(2);
-    expect(layout.sidebarWidth).toBeLessThan(columns / 2);
+    const geo = workbenchGeometry(columns, rows);
+    expect(geo.mode).toBe(mode);
+    expect(geo.listRows).toBeGreaterThanOrEqual(3);
+    expect(geo.listStartRow).toBe(6);
+    expect(geo.tabRow).toBe(2);
+    expect(geo.actionRow).toBeGreaterThan(geo.listStartRow);
   });
 
-  it("gives live output more rows when the terminal grows", () => {
-    const small = workbenchLayoutFromTerminal(80, 24);
-    const full = workbenchLayoutFromTerminal(180, 55);
-    expect(full.outputRows).toBeGreaterThan(small.outputRows);
-    expect(full.serviceRows).toBeGreaterThan(small.serviceRows);
+  it("keeps list and action rows inside the terminal", () => {
+    const geo = workbenchGeometry(80, 24);
+    expect(geo.listStartRow + geo.listRows).toBeLessThanOrEqual(geo.actionRow);
+    expect(geo.actionRow).toBeLessThanOrEqual(geo.rows);
   });
 
-  it("uses fewer runner rows when compact controls need two lines", () => {
-    const compact = workbenchLayoutFromTerminal(60, 18);
-    expect(compact.runnerRows).toBe(2);
+  it("windowOffset tracks selection", () => {
+    expect(windowOffset(10, 0, 4)).toBe(0);
+    expect(windowOffset(10, 9, 4)).toBe(6);
+  });
+
+  it("legacy layout wrapper still works", () => {
+    const layout = workbenchLayoutFromTerminal(80, 24);
+    expect(layout.listRows).toBeGreaterThan(0);
+    expect(layout.mode).toBe("standard");
   });
 });

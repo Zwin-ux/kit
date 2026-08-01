@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import type { MascotVariant, PixelFrame } from "../mascot/types.js";
 import { MascotPlayer } from "../mascot/MascotPlayer.js";
 import { useLayoutScale } from "../mascot/useLayoutScale.js";
+import { mascotAnimEnabled, mascotVisible } from "../brand/mascotPolicy.js";
 
 export interface ScreenShellProps {
   frames: PixelFrame[];
@@ -15,11 +16,8 @@ export interface ScreenShellProps {
 }
 
 /**
- * Menu-first shell:
- * - stack  → full-width menu; optional tiny top brand
- * - split/wide → compact left rail + primary menu column
- *
- * Menu always owns the interactive surface. Mascot never steals narrow windows.
+ * Menu-first shell. Mascot is opt-in (KIT_SHOW_MASCOT) — default is menu only,
+ * like Claude / Grok / Codex agent terminals.
  */
 export function ScreenShell({
   frames,
@@ -29,7 +27,12 @@ export function ScreenShell({
   focusLabel,
 }: ScreenShellProps): React.ReactElement {
   const scale = useLayoutScale();
-  const place = hideMascot ? "hidden" : scale.mascotPlacement;
+  const showBrand =
+    !hideMascot &&
+    mascotVisible() &&
+    frames.length > 0;
+  const place = showBrand ? scale.mascotPlacement : "hidden";
+  const playing = mascotAnimEnabled();
 
   const menu = (
     <Box
@@ -69,7 +72,7 @@ export function ScreenShell({
         >
           <MascotPlayer
             frames={frames}
-            playing
+            playing={playing}
             size="compact"
             variant={mascotVariant}
           />
@@ -93,7 +96,7 @@ export function ScreenShell({
       >
         <MascotPlayer
           frames={frames}
-          playing
+          playing={playing}
           size="compact"
           variant={mascotVariant}
         />

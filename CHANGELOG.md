@@ -2,6 +2,73 @@
 
 ## Unreleased
 
+### TUI brand pass — ink console (not Clack)
+- Vendored TUI skills: `skills/tui-design-skill` (gfargo) + `skills/terminal-ui` (pproenca) for agents.
+- **Real Kit identity** from `PIXEL_ART.md` + ads: fox-orange `#C45C2A`, black ink, command STE.
+- Theme tokens: `packages/tui/src/theme.ts` (orange accent, OK/`→` marks).
+- **Setup** matches `ad-ready` / `readme-terminal`: `KIT SETUP --DIR`, tabular PROJECT/DIR/AGENTS, plan rows, orange CTA.
+- **Workbench / Chrome / Flash / FirstRun** share the same mark language; drop size-debug chrome.
+
+### Setup wizard is the product (not the multi-lane hub)
+- **`kit tui` opens SETUP** — one screen: project, recommended pack, checklist, Enter/y.
+- Flow: Enter plan → y install+link → done. **a** = advanced workbench only.
+- Skill for agents: `skills/kit-tui-setup-flow/SKILL.md`.
+- Multi-lane menu is power-user path: `kit tui workbench`.
+
+### UI remake — clicks that work
+- **Full-width list UI** (no dual-column sidebar) so pack rows are easy to hit.
+- **Shared geometry** for render + mouse (`workbenchGeometry`) — hit rows match the screen.
+- **Absolute pack indices** in hit map (windowed lists no longer break clicks).
+- **Hide OLLAMA LIVE** chrome noise.
+- Mouse: prependListener + debounce; tabs labeled PACKS / AGENTS / TOOLS / SETUP.
+
+### Developer quickstart + press feedback
+- **Critique** of the product for agentic-dev setup: `docs/dev/DEVELOPER_CRITIQUE.md`.
+- **Situation-first boot** — empty / new-repo / chaos open **Ops** with the right next verb.
+- **Quickstart** label on Ready (install · apply · link).
+- **Every control press** → inverse flash + LOG line (`feedback()`).
+- Menu buttons show a short ★ pressed state.
+- ActionFlash is stronger and longer so effects are obvious.
+
+### Council usefulness cut
+- **Job proof vault** — every finished job/service saves under `~/.kit/runs/` (log + meta).
+- **Agents · H History** — reopen a saved proof into the LOG.
+- **Ops write in-terminal** — Ready/Unify plan then `y` write (no Home bounce).
+- Decision record: `docs/dev/COUNCIL_USEFULNESS.md`.
+
+### Game main menu (click + assets)
+- **One icon asset per option** — skills, agents, services, ops, ready, ollama, run, install, …
+- **Clickable main menu** — click lane tabs, list rows, and action buttons (Install / Run / Start Ollama).
+- **Double-click a selected row** to run that option.
+- Lowkey selected-row pulse (not a full-screen fox GIF).
+- Copy follows clear, short STE-style instructions.
+
+### Open like Claude / Grok (boot)
+- **`kit tui` opens the Action Terminal immediately** — no splash GIF, no typewriter, no fox theater.
+- Loading is a static `KIT` + “Starting…” strip only.
+- Mascot art is **opt-in** (`KIT_SHOW_MASCOT` / `KIT_MASCOT_ANIM`); default is content-only.
+- Optional nostalgia: `KIT_TUI_SPLASH=1`. Classic home: `kit tui home`.
+- First-run still offers pack pick when needed, then lands in the terminal.
+
+### Action Terminal (multi-purpose)
+- **Four lanes** — Skills · Agents · Services · Ops (not coding-only).
+- **Skills** — install/apply packs into the shared action log.
+- **Agents** — Codex / Claude / Grok / Ollama jobs with inspect·build.
+- **Services** — plugin tasks (e.g. Trenchwire market/health; no wallet).
+- **Ops** — Ready plan, Unify plan, Doctor, Paths, Refresh.
+- **Local Ollama lifecycle** — `o` start serve, `O` stop kit-managed, `p` pull model.
+- Core: `probeOllamaService`, `startOllamaServe`, `stopOllamaServe`, `pullOllamaModel`.
+- Dense Codex/T3-class chrome: lane tabs, OLLAMA chip, shared LOG, `>` prompt.
+
+### TUI quality + product surface
+- **Home action rail** — situation story + primary keys (`r` Ready, `u` Unify, `w` Terminal).
+- **Ready / Unify in TUI** — dry-run plan first, `y` to write (same safety as CLI).
+- **Help screen (`?`)** — full keyboard map without leaving the product.
+- **Chrome** — product header (`KIT` badge); hide debug layout meta by default.
+- **Workbench log** — `PgUp`/`PgDn` scroll (works while a job is running).
+- Splash tagline points at the multi-purpose terminal.
+
+### Workbench / plugins (prior unreleased)
 - Add local Ollama model discovery through `GET /api/tags`.
 - Run Ollama models through its official Codex bridge with the existing
   inspect/build sandbox.

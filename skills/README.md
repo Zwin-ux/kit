@@ -18,11 +18,23 @@ Schema details for contributors: [docs/dev/SKILL_SCHEMA.md](../docs/dev/SKILL_SC
 | `data-check` | Review data scripts and notebooks for clarity, leakage, and reproducibility. |
 | `deps-hygiene` | Clean up dependency drift, unused packages, and risky version ranges. |
 | `fix-bug` | Find root cause and fix a bug without drive-by refactors. |
+| `kit-tui-setup-flow` | Kit product rules: default Setup wizard, one primary action, write confirm. |
 | `pr-ready` | Prepare a clear pull request summary, test plan, and risk notes. |
 | `project-setup` | Set up a clean project baseline for agents and humans. |
 | `ship-checklist` | Run a practical pre-ship checklist for an app release. |
+| `terminal-ui` | Ink/Clack TUI performance + UX rules (42 rules, from pproenca/dot-skills). |
+| `tui-design-skill` | Professional TUI design: layouts, color, density, focus (from gfargo/tui-design-skill). |
 | `workspace-setup` | Set up monorepo and multi-package workspaces for agents and humans. |
 | `write-tests` | Add focused tests for important project behavior. |
+
+## Agent TUI design skills (vendored)
+
+| Skill | Upstream |
+|-------|----------|
+| `tui-design-skill` | [gfargo/tui-design-skill](https://github.com/gfargo/tui-design-skill) — universal TUI principles + Ink/TS deep-dive |
+| `terminal-ui` | [pproenca/dot-skills](https://github.com/pproenca/dot-skills) `skills/.curated/terminal-ui` — Ink rendering, input, component patterns |
+
+Use these when changing `packages/tui`. Prefer Clack-style hierarchy, reverse-video selection, semantic colors, clutter audit, and 80×24 floor checks.
 
 ## Install
 

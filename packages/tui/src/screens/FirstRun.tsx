@@ -26,10 +26,12 @@ export function FirstRun({
   const optionNodes = FIRST_RUN_PACK_OPTIONS.map((option) => (
     <Box key={option.name} flexDirection="column">
       <Text>
-        <Text bold>{option.key}</Text>
+        <Text bold color="#C45C2A">
+          {option.key}
+        </Text>
         <Text> </Text>
-        <PackIcon packName={option.name} size="mini" animate />
-        <Text> {option.title}</Text>
+        <PackIcon packName={option.name} size="mini" animate={false} />
+        <Text bold> {option.title.toUpperCase()}</Text>
       </Text>
       <Text dimColor wrap="truncate">
         {"  "}
@@ -40,13 +42,13 @@ export function FirstRun({
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
-      <Header screen="First run" detail="starter pack" />
+      <Header screen="INIT" detail="starter pack" />
 
       <Box marginTop={1} width="100%">
         <ScreenShell frames={frames} mascotVariant={mascotVariant}>
-          <Text bold>Pick a starter</Text>
+          <Text bold>PICK A STARTER</Text>
           <Text dimColor>
-            7 kits · each ships dependency skills via essentials
+            1–7 · each pack ships essentials + its skills
           </Text>
 
           <Box marginTop={1} flexDirection="column">

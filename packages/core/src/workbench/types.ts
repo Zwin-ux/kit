@@ -62,6 +62,34 @@ export interface OllamaDiscoveryOptions {
   fetchImpl?: typeof fetch;
 }
 
+/** Local Ollama HTTP service lifecycle. */
+export type OllamaServeState =
+  | "online"
+  | "offline"
+  | "missing"
+  | "starting"
+  | "error";
+
+export interface OllamaServiceReport {
+  state: OllamaServeState;
+  host: string;
+  executable: string | null;
+  /** True when Kit started this serve and still holds a live PID record. */
+  kitOwned: boolean;
+  models: LocalModel[];
+  detail: string;
+  version?: string;
+}
+
+export interface OllamaServeOptions extends OllamaDiscoveryOptions {
+  onProgress?: (message: string) => void;
+}
+
+export interface OllamaPullOptions extends OllamaServeOptions {
+  signal?: AbortSignal;
+  onOutput?: (chunk: string) => void;
+}
+
 export interface RunCodingJobOptions {
   timeoutMs?: number;
   maxOutputBytes?: number;
@@ -72,3 +100,35 @@ export interface RunCodingJobOptions {
 }
 
 export type WorkbenchResult<T> = LibraryResult<T>;
+
+/** Saved job proof (disk). No secrets. */
+export type SavedRunKind = "coding" | "service" | "ops";
+export type SavedRunStatus =
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "timed_out";
+
+export interface SavedRunSummary {
+  id: string;
+  kind: SavedRunKind;
+  label: string;
+  projectDir: string;
+  status: SavedRunStatus;
+  createdAt: string;
+  logPath: string;
+}
+
+export interface SavedRunRecord extends SavedRunSummary {
+  metaPath: string;
+  transcript: string;
+  runner?: CodingRunnerId;
+  mode?: CodingJobMode;
+  model?: string;
+  prompt?: string;
+  plugin?: string;
+  task?: string;
+  exitCode?: number;
+  durationMs?: number;
+  error?: string;
+}

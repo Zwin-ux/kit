@@ -15,10 +15,19 @@
 
 ## Next (v1.x)
 
+- [x] TUI product stories: Ready + Unify with dry-run → confirm write
+- [x] TUI Help (`?`) + situation-aware Home action rail
+- [x] Workbench log scroll (PgUp/PgDn)
+- [x] Action Terminal multi-lane (skills / agents / services / ops)
+- [x] Local Ollama start · stop (kit-managed) · pull from TUI
+- [x] Job proof vault (`~/.kit/runs`) + Agents history
+- [x] Ops Ready/Unify write confirm inside Action Terminal
+- [ ] Skill-as-job (library skill → runner envelope)
 - [ ] TUI device-flow login screen (no CLI detour)
 - [ ] Workshop: scaffold + validate + test skill
 - [ ] Authenticated publish API
 - [ ] Postgres-backed durable catalog
+- [ ] Decompose App.tsx (hooks per screen; pure input routers)
 - [x] Global install story (`npm i -g @kit-skills/cli`)
 - [x] `kit import` from Claude/Codex/Grok harness folders
 - [x] Keep-alive cron + skill queue
