@@ -50,6 +50,7 @@ Owned by engine supervisor task in `kit-cli` (CEO vetoed kit-engine extract for 
 - [x] EngineCommand channel + registry (Power)
 - [x] Receipt shows Killed on cancel
 - [x] Fail-only retry with gate context
-- [ ] k stops live codex/claude within 2s on 3 OS (dogfood)
-- [ ] No zombie processes proven in CI
-- [ ] Dispatch 12 → ≤8 concurrent
+- [x] Tree kill (Windows Job Object + Unix process group; taskkill /T fallback)
+- [x] Unit: kill long child ≤2s + idempotent kill
+- [ ] Live codex/claude dogfood ≤2s on 3 OS
+- [ ] Dispatch 12 → ≤8 concurrent (P3 harness)

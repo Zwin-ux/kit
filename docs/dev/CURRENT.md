@@ -20,7 +20,7 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven.
 | **Agent adapters** | **Live** | codex / claude / grok / ollama |
 | **Skills injection** | **Live** | `.agents/skills` → worktree + prompt |
 | PTY attach | Stub | 1.0.1 (CEO stamp) |
-| Kill mid-run | **Wired** | `k` → EngineCommand::Kill → CancelHandle + AgentHandle::kill; receipt `Killed` |
+| Kill mid-run | **Wired** | `k` → EngineCommand::Kill → CancelHandle + tree kill (Win job / Unix pgid); receipt `Killed` |
 | Retry fail | **Wired** | fail-only; gate failure context in new task |
 | Max concurrency | **Wired** | semaphore 8 in engine supervisor |
 
