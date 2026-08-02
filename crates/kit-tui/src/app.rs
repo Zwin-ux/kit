@@ -224,6 +224,8 @@ pub struct App {
     pub board_selected: usize,
     /// Next board id.
     board_seq: u64,
+    /// Full-screen help overlay (`?`). Esc / `?` dismiss.
+    pub help_open: bool,
 }
 
 /// One run as the Control Room / detail view-model (TUI-local).
@@ -366,6 +368,7 @@ impl App {
             board: Vec::new(),
             board_selected: 0,
             board_seq: 1,
+            help_open: false,
         }
     }
 
@@ -471,6 +474,23 @@ impl App {
 
     fn on_key(&mut self, key: KeyEvent) -> Action {
         if key.kind == KeyEventKind::Release {
+            return Action::None;
+        }
+        // Help overlay captures all keys until dismissed.
+        if self.help_open {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                    self.help_open = false;
+                }
+                _ => {}
+            }
+            return Action::None;
+        }
+        // Global help — except while typing the dispatch task.
+        if matches!(key.code, KeyCode::Char('?'))
+            && !(self.screen == Screen::Dispatch && self.dispatch.focus == DispatchFocus::Task)
+        {
+            self.help_open = true;
             return Action::None;
         }
         match self.screen {
@@ -1686,6 +1706,24 @@ mod tests {
             app.runs[0].worktree.as_deref(),
             Some(std::path::Path::new("/tmp/wt"))
         );
+    }
+
+    #[test]
+    fn question_mark_toggles_help_overlay() {
+        let mut app = App::with_motion(false);
+        assert!(!app.help_open);
+        app.update(key('?'));
+        assert!(app.help_open);
+        // Other keys ignored while open.
+        app.update(key('d'));
+        assert!(app.help_open);
+        assert_eq!(app.screen, Screen::ControlRoom);
+        app.update(code(KeyCode::Esc));
+        assert!(!app.help_open);
+        app.update(key('?'));
+        assert!(app.help_open);
+        app.update(key('?'));
+        assert!(!app.help_open);
     }
 
     #[test]

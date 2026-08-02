@@ -143,7 +143,6 @@ pub fn draw_empty_state(frame: &mut Frame, area: Rect, theme: &Theme, message: &
 }
 
 /// Centered help overlay (clear + bordered panel).
-#[allow(dead_code)]
 pub fn draw_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme, lines: Vec<Line<'static>>) {
     frame.render_widget(Clear, area);
     let block = Block::default()

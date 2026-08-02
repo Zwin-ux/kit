@@ -24,6 +24,8 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven.
 | Retry fail | **Wired** | fail-only; gate failure context in new task |
 | Max concurrency | **Wired** | semaphore 8 in engine supervisor |
 | Vacuous gate | **Wired** | empty gate → infer cargo/npm when live; still empty → UI `UNCONFIGURED` (not PASS); live `kit run` exits 1 unless `--allow-vacuous` |
+| JSON envelope | **Wired** | `schemaVersion: 1` on `run --json` + `doctor --json` — see `docs/json-contract.md` |
+| Help overlay | **Wired** | `?` / Esc in Control Room surface |
 
 ## Spine
 

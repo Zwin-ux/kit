@@ -41,7 +41,8 @@ async fn main() -> Result<()> {
         Some("demo") => launch_tui(true).await,
         Some("run") => cmd_run(&args[1..]).await,
         Some("doctor") => {
-            print_doctor(version);
+            let json = args.iter().any(|a| a == "--json");
+            print_doctor(version, json);
             Ok(())
         }
         Some("version") => {
@@ -207,8 +208,14 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     // Dry-run has no proof claim (CEO stamp); live vacuous fails unless allowed.
     let dry = dry_run == Some(true);
 
+    let exit_nonzero = matches!(
+        result.state,
+        RunState::Pass if gate_vacuous && !allow_vacuous && !dry
+    ) || matches!(result.state, RunState::Fail)
+        || !matches!(result.state, RunState::Pass | RunState::Fail);
+
     if json {
-        let payload = serde_json::json!({
+        let data = serde_json::json!({
             "id": result.id.0,
             "state": format!("{:?}", result.state).to_ascii_lowercase(),
             "receiptDir": result.receipt_dir,
@@ -216,7 +223,9 @@ async fn cmd_run(args: &[String]) -> Result<()> {
             "gatePassed": result.gate.as_ref().map(|g| g.passed),
             "gateVacuous": gate_vacuous,
         });
-        println!("{}", serde_json::to_string_pretty(&payload)?);
+        let ok = !exit_nonzero;
+        let envelope = json_envelope("run", ok, data, None);
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
     } else {
         println!("run {}", result.id);
         println!("  state     {:?}", result.state);
@@ -250,6 +259,23 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// CEO stamp P4 — thin JSON envelope (`schemaVersion: 1`, camelCase).
+fn json_envelope(
+    command: &str,
+    ok: bool,
+    data: serde_json::Value,
+    error: Option<String>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion": 1,
+        "command": command,
+        "ok": ok,
+        "data": data,
+        "error": error,
+        "warnings": [],
+    })
+}
+
 fn print_help(version: &str) {
     println!("kit {version} — control room for parallel agent work");
     println!();
@@ -258,7 +284,7 @@ fn print_help(version: &str) {
     println!("  kit --demo               Control Room with PRD fixture data");
     println!("  kit run --task \"…\"       One isolated run (live agent if installed)");
     println!("  kit run --agent codex --task \"…\" [--dry-run] [--json]");
-    println!("  kit doctor               Environment / readiness");
+    println!("  kit doctor [--json]      Environment / readiness");
     println!("  kit --version            Print version");
     println!();
     println!("Run flags:");
@@ -281,7 +307,43 @@ fn print_help(version: &str) {
     );
 }
 
-fn print_doctor(version: &str) {
+fn print_doctor(version: &str, json: bool) {
+    let kit_home = engine::paths::kit_home();
+    let skills = kit_agents::skills::resolve_skills_dir(std::path::Path::new("."));
+    let statuses = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(kit_agents::probe_all())
+    });
+
+    if json {
+        let agents: Vec<serde_json::Value> = statuses
+            .iter()
+            .map(|st| {
+                serde_json::json!({
+                    "agent": st.kind.label(),
+                    "ready": st.is_ready(),
+                    "version": st.version,
+                    "remedy": st.remedy,
+                })
+            })
+            .collect();
+        let data = serde_json::json!({
+            "version": version,
+            "binary": "ok",
+            "controlRoom": "ok",
+            "gateEngine": "ok",
+            "runEngine": "ok",
+            "kitHome": kit_home,
+            "skillsPack": skills.as_ref().map(|p| p.display().to_string()),
+            "agents": agents,
+        });
+        let envelope = json_envelope("doctor", true, data, None);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&envelope).unwrap_or_default()
+        );
+        return;
+    }
+
     println!("kit doctor {version}");
     println!();
     println!("status:");
@@ -289,18 +351,14 @@ fn print_doctor(version: &str) {
     println!("  control room    ok (kit-tui)");
     println!("  gate engine     ok (kit-gate)");
     println!("  run engine      ok (worktree + adapters + receipt)");
-    println!("  kit home        {}", engine::paths::kit_home().display());
-    if let Some(s) = kit_agents::skills::resolve_skills_dir(std::path::Path::new(".")) {
+    println!("  kit home        {}", kit_home.display());
+    if let Some(s) = skills {
         println!("  skills pack     {}", s.display());
     } else {
         println!("  skills pack     missing (.agents/skills)");
     }
     println!();
     println!("agents:");
-    // Async probe — doctor is sync in signature; block on runtime we already have.
-    let statuses = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(kit_agents::probe_all())
-    });
     for st in statuses {
         let flag = if st.is_ready() { "ready" } else { "missing" };
         let ver = st.version.as_deref().unwrap_or("-");

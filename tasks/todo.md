@@ -17,10 +17,10 @@
 - [x] P1 control plane (kill/retry/timeout/max-8 + tree kill)
 - [x] P2 vacuous → UNCONFIGURED + live inference
 - [x] Surface remake: SPEC + DESIGN + theme + shared chrome + CR/Detail/Dispatch/Board craft
-- [ ] `?` help overlay
+- [x] `?` help overlay
+- [x] P4 JSON envelope schemaVersion:1 (`run` + `doctor`)
 - [ ] Land PR #11 (CEO merge after 3-OS green)
 - [ ] P3 8-concurrent proof harness
-- [ ] P4 JSON envelope schemaVersion:1
 - [ ] B2-pty attach (1.0.1) / skill multi-select
 - [ ] F6 hit-testing; mascot polish after dogfood
 
