@@ -490,6 +490,7 @@ version = "1.0.0-alpha.1"
 dependencies = [
  "async-trait",
  "kit-core",
+ "serde_json",
  "thiserror",
  "tokio",
 ]
