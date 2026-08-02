@@ -4,6 +4,7 @@
 //! CLI share [`runner::execute`].
 
 pub mod cancel;
+pub mod infer;
 pub mod paths;
 pub mod registry;
 pub mod runner;

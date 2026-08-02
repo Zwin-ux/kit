@@ -1360,12 +1360,18 @@ pub fn format_state_label(run: &RunRow, clock: &Clock) -> String {
 
 pub fn format_gate_label(run: &RunRow) -> String {
     match (&run.state, &run.gate) {
+        (_, Some(g)) if is_vacuous_gate(g) => "UNCONFIGURED".into(),
         (_, Some(g)) if g.passed => "PASS".into(),
         (_, Some(_)) => "FAIL".into(),
         (RunState::Pass, None) => "PASS".into(),
         (RunState::Fail, None) => "FAIL".into(),
         _ => "--".into(),
     }
+}
+
+/// Vacuous pass: no checks and no violations (CEO stamp P2 → UNCONFIGURED).
+pub fn is_vacuous_gate(g: &GateOutcome) -> bool {
+    g.passed && g.checks.is_empty() && g.scope_violations.is_empty() && g.firewall_blocks.is_empty()
 }
 
 /// Build the gate log lines for the detail Gate pane.
@@ -1376,6 +1382,15 @@ pub fn gate_log_lines(run: &RunRow) -> Vec<String> {
             vec!["No gate result recorded.".into()]
         }
         None => vec!["Gate has not run yet.".into()],
+        Some(g) if is_vacuous_gate(g) => {
+            vec![
+                "OVERALL  UNCONFIGURED".into(),
+                String::new(),
+                "No gate checks configured and none inferred.".into(),
+                "Add a [gate] section to kit.toml, or install cargo/npm tooling.".into(),
+                "Live runs exit non-zero on vacuous unless --allow-vacuous.".into(),
+            ]
+        }
         Some(g) => {
             let mut lines = Vec::new();
             lines.push(if g.passed {
@@ -1610,6 +1625,24 @@ mod tests {
         app.update(AppEvent::RunUpdate(id, RunDelta::Output(big)));
         assert!(app.runs[0].output.len() <= OUTPUT_DISPLAY_CAP_BYTES);
         assert!(app.runs[0].output_truncated);
+    }
+
+    #[test]
+    fn vacuous_gate_renders_unconfigured_not_pass() {
+        let mut row = RunRow::new(
+            RunId("01VACUOUS00000000000000000".into()),
+            "kit",
+            "codex",
+            "x",
+        );
+        row.state = RunState::Pass;
+        row.gate = Some(GateOutcome::vacuous());
+        assert_eq!(format_gate_label(&row), "UNCONFIGURED");
+        let log = gate_log_lines(&row);
+        assert!(
+            log[0].contains("UNCONFIGURED"),
+            "gate log must not claim PASS for vacuous: {log:?}"
+        );
     }
 
     #[test]

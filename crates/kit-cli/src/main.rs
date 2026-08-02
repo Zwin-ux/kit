@@ -155,6 +155,7 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     // None = auto (live if installed). --dry-run forces offline.
     let mut dry_run: Option<bool> = None;
     let mut json = false;
+    let mut allow_vacuous = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -174,6 +175,7 @@ async fn cmd_run(args: &[String]) -> Result<()> {
             "--dry-run" => dry_run = Some(true),
             "--live" | "--no-dry-run" => dry_run = Some(false),
             "--json" => json = true,
+            "--allow-vacuous" => allow_vacuous = true,
             other if !other.starts_with('-') && task.is_empty() => {
                 // Positional task fallback: kit run "do the thing"
                 task = other.to_string();
@@ -197,6 +199,14 @@ async fn cmd_run(args: &[String]) -> Result<()> {
 
     let result = execute(opts, None, None).await?;
 
+    let gate_vacuous = result
+        .gate
+        .as_ref()
+        .map(engine::infer::is_vacuous)
+        .unwrap_or(false);
+    // Dry-run has no proof claim (CEO stamp); live vacuous fails unless allowed.
+    let dry = dry_run == Some(true);
+
     if json {
         let payload = serde_json::json!({
             "id": result.id.0,
@@ -204,6 +214,7 @@ async fn cmd_run(args: &[String]) -> Result<()> {
             "receiptDir": result.receipt_dir,
             "worktreeRemoved": result.worktree_removed,
             "gatePassed": result.gate.as_ref().map(|g| g.passed),
+            "gateVacuous": gate_vacuous,
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
@@ -216,11 +227,19 @@ async fn cmd_run(args: &[String]) -> Result<()> {
             println!("  worktree  removed (clean)");
         }
         if let Some(g) = &result.gate {
-            println!("  gate      {}", if g.passed { "PASS" } else { "FAIL" });
+            let label = if gate_vacuous {
+                "UNCONFIGURED"
+            } else if g.passed {
+                "PASS"
+            } else {
+                "FAIL"
+            };
+            println!("  gate      {label}");
         }
     }
 
     let code = match result.state {
+        RunState::Pass if gate_vacuous && !allow_vacuous && !dry => 1,
         RunState::Pass => 0,
         RunState::Fail => 1,
         _ => 2,
@@ -247,6 +266,7 @@ fn print_help(version: &str) {
     println!("  --agent / -a <name>      codex|claude|grok|ollama");
     println!("  --task / -t <text>       Prompt / task");
     println!("  --dry-run                Offline stream (no external CLI)");
+    println!("  --allow-vacuous          Exit 0 even when gate is UNCONFIGURED");
     println!("  --live                   Force live agent (error → dry-run if missing)");
     println!("  --json                   Machine-readable result");
     println!("  KIT_FULL_AUTO=1          Bypass agent approval prompts (dangerous)");

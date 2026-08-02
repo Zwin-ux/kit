@@ -235,11 +235,35 @@ pub async fn execute_cancellable(
 
     // --- gate phase ---
     send(&tx, &id, RunDelta::State(RunState::Gating)).await;
-    let config = load_kit_config(&repo);
+    let mut config = load_kit_config(&repo);
+    // CEO stamp P2: infer defaults on live runs only. Dry-run stays offline-fast
+    // and is exempt from vacuous non-zero exit.
+    if config.gate.is_empty() && !use_dry {
+        let inferred = super::infer::infer_gate(&repo);
+        if !inferred.is_empty() {
+            let line = format!(
+                "gate: inferred checks (no kit.toml gate) — {}\n",
+                inferred
+                    .checks()
+                    .iter()
+                    .map(|(l, c)| format!("{l}:{c}"))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            );
+            append_capped(
+                &mut output,
+                &mut truncated,
+                opts.bounds.output_cap_bytes,
+                &line,
+            );
+            send(&tx, &id, RunDelta::Output(line)).await;
+            config.gate = inferred;
+        }
+    }
     let gate_engine = KitGate::new();
     let gate = if config.gate.is_empty() {
-        // Vacuous is honest: no proof claimed. Still attach so receipt is complete.
-        let line = "gate: no checks configured in kit.toml (vacuous — not a substitute for CI)\n";
+        // Still empty after inference → vacuous (TUI: UNCONFIGURED, never PASS).
+        let line = "gate: no checks configured and none inferred (vacuous — UNCONFIGURED)\n";
         append_capped(
             &mut output,
             &mut truncated,

@@ -23,6 +23,7 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven.
 | Kill mid-run | **Wired** | `k` → EngineCommand::Kill → CancelHandle + tree kill (Win job / Unix pgid); receipt `Killed` |
 | Retry fail | **Wired** | fail-only; gate failure context in new task |
 | Max concurrency | **Wired** | semaphore 8 in engine supervisor |
+| Vacuous gate | **Wired** | empty gate → infer cargo/npm when live; still empty → UI `UNCONFIGURED` (not PASS); live `kit run` exits 1 unless `--allow-vacuous` |
 
 ## Spine
 
@@ -85,9 +86,9 @@ cargo run -p kit-cli
 
 CEO stamped (`docs/dev/tasks/CEO-STAMP-P1.md`): vacuous C→UNCONFIGURED (P2), board prefill-only, attach 1.0.1, JSON thin (P4), **P1 authorized**.
 
-1. **P0** Land PR #11 once Rust CI stays green 3 OS  
-2. **P1** Control plane — **in progress** (EngineCommand + registry + kill/retry/timeout/max-8)  
-3. **P2** Gate vacuous UNCONFIGURED + demo failure  
+1. **P0** Land PR #11 once Rust CI stays green 3 OS — **unblocking** (Unix clippy fixed)  
+2. **P1** Control plane — **shipped on branch** (EngineCommand + registry + kill/retry/timeout/max-8)  
+3. **P2** Gate vacuous UNCONFIGURED + inference — **shipped on branch**; demo deliberate FAIL still open  
 4. **P3** 8-concurrent proof harness (dispatch 12 → ≤8 running)  
 5. **P4** doctor/receipt JSON envelope (`schemaVersion: 1`) + security flags  
 6. **P5** Installers + 1.0.0
