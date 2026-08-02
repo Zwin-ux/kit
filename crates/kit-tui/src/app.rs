@@ -19,6 +19,9 @@ pub const OUTPUT_DISPLAY_CAP_BYTES: usize = 512 * 1024;
 /// Flash banner lifetime in ticks (~2 seconds at [`TICK_HZ`]).
 const FLASH_TICKS: u64 = TICK_HZ * 2;
 
+/// Maximum repo×agent combinations a single dispatch may create (UI guard).
+pub const DISPATCH_FANOUT_CAP: usize = 16;
+
 /// Side effects the event loop must perform after a pure state transition.
 ///
 /// Navigation is **not** an Action — it mutates [`Screen`] in the reducer.
@@ -29,8 +32,9 @@ pub enum Action {
     None,
     /// Restore the terminal and exit.
     Quit,
-    /// Open the dispatch form (F4 — not built yet).
-    OpenDispatch,
+    /// User submitted the dispatch form (queued runs already inserted by reducer).
+    /// M1 engine will pick up `Queued` rows.
+    DispatchSubmitted { run_count: usize },
     /// Request kill of the selected run (M1 engine).
     KillSelected,
     /// Request retry of the selected failed run (M1 engine).
@@ -85,6 +89,83 @@ pub enum Screen {
     /// Terminal would be owned by the agent PTY. Stub until B2-pty.
     /// Esc detaches back to RunDetail without killing.
     Attached,
+    /// Fan-out form: repos × agents × one task.
+    Dispatch,
+    /// Shared work queue (orchestrator view).
+    Board,
+}
+
+/// Which field is focused in the dispatch form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DispatchFocus {
+    #[default]
+    Repos,
+    Agents,
+    Task,
+}
+
+/// Dispatch form — PRD §4.2 fan-out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DispatchForm {
+    pub repos: Vec<(String, bool)>,
+    pub agents: Vec<(String, bool)>,
+    pub task: String,
+    pub focus: DispatchFocus,
+    /// Cursor index into `repos` or `agents` when that column is focused.
+    pub list_cursor: usize,
+}
+
+impl Default for DispatchForm {
+    fn default() -> Self {
+        Self {
+            repos: vec![
+                ("kit".into(), true),
+                ("guardian".into(), false),
+                ("trenchwire".into(), false),
+            ],
+            agents: vec![
+                ("codex".into(), true),
+                ("claude".into(), false),
+                ("grok".into(), false),
+                ("ollama".into(), false),
+            ],
+            task: String::new(),
+            focus: DispatchFocus::Repos,
+            list_cursor: 0,
+        }
+    }
+}
+
+impl DispatchForm {
+    pub fn selected_repos(&self) -> Vec<&str> {
+        self.repos
+            .iter()
+            .filter(|(_, on)| *on)
+            .map(|(n, _)| n.as_str())
+            .collect()
+    }
+
+    pub fn selected_agents(&self) -> Vec<&str> {
+        self.agents
+            .iter()
+            .filter(|(_, on)| *on)
+            .map(|(n, _)| n.as_str())
+            .collect()
+    }
+
+    pub fn fanout_count(&self) -> usize {
+        self.selected_repos().len() * self.selected_agents().len()
+    }
+}
+
+/// One item on the shared Board queue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoardTask {
+    pub id: u64,
+    pub title: String,
+    pub repo_hint: String,
+    pub agent_hint: String,
+    pub done: bool,
 }
 
 /// Kit Control Room application state.
@@ -116,6 +197,14 @@ pub struct App {
     pub stream_follow: bool,
     /// Short-lived status line for unwired engine seams. `(message, began_tick)`.
     flash: Option<(String, u64)>,
+    /// Dispatch form (always held; shown when `screen == Dispatch`).
+    pub dispatch: DispatchForm,
+    /// Shared board queue.
+    pub board: Vec<BoardTask>,
+    /// Selected board row.
+    pub board_selected: usize,
+    /// Next board id.
+    board_seq: u64,
 }
 
 /// One run as the Control Room / detail view-model (TUI-local).
@@ -251,6 +340,10 @@ impl App {
             detail_scroll: 0,
             stream_follow: true,
             flash: None,
+            dispatch: DispatchForm::default(),
+            board: Vec::new(),
+            board_selected: 0,
+            board_seq: 1,
         }
     }
 
@@ -362,6 +455,8 @@ impl App {
             Screen::ControlRoom => self.on_control_room_key(key),
             Screen::RunDetail { pane } => self.on_detail_key(key, pane),
             Screen::Attached => self.on_attached_key(key),
+            Screen::Dispatch => self.on_dispatch_key(key),
+            Screen::Board => self.on_board_key(key),
         }
     }
 
@@ -389,8 +484,12 @@ impl App {
                 Action::None
             }
             KeyCode::Char('d') | KeyCode::Char('D') => {
-                self.set_flash("dispatch requires F4 (not built yet)");
-                Action::OpenDispatch
+                self.screen = Screen::Dispatch;
+                Action::None
+            }
+            KeyCode::Char('b') | KeyCode::Char('B') => {
+                self.screen = Screen::Board;
+                Action::None
             }
             KeyCode::Char('k') | KeyCode::Char('K') => {
                 self.set_flash("kill requires run engine (M1)");
@@ -399,6 +498,230 @@ impl App {
             KeyCode::Char('r') | KeyCode::Char('R') => {
                 self.set_flash("retry requires run engine (M1)");
                 Action::RetrySelected
+            }
+            _ => Action::None,
+        }
+    }
+
+    fn on_dispatch_key(&mut self, key: KeyEvent) -> Action {
+        match key.code {
+            KeyCode::Esc => {
+                self.screen = Screen::ControlRoom;
+                Action::None
+            }
+            KeyCode::Char('q') | KeyCode::Char('Q')
+                if self.dispatch.focus != DispatchFocus::Task =>
+            {
+                self.should_quit = true;
+                Action::Quit
+            }
+            KeyCode::Tab => {
+                self.dispatch.focus = match self.dispatch.focus {
+                    DispatchFocus::Repos => DispatchFocus::Agents,
+                    DispatchFocus::Agents => DispatchFocus::Task,
+                    DispatchFocus::Task => DispatchFocus::Repos,
+                };
+                self.dispatch.list_cursor = 0;
+                Action::None
+            }
+            KeyCode::BackTab => {
+                self.dispatch.focus = match self.dispatch.focus {
+                    DispatchFocus::Repos => DispatchFocus::Task,
+                    DispatchFocus::Agents => DispatchFocus::Repos,
+                    DispatchFocus::Task => DispatchFocus::Agents,
+                };
+                self.dispatch.list_cursor = 0;
+                Action::None
+            }
+            KeyCode::Up => {
+                match self.dispatch.focus {
+                    DispatchFocus::Repos | DispatchFocus::Agents => {
+                        self.dispatch.list_cursor = self.dispatch.list_cursor.saturating_sub(1);
+                    }
+                    DispatchFocus::Task => {}
+                }
+                Action::None
+            }
+            KeyCode::Down => {
+                match self.dispatch.focus {
+                    DispatchFocus::Repos => {
+                        let max = self.dispatch.repos.len().saturating_sub(1);
+                        self.dispatch.list_cursor = (self.dispatch.list_cursor + 1).min(max);
+                    }
+                    DispatchFocus::Agents => {
+                        let max = self.dispatch.agents.len().saturating_sub(1);
+                        self.dispatch.list_cursor = (self.dispatch.list_cursor + 1).min(max);
+                    }
+                    DispatchFocus::Task => {}
+                }
+                Action::None
+            }
+            KeyCode::Char(' ') if self.dispatch.focus != DispatchFocus::Task => {
+                self.toggle_dispatch_cursor();
+                Action::None
+            }
+            KeyCode::Enter => self.submit_dispatch(),
+            KeyCode::Backspace if self.dispatch.focus == DispatchFocus::Task => {
+                self.dispatch.task.pop();
+                Action::None
+            }
+            KeyCode::Char(c) if self.dispatch.focus == DispatchFocus::Task && !c.is_control() => {
+                if self.dispatch.task.len() < 240 {
+                    self.dispatch.task.push(c);
+                }
+                Action::None
+            }
+            _ => Action::None,
+        }
+    }
+
+    fn toggle_dispatch_cursor(&mut self) {
+        match self.dispatch.focus {
+            DispatchFocus::Repos => {
+                if let Some((_, on)) = self.dispatch.repos.get_mut(self.dispatch.list_cursor) {
+                    *on = !*on;
+                }
+            }
+            DispatchFocus::Agents => {
+                if let Some((_, on)) = self.dispatch.agents.get_mut(self.dispatch.list_cursor) {
+                    *on = !*on;
+                }
+            }
+            DispatchFocus::Task => {}
+        }
+    }
+
+    fn submit_dispatch(&mut self) -> Action {
+        let task = self.dispatch.task.trim().to_string();
+        if task.is_empty() {
+            self.set_flash("task is empty — type a prompt first");
+            self.dispatch.focus = DispatchFocus::Task;
+            return Action::None;
+        }
+        let repos = self
+            .dispatch
+            .selected_repos()
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        let agents = self
+            .dispatch
+            .selected_agents()
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if repos.is_empty() || agents.is_empty() {
+            self.set_flash("select at least one repo and one agent");
+            return Action::None;
+        }
+        let n = repos.len() * agents.len();
+        if n > DISPATCH_FANOUT_CAP {
+            self.set_flash(format!(
+                "fan-out {n} exceeds cap {DISPATCH_FANOUT_CAP} — deselect some"
+            ));
+            return Action::None;
+        }
+
+        let mut first_id = None;
+        for repo in &repos {
+            for agent in &agents {
+                let id = RunId::new();
+                if first_id.is_none() {
+                    first_id = Some(id.clone());
+                }
+                let mut row = RunRow::new(id, repo.clone(), agent.clone(), task.clone());
+                row.state = RunState::Queued;
+                self.upsert_run(row);
+            }
+        }
+        if let Some(id) = first_id {
+            self.selected_id = Some(id);
+        }
+        self.screen = Screen::ControlRoom;
+        self.set_flash(format!("{n} run(s) queued — engine (M1) will execute"));
+        Action::DispatchSubmitted { run_count: n }
+    }
+
+    fn on_board_key(&mut self, key: KeyEvent) -> Action {
+        match key.code {
+            KeyCode::Esc => {
+                self.screen = Screen::ControlRoom;
+                Action::None
+            }
+            KeyCode::Char('q') | KeyCode::Char('Q') => {
+                self.should_quit = true;
+                Action::Quit
+            }
+            KeyCode::Up if !self.board.is_empty() => {
+                self.board_selected = self.board_selected.saturating_sub(1);
+                Action::None
+            }
+            KeyCode::Down if !self.board.is_empty() => {
+                let max = self.board.len().saturating_sub(1);
+                self.board_selected = (self.board_selected + 1).min(max);
+                Action::None
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                // Seed a board item from the dispatch task field if set, else placeholder.
+                let title = if self.dispatch.task.trim().is_empty() {
+                    format!("task-{}", self.board_seq)
+                } else {
+                    self.dispatch.task.trim().to_string()
+                };
+                let id = self.board_seq;
+                self.board_seq += 1;
+                self.board.push(BoardTask {
+                    id,
+                    title,
+                    repo_hint: self
+                        .dispatch
+                        .selected_repos()
+                        .first()
+                        .copied()
+                        .unwrap_or("kit")
+                        .to_string(),
+                    agent_hint: self
+                        .dispatch
+                        .selected_agents()
+                        .first()
+                        .copied()
+                        .unwrap_or("codex")
+                        .to_string(),
+                    done: false,
+                });
+                self.board_selected = self.board.len().saturating_sub(1);
+                Action::None
+            }
+            KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Delete if !self.board.is_empty() => {
+                self.board.remove(self.board_selected);
+                if self.board_selected >= self.board.len() && self.board_selected > 0 {
+                    self.board_selected -= 1;
+                }
+                Action::None
+            }
+            KeyCode::Char(' ') if !self.board.is_empty() => {
+                if let Some(t) = self.board.get_mut(self.board_selected) {
+                    t.done = !t.done;
+                }
+                Action::None
+            }
+            KeyCode::Enter if !self.board.is_empty() => {
+                // Prefill dispatch from the selected board item and open form.
+                let item = self.board[self.board_selected].clone();
+                self.dispatch.task = item.title;
+                for (name, on) in &mut self.dispatch.repos {
+                    *on = *name == item.repo_hint;
+                }
+                for (name, on) in &mut self.dispatch.agents {
+                    *on = *name == item.agent_hint;
+                }
+                self.dispatch.focus = DispatchFocus::Task;
+                self.screen = Screen::Dispatch;
+                Action::None
+            }
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                self.screen = Screen::Dispatch;
+                Action::None
             }
             _ => Action::None,
         }
@@ -492,8 +815,8 @@ impl App {
                 Action::RetrySelected
             }
             KeyCode::Char('d') | KeyCode::Char('D') => {
-                self.set_flash("dispatch requires F4 (not built yet)");
-                Action::OpenDispatch
+                self.screen = Screen::Dispatch;
+                Action::None
             }
             _ => Action::None,
         }
@@ -856,6 +1179,33 @@ impl App {
             .display_order()
             .first()
             .map(|&i| self.runs[i].id.clone());
+
+        // Board fixture items for F4 snapshots / QA.
+        self.board = vec![
+            BoardTask {
+                id: 1,
+                title: "port guard.js".into(),
+                repo_hint: "kit".into(),
+                agent_hint: "codex".into(),
+                done: false,
+            },
+            BoardTask {
+                id: 2,
+                title: "frame clock".into(),
+                repo_hint: "kit".into(),
+                agent_hint: "grok".into(),
+                done: false,
+            },
+            BoardTask {
+                id: 3,
+                title: "fix red CI".into(),
+                repo_hint: "trenchwire".into(),
+                agent_hint: "codex".into(),
+                done: true,
+            },
+        ];
+        self.board_seq = 4;
+        self.board_selected = 0;
         self.dirty = true;
     }
 }
@@ -1220,7 +1570,57 @@ mod tests {
         assert_eq!(app.update(key('k')), Action::KillSelected);
         assert!(app.flash_message().is_some());
         assert_eq!(app.update(key('r')), Action::RetrySelected);
-        assert_eq!(app.update(key('d')), Action::OpenDispatch);
+    }
+
+    #[test]
+    fn d_opens_dispatch_and_esc_returns() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.update(key('d'));
+        assert_eq!(app.screen, Screen::Dispatch);
+        app.update(code(KeyCode::Esc));
+        assert_eq!(app.screen, Screen::ControlRoom);
+    }
+
+    #[test]
+    fn b_opens_board() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.update(key('b'));
+        assert_eq!(app.screen, Screen::Board);
+        assert!(!app.board.is_empty());
+    }
+
+    #[test]
+    fn dispatch_submit_fans_out_queued_runs() {
+        let mut app = App::with_motion(false);
+        app.dispatch.task = "ship the gate".into();
+        // kit + guardian × codex = 2 when we enable guardian
+        app.dispatch.repos[1].1 = true; // guardian
+        let before = app.runs.len();
+        let action = app.update(key('d'));
+        assert_eq!(action, Action::None);
+        assert_eq!(app.screen, Screen::Dispatch);
+        let action = app.update(code(KeyCode::Enter));
+        assert_eq!(action, Action::DispatchSubmitted { run_count: 2 });
+        assert_eq!(app.screen, Screen::ControlRoom);
+        assert_eq!(app.runs.len(), before + 2);
+        assert!(
+            app.runs
+                .iter()
+                .filter(|r| r.task == "ship the gate")
+                .all(|r| r.state == RunState::Queued)
+        );
+    }
+
+    #[test]
+    fn board_enter_prefills_dispatch() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.update(key('b'));
+        app.update(code(KeyCode::Enter));
+        assert_eq!(app.screen, Screen::Dispatch);
+        assert_eq!(app.dispatch.task, "port guard.js");
     }
 
     #[test]

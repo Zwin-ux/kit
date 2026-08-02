@@ -11,14 +11,17 @@
 //! - [`event`] — frozen contract: `AppEvent`, `Clock`, tick cadence
 //! - [`app`] — pure reducer over `AppEvent` → `Action`, screen routing
 //! - [`event_loop`] — single `tokio::select!` merging terminal, tick, runs
-//! - [`ui`] — Control Room, Run Detail, Attached frames
+//! - [`ui`] — Control Room, Run Detail, Dispatch, Board, Attached frames
+//!
+//! Agent skills: `.agents/skills` (addyosmani/agent-skills). See root `AGENTS.md`.
 
 pub mod app;
 pub mod event;
 #[path = "loop.rs"]
 pub mod event_loop;
+pub mod theme;
 pub mod ui;
 
-pub use app::{Action, App, DetailPane, RunRow, Screen};
+pub use app::{Action, App, BoardTask, DetailPane, DispatchFocus, DispatchForm, RunRow, Screen};
 pub use event::{AppEvent, Clock, TICK_HZ, TICK_INTERVAL, motion_enabled};
 pub use event_loop::run;

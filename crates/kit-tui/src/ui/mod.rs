@@ -1,7 +1,9 @@
-//! Control Room and Run Detail frames.
+//! Control Room, Run Detail, Dispatch, and Board frames.
 
+mod board;
 mod common;
 mod control_room;
+mod dispatch;
 mod run_detail;
 
 use crate::app::{App, Screen};
@@ -13,6 +15,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Screen::ControlRoom => control_room::draw(frame, app),
         Screen::RunDetail { pane } => run_detail::draw(frame, app, pane),
         Screen::Attached => run_detail::draw_attached(frame, app),
+        Screen::Dispatch => dispatch::draw(frame, app),
+        Screen::Board => board::draw(frame, app),
     }
 }
 
@@ -134,6 +138,31 @@ mod tests {
         )));
         assert_eq!(app.screen, Screen::Attached);
         let frame = render_to_string(&app, 80, 12);
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
+    fn dispatch_snapshot() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.dispatch.task = "port guard.js across the monorepo".into();
+        app.update(AppEvent::Key(KeyEvent::new(
+            KeyCode::Char('d'),
+            KeyModifiers::NONE,
+        )));
+        let frame = render_to_string(&app, 80, 16);
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
+    fn board_snapshot() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.update(AppEvent::Key(KeyEvent::new(
+            KeyCode::Char('b'),
+            KeyModifiers::NONE,
+        )));
+        let frame = render_to_string(&app, 80, 14);
         insta::assert_snapshot!(frame);
     }
 }

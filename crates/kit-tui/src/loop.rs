@@ -86,7 +86,7 @@ async fn run_with_terminal(
         match action {
             Action::Quit
             | Action::None
-            | Action::OpenDispatch
+            | Action::DispatchSubmitted { .. }
             | Action::KillSelected
             | Action::RetrySelected
             | Action::AttachSelected => {}

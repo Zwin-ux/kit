@@ -148,6 +148,6 @@ fn annotation_row(summary: &str, selected: bool) -> Row<'static> {
 }
 
 fn draw_footer(frame: &mut Frame, _app: &App, area: Rect) {
-    let hints = " [d]ispatch  [enter] open  [g]ate log  [k]ill  [r]etry";
+    let hints = " [d]ispatch  [b]oard  [enter] open  [g]ate log  [k]ill  [r]etry";
     frame.render_widget(Paragraph::new(hints), area);
 }
