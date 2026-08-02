@@ -311,12 +311,15 @@ impl RunRow {
         self.output.push_str(chunk);
         if self.output.len() > OUTPUT_DISPLAY_CAP_BYTES {
             let overflow = self.output.len() - OUTPUT_DISPLAY_CAP_BYTES;
-            // Drop a full line boundary when possible so we do not start mid-glyph run.
-            let rest = &self.output[overflow..];
-            let cut = rest
-                .find('\n')
-                .map(|i| overflow + i + 1)
-                .unwrap_or(overflow);
+            // Byte cap may land mid-codepoint — walk *forward* so remaining
+            // length never exceeds the cap (walking back would re-include bytes).
+            let mut start = overflow.min(self.output.len());
+            while start < self.output.len() && !self.output.is_char_boundary(start) {
+                start += 1;
+            }
+            // Prefer dropping a full line so the display does not start mid-line.
+            let rest = &self.output[start..];
+            let cut = rest.find('\n').map(|i| start + i + 1).unwrap_or(start);
             self.output = self.output[cut..].to_string();
             self.output_truncated = true;
         }
@@ -1331,12 +1334,9 @@ fn short_run_id(id: &RunId) -> String {
     }
 }
 
-/// Approximate gate log height for scroll clamping.
+/// Gate log height for scroll clamping — must match rendered `gate_log_lines`.
 fn gate_log_line_count(run: &RunRow) -> usize {
-    match &run.gate {
-        None => 1,
-        Some(g) => 2 + g.checks.len() + g.firewall_blocks.len() + g.scope_violations.len() + 1,
-    }
+    gate_log_lines(run).len()
 }
 
 /// Public helpers used by the UI for state/gate labels.
@@ -1610,6 +1610,27 @@ mod tests {
         app.update(AppEvent::RunUpdate(id, RunDelta::Output(big)));
         assert!(app.runs[0].output.len() <= OUTPUT_DISPLAY_CAP_BYTES);
         assert!(app.runs[0].output_truncated);
+    }
+
+    #[test]
+    fn output_truncation_stays_on_char_boundary() {
+        let mut row = RunRow::new(
+            RunId("01UTF8000000000000000000000".into()),
+            "kit",
+            "codex",
+            "x",
+        );
+        // Multi-byte UTF-8 (each 雪 is 3 bytes) so a naive byte cut can panic.
+        let snow = "雪".repeat((OUTPUT_DISPLAY_CAP_BYTES / 3) + 80);
+        row.append_output(&snow);
+        assert!(row.output_truncated);
+        assert!(row.output.len() <= OUTPUT_DISPLAY_CAP_BYTES);
+        assert!(
+            row.output.is_char_boundary(row.output.len()),
+            "truncated buffer must remain valid UTF-8"
+        );
+        // Must not panic when re-slicing / displaying.
+        let _ = row.output_lines();
     }
 
     #[test]

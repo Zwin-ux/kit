@@ -49,7 +49,7 @@ fn configure_tree_kill(cmd: &mut Command) {
     {
         // New process group: child's pid becomes the group leader.
         // kill(-pid, SIGKILL) then stops the whole group.
-        use std::os::unix::process::CommandExt;
+        // `process_group` is inherent on tokio::process::Command (no CommandExt import).
         cmd.process_group(0);
     }
     #[cfg(windows)]
@@ -469,5 +469,86 @@ mod tests {
         let _ = handle.wait().await;
         handle.kill().await.expect("second kill");
         handle.kill().await.expect("third kill");
+    }
+
+    /// Spawn a parent that launches a grandchild sleeper; after kill, neither
+    /// pid may remain (P1 kill criterion: no zombies / orphans).
+    #[tokio::test]
+    async fn kill_terminates_process_tree_no_orphans() {
+        let marker = std::env::temp_dir().join(format!(
+            "kit-kill-tree-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&marker);
+
+        let (tx, _rx) = mpsc::channel(8);
+        let cmd = if cfg!(windows) {
+            // Parent cmd starts a detached-looking ping grandchild and waits.
+            // Job object / taskkill /T must reclaim both.
+            let mut c = Command::new("cmd");
+            let script = format!(
+                "start /B cmd /C \"echo running>\"{}\" & ping -n 60 127.0.0.1 >nul\" & ping -n 60 127.0.0.1 >nul",
+                marker.display()
+            );
+            c.args(["/C", &script]);
+            c
+        } else {
+            // Shell parent: background sleep grandchild, write marker with its pid, then sleep.
+            let mut c = Command::new("sh");
+            let script = format!("sleep 60 & echo $! > '{}'; wait", marker.display());
+            c.args(["-c", &script]);
+            c
+        };
+
+        let mut handle = spawn_streaming(AgentKind::Codex, cmd, tx)
+            .await
+            .expect("spawn tree");
+
+        // Wait until grandchild marker appears (or short timeout).
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            if marker.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        let started = Instant::now();
+        handle.kill().await.expect("kill tree");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "tree kill too slow"
+        );
+        let _ = handle.wait().await;
+
+        // Brief settle so OS reaps.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        #[cfg(unix)]
+        {
+            if let Ok(raw) = std::fs::read_to_string(&marker) {
+                if let Ok(child_pid) = raw.trim().parse::<i32>() {
+                    // kill(pid, 0) == 0 means process still exists.
+                    let still_alive = unsafe { libc::kill(child_pid, 0) == 0 };
+                    assert!(
+                        !still_alive,
+                        "orphan grandchild pid {child_pid} still alive after kill"
+                    );
+                }
+            }
+        }
+        #[cfg(windows)]
+        {
+            // If marker was written, try tasklist for residual ping/cmd from our tree.
+            // Direct pid check is harder without writing pid; assert parent reaped at least.
+            let reaped = handle.try_wait().await.expect("try_wait");
+            assert!(reaped.is_some(), "parent not reaped after kill");
+        }
+
+        let _ = std::fs::remove_file(&marker);
     }
 }
