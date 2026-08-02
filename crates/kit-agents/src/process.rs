@@ -530,15 +530,15 @@ mod tests {
 
         #[cfg(unix)]
         {
-            if let Ok(raw) = std::fs::read_to_string(&marker) {
-                if let Ok(child_pid) = raw.trim().parse::<i32>() {
-                    // kill(pid, 0) == 0 means process still exists.
-                    let still_alive = unsafe { libc::kill(child_pid, 0) == 0 };
-                    assert!(
-                        !still_alive,
-                        "orphan grandchild pid {child_pid} still alive after kill"
-                    );
-                }
+            if let Ok(raw) = std::fs::read_to_string(&marker)
+                && let Ok(child_pid) = raw.trim().parse::<i32>()
+            {
+                // kill(pid, 0) == 0 means process still exists.
+                let still_alive = unsafe { libc::kill(child_pid, 0) == 0 };
+                assert!(
+                    !still_alive,
+                    "orphan grandchild pid {child_pid} still alive after kill"
+                );
             }
         }
         #[cfg(windows)]
