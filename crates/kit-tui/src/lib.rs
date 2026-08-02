@@ -23,7 +23,8 @@ pub mod theme;
 pub mod ui;
 
 pub use app::{
-    Action, App, BoardTask, DetailPane, DispatchFocus, DispatchForm, DispatchJob, RunRow, Screen,
+    Action, App, BoardTask, DetailPane, DispatchFocus, DispatchForm, DispatchJob, EngineCommand,
+    RunRow, Screen,
 };
 pub use event::{AppEvent, Clock, TICK_HZ, TICK_INTERVAL, motion_enabled};
 pub use event_loop::{LaunchConfig, run, run_configured};

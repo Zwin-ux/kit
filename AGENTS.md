@@ -12,6 +12,21 @@ Active surface tasks: `tasks/plan.md`, `tasks/todo.md`
 
 ---
 
+## Multi-agent roles (CEO / Power / Luna)
+
+See **`docs/dev/ORCHESTRATION.md`**.
+
+| Role | Who | Job |
+|------|-----|-----|
+| **CEO** | Claude | Sequence, kill criteria, contract edits, merge, product policy |
+| **Power** | Grok | Heavy implementation, TUI/engine wiring, spawn Luna threads |
+| **Factory** | Codex | Mechanical ports, fixtures, CI scaffolding |
+| **Luna** | Many short agents | One-shard diagnose/design/verify (parallel token burn) |
+
+**Luna storm:** parallel explore/implement shards; Power synthesizes; CEO decides/merges.  
+Workflow sketch: `.grok/workflows/kit-luna-storm.rhai` (local; `.grok` may be gitignored).  
+CEO brief template: `docs/dev/tasks/CEO-BRIEF-next.md`.
+
 ## Engineering skills (always)
 
 This repo installs **[addyosmani/agent-skills](https://github.com/addyosmani/agent-skills)** under `.agents/skills/` (24 skills).

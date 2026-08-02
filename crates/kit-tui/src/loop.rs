@@ -34,7 +34,7 @@ pub struct LaunchConfig {
     /// before the M1 engine exists.
     pub demo: bool,
     /// When set, dispatch/kill/retry actions are forwarded here for the engine.
-    pub engine_tx: Option<mpsc::Sender<crate::app::DispatchJob>>,
+    pub engine_tx: Option<mpsc::Sender<crate::app::EngineCommand>>,
 }
 
 /// Run the Control Room until quit. Restores the terminal on every exit path.
@@ -62,7 +62,7 @@ async fn run_with_terminal(
     terminal: &mut Term,
     mut app: App,
     mut run_rx: mpsc::Receiver<(RunId, RunDelta)>,
-    engine_tx: Option<mpsc::Sender<crate::app::DispatchJob>>,
+    engine_tx: Option<mpsc::Sender<crate::app::EngineCommand>>,
 ) -> Result<()> {
     let mut term_events = EventStream::new();
     let mut tick = interval(TICK_INTERVAL);
@@ -104,20 +104,33 @@ async fn run_with_terminal(
 
         let action = app.update(event);
 
-        // Engine seams — forward dispatch jobs when a channel is wired (kit-cli).
+        // Engine seams — forward start/kill/retry when a channel is wired (kit-cli).
         match &action {
             Action::DispatchSubmitted { jobs } => {
                 if let Some(tx) = &engine_tx {
                     for job in jobs {
-                        let _ = tx.send(job.clone()).await;
+                        let _ = tx.send(crate::app::EngineCommand::Start(job.clone())).await;
                     }
                 }
             }
-            Action::Quit
-            | Action::None
-            | Action::KillSelected
-            | Action::RetrySelected
-            | Action::AttachSelected => {}
+            Action::KillSelected { id } => {
+                if let Some(tx) = &engine_tx {
+                    let _ = tx
+                        .send(crate::app::EngineCommand::Kill { id: id.clone() })
+                        .await;
+                }
+            }
+            Action::RetrySelected { source_id, job } => {
+                if let Some(tx) = &engine_tx {
+                    let _ = tx
+                        .send(crate::app::EngineCommand::Retry {
+                            source_id: source_id.clone(),
+                            job: job.clone(),
+                        })
+                        .await;
+                }
+            }
+            Action::Quit | Action::None | Action::AttachSelected => {}
         }
 
         if app.is_dirty() {

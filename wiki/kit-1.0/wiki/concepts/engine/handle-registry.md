@@ -19,38 +19,37 @@ Today each run is a fire-and-forget `tokio::spawn`. The TUI cannot stop a proces
 ## Design
 
 ```
-RunId -> RunHandle {
-  agent: Box<dyn AgentHandle>,
-  cancel: CancellationToken,
-  started: Instant,
-  job: DispatchJob,
-}
+RunId -> Arc<CancelHandle>   // AtomicBool + Notify (no tokio-util)
+EngineCommand { Start(job) | Kill { id } | Retry { source_id, job } }
+Supervisor: Semaphore(8) + RunRegistry + execute_cancellable
 ```
 
-Owned by engine supervisor task in `kit-cli` (or future kit-engine).
+Owned by engine supervisor task in `kit-cli` (CEO vetoed kit-engine extract for P1).
 
 ## Operations
 
 | Op | Behavior |
 |----|----------|
-| register | on spawn |
-| kill | `agent.kill()` + cancel; state Killed; receipt written |
-| get | for attach (PTY) later |
-| drop | on terminal state |
+| register | before concurrency wait (so queued kills work) |
+| kill | `CancelHandle::cancel` → agent `kill()`; state **Killed**; receipt written |
+| timeout | same path as kill; output reason `timeout` (not a new RunState) |
+| drop | unregister on terminal |
 
 ## Action wiring
 
-- `Action::KillSelected` → send `EngineCommand::Kill(id)` on channel
-- `Action::RetrySelected` → kill if running optional; enqueue new job with failure context
+- `Action::KillSelected { id }` → `EngineCommand::Kill { id }`
+- `Action::RetrySelected { source_id, job }` → fail-only; task includes `## Previous gate failure`
 
 ## Concurrency
 
-- Mutex or actor pattern
-- Max concurrent runs (default 8) — queue excess as Queued
+- `tokio::sync::Semaphore` max **8**
+- Excess wait for permit; cancel before acquire → Killed, no worktree
 
 ## Acceptance
 
-- [ ] k stops live codex/claude within 2s
-- [ ] Receipt shows Killed
-- [ ] Worktree kept if dirty
-- [ ] No zombie processes on Windows/macOS/Linux CI
+- [x] EngineCommand channel + registry (Power)
+- [x] Receipt shows Killed on cancel
+- [x] Fail-only retry with gate context
+- [ ] k stops live codex/claude within 2s on 3 OS (dogfood)
+- [ ] No zombie processes proven in CI
+- [ ] Dispatch 12 → ≤8 concurrent

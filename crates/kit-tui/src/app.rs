@@ -31,6 +31,16 @@ pub struct DispatchJob {
     pub task: String,
 }
 
+/// Commands the Control Room event loop forwards to the kit-cli engine supervisor.
+///
+/// Replaces a bare `DispatchJob` channel so kill/retry share one pipe.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EngineCommand {
+    Start(DispatchJob),
+    Kill { id: RunId },
+    Retry { source_id: RunId, job: DispatchJob },
+}
+
 /// Side effects the event loop must perform after a pure state transition.
 ///
 /// Navigation is **not** an Action — it mutates [`Screen`] in the reducer.
@@ -44,10 +54,10 @@ pub enum Action {
     /// User submitted the dispatch form (queued rows already in state).
     /// Forward to the run engine when wired.
     DispatchSubmitted { jobs: Vec<DispatchJob> },
-    /// Request kill of the selected run (M1 engine).
-    KillSelected,
-    /// Request retry of the selected failed run (M1 engine).
-    RetrySelected,
+    /// Request kill of the selected active run.
+    KillSelected { id: RunId },
+    /// Request retry of a failed run (new job already queued in UI state).
+    RetrySelected { source_id: RunId, job: DispatchJob },
     /// Request PTY attach for the selected run (B2-pty).
     AttachSelected,
 }
@@ -500,14 +510,8 @@ impl App {
                 self.screen = Screen::Board;
                 Action::None
             }
-            KeyCode::Char('k') | KeyCode::Char('K') => {
-                self.set_flash("kill requires run engine (M1)");
-                Action::KillSelected
-            }
-            KeyCode::Char('r') | KeyCode::Char('R') => {
-                self.set_flash("retry requires run engine (M1)");
-                Action::RetrySelected
-            }
+            KeyCode::Char('k') | KeyCode::Char('K') => self.request_kill(),
+            KeyCode::Char('r') | KeyCode::Char('R') => self.request_retry(),
             _ => Action::None,
         }
     }
@@ -822,14 +826,8 @@ impl App {
                 self.set_flash("PTY not connected yet — Esc detaches");
                 Action::AttachSelected
             }
-            KeyCode::Char('k') | KeyCode::Char('K') => {
-                self.set_flash("kill requires run engine (M1)");
-                Action::KillSelected
-            }
-            KeyCode::Char('r') | KeyCode::Char('R') => {
-                self.set_flash("retry requires run engine (M1)");
-                Action::RetrySelected
-            }
+            KeyCode::Char('k') | KeyCode::Char('K') => self.request_kill(),
+            KeyCode::Char('r') | KeyCode::Char('R') => self.request_retry(),
             KeyCode::Char('d') | KeyCode::Char('D') => {
                 self.screen = Screen::Dispatch;
                 Action::None
@@ -900,6 +898,77 @@ impl App {
                 pane: DetailPane::Gate,
             } => gate_log_line_count(run),
             _ => 0,
+        }
+    }
+
+    /// Kill the selected active run (Running / Gating / Queued).
+    fn request_kill(&mut self) -> Action {
+        let Some(row) = self.selected_run() else {
+            self.set_flash("no run selected");
+            return Action::None;
+        };
+        if !row.state.is_active() {
+            self.set_flash("run already finished");
+            return Action::None;
+        }
+        let id = row.id.clone();
+        let short = short_run_id(&id);
+        self.set_flash(format!("killing {short}…"));
+        Action::KillSelected { id }
+    }
+
+    /// Fail-only retry: queue a new run with gate failure context in the task.
+    fn request_retry(&mut self) -> Action {
+        let Some(row) = self.selected_run().cloned() else {
+            self.set_flash("no run selected");
+            return Action::None;
+        };
+        if row.state != RunState::Fail {
+            self.set_flash("retry only for failed (gate) runs");
+            return Action::None;
+        }
+
+        let gate_ctx = row
+            .gate_summary()
+            .or_else(|| {
+                row.gate.as_ref().map(|g| {
+                    if g.checks.is_empty() {
+                        "gate failed (no check details)".into()
+                    } else {
+                        format!(
+                            "{} check(s) failed",
+                            g.checks.iter().filter(|c| !c.passed()).count()
+                        )
+                    }
+                })
+            })
+            .unwrap_or_else(|| "gate failed".into());
+
+        let task = format!(
+            "{}\n\n## Previous gate failure\n{}\n\nFix the failure, then leave the worktree green.",
+            row.task.trim_end(),
+            gate_ctx
+        );
+        let new_id = RunId::default();
+        let job = DispatchJob {
+            id: new_id.clone(),
+            repo: row.repo.clone(),
+            agent: row.agent.clone(),
+            task: task.clone(),
+        };
+
+        let mut queued = RunRow::new(new_id.clone(), row.repo, row.agent, task);
+        queued.seq = self.runs.len() as u64;
+        self.runs.push(queued);
+        self.selected_id = Some(new_id);
+        self.screen = Screen::ControlRoom;
+        self.set_flash(format!(
+            "retry queued from {} — starting engine",
+            short_run_id(&row.id)
+        ));
+        Action::RetrySelected {
+            source_id: row.id,
+            job,
         }
     }
 
@@ -1252,6 +1321,16 @@ fn format_elapsed_ticks(ticks: u64) -> String {
     }
 }
 
+/// Short id for flash banners (first 8 chars of RunId).
+fn short_run_id(id: &RunId) -> String {
+    let s = id.0.as_str();
+    if s.len() <= 8 {
+        s.to_string()
+    } else {
+        s[..8].to_string()
+    }
+}
+
 /// Approximate gate log height for scroll clamping.
 fn gate_log_line_count(run: &RunRow) -> usize {
     match &run.gate {
@@ -1583,9 +1662,46 @@ mod tests {
     fn engine_keys_emit_actions_with_flash() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
-        assert_eq!(app.update(key('k')), Action::KillSelected);
+        // Fixture first row is Running — kill is valid.
+        let kill = app.update(key('k'));
+        match kill {
+            Action::KillSelected { id } => {
+                assert_eq!(id.0, "01FIXRUN0KITCODEX000000000");
+            }
+            other => panic!("expected KillSelected, got {other:?}"),
+        }
         assert!(app.flash_message().is_some());
-        assert_eq!(app.update(key('r')), Action::RetrySelected);
+
+        // Select a Fail row for retry.
+        let fail_id = app
+            .runs
+            .iter()
+            .find(|r| r.state == RunState::Fail)
+            .map(|r| r.id.clone())
+            .expect("fixture has Fail run");
+        app.selected_id = Some(fail_id.clone());
+        let before = app.runs.len();
+        let retry = app.update(key('r'));
+        match retry {
+            Action::RetrySelected { source_id, job } => {
+                assert_eq!(source_id, fail_id);
+                assert!(job.task.contains("Previous gate failure"));
+            }
+            other => panic!("expected RetrySelected, got {other:?}"),
+        }
+        assert_eq!(app.runs.len(), before + 1);
+    }
+
+    #[test]
+    fn retry_rejects_non_fail() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        // Running row selected by default.
+        assert_eq!(app.update(key('r')), Action::None);
+        assert!(
+            app.flash_message()
+                .is_some_and(|m| m.contains("retry only"))
+        );
     }
 
     #[test]

@@ -48,7 +48,16 @@ pub trait AgentHandle: Send + Sync {
     async fn wait(&mut self) -> std::io::Result<i32>;
 
     /// Stop the process. Idempotent — killing an exited run is not an error.
+    ///
+    /// Must not deadlock with a concurrent [`Self::wait`] / [`Self::try_wait`]
+    /// on another task: implementations release locks between polls.
     async fn kill(&mut self) -> std::io::Result<()>;
+
+    /// Non-blocking exit probe. `None` if still running.
+    async fn try_wait(&mut self) -> std::io::Result<Option<i32>> {
+        // Default: not concurrent-safe; ChildHandle overrides.
+        Ok(None)
+    }
 }
 
 /// One coding agent Kit can dispatch to.

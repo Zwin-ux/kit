@@ -135,22 +135,44 @@ pub async fn spawn_streaming_with_stdin(
 
 struct ChildHandle {
     /// Mutex so the handle is `Sync` (contract on [`AgentHandle`]).
+    /// Wait uses short `try_wait` polls so `kill` can interleave.
     child: tokio::sync::Mutex<Child>,
 }
 
 #[async_trait::async_trait]
 impl AgentHandle for ChildHandle {
     async fn wait(&mut self) -> std::io::Result<i32> {
-        let mut child = self.child.lock().await;
-        let status = child.wait().await?;
-        Ok(status.code().unwrap_or(1))
+        loop {
+            if let Some(code) = self.try_wait().await? {
+                return Ok(code);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+        }
     }
 
     async fn kill(&mut self) -> std::io::Result<()> {
-        let mut child = self.child.lock().await;
-        let _ = child.start_kill();
-        let _ = child.wait().await;
+        {
+            let mut child = self.child.lock().await;
+            let _ = child.start_kill();
+        }
+        // Reap without holding the lock across a long wait so other polls work.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+        while tokio::time::Instant::now() < deadline {
+            if self.try_wait().await?.is_some() {
+                return Ok(());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        // Best-effort: process may be stuck; kill_on_drop still applies.
         Ok(())
+    }
+
+    async fn try_wait(&mut self) -> std::io::Result<Option<i32>> {
+        let mut child = self.child.lock().await;
+        match child.try_wait()? {
+            Some(status) => Ok(Some(status.code().unwrap_or(1))),
+            None => Ok(None),
+        }
     }
 }
 
