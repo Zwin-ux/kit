@@ -70,20 +70,15 @@ cargo run -p kit-cli
 
 ## Specs / plans
 
-- `docs/dev/PRD-1.0.md` — product requirements  
 - `docs/dev/tasks/B2-agent-adapters.md` — adapter + skills spec  
 - `tasks/plan.md` / `tasks/todo.md` — execution checklist  
-- Root `AGENTS.md` + `.agents/skills` — skill routing for every agent  
-- **`wiki/kit-1.0/`** — Karpathy llm-wiki: every concept fully specified + workstreams P0–P5  
-  - Start: `wiki/kit-1.0/CLAUDE.md` + `wiki/kit-1.0/wiki/index.md`  
-  - Roadmap: `wiki/concepts/roadmap/workstreams`  
-  - Query: `outputs/queries/2026-08-01-what-next-for-high-quality-v1.md`
+- `docs/dev/PRD-1.0.md` — product requirements  
+- Root `AGENTS.md` + `.agents/skills` — skill routing for every agent
 
-## Next (production) — see wiki workstreams
+## Next (production)
 
-1. **P0** Stabilize CI / land PR #11  
-2. **P1** Handle registry + kill + retry + timeout + max concurrency  
-3. **P2** Gate vacuous policy + demo failure  
-4. **P3** 8-concurrent proof harness  
-5. **P4** doctor/receipt JSON + thin polish  
-6. **P5** Installers + 1.0.0
+1. Handle registry for kill/retry from TUI  
+2. B2-pty attach/detach  
+3. Skill multi-select in Dispatch UI  
+4. Real gate configs in dogfood repos  
+5. M5 distribution
