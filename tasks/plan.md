@@ -1,74 +1,58 @@
-# Implementation Plan: Kit TUI surface (F4–F6)
+# Implementation Plan: B2 agent adapters + skills in TUI
 
-Skills active: `planning-and-task-breakdown`, `incremental-implementation`,  
-`test-driven-development`, `frontend-ui-engineering` (TUI-adapted).
+Skills active: `spec-driven-development`, `planning-and-task-breakdown`,
+`incremental-implementation`, `test-driven-development`, `api-and-interface-design`.
 
 ## Overview
 
-Complete the Grok-owned Control Room surface after F2+F3 (PR #11):
-
-1. **F4 Dispatch** — repos × agents × one task → fan-out into queued runs  
-2. **F4 Board** — shared task queue (orchestrator view)  
-3. **F5 Theme** — minimal high-contrast theme + reduced-motion already partially honored  
-4. **F6** — layout rect registry for hit-testing (later slice; keyboard-first until then)
-
-Engine still missing (Codex M1). UI creates **queued** runs and board items so the product is demoable and testable without agents.
+Enable spinning **real** coding agents (Codex / Claude / Grok / Ollama) from the
+Control Room Dispatch form, with the **addyosmani agent-skills** pack injected
+into every worktree and prompt — Codex-like headless workflow, multi-agent.
 
 ## Architecture decisions
 
-1. **Dispatch is pure reducer** until M1: submit inserts `RunRow`s in `Queued` state; flash notes engine will execute later. No fake "running" without process.
-2. **Board is TUI-local** `Vec<BoardTask>` — not a second source of truth for Runs. Claiming a board task can pre-fill Dispatch.
-3. **One form focus model** for Dispatch (field index), same as fennec trade form simplicity.
-4. **No contract edits.** Repos/agents are string labels matching `AgentKind::label`.
-5. **Skills pack** lives in `.agents/skills` (addyosmani/agent-skills); agents must route via `using-agent-skills`.
+1. **Implementations live in `kit-agents`** against the frozen `Agent` trait.
+2. **Skills are filesystem + prompt**, not a new MCP protocol (v1).
+3. **Default live when binary on PATH**; `--dry-run` for CI and offline.
+4. **Codex sandbox default `workspace-write`**; full auto only via `KIT_FULL_AUTO=1`.
+5. **One runner** (`kit-cli` engine) calls adapters; TUI already forwards Dispatch jobs.
 
-## Task list
+## Tasks
 
-### Phase A: Dispatch (F4a)
+### Phase 1 — Skills pack
+- [x] Spec in `docs/dev/tasks/B2-agent-adapters.md`
+- [x] `kit-agents::skills` resolve + install into worktree + build preamble
 
-- [x] A1: `Screen::Dispatch` + `DispatchForm` state + open via `d`
-- [x] A2: Toggle repos/agents, edit task text, focus navigation
-- [x] A3: Submit fan-out → N queued runs + return Control Room
-- [x] A4: Draw dispatch frame + snapshots
+### Phase 2 — Adapters
+- [x] Shared process handle + streaming stdout/stderr → `RunDelta::Output`
+- [x] Codex adapter (`codex exec … --json`)
+- [x] Claude adapter (`claude -p`)
+- [x] Grok adapter (`grok -p --cwd --always-approve`)
+- [x] Ollama adapter (`ollama run`)
+- [x] `probe()` via `--version`
 
-### Checkpoint A
-- [x] cargo test -p kit-tui green
-- [x] Enter from empty selection no-ops; Esc always returns
+### Phase 3 — Wire engine + TUI defaults
+- [x] `execute()` calls adapter when live
+- [x] Auto live if installed; dry-run fallback
+- [x] TUI Dispatch uses live path
+- [x] `kit doctor` probes all four
+- [x] `kit run` defaults live (`--dry-run` opt-in)
 
-### Phase B: Board (F4b)
-
-- [x] B1: `Screen::Board` + board task list + open via `b`
-- [x] B2: Add / select / remove queue items (keyboard)
-- [x] B3: Enter on item → open Dispatch prefilled
-- [x] B4: Board draw + snapshots
-
-### Checkpoint B
-- [x] Full nav: ControlRoom ↔ Dispatch ↔ Board ↔ Detail
-- [x] Footer key map updated on Control Room
-
-### Phase C: Theme (F5 light)
-
-- [x] C1: `theme.rs` with default + high-contrast styles
-- [ ] C2: Apply theme to every widget (partial — module ready)
-- [x] C3: Document `KIT_MOTION` / `NO_COLOR` in module docs
-
-### Checkpoint C
-- [x] clippy -D warnings, fmt, all kit-tui tests
-
-### Phase D: later (not this session unless time)
-
-- [ ] F6 rect hit-testing
-- [ ] Mascot port from assets
-- [ ] Wire Submit to real engine when M1 lands
+### Phase 4 — Docs / verify
+- [x] CURRENT.md + README
+- [ ] cargo test + clippy
+- [ ] Manual: doctor + dry-run still green
 
 ## Risks
 
 | Risk | Mitigation |
 |------|------------|
-| Form editing complex on Windows keys | Press-only filter; char insert; Backspace |
-| Fan-out floods table | Cap selected combos warning if &gt; 16 |
-| Scope into engine | Queued only; flash honesty |
+| Agent blocks on approvals | `KIT_FULL_AUTO`; document sandbox |
+| Windows .cmd path | `Command::new` uses PATH |
+| Huge skill copy cost | copy only if missing; optional env to skip |
+| JSONL noise in stream | pass through; pretty later |
 
 ## Open questions
 
-- None blocking: fan-out is UI-only until M1.
+- Skill multi-select in Dispatch UI → later (F4.1)
+- Attach/PTY → B2-pty

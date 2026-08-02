@@ -7,6 +7,7 @@ use super::paths::worktrees_dir;
 use super::store::{ensure_layout, load_kit_config, write_receipt};
 use super::worktree::{self, branch_name, create_worktree, remove_if_clean, resolve_repo};
 use anyhow::{Context, Result};
+use kit_agents::{Agent, adapter};
 use kit_core::{AgentKind, Bounds, Gate, GateOutcome, Receipt, RunDelta, RunId, RunSpec, RunState};
 use kit_gate::KitGate;
 use std::path::PathBuf;
@@ -20,9 +21,9 @@ pub struct RunOptions {
     pub repo: String,
     pub agent: AgentKind,
     pub task: String,
-    /// When true (default for M1), do not invoke external CLIs — stream a
-    /// bounded dry-run transcript. Real adapters flip this off per agent probe.
-    pub dry_run: bool,
+    /// When true, skip external CLIs and stream a dry-run transcript.
+    /// When `None`, auto: live if the agent binary is on PATH, else dry-run.
+    pub dry_run: Option<bool>,
     pub bounds: Bounds,
 }
 
@@ -32,7 +33,7 @@ impl Default for RunOptions {
             repo: ".".into(),
             agent: AgentKind::Codex,
             task: String::new(),
-            dry_run: true,
+            dry_run: None,
             bounds: Bounds::default(),
         }
     }
@@ -72,29 +73,67 @@ pub async fn execute(
     let mut truncated = false;
 
     // --- agent phase ---
-    let agent_ok = if opts.dry_run {
+    let force_dry = opts.dry_run == Some(true);
+    let force_live = opts.dry_run == Some(false);
+    let agent_impl = adapter(opts.agent);
+    let status = agent_impl.probe().await;
+    let use_dry = if force_dry {
+        true
+    } else if force_live {
+        if !status.installed {
+            append_capped(
+                &mut output,
+                &mut truncated,
+                opts.bounds.output_cap_bytes,
+                &format!(
+                    "kit: {} not on PATH — cannot force live; install {}\n",
+                    opts.agent,
+                    opts.agent.binary()
+                ),
+            );
+            send(
+                &tx,
+                &id,
+                RunDelta::Output(format!(
+                    "kit: {} missing; falling back to dry-run\n",
+                    opts.agent.binary()
+                )),
+            )
+            .await;
+            true
+        } else {
+            false
+        }
+    } else {
+        // Auto: live when installed.
+        !status.installed
+    };
+
+    let agent_ok = if use_dry {
+        if !force_dry && !status.installed {
+            send(
+                &tx,
+                &id,
+                RunDelta::Output(format!(
+                    "kit: {} not installed — dry-run (install CLI for live agents)\n",
+                    opts.agent.binary()
+                )),
+            )
+            .await;
+        }
         dry_run_agent(&opts, &id, &wt_path, &tx, &mut output, &mut truncated).await?
     } else {
-        // Real adapters land as B2; fail closed to dry-run until then.
-        append_capped(
+        live_agent(
+            agent_impl.as_ref(),
+            &opts,
+            &id,
+            &repo,
+            &wt_path,
+            &tx,
             &mut output,
             &mut truncated,
-            opts.bounds.output_cap_bytes,
-            &format!(
-                "kit: real agent adapters not implemented yet; refusing non-dry run for {}\n",
-                opts.agent
-            ),
-        );
-        send(
-            &tx,
-            &id,
-            RunDelta::Output(format!(
-                "kit: use --dry-run (default) until {} adapter lands\n",
-                opts.agent
-            )),
         )
-        .await;
-        false
+        .await?
     };
 
     // --- gate phase ---
@@ -173,7 +212,7 @@ async fn dry_run_agent(
         format!("task: {}", opts.task),
         format!("worktree: {}", worktree.display()),
         "status: streaming (no external CLI invoked)".into(),
-        "note: set real adapters (B2) for production agent execution".into(),
+        "hint: install codex/claude/grok/ollama for live TUI dispatch".into(),
     ];
     for line in lines {
         let chunk = format!("{line}\n");
@@ -182,6 +221,85 @@ async fn dry_run_agent(
         sleep(Duration::from_millis(15)).await;
     }
     Ok(true)
+}
+
+/// Live agent via kit-agents adapter; tee deltas into local output buffer.
+#[allow(clippy::too_many_arguments)]
+async fn live_agent(
+    agent: &dyn Agent,
+    opts: &RunOptions,
+    id: &RunId,
+    repo: &std::path::Path,
+    worktree: &std::path::Path,
+    tx: &Option<mpsc::Sender<(RunId, RunDelta)>>,
+    output: &mut String,
+    truncated: &mut bool,
+) -> Result<bool> {
+    let (local_tx, mut local_rx) = mpsc::channel::<RunDelta>(256);
+    let tee_tx = tx.clone();
+    let id_tee = id.clone();
+    let cap = opts.bounds.output_cap_bytes;
+    // Tee task: forward to UI + capture for receipt.
+    // We cannot easily share output mutably; collect after wait via another approach:
+    // run tee in this task interleaved with wait by using try_recv loop.
+
+    let spec = RunSpec {
+        repo: repo.to_path_buf(),
+        agent: opts.agent,
+        task: opts.task.clone(),
+        branch: None,
+        bounds: opts.bounds.clone(),
+    };
+
+    let mut handle = agent
+        .spawn(&spec, worktree, local_tx)
+        .await
+        .with_context(|| format!("spawn {}", opts.agent))?;
+
+    // Drain stream until process exits.
+    let wait_fut = handle.wait();
+    tokio::pin!(wait_fut);
+
+    let code = loop {
+        tokio::select! {
+            biased;
+            maybe = local_rx.recv() => {
+                match maybe {
+                    Some(delta) => {
+                        if let RunDelta::Output(chunk) = &delta {
+                            append_capped(output, truncated, cap, chunk);
+                        }
+                        if let Some(ui) = &tee_tx {
+                            let _ = ui.send((id_tee.clone(), delta)).await;
+                        }
+                    }
+                    None => {
+                        // channel closed — still wait for process
+                        break wait_fut.await.unwrap_or(1);
+                    }
+                }
+            }
+            status = &mut wait_fut => {
+                let code = status.unwrap_or(1);
+                // drain remaining
+                while let Ok(delta) = local_rx.try_recv() {
+                    if let RunDelta::Output(chunk) = &delta {
+                        append_capped(output, truncated, cap, chunk);
+                    }
+                    if let Some(ui) = &tee_tx {
+                        let _ = ui.send((id_tee.clone(), delta)).await;
+                    }
+                }
+                break code;
+            }
+        }
+    };
+
+    let ok = code == 0;
+    let line = format!("kit: {} exited with code {code}\n", opts.agent);
+    append_capped(output, truncated, cap, &line);
+    send(tx, id, RunDelta::Output(line)).await;
+    Ok(ok)
 }
 
 fn append_capped(buf: &mut String, truncated: &mut bool, cap: u64, chunk: &str) {
@@ -243,7 +361,7 @@ mod tests {
             repo: root.to_string_lossy().into_owned(),
             agent: AgentKind::Codex,
             task: "m1 skeleton smoke".into(),
-            dry_run: true,
+            dry_run: Some(true),
             bounds: Bounds::default(),
         };
 

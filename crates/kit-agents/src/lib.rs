@@ -3,13 +3,28 @@
 //! One trait, four implementations. A broken adapter degrades one agent and
 //! never the control room (PRD risk table).
 //!
-//! CONTRACT FILE. Changing the `Agent` trait is a Claude-only operation;
-//! agents file an issue instead of editing. Adding an implementation in
-//! another module is ordinary work.
+//! **Contract:** the `Agent` trait is Claude-only to change. Adding adapters
+//! in modules is ordinary work (this crate).
+//!
+//! Skills: every live spawn injects `.agents/skills` (addyosmani pack) into the
+//! worktree and prepends a routing preamble — Codex-style headless workflow
+//! with engineering discipline.
+
+mod claude;
+mod codex;
+mod grok;
+mod ollama;
+mod process;
+pub mod skills;
 
 use kit_core::{AgentKind, RunDelta, RunSpec};
 use std::path::Path;
 use tokio::sync::mpsc;
+
+pub use claude::ClaudeAgent;
+pub use codex::CodexAgent;
+pub use grok::GrokAgent;
+pub use ollama::OllamaAgent;
 
 /// Why an adapter could not start.
 #[derive(Debug, thiserror::Error)]
@@ -37,22 +52,14 @@ pub trait AgentHandle: Send + Sync {
 }
 
 /// One coding agent Kit can dispatch to.
-///
-/// Implementations live in this crate, one module per agent. They must not
-/// read, store, or copy provider credentials (PRD principle 4) — each CLI
-/// uses its own existing login.
 #[async_trait::async_trait]
 pub trait Agent: Send + Sync {
     fn kind(&self) -> AgentKind;
 
-    /// Whether the CLI is present and usable. Cheap — called during discovery,
-    /// which must finish in under a second for all agents combined.
+    /// Whether the CLI is present and usable. Cheap — called during discovery.
     async fn probe(&self) -> AgentStatus;
 
     /// Start the task in `worktree`, streaming output through `tx`.
-    ///
-    /// The adapter is responsible for translating `spec.bounds` into the CLI's
-    /// own flags where possible, and for running headless with no TTY prompt.
     async fn spawn(
         &self,
         spec: &RunSpec,
@@ -86,4 +93,28 @@ impl AgentStatus {
     pub fn is_ready(&self) -> bool {
         self.installed && self.authenticated
     }
+}
+
+/// Return the adapter for a kind.
+pub fn adapter(kind: AgentKind) -> Box<dyn Agent> {
+    match kind {
+        AgentKind::Codex => Box::new(CodexAgent),
+        AgentKind::Claude => Box::new(ClaudeAgent),
+        AgentKind::Grok => Box::new(GrokAgent),
+        AgentKind::Ollama => Box::new(OllamaAgent),
+    }
+}
+
+/// Probe all four agents (for `kit doctor`).
+pub async fn probe_all() -> Vec<AgentStatus> {
+    let mut out = Vec::with_capacity(4);
+    for kind in [
+        AgentKind::Codex,
+        AgentKind::Claude,
+        AgentKind::Grok,
+        AgentKind::Ollama,
+    ] {
+        out.push(adapter(kind).probe().await);
+    }
+    out
 }

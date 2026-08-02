@@ -67,15 +67,15 @@ async fn launch_tui(demo: bool) -> Result<()> {
             let tx = delta_tx.clone();
             tokio::spawn(async move {
                 let agent = parse_agent(&job.agent).unwrap_or(AgentKind::Codex);
+                // TUI: auto live when CLI installed (Codex/Claude/Grok/Ollama).
                 let opts = RunOptions {
                     repo: job.repo,
                     agent,
                     task: job.task,
-                    dry_run: true,
+                    dry_run: None,
                     bounds: Bounds::default(),
                 };
                 if let Err(err) = execute(opts, Some(job.id), Some(tx)).await {
-                    // Surface engine failures in the room when possible.
                     eprintln!("kit engine: {err:#}");
                 }
             });
@@ -96,7 +96,8 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     let mut repo = ".".to_string();
     let mut agent = "codex".to_string();
     let mut task = String::new();
-    let mut dry_run = true;
+    // None = auto (live if installed). --dry-run forces offline.
+    let mut dry_run: Option<bool> = None;
     let mut json = false;
 
     let mut i = 0;
@@ -114,8 +115,8 @@ async fn cmd_run(args: &[String]) -> Result<()> {
                 i += 1;
                 task = args.get(i).context("--task needs text")?.clone();
             }
-            "--dry-run" => dry_run = true,
-            "--no-dry-run" => dry_run = false,
+            "--dry-run" => dry_run = Some(true),
+            "--live" | "--no-dry-run" => dry_run = Some(false),
             "--json" => json = true,
             other if !other.starts_with('-') && task.is_empty() => {
                 // Positional task fallback: kit run "do the thing"
@@ -180,8 +181,8 @@ fn print_help(version: &str) {
     println!("Usage:");
     println!("  kit                      Open the Control Room");
     println!("  kit --demo               Control Room with PRD fixture data");
-    println!("  kit run --task \"…\"       One isolated dry-run (M1 skeleton)");
-    println!("  kit run --repo . --agent codex --task \"…\" [--json]");
+    println!("  kit run --task \"…\"       One isolated run (live agent if installed)");
+    println!("  kit run --agent codex --task \"…\" [--dry-run] [--json]");
     println!("  kit doctor               Environment / readiness");
     println!("  kit --version            Print version");
     println!();
@@ -189,15 +190,19 @@ fn print_help(version: &str) {
     println!("  --repo / -C <path>       Target git repo (default .)");
     println!("  --agent / -a <name>      codex|claude|grok|ollama");
     println!("  --task / -t <text>       Prompt / task");
-    println!("  --dry-run                Stream without external CLI (default)");
-    println!("  --no-dry-run             Refuse until real adapters land");
+    println!("  --dry-run                Offline stream (no external CLI)");
+    println!("  --live                   Force live agent (error → dry-run if missing)");
     println!("  --json                   Machine-readable result");
+    println!("  KIT_FULL_AUTO=1          Bypass agent approval prompts (dangerous)");
+    println!("  KIT_SKILLS_DIR=…         Override skills pack path");
     println!();
     println!("Keys (Control Room):");
     println!("  ↑↓ select   Enter open   g gate   d dispatch   b board");
     println!("  k kill*     r retry*     q quit");
     println!();
-    println!("Docs: docs/dev/PRD-1.0.md  ·  docs/dev/CURRENT.md");
+    println!(
+        "Docs: docs/dev/PRD-1.0.md  ·  docs/dev/CURRENT.md  ·  docs/dev/tasks/B2-agent-adapters.md"
+    );
 }
 
 fn print_doctor(version: &str) {
@@ -207,11 +212,30 @@ fn print_doctor(version: &str) {
     println!("  binary          ok (rust)");
     println!("  control room    ok (kit-tui)");
     println!("  gate engine     ok (kit-gate)");
-    println!("  run engine      ok (dry-run M1 skeleton)");
-    println!("  agent adapters  dry-run only — real CLIs pending B2");
+    println!("  run engine      ok (worktree + adapters + receipt)");
     println!("  kit home        {}", engine::paths::kit_home().display());
+    if let Some(s) = kit_agents::skills::resolve_skills_dir(std::path::Path::new(".")) {
+        println!("  skills pack     {}", s.display());
+    } else {
+        println!("  skills pack     missing (.agents/skills)");
+    }
+    println!();
+    println!("agents:");
+    // Async probe — doctor is sync in signature; block on runtime we already have.
+    let statuses = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(kit_agents::probe_all())
+    });
+    for st in statuses {
+        let flag = if st.is_ready() { "ready" } else { "missing" };
+        let ver = st.version.as_deref().unwrap_or("-");
+        println!("  {:8}  {flag:8}  {ver}", st.kind.label());
+        if let Some(r) = st.remedy {
+            println!("            → {r}");
+        }
+    }
     println!();
     println!("try:");
-    println!("  cargo run -p kit-cli -- run --task \"smoke\" --json");
-    println!("  cargo run -p kit-cli -- --demo");
+    println!("  cargo run -p kit-cli -- run --dry-run --task \"smoke\" --json");
+    println!("  cargo run -p kit-cli -- run --agent codex --task \"…\"");
+    println!("  cargo run -p kit-cli   # Dispatch (d) spins live agents + skills");
 }

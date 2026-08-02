@@ -13,8 +13,9 @@
 ## Next (architect priority)
 - [x] M1 dry-run engine (worktree + stream + gate + receipt)
 - [x] Wire Dispatch → engine channel (live TUI)
-- [ ] B2 real agent adapters (codex/claude/grok/ollama)
+- [x] B2 real agent adapters (codex/claude/grok/ollama) + skills inject
 - [ ] B2-pty attach + kill/retry handles
+- [ ] Skill multi-select in Dispatch UI
 - [ ] F6 hit-testing; mascot polish after dogfood
 
 ## Later

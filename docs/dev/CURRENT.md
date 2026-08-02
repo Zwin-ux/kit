@@ -1,91 +1,84 @@
 # Kit 1.0 — Current architecture state
 
-**Owner judgment:** Grok Build as surface + integration architect.  
 **Date:** 2026-08-01  
-**Goal:** production path, not prototype aura.
+**Goal:** production multi-agent control room — Codex-like headless workflow × N agents + skills.
 
 ---
 
-## The product in one line
+## Product one-liner
 
 Dispatch many agents. Watch them in one place. Nothing ships unproven.
 
 ## What is real today
 
-| Layer | Status | How to prove |
-|-------|--------|----------------|
-| Rust workspace (5 crates) | Real | `cargo test --workspace` |
-| Single event loop + clock | Real | kit-tui tests + idle arm guard |
-| Control Room / detail / dispatch / board | Real UI | `cargo run -p kit-cli -- --demo` |
-| Gate (Guardian port) | Real | kit-gate fixtures |
-| **M1 dry-run engine** | **Real skeleton** | `kit run --task "…" --json` |
-| Worktree + receipt store | Real | `~/.kit/runs/<id>/receipt.json` |
-| Agent CLI adapters (codex/…) | Dry-run only | B2 real spawn next |
-| PTY attach | Stub screen | B2-pty |
-| Headless JSON CLI parity (0.1) | Not ported | B4 |
+| Layer | Status | Prove it |
+|-------|--------|----------|
+| Control Room TUI | Real | `cargo run -p kit-cli -- --demo` |
+| Dispatch / Board / Detail | Real | keys `d` / `b` / Enter |
+| Gate (Guardian) | Real | kit-gate tests |
+| Worktree + receipt | Real | `kit run --dry-run --json` |
+| **Agent adapters** | **Live** | codex / claude / grok / ollama |
+| **Skills injection** | **Live** | `.agents/skills` → worktree + prompt |
+| PTY attach | Stub | B2-pty |
+| Kill mid-run | Seam only | needs handle registry |
 
-## Architectural spine
+## Spine
 
 ```
-kit (kit-cli)
-  ├── kit run  ──► engine::execute
-  │                  ├── git worktree (isolated)
-  │                  ├── dry-run stream → RunDelta
-  │                  ├── kit-gate::evaluate (or vacuous)
-  │                  └── ~/.kit/runs/<id>/ receipt.json + output.log
-  │
-  └── kit / kit --demo  ──► kit_tui::run_configured
-        ├── AppEvent: terminal | AnimationTick | RunDelta
-        ├── Dispatch → EngineRequest channel → same execute()
-        └── Screens: ControlRoom | Detail | Dispatch | Board | Attached
+kit (TUI Dispatch or `kit run`)
+  → engine::execute
+       → git worktree
+       → kit-agents::adapter(kind).spawn  (or dry-run)
+            → install .agents/skills (addyosmani pack)
+            → skills preamble + user task
+            → codex exec | claude -p | grok -p | ollama run
+            → stream → RunDelta → Control Room
+       → kit-gate
+       → ~/.kit/runs/<id>/receipt.json
 ```
 
-**Hard rules (production)**
+## Agent workflow (Codex-style)
 
-1. One clock — no timers outside the event loop.
-2. Contracts are Claude-only.
-3. **Only the engine marks Running / Gating / Pass / Fail.** UI may queue.
-4. **No PASS without a gate outcome** (vacuous gate is explicit in the log).
-5. Clean worktrees are removed; dirty worktrees are kept for forensics.
-6. Receipts are on disk before the process claims done.
+| Agent | Command shape |
+|-------|----------------|
+| Codex | `codex exec -C <wt> -s workspace-write --json <prompt>` |
+| Claude | `claude -p <prompt>` (cwd = worktree) |
+| Grok | `grok -p <prompt> --cwd <wt> --always-approve` |
+| Ollama | `ollama run $KIT_OLLAMA_MODEL` (stdin prompt) |
 
-## Critical path
+`KIT_FULL_AUTO=1` bypasses approval prompts (dangerous — for sandboxes only).  
+`KIT_SKILLS_DIR` overrides skill pack path.
 
-1. ~~Event loop~~ M0  
-2. ~~Gate port~~ M3  
-3. ~~Control Room surface~~ F2–F4  
-4. ~~Runnable entry~~ `kit` / `--demo`  
-5. ~~M1 dry-run E2E skeleton~~ worktree + stream + gate + receipt  
-6. **B2 real agent adapters** (codex/claude/grok/ollama spawn)  
-7. **B2-pty** attach  
-8. Wire kill/retry to process handles  
-9. M5 distribution  
+**Defaults:** live when the CLI is on PATH; `--dry-run` for CI/offline.  
+TUI Dispatch uses the same auto rule.
 
 ## How to run
 
 ```bash
-# Headless M1 (CI-friendly)
-cargo run -p kit-cli -- run --task "smoke" --json
+# Doctor — which agents + skills are ready
+cargo run -p kit-cli -- doctor
 
-# Control Room (demo fixture, no engine traffic)
-cargo run -p kit-cli -- --demo
+# Offline CI path
+cargo run -p kit-cli -- run --dry-run --task "smoke" --json
 
-# Control Room empty — Dispatch (d) starts real dry-run engine jobs
+# Live Codex (if installed) with skills in the worktree
+cargo run -p kit-cli -- run --agent codex --task "add a unit test for X"
+
+# Control Room — d dispatch spins agents live
 cargo run -p kit-cli
-
-# Release
-cargo build -p kit-cli --release
-./target/release/kit run --repo . --task "…" --json
 ```
 
-Env: `KIT_HOME` (default `~/.kit`), `KIT_DEMO=1`, `KIT_MOTION=off`, `NO_COLOR=1`.
+## Specs / plans
 
-## Agent skills
+- `docs/dev/tasks/B2-agent-adapters.md` — adapter + skills spec  
+- `tasks/plan.md` / `tasks/todo.md` — execution checklist  
+- `docs/dev/PRD-1.0.md` — product requirements  
+- Root `AGENTS.md` + `.agents/skills` — skill routing for every agent
 
-`.agents/skills` = [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills).  
-Root `AGENTS.md` routes define → plan → build → verify → review → ship.
+## Next (production)
 
-## PR / merge
-
-Surface + engine skeleton land via PR; Claude reviews crate boundaries.  
-No agent merges its own work (BUILD-ASSIGNMENT).
+1. Handle registry for kill/retry from TUI  
+2. B2-pty attach/detach  
+3. Skill multi-select in Dispatch UI  
+4. Real gate configs in dogfood repos  
+5. M5 distribution

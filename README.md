@@ -35,9 +35,11 @@ cargo build -p kit-cli --release
 
 Default surface is the **Control Room**.  
 `kit run` isolates a git worktree, streams output, runs the gate, writes `~/.kit/runs/<id>/`.  
-Agent CLIs are **dry-run** until B2 adapters land — receipts and gates are still real.  
+**Live adapters:** Codex (`codex exec`), Claude (`claude -p`), Grok (`grok -p`), Ollama — auto when on PATH.  
+Every live run injects [agent-skills](https://github.com/addyosmani/agent-skills) into the worktree + prompt.  
+`--dry-run` for offline/CI. `KIT_FULL_AUTO=1` for approval bypass (dangerous).  
 Keys: `↑↓` select · `Enter` open · `g` gate · `d` dispatch · `b` board · `q` quit.  
-Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md) · PRD: [`docs/dev/PRD-1.0.md`](docs/dev/PRD-1.0.md).
+Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md) · Adapters: [`docs/dev/tasks/B2-agent-adapters.md`](docs/dev/tasks/B2-agent-adapters.md).
 
 ### Kit 0.1.x (npm skill workbench — shipped alpha)
 
