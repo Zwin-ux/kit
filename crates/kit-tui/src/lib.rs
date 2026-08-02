@@ -22,6 +22,8 @@ pub mod event_loop;
 pub mod theme;
 pub mod ui;
 
-pub use app::{Action, App, BoardTask, DetailPane, DispatchFocus, DispatchForm, RunRow, Screen};
+pub use app::{
+    Action, App, BoardTask, DetailPane, DispatchFocus, DispatchForm, DispatchJob, RunRow, Screen,
+};
 pub use event::{AppEvent, Clock, TICK_HZ, TICK_INTERVAL, motion_enabled};
 pub use event_loop::{LaunchConfig, run, run_configured};

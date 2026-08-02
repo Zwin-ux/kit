@@ -23,16 +23,21 @@
 ### Kit 1.0 (Rust Control Room — in progress)
 
 ```bash
-cargo run -p kit-cli -- --demo   # Control Room with sample runs
-cargo run -p kit-cli             # empty Control Room
+# Headless one-run (M1 dry-run: worktree → stream → gate → receipt)
+cargo run -p kit-cli -- run --task "smoke" --json
+
+# Control Room
+cargo run -p kit-cli -- --demo   # sample runs (fixture)
+cargo run -p kit-cli             # empty; d = dispatch starts dry-run engine
 cargo build -p kit-cli --release
-./target/release/kit --demo
+./target/release/kit run --task "…" --json
 ```
 
-Default surface is the **Control Room** (live table of agent runs).  
-`--demo` loads PRD fixture data so you can navigate without the M1 run engine.  
+Default surface is the **Control Room**.  
+`kit run` isolates a git worktree, streams output, runs the gate, writes `~/.kit/runs/<id>/`.  
+Agent CLIs are **dry-run** until B2 adapters land — receipts and gates are still real.  
 Keys: `↑↓` select · `Enter` open · `g` gate · `d` dispatch · `b` board · `q` quit.  
-Architecture status: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md) · PRD: [`docs/dev/PRD-1.0.md`](docs/dev/PRD-1.0.md).
+Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md) · PRD: [`docs/dev/PRD-1.0.md`](docs/dev/PRD-1.0.md).
 
 ### Kit 0.1.x (npm skill workbench — shipped alpha)
 

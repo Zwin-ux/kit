@@ -1,12 +1,14 @@
-//! Kit command line — product entry for the Control Room.
+//! Kit command line — product entry for the Control Room and headless runs.
 //!
-//! Default surface is the ratatui Control Room (PRD §4.2). Headless JSON parity
-//! with the TypeScript CLI lands as Codex B4; until then this binary is the
-//! Rust 1.0 front door.
+//! Default surface is the ratatui Control Room (PRD §4.2). `kit run` is the M1
+//! headless path: worktree → dry-run stream → gate → receipt.
 
-use anyhow::Result;
-use kit_core::{RunDelta, RunId};
-use kit_tui::{LaunchConfig, run_configured};
+mod engine;
+
+use anyhow::{Context, Result};
+use engine::{RunOptions, execute, parse_agent};
+use kit_core::{AgentKind, Bounds, RunDelta, RunId, RunState};
+use kit_tui::{DispatchJob, LaunchConfig, run_configured};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -33,6 +35,7 @@ async fn main() -> Result<()> {
             launch_tui(demo).await
         }
         Some("demo") => launch_tui(true).await,
+        Some("run") => cmd_run(&args[1..]).await,
         Some("doctor") => {
             print_doctor(version);
             Ok(())
@@ -55,30 +58,144 @@ fn wants_demo(args: &[String]) -> bool {
 }
 
 async fn launch_tui(demo: bool) -> Result<()> {
-    // Engine channel: closed sender means no live runs yet (M1). The TUI loop
-    // disables the run arm when the channel ends so idle CPU stays near zero.
-    let (tx, rx) = mpsc::channel::<(RunId, RunDelta)>(64);
-    drop(tx);
+    let (delta_tx, delta_rx) = mpsc::channel::<(RunId, RunDelta)>(256);
+    let (cmd_tx, mut cmd_rx) = mpsc::channel::<DispatchJob>(32);
 
-    run_configured(LaunchConfig { demo }, rx).await
+    // Engine supervisor: keep delta_tx alive for the lifetime of workers.
+    tokio::spawn(async move {
+        while let Some(job) = cmd_rx.recv().await {
+            let tx = delta_tx.clone();
+            tokio::spawn(async move {
+                let agent = parse_agent(&job.agent).unwrap_or(AgentKind::Codex);
+                let opts = RunOptions {
+                    repo: job.repo,
+                    agent,
+                    task: job.task,
+                    dry_run: true,
+                    bounds: Bounds::default(),
+                };
+                if let Err(err) = execute(opts, Some(job.id), Some(tx)).await {
+                    // Surface engine failures in the room when possible.
+                    eprintln!("kit engine: {err:#}");
+                }
+            });
+        }
+    });
+
+    run_configured(
+        LaunchConfig {
+            demo,
+            engine_tx: Some(cmd_tx),
+        },
+        delta_rx,
+    )
+    .await
+}
+
+async fn cmd_run(args: &[String]) -> Result<()> {
+    let mut repo = ".".to_string();
+    let mut agent = "codex".to_string();
+    let mut task = String::new();
+    let mut dry_run = true;
+    let mut json = false;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--repo" | "-C" => {
+                i += 1;
+                repo = args.get(i).context("--repo needs a path")?.clone();
+            }
+            "--agent" | "-a" => {
+                i += 1;
+                agent = args.get(i).context("--agent needs a name")?.clone();
+            }
+            "--task" | "-t" => {
+                i += 1;
+                task = args.get(i).context("--task needs text")?.clone();
+            }
+            "--dry-run" => dry_run = true,
+            "--no-dry-run" => dry_run = false,
+            "--json" => json = true,
+            other if !other.starts_with('-') && task.is_empty() => {
+                // Positional task fallback: kit run "do the thing"
+                task = other.to_string();
+            }
+            other => anyhow::bail!("unknown kit run flag: {other}"),
+        }
+        i += 1;
+    }
+
+    if task.trim().is_empty() {
+        anyhow::bail!("missing task — use --task \"…\" or a positional string");
+    }
+
+    let opts = RunOptions {
+        repo,
+        agent: parse_agent(&agent)?,
+        task,
+        dry_run,
+        bounds: Bounds::default(),
+    };
+
+    let result = execute(opts, None, None).await?;
+
+    if json {
+        let payload = serde_json::json!({
+            "id": result.id.0,
+            "state": format!("{:?}", result.state).to_ascii_lowercase(),
+            "receiptDir": result.receipt_dir,
+            "worktreeRemoved": result.worktree_removed,
+            "gatePassed": result.gate.as_ref().map(|g| g.passed),
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("run {}", result.id);
+        println!("  state     {:?}", result.state);
+        println!("  receipt   {}", result.receipt_dir.display());
+        if let Some(wt) = &result.worktree {
+            println!("  worktree  {} (kept — dirty)", wt.display());
+        } else if result.worktree_removed {
+            println!("  worktree  removed (clean)");
+        }
+        if let Some(g) = &result.gate {
+            println!("  gate      {}", if g.passed { "PASS" } else { "FAIL" });
+        }
+    }
+
+    let code = match result.state {
+        RunState::Pass => 0,
+        RunState::Fail => 1,
+        _ => 2,
+    };
+    if code != 0 {
+        std::process::exit(code);
+    }
+    Ok(())
 }
 
 fn print_help(version: &str) {
     println!("kit {version} — control room for parallel agent work");
     println!();
     println!("Usage:");
-    println!("  kit                 Open the Control Room (empty)");
-    println!("  kit --demo          Open with PRD fixture runs (dogfood without M1)");
-    println!("  kit demo            Same as --demo");
-    println!("  kit tui [--demo]    Explicit TUI entry");
-    println!("  kit doctor          Environment / readiness (scaffold)");
-    println!("  kit --version       Print version");
-    println!("  kit --help          This help");
+    println!("  kit                      Open the Control Room");
+    println!("  kit --demo               Control Room with PRD fixture data");
+    println!("  kit run --task \"…\"       One isolated dry-run (M1 skeleton)");
+    println!("  kit run --repo . --agent codex --task \"…\" [--json]");
+    println!("  kit doctor               Environment / readiness");
+    println!("  kit --version            Print version");
+    println!();
+    println!("Run flags:");
+    println!("  --repo / -C <path>       Target git repo (default .)");
+    println!("  --agent / -a <name>      codex|claude|grok|ollama");
+    println!("  --task / -t <text>       Prompt / task");
+    println!("  --dry-run                Stream without external CLI (default)");
+    println!("  --no-dry-run             Refuse until real adapters land");
+    println!("  --json                   Machine-readable result");
     println!();
     println!("Keys (Control Room):");
     println!("  ↑↓ select   Enter open   g gate   d dispatch   b board");
     println!("  k kill*     r retry*     q quit");
-    println!("  * engine seams — flash until M1");
     println!();
     println!("Docs: docs/dev/PRD-1.0.md  ·  docs/dev/CURRENT.md");
 }
@@ -89,11 +206,12 @@ fn print_doctor(version: &str) {
     println!("status:");
     println!("  binary          ok (rust)");
     println!("  control room    ok (kit-tui)");
-    println!("  gate engine     ok (kit-gate ported)");
-    println!("  run engine      missing — M1 not built (dispatch queues only)");
-    println!("  agent adapters  stub — kit-agents trait frozen, impls pending");
+    println!("  gate engine     ok (kit-gate)");
+    println!("  run engine      ok (dry-run M1 skeleton)");
+    println!("  agent adapters  dry-run only — real CLIs pending B2");
+    println!("  kit home        {}", engine::paths::kit_home().display());
     println!();
-    println!("next:");
+    println!("try:");
+    println!("  cargo run -p kit-cli -- run --task \"smoke\" --json");
     println!("  cargo run -p kit-cli -- --demo");
-    println!("  see docs/dev/CURRENT.md");
 }

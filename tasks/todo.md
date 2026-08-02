@@ -11,8 +11,10 @@
 - [x] `docs/dev/CURRENT.md` architecture truth
 
 ## Next (architect priority)
-- [ ] M1 one-run E2E (Codex engine + Grok PTY) — unblocks real RUNNING
-- [ ] Wire Dispatch submit → spawn (after M1)
+- [x] M1 dry-run engine (worktree + stream + gate + receipt)
+- [x] Wire Dispatch → engine channel (live TUI)
+- [ ] B2 real agent adapters (codex/claude/grok/ollama)
+- [ ] B2-pty attach + kill/retry handles
 - [ ] F6 hit-testing; mascot polish after dogfood
 
 ## Later

@@ -1,8 +1,8 @@
 # Kit 1.0 — Current architecture state
 
-**Owner judgment:** Grok Build acting as surface architect (session).  
+**Owner judgment:** Grok Build as surface + integration architect.  
 **Date:** 2026-08-01  
-**Branch focus:** Control Room is buildable and **runnable** with demo data.
+**Goal:** production path, not prototype aura.
 
 ---
 
@@ -17,63 +17,75 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven.
 | Rust workspace (5 crates) | Real | `cargo test --workspace` |
 | Single event loop + clock | Real | kit-tui tests + idle arm guard |
 | Control Room / detail / dispatch / board | Real UI | `cargo run -p kit-cli -- --demo` |
-| Gate (Guardian port) | Real engine | kit-gate fixture tests |
-| Agent spawn / worktree / PTY | **Not built** | M1 + B2-pty |
-| Headless JSON CLI parity (0.1) | **Not ported** | Codex B4 |
-| npm 0.1.x skill TUI | Legacy | `packages/`, archive branch |
+| Gate (Guardian port) | Real | kit-gate fixtures |
+| **M1 dry-run engine** | **Real skeleton** | `kit run --task "…" --json` |
+| Worktree + receipt store | Real | `~/.kit/runs/<id>/receipt.json` |
+| Agent CLI adapters (codex/…) | Dry-run only | B2 real spawn next |
+| PTY attach | Stub screen | B2-pty |
+| Headless JSON CLI parity (0.1) | Not ported | B4 |
 
 ## Architectural spine
 
 ```
 kit (kit-cli)
-  └── kit_tui::run_configured
-        ├── AppEvent merge: terminal | AnimationTick | RunDelta
-        ├── Screen: ControlRoom | RunDetail | Dispatch | Board | Attached
-        └── (later) kit-agents + kit-gate on run completion
+  ├── kit run  ──► engine::execute
+  │                  ├── git worktree (isolated)
+  │                  ├── dry-run stream → RunDelta
+  │                  ├── kit-gate::evaluate (or vacuous)
+  │                  └── ~/.kit/runs/<id>/ receipt.json + output.log
+  │
+  └── kit / kit --demo  ──► kit_tui::run_configured
+        ├── AppEvent: terminal | AnimationTick | RunDelta
+        ├── Dispatch → EngineRequest channel → same execute()
+        └── Screens: ControlRoom | Detail | Dispatch | Board | Attached
 ```
 
-**Hard rules**
+**Hard rules (production)**
 
-1. One clock — no timers outside the event loop (`event.rs` contract).
-2. Contracts are Claude-only; Grok owns `kit-tui`; Codex owns mechanical engine ports.
-3. UI may create **Queued** runs and board items; only the engine may mark **Running**.
-4. Failures surface first error line in the table; detail holds the full gate log.
+1. One clock — no timers outside the event loop.
+2. Contracts are Claude-only.
+3. **Only the engine marks Running / Gating / Pass / Fail.** UI may queue.
+4. **No PASS without a gate outcome** (vacuous gate is explicit in the log).
+5. Clean worktrees are removed; dirty worktrees are kept for forensics.
+6. Receipts are on disk before the process claims done.
 
-## Critical path (architect priority)
+## Critical path
 
-1. ~~Event loop~~ done (M0)
-2. ~~Gate port~~ done (M3)
-3. ~~Control Room surface~~ done (F2–F4 on PR)
-4. **Runnable entry** — `kit` / `kit --demo` (this milestone)
-5. **M1 one run E2E** — worktree + stream + receipt (Codex + Grok PTY)
-6. Wire dispatch submit → real spawn
-7. Ship distribution (M5)
-
-Polish (theme, mascot, mouse hit-test) **after** a real run path. Demo mode unblocks design dogfood without lying about process control.
+1. ~~Event loop~~ M0  
+2. ~~Gate port~~ M3  
+3. ~~Control Room surface~~ F2–F4  
+4. ~~Runnable entry~~ `kit` / `--demo`  
+5. ~~M1 dry-run E2E skeleton~~ worktree + stream + gate + receipt  
+6. **B2 real agent adapters** (codex/claude/grok/ollama spawn)  
+7. **B2-pty** attach  
+8. Wire kill/retry to process handles  
+9. M5 distribution  
 
 ## How to run
 
 ```bash
-# Control Room with PRD fixture (no engine required)
+# Headless M1 (CI-friendly)
+cargo run -p kit-cli -- run --task "smoke" --json
+
+# Control Room (demo fixture, no engine traffic)
 cargo run -p kit-cli -- --demo
 
-# Empty room
+# Control Room empty — Dispatch (d) starts real dry-run engine jobs
 cargo run -p kit-cli
 
-# Release binary
+# Release
 cargo build -p kit-cli --release
-./target/release/kit --demo
+./target/release/kit run --repo . --task "…" --json
 ```
 
-Env: `KIT_DEMO=1` same as `--demo`.  
-Motion off: `KIT_MOTION=off` or `NO_COLOR=1`.
+Env: `KIT_HOME` (default `~/.kit`), `KIT_DEMO=1`, `KIT_MOTION=off`, `NO_COLOR=1`.
 
 ## Agent skills
 
-`.agents/skills` = [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) (24).  
+`.agents/skills` = [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills).  
 Root `AGENTS.md` routes define → plan → build → verify → review → ship.
 
 ## PR / merge
 
-Surface work lands via PR; Claude reviews crate boundaries.  
+Surface + engine skeleton land via PR; Claude reviews crate boundaries.  
 No agent merges its own work (BUILD-ASSIGNMENT).

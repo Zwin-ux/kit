@@ -28,11 +28,13 @@ use tokio::time::{MissedTickBehavior, interval};
 type Term = Terminal<CrosstermBackend<Stdout>>;
 
 /// How to start the Control Room.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Default)]
 pub struct LaunchConfig {
     /// When true, seed the PRD §4.2 fixture runs so the product is dogfoodable
     /// before the M1 engine exists.
     pub demo: bool,
+    /// When set, dispatch/kill/retry actions are forwarded here for the engine.
+    pub engine_tx: Option<mpsc::Sender<crate::app::DispatchJob>>,
 }
 
 /// Run the Control Room until quit. Restores the terminal on every exit path.
@@ -40,7 +42,7 @@ pub async fn run(run_rx: mpsc::Receiver<(RunId, RunDelta)>) -> Result<()> {
     run_configured(LaunchConfig::default(), run_rx).await
 }
 
-/// Run with explicit launch options (demo fixture, later: restored session).
+/// Run with explicit launch options (demo fixture, engine channel).
 pub async fn run_configured(
     config: LaunchConfig,
     run_rx: mpsc::Receiver<(RunId, RunDelta)>,
@@ -50,7 +52,7 @@ pub async fn run_configured(
     if config.demo {
         app.load_prd_fixture();
     }
-    let result = run_with_terminal(&mut terminal, app, run_rx).await;
+    let result = run_with_terminal(&mut terminal, app, run_rx, config.engine_tx).await;
     restore_terminal(&mut terminal)?;
     result
 }
@@ -60,6 +62,7 @@ async fn run_with_terminal(
     terminal: &mut Term,
     mut app: App,
     mut run_rx: mpsc::Receiver<(RunId, RunDelta)>,
+    engine_tx: Option<mpsc::Sender<crate::app::DispatchJob>>,
 ) -> Result<()> {
     let mut term_events = EventStream::new();
     let mut tick = interval(TICK_INTERVAL);
@@ -101,12 +104,17 @@ async fn run_with_terminal(
 
         let action = app.update(event);
 
-        // Engine seams — M1 / B2-pty / F4 fulfill these. Flash is already set
-        // by the reducer so the user sees honest "not wired" feedback.
-        match action {
+        // Engine seams — forward dispatch jobs when a channel is wired (kit-cli).
+        match &action {
+            Action::DispatchSubmitted { jobs } => {
+                if let Some(tx) = &engine_tx {
+                    for job in jobs {
+                        let _ = tx.send(job.clone()).await;
+                    }
+                }
+            }
             Action::Quit
             | Action::None
-            | Action::DispatchSubmitted { .. }
             | Action::KillSelected
             | Action::RetrySelected
             | Action::AttachSelected => {}

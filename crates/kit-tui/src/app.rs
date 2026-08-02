@@ -22,19 +22,28 @@ const FLASH_TICKS: u64 = TICK_HZ * 2;
 /// Maximum repo×agent combinations a single dispatch may create (UI guard).
 pub const DISPATCH_FANOUT_CAP: usize = 16;
 
+/// A run the engine should start (UI already inserted a Queued row).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DispatchJob {
+    pub id: RunId,
+    pub repo: String,
+    pub agent: String,
+    pub task: String,
+}
+
 /// Side effects the event loop must perform after a pure state transition.
 ///
 /// Navigation is **not** an Action — it mutates [`Screen`] in the reducer.
 /// These variants are engine / future-screen seams only.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     /// No external work; continue the loop.
     None,
     /// Restore the terminal and exit.
     Quit,
-    /// User submitted the dispatch form (queued runs already inserted by reducer).
-    /// M1 engine will pick up `Queued` rows.
-    DispatchSubmitted { run_count: usize },
+    /// User submitted the dispatch form (queued rows already in state).
+    /// Forward to the run engine when wired.
+    DispatchSubmitted { jobs: Vec<DispatchJob> },
     /// Request kill of the selected run (M1 engine).
     KillSelected,
     /// Request retry of the selected failed run (M1 engine).
@@ -623,12 +632,19 @@ impl App {
         }
 
         let mut first_id = None;
+        let mut jobs = Vec::with_capacity(n);
         for repo in &repos {
             for agent in &agents {
                 let id = RunId::new();
                 if first_id.is_none() {
                     first_id = Some(id.clone());
                 }
+                jobs.push(DispatchJob {
+                    id: id.clone(),
+                    repo: repo.clone(),
+                    agent: agent.clone(),
+                    task: task.clone(),
+                });
                 let mut row = RunRow::new(id, repo.clone(), agent.clone(), task.clone());
                 row.state = RunState::Queued;
                 self.upsert_run(row);
@@ -638,8 +654,8 @@ impl App {
             self.selected_id = Some(id);
         }
         self.screen = Screen::ControlRoom;
-        self.set_flash(format!("{n} run(s) queued — engine (M1) will execute"));
-        Action::DispatchSubmitted { run_count: n }
+        self.set_flash(format!("{n} run(s) queued — starting engine"));
+        Action::DispatchSubmitted { jobs }
     }
 
     fn on_board_key(&mut self, key: KeyEvent) -> Action {
@@ -1602,7 +1618,10 @@ mod tests {
         assert_eq!(action, Action::None);
         assert_eq!(app.screen, Screen::Dispatch);
         let action = app.update(code(KeyCode::Enter));
-        assert_eq!(action, Action::DispatchSubmitted { run_count: 2 });
+        match action {
+            Action::DispatchSubmitted { jobs } => assert_eq!(jobs.len(), 2),
+            other => panic!("expected DispatchSubmitted, got {other:?}"),
+        }
         assert_eq!(app.screen, Screen::ControlRoom);
         assert_eq!(app.runs.len(), before + 2);
         assert!(
