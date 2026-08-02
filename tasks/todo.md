@@ -14,8 +14,12 @@
 - [x] M1 dry-run engine (worktree + stream + gate + receipt)
 - [x] Wire Dispatch → engine channel (live TUI)
 - [x] B2 real agent adapters (codex/claude/grok/ollama) + skills inject
-- [ ] B2-pty attach + kill/retry handles
-- [ ] Skill multi-select in Dispatch UI
+- [x] P1 control plane (kill/retry/timeout/max-8 + tree kill)
+- [x] P2 vacuous → UNCONFIGURED + live inference
+- [ ] Land PR #11 (CEO merge after 3-OS green)
+- [ ] P3 8-concurrent proof harness
+- [ ] P4 JSON envelope schemaVersion:1
+- [ ] B2-pty attach (1.0.1) / skill multi-select
 - [ ] F6 hit-testing; mascot polish after dogfood
 
 ## Later
