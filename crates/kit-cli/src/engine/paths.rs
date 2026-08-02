@@ -1,5 +1,17 @@
 //! Production paths for Kit data under `$KIT_HOME` (default `~/.kit`).
 
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
+
+/// Serialize tests that mutate process-global `KIT_HOME`.
+/// Recovers from poison so one failed test does not cascade.
+#[cfg(test)]
+pub fn kit_home_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let m = LOCK.get_or_init(|| Mutex::new(()));
+    m.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 use std::path::PathBuf;
 
 /// Resolve Kit's home directory.

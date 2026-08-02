@@ -19,8 +19,8 @@
 - [x] Surface remake: SPEC + DESIGN + theme + shared chrome + CR/Detail/Dispatch/Board craft
 - [x] `?` help overlay
 - [x] P4 JSON envelope schemaVersion:1 (`run` + `doctor`)
+- [x] P3 8-concurrent proof harness (12 jobs, max ≤8)
 - [ ] Land PR #11 (CEO merge after 3-OS green)
-- [ ] P3 8-concurrent proof harness
 - [ ] B2-pty attach (1.0.1) / skill multi-select
 - [ ] F6 hit-testing; mascot polish after dogfood
 

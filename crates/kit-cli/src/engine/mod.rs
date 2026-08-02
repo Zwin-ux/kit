@@ -9,8 +9,14 @@ pub mod paths;
 pub mod registry;
 pub mod runner;
 pub mod store;
+pub mod supervisor;
 pub mod worktree;
 
+#[allow(unused_imports)] // re-exports for tests / future CLI
 pub use cancel::CancelHandle;
-pub use registry::{RunRegistry, concurrency_limiter};
+#[allow(unused_imports)]
+pub use registry::{MAX_CONCURRENT_RUNS, RunRegistry, concurrency_limiter};
+#[allow(unused_imports)]
 pub use runner::{RunOptions, execute, execute_cancellable, parse_agent};
+#[allow(unused_imports)]
+pub use supervisor::{ConcurrencyProbe, proof_dispatch_n, run_supervisor, spawn_production};

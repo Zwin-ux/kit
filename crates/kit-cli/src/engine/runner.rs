@@ -576,14 +576,8 @@ pub fn parse_agent(s: &str) -> Result<AgentKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::paths::kit_home_test_lock;
     use std::path::PathBuf;
-    use std::sync::{Mutex, OnceLock};
-
-    /// KIT_HOME is process-global — serialize tests that mutate it.
-    fn kit_home_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     /// Holding a std Mutex across await is intentional here: tests must not
     /// interleave KIT_HOME mutation. Clippy would prefer tokio::Mutex; that
@@ -594,7 +588,7 @@ mod tests {
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = T>,
     {
-        let _guard = kit_home_lock().lock().unwrap();
+        let _guard = kit_home_test_lock();
         unsafe {
             std::env::set_var("KIT_HOME", home);
         }

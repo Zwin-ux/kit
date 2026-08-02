@@ -22,7 +22,7 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven.
 | PTY attach | Stub | 1.0.1 (CEO stamp) |
 | Kill mid-run | **Wired** | `k` → EngineCommand::Kill → CancelHandle + tree kill (Win job / Unix pgid); receipt `Killed` |
 | Retry fail | **Wired** | fail-only; gate failure context in new task |
-| Max concurrency | **Wired** | semaphore 8 in engine supervisor |
+| Max concurrency | **Wired + proven** | semaphore 8; P3 harness dispatches 12 dry-runs, asserts max in-flight ≤8 |
 | Vacuous gate | **Wired** | empty gate → infer cargo/npm when live; still empty → UI `UNCONFIGURED` (not PASS); live `kit run` exits 1 unless `--allow-vacuous` |
 | JSON envelope | **Wired** | `schemaVersion: 1` on `run --json` + `doctor --json` — see `docs/json-contract.md` |
 | Help overlay | **Wired** | `?` / Esc in Control Room surface |
@@ -91,6 +91,6 @@ CEO stamped (`docs/dev/tasks/CEO-STAMP-P1.md`): vacuous C→UNCONFIGURED (P2), b
 1. **P0** Land PR #11 once Rust CI stays green 3 OS — **unblocking** (Unix clippy fixed)  
 2. **P1** Control plane — **shipped on branch** (EngineCommand + registry + kill/retry/timeout/max-8)  
 3. **P2** Gate vacuous UNCONFIGURED + inference — **shipped on branch**; demo deliberate FAIL still open  
-4. **P3** 8-concurrent proof harness (dispatch 12 → ≤8 running)  
+4. **P3** 8-concurrent proof harness — **shipped** (`engine::supervisor` + test)
 5. **P4** doctor/receipt JSON envelope (`schemaVersion: 1`) + security flags  
 6. **P5** Installers + 1.0.0

@@ -6,13 +6,9 @@
 mod engine;
 
 use anyhow::{Context, Result};
-use engine::{
-    CancelHandle, RunOptions, RunRegistry, concurrency_limiter, execute, execute_cancellable,
-    parse_agent,
-};
-use kit_core::{AgentKind, Bounds, RunDelta, RunId, RunState};
+use engine::{RunOptions, execute, parse_agent, spawn_production};
+use kit_core::{Bounds, RunDelta, RunId, RunState};
 use kit_tui::{EngineCommand, LaunchConfig, run_configured};
-use std::sync::Arc;
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -64,80 +60,10 @@ fn wants_demo(args: &[String]) -> bool {
 
 async fn launch_tui(demo: bool) -> Result<()> {
     let (delta_tx, delta_rx) = mpsc::channel::<(RunId, RunDelta)>(256);
-    let (cmd_tx, mut cmd_rx) = mpsc::channel::<EngineCommand>(64);
+    let (cmd_tx, cmd_rx) = mpsc::channel::<EngineCommand>(64);
 
-    // Engine supervisor: registry for kill, semaphore for max-8 concurrency.
-    tokio::spawn(async move {
-        let registry = Arc::new(RunRegistry::new());
-        let limiter = concurrency_limiter();
-
-        while let Some(cmd) = cmd_rx.recv().await {
-            match cmd {
-                EngineCommand::Kill { id } => {
-                    let found = registry.kill(&id).await;
-                    if !found {
-                        // Best-effort: run may have already finished.
-                        eprintln!("kit engine: kill {id:?} — no active handle");
-                    }
-                }
-                EngineCommand::Start(job) | EngineCommand::Retry { job, .. } => {
-                    let tx = delta_tx.clone();
-                    let registry = registry.clone();
-                    let limiter = limiter.clone();
-                    // Register cancel before the concurrency wait so `k` can
-                    // abort runs still queued behind the max-8 slot.
-                    let cancel = CancelHandle::new();
-                    let job_id = job.id.clone();
-                    let reg_for_register = registry.clone();
-                    let cancel_for_register = cancel.clone();
-                    tokio::spawn(async move {
-                        reg_for_register
-                            .register(job_id.clone(), cancel_for_register)
-                            .await;
-
-                        // Cap concurrent runs (UI keeps Queued until slot frees).
-                        let permit = tokio::select! {
-                            biased;
-                            _ = cancel.cancelled() => {
-                                registry.unregister(&job_id).await;
-                                let _ = tx
-                                    .send((job_id.clone(), RunDelta::State(RunState::Killed)))
-                                    .await;
-                                return;
-                            }
-                            p = limiter.acquire() => p.expect("limiter alive"),
-                        };
-
-                        if cancel.is_cancelled() {
-                            drop(permit);
-                            registry.unregister(&job_id).await;
-                            let _ = tx
-                                .send((job_id.clone(), RunDelta::State(RunState::Killed)))
-                                .await;
-                            return;
-                        }
-
-                        let agent = parse_agent(&job.agent).unwrap_or(AgentKind::Codex);
-                        let opts = RunOptions {
-                            repo: job.repo,
-                            agent,
-                            task: job.task,
-                            dry_run: None,
-                            bounds: Bounds::default(),
-                        };
-                        if let Err(err) =
-                            execute_cancellable(opts, Some(job.id.clone()), Some(tx), Some(cancel))
-                                .await
-                        {
-                            eprintln!("kit engine: {err:#}");
-                        }
-                        drop(permit);
-                        registry.unregister(&job.id).await;
-                    });
-                }
-            }
-        }
-    });
+    // Engine supervisor: registry + max-8 concurrency (see engine::supervisor).
+    spawn_production(cmd_rx, delta_tx);
 
     run_configured(
         LaunchConfig {
