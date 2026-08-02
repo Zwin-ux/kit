@@ -238,6 +238,19 @@ mod tests {
     }
 
     #[test]
+    fn monochrome_styles_use_modifiers_not_color() {
+        let t = Theme::monochrome();
+        let fail = t.state_style(RunState::Fail);
+        assert!(fail.add_modifier.contains(Modifier::BOLD));
+        let gate = t.gate_style("FAIL");
+        assert!(gate.add_modifier.contains(Modifier::BOLD));
+        let ann = t.annotation();
+        assert!(ann.add_modifier.contains(Modifier::DIM));
+        let selected = t.selected_row();
+        assert!(selected.add_modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
     fn kit_palette_has_accent() {
         let t = Theme::kit();
         assert!(!t.monochrome);

@@ -108,22 +108,66 @@ pub fn draw_header(
 }
 
 /// Footer hints (left) + optional status (right).
+///
+/// Prefer complete short-form tokens over mid-token truncation when width is tight.
 pub fn draw_footer(frame: &mut Frame, area: Rect, theme: &Theme, hints: &str, status: &str) {
     let width = area.width as usize;
-    let hints_n = hints.chars().count();
+    let fitted = fit_footer_hints(
+        hints,
+        width.saturating_sub(if status.is_empty() {
+            0
+        } else {
+            status.chars().count() + 1
+        }),
+    );
+    let hints_n = fitted.chars().count();
     let status_n = status.chars().count();
     let text = if status.is_empty() {
-        truncate(hints, width)
+        fitted
     } else if hints_n + 1 + status_n <= width {
         let spaces = width.saturating_sub(hints_n + status_n);
-        format!("{hints}{}{status}", " ".repeat(spaces))
+        format!("{fitted}{}{status}", " ".repeat(spaces))
     } else {
-        truncate(hints, width)
+        truncate(&fitted, width)
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(text, theme.footer()))),
         area,
     );
+}
+
+/// Drop lower-priority trailing tokens so the footer stays readable at 60 cols.
+/// Tokens are split on `"  ["` boundaries (kit footer grammar).
+pub fn fit_footer_hints(hints: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+    if hints.chars().count() <= max_chars {
+        return hints.to_string();
+    }
+    // Always try to keep leading space + tokens; drop from the end.
+    let parts: Vec<&str> = hints.split("  [").collect();
+    if parts.is_empty() {
+        return truncate(hints, max_chars);
+    }
+    let mut tokens: Vec<String> = Vec::new();
+    for (i, p) in parts.iter().enumerate() {
+        if i == 0 {
+            if !p.is_empty() {
+                tokens.push((*p).to_string());
+            }
+        } else {
+            tokens.push(format!("[{p}"));
+        }
+    }
+    while tokens.len() > 1 {
+        let candidate = tokens.join("  ");
+        if candidate.chars().count() <= max_chars {
+            return candidate;
+        }
+        tokens.pop();
+    }
+    truncate(&tokens.join("  "), max_chars)
 }
 
 /// Empty-state body: one primary message + one action hint.
@@ -198,5 +242,19 @@ mod tests {
         assert!(too_small(Rect::new(0, 0, 40, 20)));
         assert!(too_small(Rect::new(0, 0, 80, 8)));
         assert!(!too_small(Rect::new(0, 0, 80, 24)));
+    }
+
+    #[test]
+    fn fit_footer_drops_trailing_tokens_not_mid_token() {
+        let full =
+            " [↑↓] select  [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry  [?]help";
+        let fitted = fit_footer_hints(full, 50);
+        assert!(fitted.chars().count() <= 50);
+        assert!(
+            !fitted.ends_with('…') || fitted.contains('['),
+            "prefer whole tokens: {fitted}"
+        );
+        // Still starts with select / primary grammar when possible.
+        assert!(fitted.contains("select") || fitted.contains("dispatch"));
     }
 }

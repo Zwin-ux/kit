@@ -548,8 +548,9 @@ impl App {
             KeyCode::Char('q') | KeyCode::Char('Q')
                 if self.dispatch.focus != DispatchFocus::Task =>
             {
-                self.should_quit = true;
-                Action::Quit
+                // SPEC: q quits only from Control Room.
+                self.set_flash("q quits from Control Room — Esc to go back");
+                Action::None
             }
             KeyCode::Tab => {
                 self.dispatch.focus = match self.dispatch.focus {
@@ -692,8 +693,8 @@ impl App {
                 Action::None
             }
             KeyCode::Char('q') | KeyCode::Char('Q') => {
-                self.should_quit = true;
-                Action::Quit
+                self.set_flash("q quits from Control Room — Esc to go back");
+                Action::None
             }
             KeyCode::Up if !self.board.is_empty() => {
                 self.board_selected = self.board_selected.saturating_sub(1);
@@ -773,8 +774,8 @@ impl App {
     fn on_detail_key(&mut self, key: KeyEvent, pane: DetailPane) -> Action {
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') => {
-                self.should_quit = true;
-                Action::Quit
+                self.set_flash("q quits from Control Room — Esc to go back");
+                Action::None
             }
             KeyCode::Esc => {
                 self.screen = Screen::ControlRoom;
@@ -1724,6 +1725,30 @@ mod tests {
         assert!(app.help_open);
         app.update(key('?'));
         assert!(!app.help_open);
+    }
+
+    #[test]
+    fn q_does_not_quit_from_nested_screens() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.update(code(KeyCode::Enter));
+        assert!(matches!(app.screen, Screen::RunDetail { .. }));
+        assert_eq!(app.update(key('q')), Action::None);
+        assert!(!app.should_quit);
+        assert!(matches!(app.screen, Screen::RunDetail { .. }));
+
+        app.update(code(KeyCode::Esc));
+        app.update(key('b'));
+        assert_eq!(app.screen, Screen::Board);
+        assert_eq!(app.update(key('q')), Action::None);
+        assert!(!app.should_quit);
+        assert_eq!(app.screen, Screen::Board);
+
+        app.update(code(KeyCode::Esc));
+        app.update(key('d'));
+        assert_eq!(app.screen, Screen::Dispatch);
+        assert_eq!(app.update(key('q')), Action::None);
+        assert!(!app.should_quit);
     }
 
     #[test]

@@ -62,7 +62,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         frame,
         chunks[2],
         &theme,
-        " [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry  [?]help",
+        " [↑↓] select  [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry  [?]help",
         "",
     );
 }

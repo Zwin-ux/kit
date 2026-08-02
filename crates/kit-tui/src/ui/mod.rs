@@ -54,14 +54,14 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
         Line::from("Global"),
         Line::from("  ?          toggle this help"),
         Line::from("  Esc        back / close help"),
-        Line::from("  q          quit (disabled while attached)"),
+        Line::from("  q          quit (Control Room only; disabled while attached)"),
         Line::from(""),
     ];
     match app.screen {
         Screen::ControlRoom => {
             lines.extend([
                 Line::from("Control Room"),
-                Line::from("  j/k ↑↓     move selection"),
+                Line::from("  ↑↓         move selection"),
                 Line::from("  Enter      open run detail (stream)"),
                 Line::from("  g          open gate log"),
                 Line::from("  d          dispatch fan-out"),
@@ -253,6 +253,24 @@ mod tests {
             KeyModifiers::NONE,
         )));
         let frame = render_to_string(&app, 80, 14);
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
+    fn help_overlay_control_room_snapshot() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.update(AppEvent::Key(KeyEvent::new(
+            KeyCode::Char('?'),
+            KeyModifiers::NONE,
+        )));
+        assert!(app.help_open);
+        let frame = render_to_string(&app, 80, 20);
+        assert!(
+            !frame.contains("j/k"),
+            "help must not advertise j/k nav while k=kill: {frame}"
+        );
+        assert!(frame.contains("kill") || frame.contains("Kill") || frame.contains("k"));
         insta::assert_snapshot!(frame);
     }
 }

@@ -28,8 +28,10 @@
 - [x] `kit-quality-cycle` workflow (audit → skeptic → plan → implement → prove)
 - [x] `docs/dev/WORKFLOW-QUALITY.md` operating guide
 - [x] Recurring 4h audit schedule (Grok scheduler)
-- [ ] First full cycle with implement slices (human-gated)
-- [ ] Paste cycle reports into `wiki/kit-1.0/outputs/queries/` for durability
+- [x] First audit cycle report + Power fixes (keys/footer/q/help snap)
+- [x] Paste audit into `wiki/kit-1.0/outputs/queries/2026-08-02-kit-quality-audit.md`
+- [ ] Full cycle with implement slices (human-gated)
+- [ ] Re-audit after tip CI green
 
 ## Later
 - [ ] Headless JSON CLI parity (B4)

@@ -47,7 +47,7 @@ FOOTER   key hints (dim) · optional flash/status right
 
 | Key | Action |
 |-----|--------|
-| `j`/`k` or arrows | Move selection |
+| `↑`/`↓` arrows | Move selection (`k` is kill — not vim nav) |
 | `Enter` | Open run detail (stream) |
 | `g` | Open run detail (gate pane) |
 | `d` | Dispatch |
@@ -55,7 +55,7 @@ FOOTER   key hints (dim) · optional flash/status right
 | `k` | Kill selected active run |
 | `r` | Retry selected FAIL only |
 | `?` | Help overlay |
-| `q` | Quit |
+| `q` | Quit (**Control Room only**) |
 
 **Empty:** "No runs yet — press **d** to dispatch" (centered in body).  
 **FAIL row:** danger text + optional fail_wash bg; annotation `^ first error` under row.  
