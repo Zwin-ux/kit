@@ -156,7 +156,11 @@ impl AgentHandle for ChildHandle {
 
 /// Cheap PATH probe: try common version flags, then bare `--help`.
 pub async fn probe_binary(binary: &str) -> (bool, Option<String>) {
-    for args in [["--version"].as_slice(), ["-V"].as_slice(), ["version"].as_slice()] {
+    for args in [
+        ["--version"].as_slice(),
+        ["-V"].as_slice(),
+        ["version"].as_slice(),
+    ] {
         if let Some(ver) = try_probe(binary, args).await {
             return (true, ver);
         }
