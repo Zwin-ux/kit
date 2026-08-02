@@ -54,6 +54,19 @@ When user or CEO says **luna storm** / **burn tokens**:
 3. Synthesis thread consolidates into `wiki/kit-1.0/outputs/queries/` + PR checklist
 4. Power implements only CEO-approved shards next
 
+## Long-running quality ladder
+
+Default high-quality loop (not a one-shot):
+
+| Cadence | Workflow | Mode |
+|---------|----------|------|
+| Every few hours | `kit-quality-cycle` | `audit` (read-only) |
+| Feature work | `kit-quality-cycle` | `full` + human gate before implement |
+| Pre-merge | `kit-quality-cycle` | `focus: engine` then `surface` |
+
+Full operating doc: **`docs/dev/WORKFLOW-QUALITY.md`**.  
+Script: `.grok/workflows/kit-quality-cycle.rhai` (also `docs/dev/workflows/` for git).
+
 ## Channels
 
 | Channel | Use |

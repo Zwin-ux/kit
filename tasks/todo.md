@@ -24,6 +24,13 @@
 - [ ] B2-pty attach (1.0.1) / skill multi-select
 - [ ] F6 hit-testing; mascot polish after dogfood
 
+## Quality system
+- [x] `kit-quality-cycle` workflow (audit → skeptic → plan → implement → prove)
+- [x] `docs/dev/WORKFLOW-QUALITY.md` operating guide
+- [x] Recurring 4h audit schedule (Grok scheduler)
+- [ ] First full cycle with implement slices (human-gated)
+- [ ] Paste cycle reports into `wiki/kit-1.0/outputs/queries/` for durability
+
 ## Later
 - [ ] Headless JSON CLI parity (B4)
 - [ ] M5 distribution
