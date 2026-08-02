@@ -81,6 +81,17 @@ async fn run_with_terminal(
 
         let action = app.update(event);
 
+        // Engine seams — M1 / B2-pty / F4 fulfill these. Flash is already set
+        // by the reducer so the user sees honest "not wired" feedback.
+        match action {
+            Action::Quit
+            | Action::None
+            | Action::OpenDispatch
+            | Action::KillSelected
+            | Action::RetrySelected
+            | Action::AttachSelected => {}
+        }
+
         if app.is_dirty() {
             terminal.draw(|f| ui::draw(f, &app))?;
             app.clear_dirty();
@@ -195,10 +206,6 @@ mod tests {
     }
 
     /// Regression: a closed run channel must disable its `select!` arm.
-    ///
-    /// `mpsc::Receiver::recv` yields `None` immediately and forever once every
-    /// sender is dropped. If the arm stays enabled, `select!` picks it on every
-    /// iteration and the loop busy-spins at 100% CPU.
     #[test]
     fn a_closed_run_channel_closes_the_arm() {
         let (event, still_open) = map_run_item(None);
@@ -210,8 +217,6 @@ mod tests {
     async fn recv_on_a_closed_channel_is_immediately_ready_forever() {
         let (tx, mut rx) = mpsc::channel::<(RunId, RunDelta)>(4);
         drop(tx);
-        // Both calls return without ever pending — the exact behaviour that
-        // makes an unguarded select arm spin.
         for _ in 0..2 {
             let got = rx.recv().await;
             assert!(got.is_none());

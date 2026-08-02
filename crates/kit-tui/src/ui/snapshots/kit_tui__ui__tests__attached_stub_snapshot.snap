@@ -1,0 +1,16 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / ATTACHED  kit · codex · port guard.js                                     "
+"                                                                                "
+"┌ attach ──────────────────────────────────────────────────────────────────────┐"
+"│PTY not connected yet — Esc detaches without killing.                         │"
+"│                                                                              │"
+"│[ waiting for agent PTY supervision ]                                         │"
+"│                                                                              │"
+"│PTY not connected yet — Esc detaches                                          │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [esc] detach (without kill)                                                    "

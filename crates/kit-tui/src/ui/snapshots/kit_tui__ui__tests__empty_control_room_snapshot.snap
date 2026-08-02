@@ -1,5 +1,5 @@
 ---
-source: crates/kit-tui/src/ui.rs
+source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
 "KIT / CONTROL ROOM                                            0 RUNNING  0 GATED"

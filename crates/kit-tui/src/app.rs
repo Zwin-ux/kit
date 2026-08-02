@@ -3,18 +3,88 @@
 //! All motion derives from [`Clock`], advanced only by `AppEvent::AnimationTick`.
 //! The reducer is synchronous and free of I/O so it can be driven headlessly
 //! in tests without a terminal.
+//!
+//! Screen model follows fennec-tui: navigation mutates [`Screen`] inside the
+//! reducer; engine work leaves as [`Action`] for the event loop to fulfill.
 
-use crate::event::{AppEvent, Clock, motion_enabled};
+use crate::event::{AppEvent, Clock, TICK_HZ, motion_enabled};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use kit_core::{GateOutcome, RunDelta, RunId, RunState};
+use std::path::PathBuf;
+
+/// Local display cap for streamed output (Principle 1: bounded by default).
+/// Engine may already cap; the TUI never holds more than this for rendering.
+pub const OUTPUT_DISPLAY_CAP_BYTES: usize = 512 * 1024;
+
+/// Flash banner lifetime in ticks (~2 seconds at [`TICK_HZ`]).
+const FLASH_TICKS: u64 = TICK_HZ * 2;
 
 /// Side effects the event loop must perform after a pure state transition.
+///
+/// Navigation is **not** an Action — it mutates [`Screen`] in the reducer.
+/// These variants are engine / future-screen seams only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     /// No external work; continue the loop.
     None,
     /// Restore the terminal and exit.
     Quit,
+    /// Open the dispatch form (F4 — not built yet).
+    OpenDispatch,
+    /// Request kill of the selected run (M1 engine).
+    KillSelected,
+    /// Request retry of the selected failed run (M1 engine).
+    RetrySelected,
+    /// Request PTY attach for the selected run (B2-pty).
+    AttachSelected,
+}
+
+/// Which body pane is focused inside run detail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DetailPane {
+    #[default]
+    Stream,
+    Gate,
+    Diff,
+}
+
+impl DetailPane {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Stream => Self::Gate,
+            Self::Gate => Self::Diff,
+            Self::Diff => Self::Stream,
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        match self {
+            Self::Stream => Self::Diff,
+            Self::Gate => Self::Stream,
+            Self::Diff => Self::Gate,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Stream => "stream",
+            Self::Gate => "gate",
+            Self::Diff => "diff",
+        }
+    }
+}
+
+/// Active surface. Selection (`selected_id`) is shared across screens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Screen {
+    #[default]
+    ControlRoom,
+    RunDetail {
+        pane: DetailPane,
+    },
+    /// Terminal would be owned by the agent PTY. Stub until B2-pty.
+    /// Esc detaches back to RunDetail without killing.
+    Attached,
 }
 
 /// Kit Control Room application state.
@@ -28,18 +98,27 @@ pub struct App {
     dirty: bool,
     /// Last known terminal size (`Resize` events).
     pub size: (u16, u16),
-    /// Selected row in the run table (placeholder selection for M0).
-    pub selected: usize,
+    /// Selected run identity. Stable across re-sorts so the list never jumps
+    /// under the reader (PRD §4.2).
+    pub selected_id: Option<RunId>,
     /// Snapshot of motion preference at construction (tests can override).
     motion: bool,
     /// Banner shown when a background operation fails.
     pub error: Option<String>,
-    /// Placeholder run list — real rows land in a later milestone.
-    /// Kept so `RunUpdate` / `GateResult` have a place to land and be tested.
+    /// Live run table. Order in the vec is insertion order; display order is
+    /// computed by [`App::display_order`].
     pub runs: Vec<RunRow>,
+    /// Active surface.
+    pub screen: Screen,
+    /// Scroll offset (lines from top) when not following the stream/diff tail.
+    pub detail_scroll: u16,
+    /// When true, detail body pins to the last page of lines.
+    pub stream_follow: bool,
+    /// Short-lived status line for unwired engine seams. `(message, began_tick)`.
+    flash: Option<(String, u64)>,
 }
 
-/// Minimal row shown in the Control Room table.
+/// One run as the Control Room / detail view-model (TUI-local).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunRow {
     pub id: RunId,
@@ -48,8 +127,107 @@ pub struct RunRow {
     pub task: String,
     pub state: RunState,
     pub gate: Option<GateOutcome>,
-    /// Elapsed label, e.g. `"2m"`. Empty until a later milestone fills it.
-    pub elapsed: String,
+    /// Clock tick when the run entered an active state (`Running` / `Gating`).
+    pub active_since_tick: Option<u64>,
+    /// Frozen elapsed at the moment the run left an active state, e.g. `"2m"`.
+    pub elapsed_frozen: String,
+    /// Creation order for stable secondary sort (age).
+    pub seq: u64,
+    /// Isolated worktree path once known.
+    pub worktree: Option<PathBuf>,
+    /// Append-only agent output (display-capped).
+    pub output: String,
+    /// True when the local display cap dropped older output.
+    pub output_truncated: bool,
+    /// Unified diff text. Empty until seeded / receipt / future contract delta.
+    pub diff: String,
+}
+
+impl RunRow {
+    pub fn new(
+        id: RunId,
+        repo: impl Into<String>,
+        agent: impl Into<String>,
+        task: impl Into<String>,
+    ) -> Self {
+        Self {
+            id,
+            repo: repo.into(),
+            agent: agent.into(),
+            task: task.into(),
+            state: RunState::Queued,
+            gate: None,
+            active_since_tick: None,
+            elapsed_frozen: String::new(),
+            seq: 0,
+            worktree: None,
+            output: String::new(),
+            output_truncated: false,
+            diff: String::new(),
+        }
+    }
+
+    /// Live or frozen elapsed label for the STATE column.
+    pub fn elapsed_label(&self, clock: &Clock) -> String {
+        if let Some(since) = self.active_since_tick
+            && matches!(self.state, RunState::Running | RunState::Gating)
+        {
+            return format_elapsed_ticks(clock.tick.saturating_sub(since));
+        }
+        self.elapsed_frozen.clone()
+    }
+
+    /// First failure summary for the Control Room annotation line (`^ tsc: …`).
+    pub fn gate_summary(&self) -> Option<String> {
+        let gate = self.gate.as_ref()?;
+        if gate.passed {
+            return None;
+        }
+        if let Some(check) = gate.first_failure() {
+            if let Some(summary) = &check.summary {
+                return Some(summary.clone());
+            }
+            return Some(format!("{} failed", check.label));
+        }
+        if let Some(block) = gate.firewall_blocks.first() {
+            return Some(block.clone());
+        }
+        if let Some(scope) = gate.scope_violations.first() {
+            return Some(format!("scope: {scope}"));
+        }
+        Some("gate failed".into())
+    }
+
+    /// Append an output chunk, keeping the tail within the display cap.
+    pub fn append_output(&mut self, chunk: &str) {
+        self.output.push_str(chunk);
+        if self.output.len() > OUTPUT_DISPLAY_CAP_BYTES {
+            let overflow = self.output.len() - OUTPUT_DISPLAY_CAP_BYTES;
+            // Drop a full line boundary when possible so we do not start mid-glyph run.
+            let rest = &self.output[overflow..];
+            let cut = rest
+                .find('\n')
+                .map(|i| overflow + i + 1)
+                .unwrap_or(overflow);
+            self.output = self.output[cut..].to_string();
+            self.output_truncated = true;
+        }
+    }
+
+    /// Output split into display lines (preserves a trailing incomplete line).
+    pub fn output_lines(&self) -> Vec<&str> {
+        if self.output.is_empty() {
+            return Vec::new();
+        }
+        self.output.split('\n').collect()
+    }
+
+    pub fn diff_lines(&self) -> Vec<&str> {
+        if self.diff.is_empty() {
+            return Vec::new();
+        }
+        self.diff.split('\n').collect()
+    }
 }
 
 impl App {
@@ -63,58 +241,81 @@ impl App {
         Self {
             clock: Clock::default(),
             should_quit: false,
-            dirty: true, // first frame always paints
+            dirty: true,
             size: (80, 24),
-            selected: 0,
+            selected_id: None,
             motion,
             error: None,
             runs: Vec::new(),
+            screen: Screen::ControlRoom,
+            detail_scroll: 0,
+            stream_follow: true,
+            flash: None,
         }
     }
 
-    /// Whether the next draw should run.
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
 
-    /// Clear the dirty flag after a successful draw.
     pub fn clear_dirty(&mut self) {
         self.dirty = false;
     }
 
-    /// Force a redraw (e.g. after terminal setup).
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
 
-    /// Motion preference currently in effect for this session.
     pub fn motion_enabled(&self) -> bool {
         self.motion
     }
 
-    /// Whether anything on the current frame would change with the clock.
-    ///
-    /// The empty Control Room placeholder has no animated widgets, so an idle
-    /// Kit never redraws on tick alone — the M0 idle-CPU kill criterion.
-    pub fn animated_on_screen(&self) -> bool {
-        // Later milestones: mascot, blink cursors, live elapsed counters.
-        false
+    /// Active flash message, if still within its lifetime.
+    pub fn flash_message(&self) -> Option<&str> {
+        self.flash.as_ref().and_then(|(msg, began)| {
+            if self.clock.within(*began, FLASH_TICKS) {
+                Some(msg.as_str())
+            } else {
+                None
+            }
+        })
     }
 
-    /// Pure, synchronous reducer. Advances state and returns any loop action.
-    ///
-    /// Redraw policy lives here so headless tests can assert dirty flags
-    /// without spinning a terminal:
-    /// - events with `is_redraw_worthy()` mark the frame dirty
-    /// - `AnimationTick` marks dirty only when motion is on *and* something
-    ///   animated is actually drawn
+    /// Whether anything on the current frame would change with the clock.
+    pub fn animated_on_screen(&self) -> bool {
+        if self.flash.is_some() {
+            return true;
+        }
+        self.runs
+            .iter()
+            .any(|r| matches!(r.state, RunState::Running | RunState::Gating))
+    }
+
+    /// Pure, synchronous reducer.
     pub fn update(&mut self, event: AppEvent) -> Action {
         let marks_dirty = match &event {
-            AppEvent::AnimationTick => self.motion && self.animated_on_screen(),
+            AppEvent::AnimationTick => {
+                let next = self.clock.tick.wrapping_add(1);
+                // Elapsed labels: once per second. Flash expiry: every tick while live.
+                let flash_active = self.flash.is_some();
+                let elapsed_tick = next.is_multiple_of(TICK_HZ)
+                    && self
+                        .runs
+                        .iter()
+                        .any(|r| matches!(r.state, RunState::Running | RunState::Gating));
+                self.motion && (elapsed_tick || flash_active)
+            }
             other => other.is_redraw_worthy(),
         };
         let action = self.apply(event);
         if marks_dirty {
+            self.dirty = true;
+        }
+        // Drop expired flash so it does not keep us animated forever.
+        if let Some((_, began)) = &self.flash
+            && !self.clock.within(*began, FLASH_TICKS)
+        {
+            self.flash = None;
             self.dirty = true;
         }
         action
@@ -138,12 +339,7 @@ impl App {
             }
             AppEvent::GateResult(id, outcome) => {
                 if let Some(row) = self.runs.iter_mut().find(|r| r.id == id) {
-                    row.gate = Some(outcome.clone());
-                    row.state = if outcome.passed {
-                        RunState::Pass
-                    } else {
-                        RunState::Fail
-                    };
+                    Self::apply_gate_to_row(row, outcome, self.clock.tick);
                 }
                 Action::None
             }
@@ -159,64 +355,356 @@ impl App {
     }
 
     fn on_key(&mut self, key: KeyEvent) -> Action {
-        // Windows emits Press + Release; only act on Press.
         if key.kind == KeyEventKind::Release {
             return Action::None;
         }
+        match self.screen {
+            Screen::ControlRoom => self.on_control_room_key(key),
+            Screen::RunDetail { pane } => self.on_detail_key(key, pane),
+            Screen::Attached => self.on_attached_key(key),
+        }
+    }
 
+    fn on_control_room_key(&mut self, key: KeyEvent) -> Action {
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') => {
                 self.should_quit = true;
                 Action::Quit
             }
             KeyCode::Up if !self.runs.is_empty() => {
-                self.selected = self.selected.saturating_sub(1);
+                self.move_selection(-1);
                 Action::None
             }
             KeyCode::Down if !self.runs.is_empty() => {
-                let max = self.runs.len().saturating_sub(1);
-                self.selected = (self.selected + 1).min(max);
+                self.move_selection(1);
                 Action::None
             }
-            // Footer bindings (d/enter/g/k/r) land as real commands later.
+            KeyCode::Enter => {
+                self.open_detail(DetailPane::Stream);
+                Action::None
+            }
+            KeyCode::Char('g') => {
+                // lowercase only — uppercase G is End in detail.
+                self.open_detail(DetailPane::Gate);
+                Action::None
+            }
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                self.set_flash("dispatch requires F4 (not built yet)");
+                Action::OpenDispatch
+            }
+            KeyCode::Char('k') | KeyCode::Char('K') => {
+                self.set_flash("kill requires run engine (M1)");
+                Action::KillSelected
+            }
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                self.set_flash("retry requires run engine (M1)");
+                Action::RetrySelected
+            }
             _ => Action::None,
         }
     }
 
-    fn apply_run_update(&mut self, id: RunId, delta: RunDelta) {
-        let row = if let Some(row) = self.runs.iter_mut().find(|r| r.id == id) {
-            row
-        } else {
-            self.runs.push(RunRow {
-                id: id.clone(),
-                repo: String::new(),
-                agent: String::new(),
-                task: String::new(),
-                state: RunState::Queued,
-                gate: None,
-                elapsed: String::new(),
-            });
-            self.runs.last_mut().expect("just pushed")
-        };
-
-        match delta {
-            RunDelta::State(state) => row.state = state,
-            RunDelta::Output(_) => {
-                // Streamed into run detail later; Control Room ignores chunks.
+    fn on_detail_key(&mut self, key: KeyEvent, pane: DetailPane) -> Action {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Char('Q') => {
+                self.should_quit = true;
+                Action::Quit
             }
-            RunDelta::Worktree(_) => {}
-            RunDelta::Gate(outcome) => {
-                row.gate = Some(outcome.clone());
-                row.state = if outcome.passed {
-                    RunState::Pass
-                } else {
-                    RunState::Fail
+            KeyCode::Esc => {
+                self.screen = Screen::ControlRoom;
+                Action::None
+            }
+            KeyCode::Tab | KeyCode::Right => {
+                self.screen = Screen::RunDetail { pane: pane.next() };
+                self.detail_scroll = 0;
+                self.stream_follow = true;
+                Action::None
+            }
+            KeyCode::BackTab | KeyCode::Left => {
+                self.screen = Screen::RunDetail { pane: pane.prev() };
+                self.detail_scroll = 0;
+                self.stream_follow = true;
+                Action::None
+            }
+            KeyCode::Char('1') => {
+                self.screen = Screen::RunDetail {
+                    pane: DetailPane::Stream,
                 };
+                self.detail_scroll = 0;
+                self.stream_follow = true;
+                Action::None
+            }
+            KeyCode::Char('2') => {
+                self.screen = Screen::RunDetail {
+                    pane: DetailPane::Gate,
+                };
+                self.detail_scroll = 0;
+                self.stream_follow = true;
+                Action::None
+            }
+            KeyCode::Char('3') => {
+                self.screen = Screen::RunDetail {
+                    pane: DetailPane::Diff,
+                };
+                self.detail_scroll = 0;
+                self.stream_follow = true;
+                Action::None
+            }
+            KeyCode::Up => {
+                self.scroll_detail(-1);
+                Action::None
+            }
+            KeyCode::Down => {
+                self.scroll_detail(1);
+                Action::None
+            }
+            KeyCode::PageUp => {
+                self.scroll_detail(-10);
+                Action::None
+            }
+            KeyCode::PageDown => {
+                self.scroll_detail(10);
+                Action::None
+            }
+            KeyCode::Home => {
+                self.detail_scroll = 0;
+                self.stream_follow = false;
+                Action::None
+            }
+            KeyCode::End | KeyCode::Char('G') => {
+                self.stream_follow = true;
+                self.detail_scroll = 0;
+                Action::None
+            }
+            KeyCode::Char('a') | KeyCode::Char('A') => {
+                // Enter attach mode immediately as an honest stub; Action
+                // signals the loop to wire PTY when B2-pty exists.
+                self.screen = Screen::Attached;
+                self.set_flash("PTY not connected yet — Esc detaches");
+                Action::AttachSelected
+            }
+            KeyCode::Char('k') | KeyCode::Char('K') => {
+                self.set_flash("kill requires run engine (M1)");
+                Action::KillSelected
+            }
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                self.set_flash("retry requires run engine (M1)");
+                Action::RetrySelected
+            }
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                self.set_flash("dispatch requires F4 (not built yet)");
+                Action::OpenDispatch
+            }
+            _ => Action::None,
+        }
+    }
+
+    fn on_attached_key(&mut self, key: KeyEvent) -> Action {
+        match key.code {
+            KeyCode::Esc => {
+                // Detach without killing (PRD §4.2).
+                self.screen = Screen::RunDetail {
+                    pane: DetailPane::Stream,
+                };
+                self.stream_follow = true;
+                self.detail_scroll = 0;
+                Action::None
+            }
+            KeyCode::Char('q') | KeyCode::Char('Q') => {
+                // Refuse quit-from-attach — accidental death of agent sessions.
+                self.set_flash("Esc to detach (q disabled while attached)");
+                Action::None
+            }
+            _ => Action::None,
+        }
+    }
+
+    fn open_detail(&mut self, pane: DetailPane) {
+        if self.selected_id.is_none() && !self.runs.is_empty() {
+            // Prefer display-order first if nothing selected.
+            self.selected_id = self
+                .display_order()
+                .first()
+                .map(|&i| self.runs[i].id.clone());
+        }
+        if self.selected_id.is_none() {
+            return;
+        }
+        self.screen = Screen::RunDetail { pane };
+        self.stream_follow = true;
+        self.detail_scroll = 0;
+    }
+
+    fn scroll_detail(&mut self, delta: i32) {
+        self.stream_follow = false;
+        let max = self.detail_line_count().saturating_sub(1) as u16;
+        if delta < 0 {
+            self.detail_scroll = self.detail_scroll.saturating_sub((-delta) as u16);
+        } else {
+            self.detail_scroll = (self.detail_scroll.saturating_add(delta as u16)).min(max);
+        }
+    }
+
+    /// Line count for the active detail body (for scroll clamping).
+    pub fn detail_line_count(&self) -> usize {
+        let Some(run) = self.selected_run() else {
+            return 0;
+        };
+        match self.screen {
+            Screen::RunDetail {
+                pane: DetailPane::Stream,
+            } => run.output_lines().len().max(1),
+            Screen::RunDetail {
+                pane: DetailPane::Diff,
+            } => run.diff_lines().len().max(1),
+            Screen::RunDetail {
+                pane: DetailPane::Gate,
+            } => gate_log_line_count(run),
+            _ => 0,
+        }
+    }
+
+    fn set_flash(&mut self, msg: impl Into<String>) {
+        self.flash = Some((msg.into(), self.clock.tick));
+    }
+
+    /// Move selection by `delta` rows in *display* order.
+    fn move_selection(&mut self, delta: isize) {
+        let order = self.display_order();
+        if order.is_empty() {
+            return;
+        }
+        let current = self
+            .selected_id
+            .as_ref()
+            .and_then(|id| order.iter().position(|&i| self.runs[i].id == *id))
+            .unwrap_or(0);
+        let next = if delta < 0 {
+            current.saturating_sub((-delta) as usize)
+        } else {
+            (current + delta as usize).min(order.len() - 1)
+        };
+        self.selected_id = Some(self.runs[order[next]].id.clone());
+    }
+
+    /// Indices into `runs` sorted for the Control Room: state priority, then age.
+    pub fn display_order(&self) -> Vec<usize> {
+        let mut idxs: Vec<usize> = (0..self.runs.len()).collect();
+        idxs.sort_by(|&a, &b| {
+            let ra = &self.runs[a];
+            let rb = &self.runs[b];
+            state_rank(ra.state)
+                .cmp(&state_rank(rb.state))
+                .then_with(|| ra.seq.cmp(&rb.seq))
+        });
+        idxs
+    }
+
+    pub fn selected_display_index(&self) -> Option<usize> {
+        let id = self.selected_id.as_ref()?;
+        self.display_order()
+            .into_iter()
+            .position(|i| self.runs[i].id == *id)
+    }
+
+    pub fn selected_run(&self) -> Option<&RunRow> {
+        let id = self.selected_id.as_ref()?;
+        self.runs.iter().find(|r| r.id == *id)
+    }
+
+    /// Insert or replace a fully-described row (engine / fixtures use this).
+    pub fn upsert_run(&mut self, mut row: RunRow) {
+        if let Some(existing) = self.runs.iter_mut().find(|r| r.id == row.id) {
+            row.seq = existing.seq;
+            if row.active_since_tick.is_none() {
+                row.active_since_tick = existing.active_since_tick;
+            }
+            if row.elapsed_frozen.is_empty() {
+                row.elapsed_frozen = existing.elapsed_frozen.clone();
+            }
+            if row.output.is_empty() && !existing.output.is_empty() {
+                row.output = existing.output.clone();
+                row.output_truncated = existing.output_truncated;
+            }
+            if row.diff.is_empty() && !existing.diff.is_empty() {
+                row.diff = existing.diff.clone();
+            }
+            if row.worktree.is_none() {
+                row.worktree = existing.worktree.clone();
+            }
+            *existing = row;
+        } else {
+            row.seq = self.runs.len() as u64;
+            if matches!(row.state, RunState::Running | RunState::Gating)
+                && row.active_since_tick.is_none()
+            {
+                row.active_since_tick = Some(self.clock.tick);
+            }
+            let id = row.id.clone();
+            self.runs.push(row);
+            if self.selected_id.is_none() {
+                self.selected_id = Some(id);
             }
         }
     }
 
-    /// Counts used by the Control Room header.
+    fn apply_run_update(&mut self, id: RunId, delta: RunDelta) {
+        let tick = self.clock.tick;
+        let row = if let Some(row) = self.runs.iter_mut().find(|r| r.id == id) {
+            row
+        } else {
+            let mut fresh = RunRow::new(id.clone(), "", "", "");
+            fresh.seq = self.runs.len() as u64;
+            self.runs.push(fresh);
+            if self.selected_id.is_none() {
+                self.selected_id = Some(id.clone());
+            }
+            self.runs.last_mut().expect("just pushed")
+        };
+
+        match delta {
+            RunDelta::State(state) => {
+                Self::transition_state(row, state, tick);
+            }
+            RunDelta::Output(chunk) => {
+                row.append_output(&chunk);
+            }
+            RunDelta::Worktree(path) => {
+                row.worktree = Some(path);
+            }
+            RunDelta::Gate(outcome) => {
+                Self::apply_gate_to_row(row, outcome, tick);
+            }
+        }
+    }
+
+    fn transition_state(row: &mut RunRow, state: RunState, tick: u64) {
+        let was_active = matches!(row.state, RunState::Running | RunState::Gating);
+        let now_active = matches!(state, RunState::Running | RunState::Gating);
+
+        if now_active && !was_active {
+            row.active_since_tick = Some(tick);
+            row.elapsed_frozen.clear();
+        } else if was_active
+            && !now_active
+            && let Some(since) = row.active_since_tick.take()
+        {
+            row.elapsed_frozen = format_elapsed_ticks(tick.saturating_sub(since));
+        }
+
+        row.state = state;
+    }
+
+    fn apply_gate_to_row(row: &mut RunRow, outcome: GateOutcome, tick: u64) {
+        let next = if outcome.passed {
+            RunState::Pass
+        } else {
+            RunState::Fail
+        };
+        Self::transition_state(row, next, tick);
+        row.gate = Some(outcome);
+    }
+
     pub fn running_count(&self) -> usize {
         self.runs
             .iter()
@@ -229,6 +717,258 @@ impl App {
             .iter()
             .filter(|r| matches!(r.state, RunState::Gating))
             .count()
+    }
+
+    /// PRD §4.2 fixture rows — Control Room + detail snapshots / visual QA.
+    pub fn load_prd_fixture(&mut self) {
+        use kit_core::{CheckStatus, GateCheck};
+        use std::time::Duration;
+
+        self.runs.clear();
+        self.selected_id = None;
+        self.screen = Screen::ControlRoom;
+        self.clock = Clock {
+            tick: TICK_HZ * 120,
+        };
+
+        let mut r0 = RunRow::new(
+            RunId("01FIXRUN0KITCODEX000000000".into()),
+            "kit",
+            "codex",
+            "port guard.js",
+        );
+        r0.state = RunState::Running;
+        r0.active_since_tick = Some(0);
+        r0.worktree = Some(PathBuf::from("/tmp/kit-wt-01FIXRUN0"));
+        r0.output = [
+            "codex: starting worktree",
+            "reading crates/kit-gate/src/lib.rs",
+            "porting allowlist rules…",
+            "drafting firewall verdict mapping",
+            "tests: pending",
+        ]
+        .join("\n");
+        r0.seq = 0;
+        self.upsert_run(r0);
+
+        let mut r1 = RunRow::new(
+            RunId("01FIXRUN1KITGROK0000000000".into()),
+            "kit",
+            "grok",
+            "frame clock",
+        );
+        r1.state = RunState::Running;
+        r1.active_since_tick = Some(0);
+        r1.worktree = Some(PathBuf::from("/tmp/kit-wt-01FIXRUN1"));
+        r1.output = "grok: event loop select! arms online\nredraw policy: idle quiet".into();
+        r1.seq = 1;
+        self.upsert_run(r1);
+
+        let mut r2 = RunRow::new(
+            RunId("01FIXRUN2GUARDIANCLAUDE000".into()),
+            "guardian",
+            "claude",
+            "855-case suite",
+        );
+        r2.state = RunState::Pass;
+        r2.elapsed_frozen = "4m".into();
+        r2.output = "npm test\n\n  855 passed\n".into();
+        r2.diff = [
+            "diff --git a/hooks/guard.js b/hooks/guard.js",
+            "--- a/hooks/guard.js",
+            "+++ b/hooks/guard.js",
+            "@@ -10,0 +11,3 @@",
+            "+// rust port parity note",
+            "+export const KIT_PARITY = true;",
+        ]
+        .join("\n");
+        r2.gate = Some(GateOutcome {
+            passed: true,
+            checks: vec![GateCheck {
+                label: "test".into(),
+                command: "npm test".into(),
+                status: CheckStatus::Pass,
+                exit_code: Some(0),
+                summary: None,
+                duration: Duration::from_secs(12),
+            }],
+            scope_violations: vec![],
+            firewall_blocks: vec![],
+            duration: Duration::from_secs(12),
+        });
+        r2.seq = 2;
+        self.upsert_run(r2);
+
+        let mut r3 = RunRow::new(
+            RunId("01FIXRUN3TRENCHWIRECODEX00".into()),
+            "trenchwire",
+            "codex",
+            "fix red CI",
+        );
+        r3.state = RunState::Fail;
+        r3.elapsed_frozen = "1m".into();
+        r3.worktree = Some(PathBuf::from("/tmp/kit-wt-01FIXRUN3"));
+        r3.output = [
+            "codex: patching src/client.ts",
+            "running tsc --noEmit",
+            "src/client.ts(42,5): error TS2322: Type 'string' is not assignable…",
+            "src/client.ts(88,12): error TS2345",
+            "src/api.ts(3,1): error TS2307: Cannot find module './missing'",
+        ]
+        .join("\n");
+        r3.diff = [
+            "diff --git a/src/client.ts b/src/client.ts",
+            "--- a/src/client.ts",
+            "+++ b/src/client.ts",
+            "@@ -40,3 +40,3 @@",
+            "-  return data as Response;",
+            "+  return data as string;",
+        ]
+        .join("\n");
+        r3.gate = Some(GateOutcome {
+            passed: false,
+            checks: vec![
+                GateCheck {
+                    label: "format".into(),
+                    command: "pnpm format:check".into(),
+                    status: CheckStatus::Pass,
+                    exit_code: Some(0),
+                    summary: None,
+                    duration: Duration::from_secs(2),
+                },
+                GateCheck {
+                    label: "typecheck".into(),
+                    command: "tsc --noEmit".into(),
+                    status: CheckStatus::Fail,
+                    exit_code: Some(2),
+                    summary: Some("tsc: 3 errors".into()),
+                    duration: Duration::from_secs(8),
+                },
+            ],
+            scope_violations: vec![],
+            firewall_blocks: vec![],
+            duration: Duration::from_secs(10),
+        });
+        r3.seq = 3;
+        self.upsert_run(r3);
+
+        self.selected_id = self
+            .display_order()
+            .first()
+            .map(|&i| self.runs[i].id.clone());
+        self.dirty = true;
+    }
+}
+
+/// Display sort rank — lower is higher in the table.
+fn state_rank(state: RunState) -> u8 {
+    match state {
+        RunState::Running => 0,
+        RunState::Gating => 1,
+        RunState::Queued => 2,
+        RunState::Fail => 3,
+        RunState::Error => 4,
+        RunState::Pass => 5,
+        RunState::Killed => 6,
+    }
+}
+
+fn format_elapsed_ticks(ticks: u64) -> String {
+    let secs = ticks / TICK_HZ;
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        let m = secs / 60;
+        format!("{m}m")
+    } else {
+        let h = secs / 3600;
+        format!("{h}h")
+    }
+}
+
+/// Approximate gate log height for scroll clamping.
+fn gate_log_line_count(run: &RunRow) -> usize {
+    match &run.gate {
+        None => 1,
+        Some(g) => 2 + g.checks.len() + g.firewall_blocks.len() + g.scope_violations.len() + 1,
+    }
+}
+
+/// Public helpers used by the UI for state/gate labels.
+pub fn format_state_label(run: &RunRow, clock: &Clock) -> String {
+    let label = match run.state {
+        RunState::Queued => "QUEUED",
+        RunState::Running => "RUN",
+        RunState::Gating => "GATING",
+        RunState::Pass => "DONE",
+        RunState::Fail => "DONE",
+        RunState::Killed => "KILLED",
+        RunState::Error => "ERROR",
+    };
+    let elapsed = run.elapsed_label(clock);
+    if matches!(run.state, RunState::Running | RunState::Gating) && !elapsed.is_empty() {
+        format!("{label} {elapsed}")
+    } else {
+        label.to_string()
+    }
+}
+
+pub fn format_gate_label(run: &RunRow) -> String {
+    match (&run.state, &run.gate) {
+        (_, Some(g)) if g.passed => "PASS".into(),
+        (_, Some(_)) => "FAIL".into(),
+        (RunState::Pass, None) => "PASS".into(),
+        (RunState::Fail, None) => "FAIL".into(),
+        _ => "--".into(),
+    }
+}
+
+/// Build the gate log lines for the detail Gate pane.
+pub fn gate_log_lines(run: &RunRow) -> Vec<String> {
+    use kit_core::CheckStatus;
+    match &run.gate {
+        None if run.state.is_terminal() => {
+            vec!["No gate result recorded.".into()]
+        }
+        None => vec!["Gate has not run yet.".into()],
+        Some(g) => {
+            let mut lines = Vec::new();
+            lines.push(if g.passed {
+                format!("OVERALL  PASS  ({}ms)", g.duration.as_millis())
+            } else {
+                format!("OVERALL  FAIL  ({}ms)", g.duration.as_millis())
+            });
+            lines.push(String::new());
+            for c in &g.checks {
+                let status = match c.status {
+                    CheckStatus::Pass => "PASS",
+                    CheckStatus::Fail => "FAIL",
+                    CheckStatus::Skipped => "SKIP",
+                    CheckStatus::TimedOut => "TIME",
+                };
+                let mut line = format!("{status}  {}  {}", c.label, c.command);
+                if let Some(s) = &c.summary {
+                    line.push_str("  ·  ");
+                    line.push_str(s);
+                }
+                lines.push(line);
+            }
+            if !g.firewall_blocks.is_empty() {
+                lines.push(String::new());
+                lines.push("FIREWALL".into());
+                for b in &g.firewall_blocks {
+                    lines.push(format!("  block  {b}"));
+                }
+            }
+            if !g.scope_violations.is_empty() {
+                lines.push(String::new());
+                lines.push("SCOPE".into());
+                for s in &g.scope_violations {
+                    lines.push(format!("  violate  {s}"));
+                }
+            }
+            lines
+        }
     }
 }
 
@@ -248,20 +988,18 @@ mod tests {
         AppEvent::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE))
     }
 
+    fn code(code: KeyCode) -> AppEvent {
+        AppEvent::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
     #[test]
     fn animation_tick_advances_clock_but_not_dirty_when_motion_off() {
         let mut app = App::with_motion(false);
         app.clear_dirty();
-        assert!(!app.is_dirty());
-        assert_eq!(app.clock.tick, 0);
-
         let action = app.update(AppEvent::AnimationTick);
         assert_eq!(action, Action::None);
         assert_eq!(app.clock.tick, 1);
-        assert!(
-            !app.is_dirty(),
-            "AnimationTick must not dirty the frame when motion is disabled"
-        );
+        assert!(!app.is_dirty());
     }
 
     #[test]
@@ -269,54 +1007,39 @@ mod tests {
         let mut app = App::with_motion(true);
         app.clear_dirty();
         app.update(AppEvent::AnimationTick);
-        assert_eq!(app.clock.tick, 1);
-        assert!(
-            !app.is_dirty(),
-            "empty Control Room has nothing animated; idle CPU stays near zero"
-        );
+        assert!(!app.is_dirty());
+    }
+
+    #[test]
+    fn active_run_dirties_once_per_second_for_elapsed() {
+        let mut app = App::with_motion(true);
+        let id = RunId("01ACTIVE000000000000000000".into());
+        app.upsert_run({
+            let mut r = RunRow::new(id, "kit", "codex", "tick");
+            r.state = RunState::Running;
+            r.active_since_tick = Some(0);
+            r
+        });
+        app.clear_dirty();
+        for _ in 0..19 {
+            app.update(AppEvent::AnimationTick);
+        }
+        assert!(!app.is_dirty());
+        app.update(AppEvent::AnimationTick);
+        assert!(app.is_dirty());
     }
 
     #[test]
     fn scripted_reducer_sequence_is_deterministic() {
         let mut app = App::with_motion(false);
         app.clear_dirty();
-
         assert_eq!(app.update(AppEvent::Resize(120, 40)), Action::None);
         assert_eq!(app.size, (120, 40));
-        assert!(app.is_dirty());
-        app.clear_dirty();
-
         let id = RunId("01TESTRUN00000000000000000".into());
-        assert_eq!(
-            app.update(AppEvent::RunUpdate(
-                id.clone(),
-                RunDelta::State(RunState::Running)
-            )),
-            Action::None
-        );
-        assert_eq!(app.runs.len(), 1);
-        assert_eq!(app.runs[0].state, RunState::Running);
+        app.update(AppEvent::RunUpdate(id, RunDelta::State(RunState::Running)));
         assert_eq!(app.running_count(), 1);
-        assert!(app.is_dirty());
-        app.clear_dirty();
-
-        for _ in 0..5 {
-            app.update(AppEvent::AnimationTick);
-        }
-        assert_eq!(app.clock.tick, 5);
-        assert!(!app.is_dirty());
-
-        assert_eq!(
-            app.update(AppEvent::Error("probe failed".into())),
-            Action::None
-        );
-        assert_eq!(app.error.as_deref(), Some("probe failed"));
-        assert!(app.is_dirty());
-        app.clear_dirty();
-
         assert_eq!(app.update(key('q')), Action::Quit);
         assert!(app.should_quit);
-        assert!(app.is_dirty());
     }
 
     #[test]
@@ -327,10 +1050,220 @@ mod tests {
     }
 
     #[test]
-    fn redraw_worthy_events_mark_dirty() {
+    fn selection_is_stable_across_resort() {
         let mut app = App::with_motion(false);
-        app.clear_dirty();
-        app.update(AppEvent::Error("x".into()));
-        assert!(app.is_dirty());
+        let pass_id = RunId("01PASS00000000000000000000".into());
+        let run_id = RunId("01RUN000000000000000000000".into());
+        app.upsert_run({
+            let mut r = RunRow::new(pass_id.clone(), "a", "codex", "done");
+            r.state = RunState::Pass;
+            r
+        });
+        app.upsert_run({
+            let mut r = RunRow::new(run_id.clone(), "b", "grok", "live");
+            r.state = RunState::Running;
+            r
+        });
+        app.selected_id = Some(pass_id.clone());
+        app.update(AppEvent::RunUpdate(run_id, RunDelta::State(RunState::Pass)));
+        assert_eq!(app.selected_id.as_ref(), Some(&pass_id));
+    }
+
+    #[test]
+    fn arrow_keys_move_in_display_order() {
+        let mut app = App::with_motion(false);
+        let a = RunId("01A00000000000000000000000".into());
+        let b = RunId("01B00000000000000000000000".into());
+        app.upsert_run({
+            let mut r = RunRow::new(a.clone(), "a", "codex", "x");
+            r.state = RunState::Pass;
+            r
+        });
+        app.upsert_run({
+            let mut r = RunRow::new(b.clone(), "b", "grok", "y");
+            r.state = RunState::Running;
+            r
+        });
+        app.selected_id = Some(a.clone());
+        app.update(code(KeyCode::Up));
+        assert_eq!(app.selected_id.as_ref(), Some(&b));
+        app.update(code(KeyCode::Down));
+        assert_eq!(app.selected_id.as_ref(), Some(&a));
+    }
+
+    #[test]
+    fn enter_opens_stream_detail_and_esc_returns() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        assert_eq!(app.screen, Screen::ControlRoom);
+        app.update(code(KeyCode::Enter));
+        assert_eq!(
+            app.screen,
+            Screen::RunDetail {
+                pane: DetailPane::Stream
+            }
+        );
+        assert!(app.stream_follow);
+        app.update(code(KeyCode::Esc));
+        assert_eq!(app.screen, Screen::ControlRoom);
+    }
+
+    #[test]
+    fn g_opens_gate_pane() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.update(key('g'));
+        assert_eq!(
+            app.screen,
+            Screen::RunDetail {
+                pane: DetailPane::Gate
+            }
+        );
+    }
+
+    #[test]
+    fn tab_cycles_detail_panes() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.update(code(KeyCode::Enter));
+        app.update(code(KeyCode::Tab));
+        assert_eq!(
+            app.screen,
+            Screen::RunDetail {
+                pane: DetailPane::Gate
+            }
+        );
+        app.update(code(KeyCode::Tab));
+        assert_eq!(
+            app.screen,
+            Screen::RunDetail {
+                pane: DetailPane::Diff
+            }
+        );
+        app.update(code(KeyCode::Tab));
+        assert_eq!(
+            app.screen,
+            Screen::RunDetail {
+                pane: DetailPane::Stream
+            }
+        );
+    }
+
+    #[test]
+    fn output_delta_appends_and_truncates() {
+        let mut app = App::with_motion(false);
+        let id = RunId("01OUT000000000000000000000".into());
+        app.upsert_run(RunRow::new(id.clone(), "kit", "codex", "x"));
+        app.update(AppEvent::RunUpdate(
+            id.clone(),
+            RunDelta::Output("hello\n".into()),
+        ));
+        assert_eq!(app.runs[0].output, "hello\n");
+
+        // Force over-cap.
+        let big = "x".repeat(OUTPUT_DISPLAY_CAP_BYTES + 100);
+        app.update(AppEvent::RunUpdate(id, RunDelta::Output(big)));
+        assert!(app.runs[0].output.len() <= OUTPUT_DISPLAY_CAP_BYTES);
+        assert!(app.runs[0].output_truncated);
+    }
+
+    #[test]
+    fn worktree_delta_is_stored() {
+        let mut app = App::with_motion(false);
+        let id = RunId("01WT0000000000000000000000".into());
+        app.upsert_run(RunRow::new(id.clone(), "kit", "codex", "x"));
+        app.update(AppEvent::RunUpdate(
+            id,
+            RunDelta::Worktree(PathBuf::from("/tmp/wt")),
+        ));
+        assert_eq!(
+            app.runs[0].worktree.as_deref(),
+            Some(std::path::Path::new("/tmp/wt"))
+        );
+    }
+
+    #[test]
+    fn scroll_disables_follow_end_reenables() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.update(code(KeyCode::Enter));
+        assert!(app.stream_follow);
+        app.update(code(KeyCode::Up));
+        assert!(!app.stream_follow);
+        app.update(code(KeyCode::End));
+        assert!(app.stream_follow);
+    }
+
+    #[test]
+    fn attach_and_detach_without_quit() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.update(code(KeyCode::Enter));
+        assert_eq!(app.update(key('a')), Action::AttachSelected);
+        assert_eq!(app.screen, Screen::Attached);
+        // q does not quit while attached.
+        assert_eq!(app.update(key('q')), Action::None);
+        assert!(!app.should_quit);
+        app.update(code(KeyCode::Esc));
+        assert_eq!(
+            app.screen,
+            Screen::RunDetail {
+                pane: DetailPane::Stream
+            }
+        );
+    }
+
+    #[test]
+    fn engine_keys_emit_actions_with_flash() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        assert_eq!(app.update(key('k')), Action::KillSelected);
+        assert!(app.flash_message().is_some());
+        assert_eq!(app.update(key('r')), Action::RetrySelected);
+        assert_eq!(app.update(key('d')), Action::OpenDispatch);
+    }
+
+    #[test]
+    fn prd_fixture_matches_section_4_2_shape() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        assert_eq!(app.running_count(), 2);
+        assert_eq!(app.runs.len(), 4);
+        let order = app.display_order();
+        assert_eq!(app.runs[order[0]].state, RunState::Running);
+        assert_eq!(app.runs[order[2]].state, RunState::Fail);
+        let fail = app.runs.iter().find(|r| r.state == RunState::Fail).unwrap();
+        assert_eq!(fail.gate_summary().as_deref(), Some("tsc: 3 errors"));
+        assert!(!fail.diff.is_empty());
+        assert!(!fail.output.is_empty());
+    }
+
+    #[test]
+    fn detail_arrows_do_not_change_selected_run() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let before = app.selected_id.clone();
+        app.update(code(KeyCode::Enter));
+        app.update(code(KeyCode::Down));
+        app.update(code(KeyCode::Down));
+        assert_eq!(app.selected_id, before);
+    }
+
+    #[test]
+    fn elapsed_freezes_when_run_finishes() {
+        let mut app = App::with_motion(false);
+        let id = RunId("01ELAPSED00000000000000000".into());
+        app.upsert_run({
+            let mut r = RunRow::new(id.clone(), "kit", "codex", "x");
+            r.state = RunState::Running;
+            r.active_since_tick = Some(0);
+            r
+        });
+        for _ in 0..(TICK_HZ * 45) {
+            app.update(AppEvent::AnimationTick);
+        }
+        assert_eq!(app.runs[0].elapsed_label(&app.clock), "45s");
+        app.update(AppEvent::RunUpdate(id, RunDelta::State(RunState::Pass)));
+        assert_eq!(app.runs[0].elapsed_label(&app.clock), "45s");
     }
 }

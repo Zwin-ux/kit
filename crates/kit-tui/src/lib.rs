@@ -9,9 +9,9 @@
 //! ## Architecture
 //!
 //! - [`event`] — frozen contract: `AppEvent`, `Clock`, tick cadence
-//! - [`app`] — pure reducer over `AppEvent` → `Action`
+//! - [`app`] — pure reducer over `AppEvent` → `Action`, screen routing
 //! - [`event_loop`] — single `tokio::select!` merging terminal, tick, runs
-//! - [`ui`] — Control Room placeholder frame
+//! - [`ui`] — Control Room, Run Detail, Attached frames
 
 pub mod app;
 pub mod event;
@@ -19,6 +19,6 @@ pub mod event;
 pub mod event_loop;
 pub mod ui;
 
-pub use app::{Action, App, RunRow};
+pub use app::{Action, App, DetailPane, RunRow, Screen};
 pub use event::{AppEvent, Clock, TICK_HZ, TICK_INTERVAL, motion_enabled};
 pub use event_loop::run;
