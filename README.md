@@ -20,6 +20,22 @@
 
 ## Install
 
+### Kit 1.0 (Rust Control Room — in progress)
+
+```bash
+cargo run -p kit-cli -- --demo   # Control Room with sample runs
+cargo run -p kit-cli             # empty Control Room
+cargo build -p kit-cli --release
+./target/release/kit --demo
+```
+
+Default surface is the **Control Room** (live table of agent runs).  
+`--demo` loads PRD fixture data so you can navigate without the M1 run engine.  
+Keys: `↑↓` select · `Enter` open · `g` gate · `d` dispatch · `b` board · `q` quit.  
+Architecture status: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md) · PRD: [`docs/dev/PRD-1.0.md`](docs/dev/PRD-1.0.md).
+
+### Kit 0.1.x (npm skill workbench — shipped alpha)
+
 ```bash
 npm i -g @mzwin/kit
 kit --version

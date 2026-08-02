@@ -27,10 +27,30 @@ use tokio::time::{MissedTickBehavior, interval};
 
 type Term = Terminal<CrosstermBackend<Stdout>>;
 
+/// How to start the Control Room.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LaunchConfig {
+    /// When true, seed the PRD §4.2 fixture runs so the product is dogfoodable
+    /// before the M1 engine exists.
+    pub demo: bool,
+}
+
 /// Run the Control Room until quit. Restores the terminal on every exit path.
 pub async fn run(run_rx: mpsc::Receiver<(RunId, RunDelta)>) -> Result<()> {
+    run_configured(LaunchConfig::default(), run_rx).await
+}
+
+/// Run with explicit launch options (demo fixture, later: restored session).
+pub async fn run_configured(
+    config: LaunchConfig,
+    run_rx: mpsc::Receiver<(RunId, RunDelta)>,
+) -> Result<()> {
     let mut terminal = setup_terminal()?;
-    let result = run_with_terminal(&mut terminal, run_rx).await;
+    let mut app = App::new();
+    if config.demo {
+        app.load_prd_fixture();
+    }
+    let result = run_with_terminal(&mut terminal, app, run_rx).await;
     restore_terminal(&mut terminal)?;
     result
 }
@@ -38,9 +58,9 @@ pub async fn run(run_rx: mpsc::Receiver<(RunId, RunDelta)>) -> Result<()> {
 /// Event loop body, factored so tests can inject a backend later if needed.
 async fn run_with_terminal(
     terminal: &mut Term,
+    mut app: App,
     mut run_rx: mpsc::Receiver<(RunId, RunDelta)>,
 ) -> Result<()> {
-    let mut app = App::new();
     let mut term_events = EventStream::new();
     let mut tick = interval(TICK_INTERVAL);
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);

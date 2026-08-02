@@ -71,11 +71,19 @@ Reference architecture: `C:/Users/mzwin/Documents/fennec/crates/fennec-tui`
 ## Commands
 
 ```text
+# Run the product
+cargo run -p kit-cli -- --demo    # Control Room + PRD fixture
+cargo run -p kit-cli              # empty Control Room
+cargo run -p kit-cli -- doctor
+
+# Verify
 cargo test -p kit-tui
-cargo clippy -p kit-tui --all-targets -- -D warnings
+cargo clippy -p kit-cli -p kit-tui --all-targets -- -D warnings
 cargo fmt --all --check
 cargo test --workspace
 ```
+
+Living status: `docs/dev/CURRENT.md`
 
 Rust workspace: `crates/kit-{core,agents,gate,tui,cli}`  
 Legacy Node packages still exist under `packages/` (0.1.x); 1.0 is the Rust binary.

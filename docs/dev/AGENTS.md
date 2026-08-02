@@ -42,10 +42,13 @@ Surface work queue: `tasks/plan.md`, `tasks/todo.md`.
 ## Commands
 
 ```text
+cargo run -p kit-cli -- --demo
 cargo test -p kit-tui
-cargo clippy -p kit-tui --all-targets -- -D warnings
+cargo clippy -p kit-cli -p kit-tui --all-targets -- -D warnings
 cargo test --workspace
 ```
+
+Status board: `CURRENT.md`
 
 ## Surface status
 
