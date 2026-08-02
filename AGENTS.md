@@ -25,6 +25,8 @@ See **`docs/dev/ORCHESTRATION.md`**.
 
 **Luna storm:** parallel explore/implement shards; Power synthesizes; CEO decides/merges.  
 Workflow sketch: `.grok/workflows/kit-luna-storm.rhai` (local; `.grok` may be gitignored).  
+**Quality ladder (long-running):** `docs/dev/WORKFLOW-QUALITY.md` + workflow `kit-quality-cycle`  
+  (audit → skeptic → plan → implement → prove). Git copy: `docs/dev/workflows/kit-quality-cycle.rhai`.  
 CEO brief template: `docs/dev/tasks/CEO-BRIEF-next.md`.
 
 ## Engineering skills (always)
