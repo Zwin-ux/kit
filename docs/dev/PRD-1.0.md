@@ -71,32 +71,42 @@ States: `QUEUED → RUNNING → GATING → PASS | FAIL | KILLED | ERROR`.
 
 ### 4.2 Screens
 
+> **Full surface contract:** `docs/dev/SPEC-surface-1.0.md`  
+> **Visual system + concept art:** `docs/dev/DESIGN-tui.md` + `docs/dev/assets/concept-*.jpg`
+
 **Control Room** (default surface, `kit`)
 
 ```
-KIT / CONTROL ROOM                              4 RUNNING  1 GATED
+KIT / CONTROL ROOM                         2 RUNNING  1 FAIL  0 GATED
 +------------------------------------------------------------------+
 | REPO            AGENT    TASK                   STATE    GATE     |
 | kit             codex    port guard.js          RUN 2m   --       |
 | kit             grok     frame clock            RUN 2m   --       |
-| guardian        claude   855-case suite         DONE     PASS     |
 | trenchwire      codex    fix red CI             DONE     FAIL     |
 |                                               ^ tsc: 3 errors     |
+| guardian        claude   855-case suite         DONE     PASS     |
 +------------------------------------------------------------------+
- [d]ispatch  [enter] open  [g]ate log  [k]ill  [r]etry
+ [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry  [?]help
 ```
 
-Live. Sorted by state, then age. Never scrolls under you while you read it.
+Live. Sorted by state, then age. Never scrolls under you while you read it.  
+Semantic colors for STATE/GATE (always paired with text). FAIL rows get a danger wash + first-error annotation. Empty room says `press d to dispatch`. Vacuous gates render **UNCONFIGURED**, never PASS.
 
-**Run detail** — streamed output, live diff, gate log, receipt. `[a]ttach` takes over the terminal for interactive agents; `Esc` detaches without killing.
+**1.0 surface acceptance (Control Room):**
+- Demo fixture shows FAIL unmissable without reading logs
+- `NO_COLOR` remains usable (modifiers only)
+- Snapshots green at 80×14 and 60×12
+- One footer grammar shared with every other screen
 
-**Dispatch** — choose repos × agents × one task, fan out. The fan-out is the feature: one task, four repos, four isolated worktrees, four gates.
+**Run detail** — streamed output, live diff, gate log, receipt. Tabs `stream | gate | diff`. Stream highlights error lines; diff paints `+`/`-`. `[a]ttach` is an honest stub until 1.0.1 PTY; `Esc` detaches without killing.
 
-**Board** — a shared queue. Agents pull the next task when they finish. This is what turns Kit from a dashboard into an orchestrator.
+**Dispatch** — choose repos × agents × one task, fan out. Focus ring on the active field. The fan-out is the feature: one task, N repos, N isolated worktrees, N gates.
 
-**Doctor** — what's installed, what's authenticated, what's broken, what to run to fix it.
+**Board** — curated Dispatch prefill list for 1.0 (**not** a pull-queue). Pull/lease orchestration is 1.1+.
 
-**Library** — installed skills, minimal. Supporting screen only.
+**Doctor** — CLI `kit doctor` for 1.0 (what's installed / broken / fix). TUI doctor optional later.
+
+**Library** — installed skills, minimal. Supporting screen only; not the product.
 
 ### 4.3 The gate
 

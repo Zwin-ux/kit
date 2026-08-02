@@ -2,9 +2,9 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / RUN  kit · codex · port guard.js    RUN 2m  GATE --   "
-"worktree: /tmp/kit-wt-01FIXRUN0    id: 01FIXRUN0KI…         "
-" stream    gate    diff                                     "
+"KIT / RUN  kit · codex · port guard.js  RUN 2m  GATE --     "
+"worktree  /tmp/kit-wt-01FIXRUN0                             "
+" stream  │  gate  │  diff                                   "
 "┌ stream ──────────────────────────────────────────────────┐"
 "│codex: starting worktree                                  │"
 "│reading crates/kit-gate/src/lib.rs                        │"
@@ -13,4 +13,4 @@ expression: frame
 "│tests: pending                                            │"
 "│                                                          │"
 "└──────────────────────────────────────────────────────────┘"
-" [esc] back  [1]stream [2]gate [3]diff  [a]ttach  [k]ill  [r"
+" [esc] back  [1]stream [2]gate [3]diff  [a]ttach  [k]ill  […"

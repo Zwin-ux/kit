@@ -2,15 +2,15 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / CONTROL ROOM                                            0 RUNNING  0 GATED"
+"KIT / CONTROL ROOM                                    0 RUNNING  0 FAIL  0 GATED"
 "┌──────────────────────────────────────────────────────────────────────────────┐"
-"│REPO              AGENT      TASK                     STATE       GATE        │"
 "│                                                                              │"
-"│                                                                              │"
+"│                                  No runs yet                                 │"
+"│              press d to dispatch  ·  kit --demo for fixture data             │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" [d]ispatch  [b]oard  [enter] open  [g]ate log  [k]ill  [r]etry                 "
+" [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry  [?]help            "

@@ -1,15 +1,23 @@
-//! Board — shared task queue (PRD §4.2 orchestrator view).
+//! Board — curated Dispatch prefill list (1.0; no pull-queue).
 
-use super::common::truncate;
+use super::common::{
+    draw_empty_state, draw_footer, draw_header, draw_too_small, too_small, truncate,
+};
 use crate::app::App;
+use crate::theme::Theme;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
+use ratatui::style::Modifier;
+use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 
 pub fn draw(frame: &mut Frame, app: &App) {
+    let theme = Theme::resolve();
     let area = frame.area();
+    if too_small(area) {
+        draw_too_small(frame, area, &theme);
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -20,83 +28,95 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .split(area);
 
     let open = app.board.iter().filter(|t| !t.done).count();
-    let mut title = format!("KIT / BOARD    {open} open  {} total", app.board.len());
-    if let Some(flash) = app.flash_message() {
-        title.push_str("  ·  ");
-        title.push_str(flash);
-    }
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            title,
-            Style::default().add_modifier(Modifier::BOLD),
-        ))),
+    let stats = format!("{open} open  {} total", app.board.len());
+    draw_header(
+        frame,
         chunks[0],
+        &theme,
+        "KIT / BOARD",
+        &stats,
+        app.flash_message(),
+        None,
     );
 
-    draw_table(frame, app, chunks[1]);
-    frame.render_widget(
-        Paragraph::new(
-            " [esc] back  [n]ew  [enter] dispatch  [space] done  [x] remove  [d]ispatch",
-        ),
+    if app.board.is_empty() {
+        draw_empty_state(
+            frame,
+            chunks[1],
+            &theme,
+            "Board is empty",
+            "press n to add a task  ·  Enter prefills Dispatch",
+        );
+    } else {
+        draw_table(frame, app, chunks[1], &theme);
+    }
+
+    draw_footer(
+        frame,
         chunks[2],
+        &theme,
+        " [esc] back  [n]ew  [enter] dispatch  [space] done  [x] remove",
+        "prefill-only 1.0",
     );
 }
 
-fn draw_table(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let header = Row::new(vec![
-        Cell::from("#"),
-        Cell::from("TASK"),
-        Cell::from("REPO"),
-        Cell::from("AGENT"),
-        Cell::from("STATE"),
-    ])
-    .style(Style::default().add_modifier(Modifier::BOLD));
+        Cell::from("#").style(theme.dim().add_modifier(Modifier::BOLD)),
+        Cell::from("TASK").style(theme.dim().add_modifier(Modifier::BOLD)),
+        Cell::from("REPO").style(theme.dim().add_modifier(Modifier::BOLD)),
+        Cell::from("AGENT").style(theme.dim().add_modifier(Modifier::BOLD)),
+        Cell::from("STATE").style(theme.dim().add_modifier(Modifier::BOLD)),
+    ]);
 
-    let rows: Vec<Row> = if app.board.is_empty() {
-        vec![Row::new(vec![
-            Cell::from(""),
-            Cell::from("(empty — press n to add)"),
-            Cell::from(""),
-            Cell::from(""),
-            Cell::from(""),
-        ])]
-    } else {
-        app.board
-            .iter()
-            .enumerate()
-            .map(|(i, t)| {
-                let selected = i == app.board_selected;
-                let marker = if selected { "> " } else { "  " };
-                let state = if t.done { "DONE" } else { "OPEN" };
-                let style = if selected {
-                    Style::default().add_modifier(Modifier::REVERSED)
-                } else {
-                    Style::default()
-                };
-                Row::new(vec![
-                    Cell::from(format!("{marker}{}", t.id)),
-                    Cell::from(truncate(&t.title, 32)),
-                    Cell::from(truncate(&t.repo_hint, 12)),
-                    Cell::from(truncate(&t.agent_hint, 10)),
-                    Cell::from(state),
-                ])
-                .style(style)
-            })
-            .collect()
-    };
+    let rows: Vec<Row> = app
+        .board
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let selected = i == app.board_selected;
+            let marker = if selected { "▶ " } else { "  " };
+            let state = if t.done { "DONE" } else { "OPEN" };
+            let base = if selected {
+                theme.selected_row()
+            } else {
+                theme.body()
+            };
+            let state_style = if selected {
+                theme.selected_row()
+            } else if t.done {
+                theme.success()
+            } else {
+                theme.warn()
+            };
+            Row::new(vec![
+                Cell::from(format!("{marker}{}", t.id)).style(base),
+                Cell::from(truncate(&t.title, 32)).style(base),
+                Cell::from(truncate(&t.repo_hint, 12)).style(base),
+                Cell::from(truncate(&t.agent_hint, 10)).style(base),
+                Cell::from(state).style(state_style),
+            ])
+        })
+        .collect();
 
     let widths = [
-        Constraint::Length(6),
-        Constraint::Percentage(45),
+        Constraint::Length(8),
+        Constraint::Percentage(40),
         Constraint::Percentage(18),
-        Constraint::Percentage(15),
-        Constraint::Percentage(12),
+        Constraint::Percentage(16),
+        Constraint::Percentage(14),
     ];
-    frame.render_widget(
-        Table::new(rows, widths)
-            .header(header)
-            .block(Block::default().borders(Borders::ALL))
-            .column_spacing(1),
-        area,
-    );
+
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme.border(true))
+                .title(" queue ")
+                .title_style(theme.dim()),
+        )
+        .column_spacing(1);
+
+    frame.render_widget(table, area);
 }

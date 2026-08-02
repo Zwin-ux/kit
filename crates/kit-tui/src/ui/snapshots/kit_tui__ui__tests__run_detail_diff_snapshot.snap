@@ -2,9 +2,9 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / RUN  trenchwire · codex · fix red CI    DONE  GATE FAIL                   "
-"worktree: /tmp/kit-wt-01FIXRUN3    id: 01FIXRUN3TR…                             "
-" stream    gate    diff                                                         "
+"KIT / RUN  trenchwire · codex · fix red CI  DONE  GATE FAIL                     "
+"worktree  /tmp/kit-wt-01FIXRUN3                                                 "
+" stream  │  gate  │  diff                                                       "
 "┌ diff ────────────────────────────────────────────────────────────────────────┐"
 "│diff --git a/src/client.ts b/src/client.ts                                    │"
 "│--- a/src/client.ts                                                           │"

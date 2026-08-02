@@ -1130,6 +1130,13 @@ impl App {
             .count()
     }
 
+    pub fn fail_count(&self) -> usize {
+        self.runs
+            .iter()
+            .filter(|r| matches!(r.state, RunState::Fail | RunState::Error))
+            .count()
+    }
+
     /// PRD §4.2 fixture rows — Control Room + detail snapshots / visual QA.
     pub fn load_prd_fixture(&mut self) {
         use kit_core::{CheckStatus, GateCheck};

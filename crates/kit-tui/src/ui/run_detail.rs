@@ -1,18 +1,24 @@
-//! Run detail — stream, gate log, diff panes (PRD §4.2).
+//! Run detail — stream, gate log, diff panes (1.0 craft remake).
 
-use super::common::{truncate, viewport_start};
-use crate::app::{
-    App, DetailPane, RunRow, Screen, format_gate_label, format_state_label, gate_log_lines,
+use super::common::{
+    draw_footer, draw_header, draw_too_small, style_log_line, too_small, truncate, viewport_start,
 };
-use kit_core::RunState;
+use crate::app::{App, DetailPane, RunRow, format_gate_label, format_state_label, gate_log_lines};
+use crate::theme::Theme;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
 pub fn draw(frame: &mut Frame, app: &App, pane: DetailPane) {
+    let theme = Theme::resolve();
     let area = frame.area();
+    if too_small(area) {
+        draw_too_small(frame, area, &theme);
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -24,18 +30,34 @@ pub fn draw(frame: &mut Frame, app: &App, pane: DetailPane) {
         .split(area);
 
     let Some(run) = app.selected_run() else {
-        frame.render_widget(Paragraph::new("No run selected."), area);
+        frame.render_widget(
+            Paragraph::new(Span::styled("No run selected.", theme.warn())),
+            area,
+        );
         return;
     };
 
-    draw_header(frame, app, run, chunks[0]);
-    draw_tabs(frame, pane, chunks[1]);
-    draw_body(frame, app, run, pane, chunks[2]);
-    draw_footer(frame, app, chunks[3]);
+    draw_run_header(frame, app, run, chunks[0], &theme);
+    draw_tabs(frame, pane, chunks[1], &theme);
+    draw_body(frame, app, run, pane, chunks[2], &theme);
+    let follow = if app.stream_follow { " follow" } else { "" };
+    draw_footer(
+        frame,
+        chunks[3],
+        &theme,
+        &format!(" [esc] back  [1]stream [2]gate [3]diff  [a]ttach  [k]ill  [r]etry{follow}"),
+        "",
+    );
 }
 
 pub fn draw_attached(frame: &mut Frame, app: &App) {
+    let theme = Theme::resolve();
     let area = frame.area();
+    if too_small(area) {
+        draw_too_small(frame, area, &theme);
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -55,31 +77,46 @@ pub fn draw_attached(frame: &mut Frame, app: &App) {
         None => "KIT / ATTACHED".into(),
     };
 
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            title,
-            Style::default().add_modifier(Modifier::BOLD),
-        ))),
+    draw_header(
+        frame,
         chunks[0],
+        &theme,
+        &title,
+        "PTY 1.0.1",
+        app.flash_message(),
+        None,
     );
 
-    let body = [
-        "PTY not connected yet — Esc detaches without killing.".into(),
-        String::new(),
-        "[ waiting for agent PTY supervision ]".into(),
-        String::new(),
-        app.flash_message().unwrap_or("").to_string(),
-    ]
-    .join("\n");
+    let body: Vec<Line> = vec![
+        Line::from(Span::styled("PTY attach ships in 1.0.1", theme.title())),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Esc detaches without killing the run.",
+            theme.body(),
+        )),
+        Line::from(Span::styled("q is disabled while attached.", theme.dim())),
+        Line::from(""),
+        Line::from(Span::styled(
+            app.flash_message()
+                .unwrap_or("[ waiting for agent PTY supervision ]"),
+            theme.warn(),
+        )),
+    ];
 
     frame.render_widget(
-        Paragraph::new(body).block(Block::default().borders(Borders::ALL).title(" attach ")),
+        Paragraph::new(body).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" attach ")
+                .border_style(theme.border(true))
+                .title_style(theme.dim()),
+        ),
         chunks[1],
     );
-    frame.render_widget(Paragraph::new(" [esc] detach (without kill)"), chunks[2]);
+    draw_footer(frame, chunks[2], &theme, " [esc] detach (without kill)", "");
 }
 
-fn draw_header(frame: &mut Frame, app: &App, run: &RunRow, area: Rect) {
+fn draw_run_header(frame: &mut Frame, app: &App, run: &RunRow, area: Rect, theme: &Theme) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Length(1)])
@@ -88,7 +125,7 @@ fn draw_header(frame: &mut Frame, app: &App, run: &RunRow, area: Rect) {
     let state = format_state_label(run, &app.clock);
     let gate = format_gate_label(run);
     let l1 = format!(
-        "KIT / RUN  {} · {} · {}    {state}  GATE {gate}",
+        "KIT / RUN  {} · {} · {}",
         run.repo,
         run.agent,
         truncate(&run.task, 28)
@@ -98,115 +135,121 @@ fn draw_header(frame: &mut Frame, app: &App, run: &RunRow, area: Rect) {
         .worktree
         .as_ref()
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "(no worktree)".into());
-    let mut l2 = format!(
-        "worktree: {}    id: {}",
-        truncate(&wt, 40),
-        truncate(&run.id.0, 12)
+        .unwrap_or_else(|| "—".into());
+    let l2 = format!(
+        "worktree  {}",
+        truncate(&wt, area.width.saturating_sub(12) as usize)
     );
-    if let Some(flash) = app.flash_message() {
-        l2.push_str("  · ");
-        l2.push_str(flash);
-    }
 
+    let header_line = Line::from(vec![
+        Span::styled(l1, theme.title()),
+        Span::raw("  "),
+        Span::styled(state, theme.state_style(run.state)),
+        Span::raw("  GATE "),
+        Span::styled(gate.clone(), theme.gate_style(&gate)),
+    ]);
+    frame.render_widget(Paragraph::new(header_line), chunks[0]);
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            l1,
-            Style::default().add_modifier(Modifier::BOLD),
-        ))),
-        chunks[0],
+        Paragraph::new(Line::from(Span::styled(l2, theme.dim()))),
+        chunks[1],
     );
-    frame.render_widget(Paragraph::new(l2), chunks[1]);
 }
 
-fn draw_tabs(frame: &mut Frame, pane: DetailPane, area: Rect) {
+fn draw_tabs(frame: &mut Frame, pane: DetailPane, area: Rect, theme: &Theme) {
     let tabs = [DetailPane::Stream, DetailPane::Gate, DetailPane::Diff];
     let mut spans = Vec::new();
     for (i, t) in tabs.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::raw("  "));
+            spans.push(Span::styled(" │ ", theme.dim()));
         }
         let label = format!(" {} ", t.label());
-        if *t == pane {
-            spans.push(Span::styled(
-                label,
-                Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-            ));
+        let style = if *t == pane {
+            theme
+                .accent()
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
         } else {
-            spans.push(Span::raw(label));
-        }
+            theme.dim()
+        };
+        spans.push(Span::styled(label, style));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-fn draw_body(frame: &mut Frame, app: &App, run: &RunRow, pane: DetailPane, area: Rect) {
+fn draw_body(
+    frame: &mut Frame,
+    app: &App,
+    run: &RunRow,
+    pane: DetailPane,
+    area: Rect,
+    theme: &Theme,
+) {
     let title = match pane {
-        DetailPane::Stream if run.output_truncated => " stream (truncated) ",
         DetailPane::Stream => " stream ",
         DetailPane::Gate => " gate ",
         DetailPane::Diff => " diff ",
     };
-
-    let block = Block::default().borders(Borders::ALL).title(title);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(theme.border(true))
+        .title_style(theme.dim());
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let text = body_text(run, pane);
-    let lines: Vec<&str> = text.lines().collect();
-    let total = lines.len().max(1);
-    let start = viewport_start(total, inner.height, app.detail_scroll, app.stream_follow);
-    let end = (start + inner.height as usize).min(total);
-    let visible: Vec<Line> = lines[start..end]
-        .iter()
-        .map(|l| Line::from((*l).to_string()))
-        .collect();
-
-    frame.render_widget(Paragraph::new(visible).wrap(Wrap { trim: false }), inner);
-}
-
-fn body_text(run: &RunRow, pane: DetailPane) -> String {
-    match pane {
+    let lines: Vec<Line> = match pane {
         DetailPane::Stream => {
-            if run.output.is_empty() {
-                "(no output yet)".into()
-            } else {
-                run.output.clone()
-            }
+            let raw = run.output_lines();
+            let start = viewport_start(
+                raw.len(),
+                inner.height,
+                app.detail_scroll,
+                app.stream_follow,
+            );
+            raw.into_iter()
+                .skip(start)
+                .take(inner.height as usize)
+                .map(|l| Line::from(Span::styled(l.to_string(), style_log_line(theme, l))))
+                .collect()
         }
-        DetailPane::Gate => gate_log_lines(run).join("\n"),
+        DetailPane::Gate => {
+            let raw = gate_log_lines(run);
+            let start = viewport_start(raw.len(), inner.height, app.detail_scroll, false);
+            raw.into_iter()
+                .skip(start)
+                .take(inner.height as usize)
+                .map(|l| {
+                    let style = if l.contains("UNCONFIGURED") {
+                        theme.warn()
+                    } else if l.contains("FAIL") || l.contains("OVERALL  FAIL") {
+                        theme.danger()
+                    } else if l.contains("PASS") || l.contains("OVERALL  PASS") {
+                        theme.success()
+                    } else {
+                        theme.body()
+                    };
+                    Line::from(Span::styled(l, style))
+                })
+                .collect()
+        }
         DetailPane::Diff => {
-            if run.diff.is_empty() {
-                if matches!(
-                    run.state,
-                    RunState::Queued | RunState::Running | RunState::Gating
-                ) {
-                    "Diff available when the run finishes (receipt).".into()
-                } else {
-                    "No file changes in this run.".into()
-                }
-            } else {
-                run.diff.clone()
-            }
+            let raw = run.diff_lines();
+            let start = viewport_start(raw.len(), inner.height, app.detail_scroll, false);
+            raw.into_iter()
+                .skip(start)
+                .take(inner.height as usize)
+                .map(|l| Line::from(Span::styled(l.to_string(), style_log_line(theme, l))))
+                .collect()
         }
-    }
-}
-
-fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
-    let follow = if matches!(
-        app.screen,
-        Screen::RunDetail {
-            pane: DetailPane::Stream | DetailPane::Diff
-        }
-    ) {
-        if app.stream_follow {
-            " follow"
-        } else {
-            " scrolled"
-        }
-    } else {
-        ""
     };
-    let hints =
-        format!(" [esc] back  [1]stream [2]gate [3]diff  [a]ttach  [k]ill  [r]etry{follow}");
-    frame.render_widget(Paragraph::new(hints), area);
+
+    if lines.is_empty() {
+        let empty = match pane {
+            DetailPane::Stream => "No output yet.",
+            DetailPane::Gate => "Gate has not run yet.",
+            DetailPane::Diff => "No diff recorded.",
+        };
+        frame.render_widget(Paragraph::new(Span::styled(empty, theme.dim())), inner);
+    } else {
+        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+    }
 }

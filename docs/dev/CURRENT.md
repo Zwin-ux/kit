@@ -13,8 +13,8 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven.
 
 | Layer | Status | Prove it |
 |-------|--------|----------|
-| Control Room TUI | Real | `cargo run -p kit-cli -- --demo` |
-| Dispatch / Board / Detail | Real | keys `d` / `b` / Enter |
+| Control Room TUI | Real (1.0 craft) | `cargo run -p kit-cli -- --demo` — theme tokens, FAIL wash, empty state |
+| Dispatch / Board / Detail | Real (1.0 craft) | shared chrome; semantic STATE/GATE colors; concept art in `docs/dev/assets/` |
 | Gate (Guardian) | Real | kit-gate tests |
 | Worktree + receipt | Real | `kit run --dry-run --json` |
 | **Agent adapters** | **Live** | codex / claude / grok / ollama |

@@ -2,15 +2,15 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / ATTACHED  kit · codex · port guard.js                                     "
+"KIT / ATTACHED  kit · codex · port guard.js                            PTY 1.0.1"
 "                                                                                "
 "┌ attach ──────────────────────────────────────────────────────────────────────┐"
-"│PTY not connected yet — Esc detaches without killing.                         │"
+"│PTY attach ships in 1.0.1                                                     │"
 "│                                                                              │"
-"│[ waiting for agent PTY supervision ]                                         │"
+"│Esc detaches without killing the run.                                         │"
+"│q is disabled while attached.                                                 │"
 "│                                                                              │"
 "│PTY not connected yet — Esc detaches                                          │"
-"│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
 " [esc] detach (without kill)                                                    "

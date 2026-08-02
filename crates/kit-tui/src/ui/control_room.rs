@@ -1,15 +1,26 @@
-//! Control Room frame — PRD §4.2 live table.
+//! Control Room frame — PRD §4.2 live table (1.0 craft remake).
+//!
+//! Visual bar: `docs/dev/DESIGN-tui.md` + concept-control-room.jpg
 
-use super::common::truncate;
+use super::common::{
+    draw_empty_state, draw_footer, draw_header, draw_too_small, too_small, truncate,
+};
 use crate::app::{App, RunRow, format_gate_label, format_state_label};
+use crate::theme::Theme;
+use kit_core::RunState;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 
 pub fn draw(frame: &mut Frame, app: &App) {
+    let theme = Theme::resolve();
     let area = frame.area();
+    if too_small(area) {
+        draw_too_small(frame, area, &theme);
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -19,123 +30,137 @@ pub fn draw(frame: &mut Frame, app: &App) {
         ])
         .split(area);
 
-    draw_header(frame, app, chunks[0]);
-    draw_table(frame, app, chunks[1]);
-    draw_footer(frame, app, chunks[2]);
-}
-
-fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
-    let left = "KIT / CONTROL ROOM";
-    let right = format!(
-        "{} RUNNING  {} GATED",
+    let stats = format!(
+        "{} RUNNING  {} FAIL  {} GATED",
         app.running_count(),
+        app.fail_count(),
         app.gated_count()
     );
+    draw_header(
+        frame,
+        chunks[0],
+        &theme,
+        "KIT / CONTROL ROOM",
+        &stats,
+        app.flash_message(),
+        app.error.as_deref(),
+    );
 
-    let gap = area.width as usize;
-    let mut line = if left.len() + 2 + right.len() <= gap {
-        let spaces = gap.saturating_sub(left.len() + right.len());
-        format!("{left}{}{right}", " ".repeat(spaces))
+    if app.runs.is_empty() {
+        draw_empty_state(
+            frame,
+            chunks[1],
+            &theme,
+            "No runs yet",
+            "press d to dispatch  ·  kit --demo for fixture data",
+        );
     } else {
-        left.to_string()
-    };
-
-    if let Some(flash) = app.flash_message() {
-        let tag = format!("  · {flash}");
-        if line.len() + tag.len() <= gap {
-            line.push_str(&tag);
-        }
-    } else if let Some(err) = &app.error {
-        let tag = format!("  ! {err}");
-        if line.len() + tag.len() <= gap {
-            line.push_str(&tag);
-        }
+        draw_table(frame, app, chunks[1], &theme);
     }
 
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            line,
-            Style::default().add_modifier(Modifier::BOLD),
-        ))),
-        area,
+    draw_footer(
+        frame,
+        chunks[2],
+        &theme,
+        " [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry  [?]help",
+        "",
     );
 }
 
-fn draw_table(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let header = Row::new(vec![
-        Cell::from("REPO"),
-        Cell::from("AGENT"),
-        Cell::from("TASK"),
-        Cell::from("STATE"),
-        Cell::from("GATE"),
-    ])
-    .style(Style::default().add_modifier(Modifier::BOLD));
+        Cell::from("REPO").style(theme.dim().add_modifier(Modifier::BOLD)),
+        Cell::from("AGENT").style(theme.dim().add_modifier(Modifier::BOLD)),
+        Cell::from("TASK").style(theme.dim().add_modifier(Modifier::BOLD)),
+        Cell::from("STATE").style(theme.dim().add_modifier(Modifier::BOLD)),
+        Cell::from("GATE").style(theme.dim().add_modifier(Modifier::BOLD)),
+    ]);
 
     let order = app.display_order();
     let selected_id = app.selected_id.as_ref();
 
-    let rows: Vec<Row> = if order.is_empty() {
-        vec![Row::new(vec![
-            Cell::from(""),
-            Cell::from(""),
-            Cell::from(""),
-            Cell::from(""),
-            Cell::from(""),
-        ])]
-    } else {
-        let mut out = Vec::with_capacity(order.len() * 2);
-        for &idx in &order {
-            let run = &app.runs[idx];
-            let selected = selected_id.is_some_and(|id| *id == run.id);
-            out.push(row_for(run, selected, app));
-            if let Some(summary) = run.gate_summary() {
-                out.push(annotation_row(&summary, selected));
-            }
+    let mut rows: Vec<Row> = Vec::with_capacity(order.len() * 2);
+    for &idx in &order {
+        let run = &app.runs[idx];
+        let selected = selected_id.is_some_and(|id| *id == run.id);
+        rows.push(row_for(run, selected, app, theme));
+        if let Some(summary) = run.gate_summary() {
+            rows.push(annotation_row(&summary, selected, theme));
         }
-        out
-    };
+    }
 
-    let widths = [
-        Constraint::Percentage(22),
-        Constraint::Percentage(12),
-        Constraint::Percentage(36),
-        Constraint::Percentage(15),
-        Constraint::Percentage(15),
-    ];
+    let widths = if area.width < 70 {
+        [
+            Constraint::Percentage(20),
+            Constraint::Percentage(12),
+            Constraint::Percentage(32),
+            Constraint::Percentage(18),
+            Constraint::Percentage(18),
+        ]
+    } else {
+        [
+            Constraint::Percentage(22),
+            Constraint::Percentage(12),
+            Constraint::Percentage(36),
+            Constraint::Percentage(15),
+            Constraint::Percentage(15),
+        ]
+    };
 
     let table = Table::new(rows, widths)
         .header(header)
-        .block(Block::default().borders(Borders::ALL))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme.border(true))
+                .title(" runs ")
+                .title_style(theme.dim()),
+        )
         .column_spacing(1);
 
     frame.render_widget(table, area);
 }
 
-fn row_for(run: &RunRow, selected: bool, app: &App) -> Row<'static> {
-    let marker = if selected { "> " } else { "  " };
-    let repo = format!("{marker}{}", truncate(&run.repo, 18));
-    let style = if selected {
-        Style::default().add_modifier(Modifier::REVERSED)
+fn row_for(run: &RunRow, selected: bool, app: &App, theme: &Theme) -> Row<'static> {
+    let marker = if selected { "▶ " } else { "  " };
+    let repo = format!("{marker}{}", truncate(&run.repo, 16));
+    let state_label = format_state_label(run, &app.clock);
+    let gate_label = format_gate_label(run);
+
+    let base = if selected {
+        theme.selected_row()
+    } else if run.state == RunState::Fail {
+        theme.fail_row(false)
     } else {
-        Style::default()
+        theme.body()
+    };
+
+    let state_style = if selected {
+        theme.selected_row()
+    } else {
+        theme.state_style(run.state)
+    };
+    let gate_style = if selected {
+        theme.selected_row()
+    } else {
+        theme.gate_style(&gate_label)
     };
 
     Row::new(vec![
-        Cell::from(repo),
-        Cell::from(truncate(&run.agent, 10)),
-        Cell::from(truncate(&run.task, 28)),
-        Cell::from(format_state_label(run, &app.clock)),
-        Cell::from(format_gate_label(run)),
+        Cell::from(repo).style(base),
+        Cell::from(truncate(&run.agent, 10)).style(base),
+        Cell::from(truncate(&run.task, 28)).style(base),
+        Cell::from(state_label).style(state_style),
+        Cell::from(gate_label).style(gate_style),
     ])
-    .style(style)
 }
 
-fn annotation_row(summary: &str, selected: bool) -> Row<'static> {
+fn annotation_row(summary: &str, selected: bool, theme: &Theme) -> Row<'static> {
     let text = format!("    ^ {}", truncate(summary, 48));
     let style = if selected {
         Style::default().add_modifier(Modifier::REVERSED | Modifier::DIM)
     } else {
-        Style::default().add_modifier(Modifier::DIM)
+        theme.annotation()
     };
     Row::new(vec![
         Cell::from(""),
@@ -145,9 +170,4 @@ fn annotation_row(summary: &str, selected: bool) -> Row<'static> {
         Cell::from(""),
     ])
     .style(style)
-}
-
-fn draw_footer(frame: &mut Frame, _app: &App, area: Rect) {
-    let hints = " [d]ispatch  [b]oard  [enter] open  [g]ate log  [k]ill  [r]etry";
-    frame.render_widget(Paragraph::new(hints), area);
 }

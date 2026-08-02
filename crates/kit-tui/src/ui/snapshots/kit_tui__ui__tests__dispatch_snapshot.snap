@@ -2,9 +2,9 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / DISPATCH                                                                  "
+"KIT / DISPATCH                                                         fan-out 1"
 "┌ repos (space) ───────────────────────┐┌ agents (space) ──────────────────────┐"
-"│> [x] kit                             ││  [x] codex                           │"
+"│▶ [x] kit                             ││  [x] codex                           │"
 "│  [ ] guardian                        ││  [ ] claude                          │"
 "│  [ ] trenchwire                      ││  [ ] grok                            │"
 "│                                      ││  [ ] ollama                          │"
@@ -13,8 +13,8 @@ expression: frame
 "│                                      ││                                      │"
 "│                                      ││                                      │"
 "│                                      ││                                      │"
-"│                                      ││                                      │"
 "└──────────────────────────────────────┘└──────────────────────────────────────┘"
 "┌ task ────────────────────────────────────────────────────────────────────────┐"
+"│port guard.js across the monorepo                                             │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
 " [esc] back  [tab] field  [space] toggle  [enter] submit                        "

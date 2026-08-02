@@ -16,6 +16,8 @@
 - [x] B2 real agent adapters (codex/claude/grok/ollama) + skills inject
 - [x] P1 control plane (kill/retry/timeout/max-8 + tree kill)
 - [x] P2 vacuous → UNCONFIGURED + live inference
+- [x] Surface remake: SPEC + DESIGN + theme + shared chrome + CR/Detail/Dispatch/Board craft
+- [ ] `?` help overlay
 - [ ] Land PR #11 (CEO merge after 3-OS green)
 - [ ] P3 8-concurrent proof harness
 - [ ] P4 JSON envelope schemaVersion:1
