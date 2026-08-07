@@ -2,7 +2,7 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / CONTROL ROOM                                    2 RUNNING  1 FAIL  0 GATED"
+"KIT / CONTROL ROOM                             [ALL]  2 RUNNING  1 FAIL  0 GATED"
 "┌ runs ────────────────────────────────────────────────────────────────────────┐"
 "│REPO              AGENT      TASK                     STATE       GATE        │"
 "│  kit             codex      port guard.js            RUN 2m      --          │"
@@ -15,4 +15,4 @@ expression: frame
 "│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" [↑↓] select  [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry        "
+" [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate  [k]ill       "

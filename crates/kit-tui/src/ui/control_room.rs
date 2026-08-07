@@ -31,9 +31,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .split(area);
 
     let agents = app.agents_strip();
+    let filter = app.run_filter.label();
     let stats = if agents.is_empty() {
         format!(
-            "{} RUNNING  {} FAIL  {} GATED",
+            "[{filter}]  {} RUNNING  {} FAIL  {} GATED",
             app.running_count(),
             app.fail_count(),
             app.gated_count()
@@ -42,7 +43,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         agents
     } else {
         format!(
-            "{}  ·  {}R {}F {}G",
+            "[{filter}]  {}  ·  {}R {}F {}G",
             agents,
             app.running_count(),
             app.fail_count(),
@@ -70,7 +71,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         frame,
         chunks[2],
         &theme,
-        " [↑↓] select  [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry  [?]help",
+        " [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate  [k]ill  [r]etry  [?]help",
         "",
     );
 }
