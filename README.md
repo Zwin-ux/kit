@@ -30,6 +30,8 @@ cargo run -p kit-cli -- run --dry-run --task "smoke" --json
 | `kit run --task "…"` | One isolated run (live agent if on PATH) |
 | `kit doctor` | Probe codex / claude / grok / ollama + skills pack |
 | `kit run --dry-run --json` | Offline CI path (worktree → stream → gate → receipt) |
+| `kit receipt list` | Browse proof under `~/.kit/runs/` |
+| `kit receipt show <id>` | One receipt (+ `--output` for log tail) |
 
 **Product loop:** dispatch → table of runs → FAIL wash + first error → `r` retry with gate context → receipt under `~/.kit/runs/<id>/`.
 
@@ -98,6 +100,19 @@ Resolution order: `KIT_SKILLS_DIR` → `<repo>/.agents/skills` → `<repo>/skill
 ```bash
 cargo run -p kit-cli -- --demo   # lands on a FAIL so the proof loop is obvious
 ```
+
+## Receipts
+
+Every run writes `~/.kit/runs/<id>/` (`receipt.json`, `output.log`, optional `diff.patch` / `gate.json`).
+
+```bash
+cargo run -p kit-cli -- receipt list
+cargo run -p kit-cli -- receipt show 01KZD0… --output
+cargo run -p kit-cli -- receipt list --json --limit 10
+```
+
+Override data root with `KIT_HOME`. Contract: [`docs/json-contract.md`](docs/json-contract.md).  
+Dogfood path: [`docs/dev/DOGFOOD.md`](docs/dev/DOGFOOD.md).
 
 ---
 

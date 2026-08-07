@@ -1,6 +1,6 @@
 # Kit 1.0 — Current architecture state
 
-**Date:** 2026-08-01  
+**Date:** 2026-08-07  
 **Goal:** production multi-agent control room — Codex-like headless workflow × N agents + skills.
 
 ---
@@ -27,6 +27,7 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven.
 | JSON envelope | **Wired** | `schemaVersion: 1` on `run --json` + `doctor --json` — see `docs/json-contract.md` |
 | Help overlay | **Wired** | `?` / Esc in Control Room surface |
 | Skill packs | **Wired** | default `.agents/skills`; optional `skills/` or `KIT_SKILLS_DIR` (Harness etc.) — see `docs/skills-packs.md` |
+| Receipt browser | **Wired** | `kit receipt list` / `kit receipt show <id>` (+ `--json`, `--output`) |
 
 ## Spine
 
@@ -85,13 +86,17 @@ cargo run -p kit-cli
   - Roadmap: `wiki/concepts/roadmap/workstreams`  
   - Query: `outputs/queries/2026-08-01-what-next-for-high-quality-v1.md`
 
-## Next (production) — see wiki workstreams + CEO stamp
+## Next (production) — see wiki workstreams + bigger-scope plan
 
-CEO stamped (`docs/dev/tasks/CEO-STAMP-P1.md`): vacuous C→UNCONFIGURED (P2), board prefill-only, attach 1.0.1, JSON thin (P4), **P1 authorized**.
+PR **#11 merged to main** (`b42acfd`). CEO stamp still holds: board prefill-only 1.0, attach **1.0.1**, marketplace cut.
 
-1. **P0** Land PR #11 once Rust CI stays green 3 OS — **unblocking** (Unix clippy fixed)  
-2. **P1** Control plane — **shipped on branch** (EngineCommand + registry + kill/retry/timeout/max-8)  
-3. **P2** Gate vacuous UNCONFIGURED + inference — **shipped on branch**; demo lands on deliberate FAIL  
-4. **P3** 8-concurrent proof harness — **shipped** (`engine::supervisor` + test)
-5. **P4** doctor/receipt JSON envelope (`schemaVersion: 1`) + security flags  
-6. **P5** Installers + 1.0.0
+| Done on main | Next for 1.0.0 |
+|--------------|----------------|
+| P0–P4 alpha (TUI + engine + vacuous + JSON) | H0 dogfood Kit-on-Kit |
+| Receipt CLI list/show | Dispatch real repo paths |
+| Demo FAIL selected | Gate inference hardening + `kit.toml` |
+| | **P5** npm platform binaries + curl installer |
+| | 60s demo asset + third-party install proof |
+| | Tag **1.0.0** only when clean-machine install works |
+
+**1.0.1:** PTY attach. **1.1:** board pull-queue.

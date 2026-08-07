@@ -49,3 +49,23 @@ Exit code: `0` pass, `1` fail or vacuous (unless `--allow-vacuous` / `--dry-run`
 | `kitHome` | path |
 | `skillsPack` | path \| null |
 | `agents` | array of `{ agent, ready, version, remedy }` |
+
+## `kit receipt list --json` → `data`
+
+| Field | Type |
+|-------|------|
+| `kitHome` | path |
+| `runsDir` | path |
+| `count` | integer |
+| `receipts` | array of `{ id, state, agent, repo, task, gatePassed, dir }` |
+
+## `kit receipt show <id> --json` → `data`
+
+Receipt object (`version`, `id`, `spec`, `state`, `gate`, `diff`, …) plus:
+
+| Field | Type |
+|-------|------|
+| `dir` | path to `~/.kit/runs/<id>/` |
+| `outputTail` | string (only with `--output`) |
+
+Id may be a unique prefix of the ULID.
