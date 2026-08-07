@@ -181,9 +181,7 @@ mod tests {
     fn run_detail_gate_fail_snapshot() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
-        // Select the FAIL row (display index 2: two Running, then Fail).
-        app.update(code(KeyCode::Down));
-        app.update(code(KeyCode::Down));
+        // Demo fixture already selects the FAIL row.
         app.update(AppEvent::Key(KeyEvent::new(
             KeyCode::Char('g'),
             KeyModifiers::NONE,
@@ -196,9 +194,7 @@ mod tests {
     fn run_detail_diff_snapshot() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
-        // FAIL row has a diff.
-        app.update(code(KeyCode::Down));
-        app.update(code(KeyCode::Down));
+        // FAIL row is selected and has a diff.
         app.update(code(KeyCode::Enter));
         app.update(AppEvent::Key(KeyEvent::new(
             KeyCode::Char('3'),

@@ -35,6 +35,8 @@ pub struct LaunchConfig {
     pub demo: bool,
     /// When set, dispatch/kill/retry actions are forwarded here for the engine.
     pub engine_tx: Option<mpsc::Sender<crate::app::EngineCommand>>,
+    /// When true (default for interactive launch), probe coding agents for the header strip.
+    pub probe_agents: bool,
 }
 
 /// Run the Control Room until quit. Restores the terminal on every exit path.
@@ -49,6 +51,15 @@ pub async fn run_configured(
 ) -> Result<()> {
     let mut terminal = setup_terminal()?;
     let mut app = App::new();
+    if config.probe_agents {
+        let probe = kit_agents::probe_all().await;
+        app.set_agents_probe(
+            probe
+                .into_iter()
+                .map(|s| (s.kind.binary().to_string(), s.is_ready()))
+                .collect(),
+        );
+    }
     if config.demo {
         app.load_prd_fixture();
     }

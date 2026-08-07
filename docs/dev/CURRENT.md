@@ -13,7 +13,7 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven.
 
 | Layer | Status | Prove it |
 |-------|--------|----------|
-| Control Room TUI | Real (1.0 craft) | `cargo run -p kit-cli -- --demo` — theme tokens, FAIL wash, empty state |
+| Control Room TUI | Real (1.0 craft) | `cargo run -p kit-cli -- --demo` — FAIL selected + wash; empty room shows agent readiness |
 | Dispatch / Board / Detail | Real (1.0 craft) | shared chrome; semantic STATE/GATE colors; concept art in `docs/dev/assets/` |
 | Gate (Guardian) | Real | kit-gate tests |
 | Worktree + receipt | Real | `kit run --dry-run --json` |
@@ -26,6 +26,7 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven.
 | Vacuous gate | **Wired** | empty gate → infer cargo/npm when live; still empty → UI `UNCONFIGURED` (not PASS); live `kit run` exits 1 unless `--allow-vacuous` |
 | JSON envelope | **Wired** | `schemaVersion: 1` on `run --json` + `doctor --json` — see `docs/json-contract.md` |
 | Help overlay | **Wired** | `?` / Esc in Control Room surface |
+| Skill packs | **Wired** | default `.agents/skills`; optional `skills/` or `KIT_SKILLS_DIR` (Harness etc.) — see `docs/skills-packs.md` |
 
 ## Spine
 
@@ -90,7 +91,7 @@ CEO stamped (`docs/dev/tasks/CEO-STAMP-P1.md`): vacuous C→UNCONFIGURED (P2), b
 
 1. **P0** Land PR #11 once Rust CI stays green 3 OS — **unblocking** (Unix clippy fixed)  
 2. **P1** Control plane — **shipped on branch** (EngineCommand + registry + kill/retry/timeout/max-8)  
-3. **P2** Gate vacuous UNCONFIGURED + inference — **shipped on branch**; demo deliberate FAIL still open  
+3. **P2** Gate vacuous UNCONFIGURED + inference — **shipped on branch**; demo lands on deliberate FAIL  
 4. **P3** 8-concurrent proof harness — **shipped** (`engine::supervisor` + test)
 5. **P4** doctor/receipt JSON envelope (`schemaVersion: 1`) + security flags  
 6. **P5** Installers + 1.0.0

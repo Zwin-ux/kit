@@ -30,12 +30,25 @@ pub fn draw(frame: &mut Frame, app: &App) {
         ])
         .split(area);
 
-    let stats = format!(
-        "{} RUNNING  {} FAIL  {} GATED",
-        app.running_count(),
-        app.fail_count(),
-        app.gated_count()
-    );
+    let agents = app.agents_strip();
+    let stats = if agents.is_empty() {
+        format!(
+            "{} RUNNING  {} FAIL  {} GATED",
+            app.running_count(),
+            app.fail_count(),
+            app.gated_count()
+        )
+    } else if app.runs.is_empty() {
+        agents
+    } else {
+        format!(
+            "{}  ·  {}R {}F {}G",
+            agents,
+            app.running_count(),
+            app.fail_count(),
+            app.gated_count()
+        )
+    };
     draw_header(
         frame,
         chunks[0],
@@ -47,13 +60,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
     );
 
     if app.runs.is_empty() {
-        draw_empty_state(
-            frame,
-            chunks[1],
-            &theme,
-            "No runs yet",
-            "press d to dispatch  ·  kit --demo for fixture data",
-        );
+        let (message, hint) = empty_room_copy(app);
+        draw_empty_state(frame, chunks[1], &theme, message, hint);
     } else {
         draw_table(frame, app, chunks[1], &theme);
     }
@@ -65,6 +73,27 @@ pub fn draw(frame: &mut Frame, app: &App) {
         " [↑↓] select  [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry  [?]help",
         "",
     );
+}
+
+/// Empty Control Room copy — cold-start cockpit, not a blank form.
+fn empty_room_copy(app: &App) -> (&'static str, &'static str) {
+    let ready = app.agents_ready_count();
+    if app.agents_probe.is_empty() {
+        (
+            "No runs yet",
+            "press d to dispatch  ·  kit --demo for fixture data  ·  ? help",
+        )
+    } else if ready == 0 {
+        (
+            "No coding agents on PATH",
+            "install codex / claude / grok / ollama  ·  kit doctor  ·  kit --demo",
+        )
+    } else {
+        (
+            "Ready to dispatch",
+            "press d to fan out agents  ·  kit --demo to see FAIL + retry  ·  ? help",
+        )
+    }
 }
 
 fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {

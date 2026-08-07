@@ -1,40 +1,52 @@
-//! Inject addyosmani agent-skills into a run worktree and prompt.
+//! Inject a skill pack into a run worktree and prompt.
 //!
-//! Production rule: agents get the same skill pack Kit uses, so TUI-dispatched
-//! work follows define → plan → build → verify → review → ship.
+//! Default pack is [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills)
+//! under `.agents/skills`. Any directory of `*/SKILL.md` folders works — including
+//! [Harness skills](https://github.com/harness/harness-skills) via `KIT_SKILLS_DIR`
+//! or a repo-root `skills/` tree (Harness layout).
+//!
+//! Harness skills need the Harness MCP server; they are optional domain packs,
+//! not Kit's default coding pack.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Resolve the skills directory (never panics).
 ///
-/// Order: `KIT_SKILLS_DIR` → `<repo>/.agents/skills` → `<cwd>/.agents/skills`
-/// → walk up from cwd looking for `.agents/skills`.
+/// Order:
+/// 1. `KIT_SKILLS_DIR` (explicit override — use for harness-skills or custom packs)
+/// 2. `<repo>/.agents/skills` then `<repo>/skills` (if it looks like a skill pack)
+/// 3. same under cwd
+/// 4. walk up from cwd looking for `.agents/skills` or `skills/`
 pub fn resolve_skills_dir(repo: &Path) -> Option<PathBuf> {
     if let Ok(p) = std::env::var("KIT_SKILLS_DIR") {
         let p = PathBuf::from(p);
-        if p.is_dir() {
+        if looks_like_skill_pack(&p) {
             return Some(p);
         }
     }
-    let candidates = [
-        repo.join(".agents").join("skills"),
-        std::env::current_dir()
-            .ok()
-            .map(|c| c.join(".agents").join("skills"))
-            .unwrap_or_default(),
-    ];
-    for c in candidates {
-        if c.is_dir() {
-            return Some(c);
+
+    let roots: Vec<PathBuf> = {
+        let mut v = vec![repo.to_path_buf()];
+        if let Ok(cwd) = std::env::current_dir()
+            && cwd != repo
+        {
+            v.push(cwd);
+        }
+        v
+    };
+
+    for root in &roots {
+        if let Some(p) = pack_under(root) {
+            return Some(p);
         }
     }
+
     // Walk up from cwd (monorepo / nested worktree cases).
     if let Ok(mut dir) = std::env::current_dir() {
         for _ in 0..6 {
-            let c = dir.join(".agents").join("skills");
-            if c.is_dir() {
-                return Some(c);
+            if let Some(p) = pack_under(&dir) {
+                return Some(p);
             }
             if !dir.pop() {
                 break;
@@ -42,6 +54,24 @@ pub fn resolve_skills_dir(repo: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Prefer `.agents/skills`, then a repo-root `skills/` pack (Harness layout).
+fn pack_under(root: &Path) -> Option<PathBuf> {
+    let agents = root.join(".agents").join("skills");
+    if looks_like_skill_pack(&agents) {
+        return Some(agents);
+    }
+    let plain = root.join("skills");
+    if looks_like_skill_pack(&plain) {
+        return Some(plain);
+    }
+    None
+}
+
+/// True when `dir` exists and contains at least one `*/SKILL.md` skill folder.
+pub fn looks_like_skill_pack(dir: &Path) -> bool {
+    dir.is_dir() && count_skills(dir) > 0
 }
 
 /// Copy skill pack into the worktree when absent. Returns how many skill dirs linked/copied.
@@ -68,8 +98,9 @@ You are executing a task under **Kit**, the control room for parallel agent work
 
 ## Skills
 
-Engineering skills live in `.agents/skills/` (addyosmani/agent-skills pack).
-Start with `using-agent-skills`, then follow the lifecycle that fits the task.
+Skill folders live in `.agents/skills/` (each skill is `name/SKILL.md`).
+If a router skill such as `using-agent-skills` is present, start there.
+Otherwise read skill descriptions and pick the one that matches the task.
 
 ## Rules
 
@@ -77,26 +108,53 @@ Start with `using-agent-skills`, then follow the lifecycle that fits the task.
 2. Small vertical slices; test after each change.
 3. Do not invent credentials; use existing CLI logins only.
 4. Prefer boring, reviewable diffs.
+5. Domain packs (e.g. Harness) may require their own MCP/tools — use them when available.
 
 See the task prompt for the specific objective.
 "#;
     fs::write(path, body)
 }
 
-/// Build the full prompt: skills preamble + user task.
-pub fn build_prompt(user_task: &str, skills_installed: bool) -> String {
-    let pack = if skills_installed {
-        "Skills pack is installed at `.agents/skills/` (24 skills including using-agent-skills)."
-    } else {
-        "Skills pack was not found on the host; still follow the routing below."
+/// Kind of pack for prompt routing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillPackKind {
+    /// addyosmani-style engineering pack with `using-agent-skills`.
+    CodingRouter,
+    /// Any other SKILL.md pack (Harness, custom).
+    Generic,
+    /// No pack on disk.
+    Missing,
+}
+
+/// Classify a skills directory (or missing).
+pub fn pack_kind(skills_dir: Option<&Path>) -> SkillPackKind {
+    let Some(dir) = skills_dir else {
+        return SkillPackKind::Missing;
     };
+    if !looks_like_skill_pack(dir) {
+        return SkillPackKind::Missing;
+    }
+    if dir.join("using-agent-skills").join("SKILL.md").is_file() {
+        SkillPackKind::CodingRouter
+    } else {
+        SkillPackKind::Generic
+    }
+}
 
-    format!(
-        r#"# Kit Control Room — agent run
+/// Build the full prompt: skills preamble + user task.
+///
+/// Pass the same `skills_src` directory that was installed into the worktree
+/// so routing matches the pack (coding router vs generic / Harness).
+pub fn build_prompt(user_task: &str, skills_src: Option<&Path>) -> String {
+    let kind = pack_kind(skills_src);
+    let installed = !matches!(kind, SkillPackKind::Missing);
+    build_prompt_for(user_task, kind, installed)
+}
 
-You are running under **Kit** (multi-agent control room). {pack}
-
-## Skill routing (mandatory)
+/// Testable prompt builder with an explicit pack kind.
+pub fn build_prompt_for(user_task: &str, kind: SkillPackKind, skills_installed: bool) -> String {
+    let routing = match kind {
+        SkillPackKind::CodingRouter => r#"## Skill routing (mandatory)
 
 Before coding, apply the workflow from **using-agent-skills**:
 
@@ -109,7 +167,34 @@ Before coding, apply the workflow from **using-agent-skills**:
 | Bug | debugging-and-error-recovery |
 | Before claiming done | code-review-and-quality + code-simplification |
 
-Core behaviors: surface assumptions · stop on confusion · simplicity first · scope discipline · verify with evidence.
+Core behaviors: surface assumptions · stop on confusion · simplicity first · scope discipline · verify with evidence."#,
+        SkillPackKind::Generic => r#"## Skill routing (mandatory)
+
+A skill pack is installed at `.agents/skills/` (each skill has `SKILL.md`).
+
+1. Scan skill names/descriptions for the best match to the user task.
+2. Follow that skill's instructions fully (tools, MCP, YAML, policies).
+3. If nothing matches, do the smallest correct change and say which skills you considered.
+4. Domain packs (e.g. Harness) may require MCP/API credentials already configured on the host — do not invent secrets."#,
+        SkillPackKind::Missing => r#"## Skill routing
+
+No skill pack was found on the host. Still:
+
+- Surface assumptions · stop on confusion · simplicity first · scope discipline · verify with evidence."#,
+    };
+
+    let pack = if skills_installed {
+        "Skills pack is installed at `.agents/skills/`."
+    } else {
+        "Skills pack was not found on the host."
+    };
+
+    format!(
+        r#"# Kit Control Room — agent run
+
+You are running under **Kit** (multi-agent control room). {pack}
+
+{routing}
 
 ## User task
 
@@ -156,10 +241,35 @@ mod tests {
 
     #[test]
     fn preamble_includes_task_and_routing() {
-        let p = build_prompt("fix the flaky test", true);
+        let p = build_prompt_for("fix the flaky test", SkillPackKind::CodingRouter, true);
         assert!(p.contains("fix the flaky test"));
         assert!(p.contains("using-agent-skills"));
         assert!(p.contains("incremental-implementation"));
+    }
+
+    #[test]
+    fn generic_pack_prompt_mentions_skill_md() {
+        let p = build_prompt_for("debug pipeline", SkillPackKind::Generic, true);
+        assert!(p.contains("debug pipeline"));
+        assert!(p.contains("SKILL.md"));
+        assert!(!p.contains("using-agent-skills"));
+    }
+
+    #[test]
+    fn looks_like_skill_pack_requires_skill_md() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let root = std::env::temp_dir().join(format!("kit-pack-detect-{stamp}"));
+        let empty = root.join("empty");
+        fs::create_dir_all(&empty).unwrap();
+        assert!(!looks_like_skill_pack(&empty));
+        let skill = root.join("skills").join("debug-pipeline");
+        fs::create_dir_all(&skill).unwrap();
+        fs::write(skill.join("SKILL.md"), "---\nname: debug-pipeline\n---\n").unwrap();
+        assert!(looks_like_skill_pack(&root.join("skills")));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

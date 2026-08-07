@@ -39,8 +39,8 @@ impl Agent for OllamaAgent {
         worktree: &Path,
         tx: mpsc::Sender<RunDelta>,
     ) -> Result<Box<dyn AgentHandle>, SpawnError> {
-        let skills_n = install_skills(worktree, &spec.repo, &tx).await;
-        let prompt = skills::build_prompt(&spec.task, skills_n > 0);
+        let skills_src = install_skills(worktree, &spec.repo, &tx).await;
+        let prompt = skills::build_prompt(&spec.task, skills_src.as_deref());
         let model = model_name();
 
         let _ = tx
@@ -59,10 +59,12 @@ impl Agent for OllamaAgent {
     }
 }
 
-async fn install_skills(worktree: &Path, repo: &Path, tx: &mpsc::Sender<RunDelta>) -> usize {
-    let Some(src) = skills::resolve_skills_dir(repo) else {
-        return 0;
-    };
+async fn install_skills(
+    worktree: &Path,
+    repo: &Path,
+    tx: &mpsc::Sender<RunDelta>,
+) -> Option<std::path::PathBuf> {
+    let src = skills::resolve_skills_dir(repo)?;
     match skills::install_into_worktree(worktree, &src) {
         Ok(n) => {
             let _ = skills::ensure_agents_md(worktree);
@@ -71,8 +73,8 @@ async fn install_skills(worktree: &Path, repo: &Path, tx: &mpsc::Sender<RunDelta
                     "kit: installed {n} skills for ollama context\n"
                 )))
                 .await;
-            n
+            Some(src)
         }
-        Err(_) => 0,
+        Err(_) => None,
     }
 }

@@ -69,6 +69,7 @@ async fn launch_tui(demo: bool) -> Result<()> {
         LaunchConfig {
             demo,
             engine_tx: Some(cmd_tx),
+            probe_agents: true,
         },
         delta_rx,
     )

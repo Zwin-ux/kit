@@ -6,7 +6,7 @@
 //! **Contract:** the `Agent` trait is Claude-only to change. Adding adapters
 //! in modules is ordinary work (this crate).
 //!
-//! Skills: every live spawn injects `.agents/skills` (addyosmani pack) into the
+//! Skills: every live spawn injects a skill pack (`.agents/skills` or `skills/`) into the
 //! worktree and prepends a routing preamble — Codex-style headless workflow
 //! with engineering discipline.
 

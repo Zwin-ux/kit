@@ -226,6 +226,8 @@ pub struct App {
     board_seq: u64,
     /// Full-screen help overlay (`?`). Esc / `?` dismiss.
     pub help_open: bool,
+    /// Agent readiness from launch-time probe (`name`, ready). Empty until set.
+    pub agents_probe: Vec<(String, bool)>,
 }
 
 /// One run as the Control Room / detail view-model (TUI-local).
@@ -369,7 +371,48 @@ impl App {
             board_selected: 0,
             board_seq: 1,
             help_open: false,
+            agents_probe: Vec::new(),
         }
+    }
+
+    /// Seed launch-time agent readiness (from `kit_agents::probe_all`).
+    pub fn set_agents_probe(&mut self, probe: Vec<(String, bool)>) {
+        self.agents_probe = probe;
+        self.dirty = true;
+    }
+
+    /// Compact strip for the Control Room header, e.g. `codex·claude·grok ready`.
+    pub fn agents_strip(&self) -> String {
+        if self.agents_probe.is_empty() {
+            return String::new();
+        }
+        let ready: Vec<&str> = self
+            .agents_probe
+            .iter()
+            .filter(|(_, ok)| *ok)
+            .map(|(n, _)| n.as_str())
+            .collect();
+        let missing: Vec<&str> = self
+            .agents_probe
+            .iter()
+            .filter(|(_, ok)| !*ok)
+            .map(|(n, _)| n.as_str())
+            .collect();
+        match (ready.is_empty(), missing.is_empty()) {
+            (true, true) => String::new(),
+            (false, true) => format!("{} ready", ready.join("·")),
+            (true, false) => format!("{} missing — kit doctor", missing.join("·")),
+            (false, false) => format!(
+                "{} ready  ·  {} missing",
+                ready.join("·"),
+                missing.join("·")
+            ),
+        }
+    }
+
+    /// How many agents reported ready at launch.
+    pub fn agents_ready_count(&self) -> usize {
+        self.agents_probe.iter().filter(|(_, ok)| *ok).count()
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -1280,7 +1323,7 @@ impl App {
                     command: "tsc --noEmit".into(),
                     status: CheckStatus::Fail,
                     exit_code: Some(2),
-                    summary: Some("tsc: 3 errors".into()),
+                    summary: Some("tsc: 3 errors — Type 'string' is not assignable".into()),
                     duration: Duration::from_secs(8),
                 },
             ],
@@ -1289,12 +1332,12 @@ impl App {
             duration: Duration::from_secs(10),
         });
         r3.seq = 3;
+        let fail_id = r3.id.clone();
         self.upsert_run(r3);
 
-        self.selected_id = self
-            .display_order()
-            .first()
-            .map(|&i| self.runs[i].id.clone());
+        // Product moment: land on FAIL so gate wash + `r` retry are visible immediately.
+        self.selected_id = Some(fail_id);
+        self.set_flash("FAIL selected — enter open · r retry with gate context");
 
         // Board fixture items for F4 snapshots / QA.
         self.board = vec![
@@ -1327,13 +1370,14 @@ impl App {
 }
 
 /// Display sort rank — lower is higher in the table.
+/// FAIL/ERROR surface just under live work so the proof loop stays visible.
 fn state_rank(state: RunState) -> u8 {
     match state {
         RunState::Running => 0,
         RunState::Gating => 1,
-        RunState::Queued => 2,
-        RunState::Fail => 3,
-        RunState::Error => 4,
+        RunState::Fail => 2,
+        RunState::Error => 3,
+        RunState::Queued => 4,
         RunState::Pass => 5,
         RunState::Killed => 6,
     }
@@ -1786,11 +1830,18 @@ mod tests {
     fn engine_keys_emit_actions_with_flash() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
-        // Fixture first row is Running — kill is valid.
+        // Demo fixture selects FAIL first — pick a Running row for kill.
+        let running_id = app
+            .runs
+            .iter()
+            .find(|r| r.state == RunState::Running)
+            .map(|r| r.id.clone())
+            .expect("fixture has Running run");
+        app.selected_id = Some(running_id.clone());
         let kill = app.update(key('k'));
         match kill {
             Action::KillSelected { id } => {
-                assert_eq!(id.0, "01FIXRUN0KITCODEX000000000");
+                assert_eq!(id, running_id);
             }
             other => panic!("expected KillSelected, got {other:?}"),
         }
@@ -1820,7 +1871,14 @@ mod tests {
     fn retry_rejects_non_fail() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
-        // Running row selected by default.
+        // Demo selects FAIL — force a Running selection so retry is rejected.
+        let running_id = app
+            .runs
+            .iter()
+            .find(|r| r.state == RunState::Running)
+            .map(|r| r.id.clone())
+            .expect("fixture has Running run");
+        app.selected_id = Some(running_id);
         assert_eq!(app.update(key('r')), Action::None);
         assert!(
             app.flash_message()
@@ -1892,7 +1950,10 @@ mod tests {
         assert_eq!(app.runs[order[0]].state, RunState::Running);
         assert_eq!(app.runs[order[2]].state, RunState::Fail);
         let fail = app.runs.iter().find(|r| r.state == RunState::Fail).unwrap();
-        assert_eq!(fail.gate_summary().as_deref(), Some("tsc: 3 errors"));
+        assert_eq!(
+            fail.gate_summary().as_deref(),
+            Some("tsc: 3 errors — Type 'string' is not assignable")
+        );
         assert!(!fail.diff.is_empty());
         assert!(!fail.output.is_empty());
     }

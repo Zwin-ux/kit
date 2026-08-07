@@ -1,119 +1,122 @@
 <p align="center">
-  <img src="docs/assets/readme-banner.png" alt="KIT — Portable Agent Skills" width="720" />
+  <img src="docs/assets/readme-banner.png" alt="KIT — multi-agent control room" width="720" />
 </p>
 
 <p align="center">
-  <img src="docs/assets/kit-idle.gif" alt="Kit" width="140" />
+  <strong>Dispatch many agents. Watch them in one place. Nothing ships unproven.</strong><br />
+  Local Control Room for Codex, Claude, Grok, and Ollama — worktrees, gates, receipts.
 </p>
 
 <p align="center">
-  <strong>A local workbench for Codex, Claude, Grok, Ollama, and the tools beside your code.</strong><br />
-  Point at a repo. Run one bounded job. Keep the proof.
-</p>
-
-<p align="center">
-  <a href="https://www.npmjs.com/package/@mzwin/kit"><img src="https://img.shields.io/npm/v/@mzwin/kit?style=for-the-badge&label=npm&color=1a1a1a" alt="npm" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1a1a1a?style=for-the-badge" alt="MIT" /></a>
+  <img src="https://img.shields.io/badge/status-1.0%20alpha-00E6CC?style=for-the-badge" alt="1.0 alpha" />
 </p>
 
 ---
 
-## Install
-
-### Kit 1.0 (Rust Control Room — in progress)
+## 30 seconds
 
 ```bash
-# Headless one-run (M1 dry-run: worktree → stream → gate → receipt)
-cargo run -p kit-cli -- run --task "smoke" --json
-
-# Control Room
-cargo run -p kit-cli -- --demo   # sample runs (fixture)
-cargo run -p kit-cli             # empty; d = dispatch starts dry-run engine
-cargo build -p kit-cli --release
-./target/release/kit run --task "…" --json
+# From this repo
+cargo run -p kit-cli -- doctor          # which agents are ready
+cargo run -p kit-cli -- --demo          # Control Room with FAIL + retry fixture
+cargo run -p kit-cli                    # empty room; d = dispatch live agents
+cargo run -p kit-cli -- run --dry-run --task "smoke" --json
 ```
 
-Default surface is the **Control Room**.  
-`kit run` isolates a git worktree, streams output, runs the gate, writes `~/.kit/runs/<id>/`.  
-**Live adapters:** Codex (`codex exec`), Claude (`claude -p`), Grok (`grok -p`), Ollama — auto when on PATH.  
-Every live run injects [agent-skills](https://github.com/addyosmani/agent-skills) into the worktree + prompt.  
-`--dry-run` for offline/CI. `KIT_FULL_AUTO=1` for approval bypass (dangerous).  
-Keys: `↑↓` select · `Enter` open · `g` gate · `d` dispatch · `b` board · `q` quit.  
-Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md) · Adapters: [`docs/dev/tasks/B2-agent-adapters.md`](docs/dev/tasks/B2-agent-adapters.md).
+| Command | What it does |
+|---------|----------------|
+| `kit` / `kit --demo` | Control Room TUI |
+| `kit run --task "…"` | One isolated run (live agent if on PATH) |
+| `kit doctor` | Probe codex / claude / grok / ollama + skills pack |
+| `kit run --dry-run --json` | Offline CI path (worktree → stream → gate → receipt) |
 
-### Kit 0.1.x (npm skill workbench — shipped alpha)
+**Product loop:** dispatch → table of runs → FAIL wash + first error → `r` retry with gate context → receipt under `~/.kit/runs/<id>/`.
+
+Keys: `↑↓` select · `Enter` open · `g` gate · `d` dispatch · `b` board · `k` kill · `r` retry · `?` help · `q` quit.
+
+---
+
+## Install (1.0 alpha)
+
+```bash
+git clone https://github.com/Zwin-ux/kit.git
+cd kit
+cargo build -p kit-cli --release
+./target/release/kit doctor
+./target/release/kit --demo
+```
+
+Requires Rust stable and (for live runs) at least one of: `codex`, `claude`, `grok`, `ollama` on PATH.  
+Kit uses each provider's existing login. It does not store model API keys.
+
+Env flags:
+
+| Env | Effect |
+|-----|--------|
+| `KIT_FULL_AUTO=1` | Bypass agent approval prompts (dangerous — sandboxes only) |
+| `KIT_SKILLS_DIR=…` | Override skill pack root (see Skills) |
+| `KIT_OLLAMA_MODEL=…` | Model for Ollama adapter (default `llama3.2`) |
+| `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
+
+Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md) · PRD: [`docs/dev/PRD-1.0.md`](docs/dev/PRD-1.0.md)
+
+---
+
+## Skills
+
+Every live run copies a skill pack into the worktree and prepends routing to the prompt.
+
+**Default:** [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) at `.agents/skills` (coding lifecycle: spec → plan → build → verify → review).
+
+**Any `*/SKILL.md` pack works**, including [Harness skills](https://github.com/harness/harness-skills):
+
+```bash
+git clone https://github.com/harness/harness-skills.git
+# Point Kit at the skills tree (not the repo root)
+export KIT_SKILLS_DIR="$PWD/harness-skills/skills"
+cargo run -p kit-cli -- run --agent claude --task "debug my failed pipeline"
+```
+
+Or place a `skills/` directory (Harness layout) in the target repo — Kit discovers it after `.agents/skills`.
+
+**Harness note:** those skills expect the [Harness MCP v2 server](https://github.com/harness/mcp-server) and API credentials. They are a **domain pack**, not Kit's default. Without MCP, agents can still read the markdown but cannot call Harness tools.
+
+Resolution order: `KIT_SKILLS_DIR` → `<repo>/.agents/skills` → `<repo>/skills` → walk up from cwd.
+
+---
+
+## Control Room
+
+- Live table of runs (repo · agent · task · STATE · GATE)
+- FAIL rows get a danger wash and a `^ first error` annotation
+- Dispatch fans out repo × agent (cap 16) with one task
+- Board is prefill-only in 1.0 (Enter → Dispatch)
+- Gate: empty checks render **UNCONFIGURED**, never silent PASS
+- Kill mid-run (`k`) and retry failed (`r`) with gate failure context
+
+```bash
+cargo run -p kit-cli -- --demo   # lands on a FAIL so the proof loop is obvious
+```
+
+---
+
+## Legacy: Kit 0.1.x npm workbench
+
+Earlier alpha (`npm i -g @mzwin/kit`) was a Node skill/workbench TUI. Still in `packages/` for history; **1.0 is the Rust binary above**. Prefer Control Room commands.
+
+<details>
+<summary>0.1 workbench notes</summary>
 
 ```bash
 npm i -g @mzwin/kit
-kit --version
-```
-
-Node 20+. Command name: `kit`.
-
-```bash
-kit                  # status + next command
-kit ready --write    # pack → install → apply → link → doctor
-kit unify --write --link
-kit tui              # keyboard console + calm side mascot
-kit tui workbench    # coding runners + attached CLI services
-```
-
----
-
-## Workbench
-
-<p align="center">
-  <img src="docs/assets/demo-workbench-trenchwire.gif" alt="Kit Workbench detects local coding runners and runs fixed Trenchwire service tasks with offline market data" width="720" />
-</p>
-
-Workbench takes over the terminal while it runs. Your shell and scrollback return
-when Kit exits. The layout has compact, standard, and wide modes, so the job and
-live output stay readable from 60x18 through a maximized terminal.
-
-- **Runners:** Codex, Claude Code, Grok Build, and local Ollama models.
-- **Services:** fixed read-only tasks from registered CLI plugins.
-
-Write one job in the TUI. `inspect` uses the provider's read-only or plan mode.
-`build` can edit the selected repo and needs a separate confirmation. Kit uses
-the provider's existing login. It does not store model API keys. Output streams
-inside the Workbench, and `Esc` stops a running job or service task.
-
-`Tab` switches between Runners and Services. The main panel always describes
-the selected lane. The footer changes with the current action, so prompt,
-confirmation, run, and stop keys stay visible on small terminals. Run state
-uses words such as `RUNNING`, `STOPPING`, `DONE`, and `FAILED`; color is not
-required. `Q` quits from navigation, but it remains normal text while you edit
-a prompt. `Ctrl+C` always exits.
-
-Ollama runs through its official Codex launch bridge. This gives the local
-model the same repository tools and sandbox as a normal Codex job. Kit isolates
-the local run from unrelated global connectors so they do not consume the
-model's context.
-
-```bash
-ollama serve
-ollama pull <model>
+kit ready --write
 kit tui workbench
 ```
 
-Select **Ollama · Codex**, then use left and right to choose an installed model.
-Kit reads the model list from the local Ollama service. It does not send project
-content to a hosted model. Set `KIT_NO_ALT_SCREEN=1` only when you need inline
-terminal output for debugging or capture.
+See [Workbench architecture](docs/dev/WORKBENCH_ARCHITECTURE.md) for the archived design.
 
-Trenchwire is the first attached service. Its `health` and `market` tasks use
-fixed arguments. Wallet login, signing, submission, and the literal `SEND`
-gate stay inside Trenchwire.
-
-```bash
-kit plugin add ../trenchwire --write
-kit tui workbench
-```
-
-The proof above uses the compiled Trenchwire binary, recorded market data, and
-live runner detection. It does not connect a wallet or submit a trade.
-
-Read the [Workbench architecture](docs/dev/WORKBENCH_ARCHITECTURE.md).
+</details>
 
 ---
 
