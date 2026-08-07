@@ -154,7 +154,8 @@ pub fn build_prompt(user_task: &str, skills_src: Option<&Path>) -> String {
 /// Testable prompt builder with an explicit pack kind.
 pub fn build_prompt_for(user_task: &str, kind: SkillPackKind, skills_installed: bool) -> String {
     let routing = match kind {
-        SkillPackKind::CodingRouter => r#"## Skill routing (mandatory)
+        SkillPackKind::CodingRouter => {
+            r#"## Skill routing (mandatory)
 
 Before coding, apply the workflow from **using-agent-skills**:
 
@@ -167,20 +168,25 @@ Before coding, apply the workflow from **using-agent-skills**:
 | Bug | debugging-and-error-recovery |
 | Before claiming done | code-review-and-quality + code-simplification |
 
-Core behaviors: surface assumptions · stop on confusion · simplicity first · scope discipline · verify with evidence."#,
-        SkillPackKind::Generic => r#"## Skill routing (mandatory)
+Core behaviors: surface assumptions · stop on confusion · simplicity first · scope discipline · verify with evidence."#
+        }
+        SkillPackKind::Generic => {
+            r#"## Skill routing (mandatory)
 
 A skill pack is installed at `.agents/skills/` (each skill has `SKILL.md`).
 
 1. Scan skill names/descriptions for the best match to the user task.
 2. Follow that skill's instructions fully (tools, MCP, YAML, policies).
 3. If nothing matches, do the smallest correct change and say which skills you considered.
-4. Domain packs (e.g. Harness) may require MCP/API credentials already configured on the host — do not invent secrets."#,
-        SkillPackKind::Missing => r#"## Skill routing
+4. Domain packs (e.g. Harness) may require MCP/API credentials already configured on the host — do not invent secrets."#
+        }
+        SkillPackKind::Missing => {
+            r#"## Skill routing
 
 No skill pack was found on the host. Still:
 
-- Surface assumptions · stop on confusion · simplicity first · scope discipline · verify with evidence."#,
+- Surface assumptions · stop on confusion · simplicity first · scope discipline · verify with evidence."#
+        }
     };
 
     let pack = if skills_installed {
