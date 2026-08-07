@@ -66,6 +66,7 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
                 Line::from("  g          open gate log"),
                 Line::from("  d          dispatch fan-out"),
                 Line::from("  b          board (prefill list)"),
+                Line::from("  f          filter ALL → FAIL → RUN → DONE"),
                 Line::from("  k          kill selected run"),
                 Line::from("  r          retry FAIL only"),
             ]);

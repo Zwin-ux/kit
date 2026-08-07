@@ -123,6 +123,48 @@ pub enum DispatchFocus {
     Task,
 }
 
+/// Control Room table filter (`f` cycles).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RunFilter {
+    #[default]
+    All,
+    Fail,
+    Running,
+    Done,
+}
+
+impl RunFilter {
+    pub fn next(self) -> Self {
+        match self {
+            Self::All => Self::Fail,
+            Self::Fail => Self::Running,
+            Self::Running => Self::Done,
+            Self::Done => Self::All,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "ALL",
+            Self::Fail => "FAIL",
+            Self::Running => "RUN",
+            Self::Done => "DONE",
+        }
+    }
+
+    fn matches(self, state: RunState) -> bool {
+        match self {
+            Self::All => true,
+            Self::Fail => matches!(state, RunState::Fail | RunState::Error),
+            Self::Running => matches!(
+                state,
+                RunState::Running | RunState::Gating | RunState::Queued
+            ),
+            Self::Done => matches!(state, RunState::Pass | RunState::Killed),
+        }
+    }
+}
+
 /// Dispatch form — PRD §4.2 fan-out.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DispatchForm {
@@ -137,11 +179,7 @@ pub struct DispatchForm {
 impl Default for DispatchForm {
     fn default() -> Self {
         Self {
-            repos: vec![
-                ("kit".into(), true),
-                ("guardian".into(), false),
-                ("trenchwire".into(), false),
-            ],
+            repos: default_dispatch_repos(),
             agents: vec![
                 ("codex".into(), true),
                 ("claude".into(), false),
@@ -153,6 +191,29 @@ impl Default for DispatchForm {
             list_cursor: 0,
         }
     }
+}
+
+/// Prefer cwd repo name first, then known neighbors when present on disk.
+fn default_dispatch_repos() -> Vec<(String, bool)> {
+    let mut repos: Vec<(String, bool)> = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(name) = cwd.file_name().and_then(|n| n.to_str()) {
+            repos.push((name.to_string(), true));
+        }
+        if let Some(parent) = cwd.parent() {
+            for sibling in ["kit", "guardian", "trenchwire", "board-world-app"] {
+                let p = parent.join(sibling);
+                if p.is_dir() && !repos.iter().any(|(n, _)| n == sibling) && p.join(".git").exists()
+                {
+                    repos.push((sibling.to_string(), false));
+                }
+            }
+        }
+    }
+    if repos.is_empty() {
+        repos.push((".".into(), true));
+    }
+    repos
 }
 
 impl DispatchForm {
@@ -228,6 +289,8 @@ pub struct App {
     pub help_open: bool,
     /// Agent readiness from launch-time probe (`name`, ready). Empty until set.
     pub agents_probe: Vec<(String, bool)>,
+    /// Control Room table filter (`f`).
+    pub run_filter: RunFilter,
 }
 
 /// One run as the Control Room / detail view-model (TUI-local).
@@ -372,6 +435,7 @@ impl App {
             board_seq: 1,
             help_open: false,
             agents_probe: Vec::new(),
+            run_filter: RunFilter::All,
         }
     }
 
@@ -569,6 +633,7 @@ impl App {
                 Action::None
             }
             KeyCode::Char('d') | KeyCode::Char('D') => {
+                self.prepare_dispatch_repos();
                 self.screen = Screen::Dispatch;
                 Action::None
             }
@@ -578,6 +643,22 @@ impl App {
             }
             KeyCode::Char('k') | KeyCode::Char('K') => self.request_kill(),
             KeyCode::Char('r') | KeyCode::Char('R') => self.request_retry(),
+            KeyCode::Char('f') => {
+                self.run_filter = self.run_filter.next();
+                self.set_flash(format!("filter {}", self.run_filter.label()));
+                // Keep selection valid under the new filter.
+                let order = self.display_order();
+                if order.is_empty() {
+                    self.selected_id = None;
+                } else if self
+                    .selected_id
+                    .as_ref()
+                    .is_none_or(|id| !order.iter().any(|&i| self.runs[i].id == *id))
+                {
+                    self.selected_id = Some(self.runs[order[0]].id.clone());
+                }
+                Action::None
+            }
             _ => Action::None,
         }
     }
@@ -795,9 +876,20 @@ impl App {
             KeyCode::Enter if !self.board.is_empty() => {
                 // Prefill dispatch from the selected board item and open form.
                 let item = self.board[self.board_selected].clone();
+                self.prepare_dispatch_repos();
                 self.dispatch.task = item.title;
                 for (name, on) in &mut self.dispatch.repos {
                     *on = *name == item.repo_hint;
+                }
+                if !self
+                    .dispatch
+                    .repos
+                    .iter()
+                    .any(|(n, _)| n == &item.repo_hint)
+                {
+                    self.dispatch
+                        .repos
+                        .insert(0, (item.repo_hint.clone(), true));
                 }
                 for (name, on) in &mut self.dispatch.agents {
                     *on = *name == item.agent_hint;
@@ -807,6 +899,7 @@ impl App {
                 Action::None
             }
             KeyCode::Char('d') | KeyCode::Char('D') => {
+                self.prepare_dispatch_repos();
                 self.screen = Screen::Dispatch;
                 Action::None
             }
@@ -896,6 +989,7 @@ impl App {
             KeyCode::Char('k') | KeyCode::Char('K') => self.request_kill(),
             KeyCode::Char('r') | KeyCode::Char('R') => self.request_retry(),
             KeyCode::Char('d') | KeyCode::Char('D') => {
+                self.prepare_dispatch_repos();
                 self.screen = Screen::Dispatch;
                 Action::None
             }
@@ -1063,8 +1157,11 @@ impl App {
     }
 
     /// Indices into `runs` sorted for the Control Room: state priority, then age.
+    /// Honors [`RunFilter`].
     pub fn display_order(&self) -> Vec<usize> {
-        let mut idxs: Vec<usize> = (0..self.runs.len()).collect();
+        let mut idxs: Vec<usize> = (0..self.runs.len())
+            .filter(|&i| self.run_filter.matches(self.runs[i].state))
+            .collect();
         idxs.sort_by(|&a, &b| {
             let ra = &self.runs[a];
             let rb = &self.runs[b];
@@ -1073,6 +1170,49 @@ impl App {
                 .then_with(|| ra.seq.cmp(&rb.seq))
         });
         idxs
+    }
+
+    /// Seed Dispatch repos from cwd + sibling git checkouts + recent run repos.
+    fn prepare_dispatch_repos(&mut self) {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut repos: Vec<(String, bool)> = Vec::new();
+
+        // Cwd first (selected).
+        if let Ok(cwd) = std::env::current_dir() {
+            if let Some(name) = cwd.file_name().and_then(|n| n.to_str()) {
+                push_repo(&mut repos, &mut seen, name.to_string(), true);
+            }
+            if let Some(parent) = cwd.parent() {
+                for sibling in ["kit", "guardian", "trenchwire", "board-world-app", "wiki"] {
+                    let p = parent.join(sibling);
+                    if p.is_dir() && p.join(".git").exists() {
+                        push_repo(&mut repos, &mut seen, sibling.to_string(), false);
+                    }
+                }
+            }
+        }
+
+        // Recent run repos (labels already short names from engine).
+        for run in &self.runs {
+            if !run.repo.is_empty() {
+                push_repo(&mut repos, &mut seen, run.repo.clone(), false);
+            }
+        }
+
+        // Keep any user-toggled extras already on the form.
+        for (name, on) in &self.dispatch.repos {
+            push_repo(&mut repos, &mut seen, name.clone(), *on);
+        }
+
+        if repos.is_empty() {
+            repos.push((".".into(), true));
+        } else if !repos.iter().any(|(_, on)| *on) {
+            repos[0].1 = true;
+        }
+
+        self.dispatch.repos = repos;
+        self.dispatch.list_cursor = 0;
+        self.dispatch.focus = DispatchFocus::Repos;
     }
 
     pub fn selected_display_index(&self) -> Option<usize> {
@@ -1366,6 +1506,22 @@ impl App {
         self.board_seq = 4;
         self.board_selected = 0;
         self.dirty = true;
+    }
+}
+
+fn push_repo(
+    repos: &mut Vec<(String, bool)>,
+    seen: &mut std::collections::BTreeSet<String>,
+    name: String,
+    on: bool,
+) {
+    if seen.insert(name.clone()) {
+        repos.push((name, on));
+    } else if on {
+        // Prefer selected if we see the name again with on=true.
+        if let Some((_, flag)) = repos.iter_mut().find(|(n, _)| n == &name) {
+            *flag = true;
+        }
     }
 }
 
@@ -1868,6 +2024,34 @@ mod tests {
     }
 
     #[test]
+    fn filter_cycles_and_hides_rows() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        assert_eq!(app.run_filter, RunFilter::All);
+        let all_n = app.display_order().len();
+        assert!(all_n >= 3);
+
+        app.update(key('f'));
+        assert_eq!(app.run_filter, RunFilter::Fail);
+        let fail_n = app.display_order().len();
+        assert_eq!(fail_n, 1);
+        assert!(
+            app.display_order()
+                .iter()
+                .all(|&i| matches!(app.runs[i].state, RunState::Fail | RunState::Error))
+        );
+
+        app.update(key('f'));
+        assert_eq!(app.run_filter, RunFilter::Running);
+        assert!(app.display_order().len() >= 2);
+
+        app.update(key('f')); // Done
+        app.update(key('f')); // All
+        assert_eq!(app.run_filter, RunFilter::All);
+        assert_eq!(app.display_order().len(), all_n);
+    }
+
+    #[test]
     fn retry_rejects_non_fail() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
@@ -1908,13 +2092,12 @@ mod tests {
     #[test]
     fn dispatch_submit_fans_out_queued_runs() {
         let mut app = App::with_motion(false);
+        // Explicit form — do not depend on cwd siblings for fan-out count.
+        app.dispatch.repos = vec![("kit".into(), true), ("guardian".into(), true)];
+        app.dispatch.agents = vec![("codex".into(), true)];
         app.dispatch.task = "ship the gate".into();
-        // kit + guardian × codex = 2 when we enable guardian
-        app.dispatch.repos[1].1 = true; // guardian
+        app.screen = Screen::Dispatch;
         let before = app.runs.len();
-        let action = app.update(key('d'));
-        assert_eq!(action, Action::None);
-        assert_eq!(app.screen, Screen::Dispatch);
         let action = app.update(code(KeyCode::Enter));
         match action {
             Action::DispatchSubmitted { jobs } => assert_eq!(jobs.len(), 2),
