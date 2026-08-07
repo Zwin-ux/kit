@@ -1,0 +1,16 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / ATTACHED  trenchwire · codex · fix red CI                        PTY 1.0.1"
+"                                                                                "
+"┌ attach ──────────────────────────────────────────────────────────────────────┐"
+"│PTY attach ships in 1.0.1                                                     │"
+"│                                                                              │"
+"│Esc detaches without killing the run.                                         │"
+"│q is disabled while attached.                                                 │"
+"│                                                                              │"
+"│PTY not connected yet — Esc detaches                                          │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [esc] detach (without kill)                                                    "

@@ -1,51 +1,69 @@
 # AGENTS.md — Living Context for Coding Agents
 
-You are working on **Kit**.
+You are working on **Kit 1.0** (Rust control room).
 
-Kit is a portable Agent Skills platform with a pixel TUI and CLI.
-Offline-first local engine.
+> Supersedes the 0.1 “skill platform / Ink TUI” brief.  
+> Product truth: `PRD-1.0.md`. Ownership: `BUILD-ASSIGNMENT.md`.  
+> Root agent routing: `/AGENTS.md` + `.agents/skills` ([addyosmani/agent-skills](https://github.com/addyosmani/agent-skills)).
 
-## Core Identity
-- Portable skills across Claude Code, Grok Build, Codex, and others
-- Pure black-and-white silhouette visual language
-- GitHub sign-in for registry identity
-- Offline-first local engine
-- Strict validation
+## Core identity
 
-## Current State (Alpha v1)
+- **Control room for parallel agent work** — dispatch, watch, gate, receipt
+- Gate is the differentiator (`GATING` state; nothing ships unproven)
+- Terminal is the product (ratatui + crossterm + tokio)
+- Local-first, no credential custody, bounded by default
 
-**Shipped**
-- Monorepo (pnpm): `@kit-skills/core`, `cli`, `tui`, `shared`, `registry-api`
-- Skill schema, library, packs with `extends`, paths/link, test, doctor
-- **7 packs:** essentials, web-app, library, cli-tool, api-service, full-stack, data-ml
-- Pack silhouettes in `assets/pixel/packs` + TUI `PackIcon`
-- TUI: splash, first-run 1–7, home, packs, library, explore, doctor, paths
-- kit-idle 6-frame loop; motion primitives; Enter install; path write approval
-- Point project (`o` / `KIT_PROJECT_DIR` / config) → auto-recommend
-- GitHub login + Railway explore
-- Workbench: Codex, Claude Code, Grok Build, and local Ollama models
-- Full-terminal alternate screen with compact, standard, and wide layouts
-- Live bounded runner output, cancellation, and fixed read-only CLI services
-- CI, README, LICENSE, CHANGELOG for public alpha
+## Skills pack (required)
 
-**Next**
-1. TUI login screen
-2. Workshop
-3. Publish API
-4. Durable catalog
+All agents on this repo should use **addyosmani/agent-skills** under `.agents/skills/`.
 
-## Key Documents
-- Public: `README.md`, `CHANGELOG.md`, `docs/packs.md`
-- Engineering (this folder): `ROADMAP.md`, `ARCHITECTURE.md`, `SKILL_SCHEMA.md`, `TUI_SCREENS.md`, `HARNESS_PATHS.md`
-- Art: `assets/pixel/README.md`, `PIXEL_ART.md`
+| When | Skill |
+|------|--------|
+| Session start | `using-agent-skills` |
+| New feature | `spec-driven-development` → `planning-and-task-breakdown` |
+| Implementation | `incremental-implementation` + `test-driven-development` |
+| TUI screens | `frontend-ui-engineering` (interaction language, a11y) |
+| Contracts / seams | `api-and-interface-design` + Claude-only contract rule |
+| Before PR | `code-review-and-quality` + `code-simplification` |
+| Perf / idle CPU | `performance-optimization` (M0 kill criteria) |
 
-## Visual Rules (Non-Negotiable)
-- Pure black silhouette only for TUI assets
-- High contrast; readable at 16×16
-- Alpha 1 mascot: laying-down fox, no wrench, 6-frame tail wag
-- Pack icons match the same language
+Surface work queue: `tasks/plan.md`, `tasks/todo.md`.
 
-## Working Style
-- Small, clear commits
-- Prefer simple solutions
-- Update this file when major progress ships
+## Ownership
+
+| Agent | Owns |
+|-------|------|
+| Grok | `crates/kit-tui` (F1–F6), later B2-pty |
+| Codex | engine crates, CI, ports |
+| Claude | five contract files, merge review |
+
+**Never:** timers outside the event loop; edit frozen contracts as Grok/Codex.
+
+## Commands
+
+```text
+cargo run -p kit-cli -- --demo
+cargo test -p kit-tui
+cargo clippy -p kit-cli -p kit-tui --all-targets -- -D warnings
+cargo test --workspace
+```
+
+Status board: `CURRENT.md`
+
+## Surface status
+
+| Corner | Status |
+|--------|--------|
+| F1 Event loop | Done |
+| F2 Control Room | Done |
+| F3 Run detail | Done |
+| F4 Dispatch + Board | In progress / landing |
+| F5 Theme (light) | Partial |
+| F6 Hit-testing | Not started |
+
+## Visual rules (TUI)
+
+- High contrast; monochrome-friendly
+- Stable selection (by RunId); fixed geometry on ↑↓
+- One interaction language: Esc back, footer grammar consistent
+- Reduced motion: `NO_COLOR`, `KIT_MOTION=off`

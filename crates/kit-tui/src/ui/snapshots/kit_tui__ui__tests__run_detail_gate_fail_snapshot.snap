@@ -1,0 +1,20 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / RUN  trenchwire · codex · fix red CI  DONE  GATE FAIL                     "
+"worktree  /tmp/kit-wt-01FIXRUN3                                                 "
+" stream  │  gate  │  diff                                                       "
+"┌ gate ────────────────────────────────────────────────────────────────────────┐"
+"│OVERALL  FAIL  (10000ms)                                                      │"
+"│                                                                              │"
+"│PASS  format  pnpm format:check                                               │"
+"│FAIL  typecheck  tsc --noEmit  ·  tsc: 3 errors — Type 'string' is not        │"
+"│assignable                                                                    │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [esc] back  [1]stream [2]gate [3]diff  [a]ttach  [k]ill  [r]etry follow        "

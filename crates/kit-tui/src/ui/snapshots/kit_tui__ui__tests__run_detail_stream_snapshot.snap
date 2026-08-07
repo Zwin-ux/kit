@@ -1,0 +1,20 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / RUN  trenchwire · codex · fix red CI  DONE  GATE FAIL                     "
+"worktree  /tmp/kit-wt-01FIXRUN3                                                 "
+" stream  │  gate  │  diff                                                       "
+"┌ stream ──────────────────────────────────────────────────────────────────────┐"
+"│codex: patching src/client.ts                                                 │"
+"│running tsc --noEmit                                                          │"
+"│src/client.ts(42,5): error TS2322: Type 'string' is not assignable…           │"
+"│src/client.ts(88,12): error TS2345                                            │"
+"│src/api.ts(3,1): error TS2307: Cannot find module './missing'                 │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [esc] back  [1]stream [2]gate [3]diff  [a]ttach  [k]ill  [r]etry follow        "

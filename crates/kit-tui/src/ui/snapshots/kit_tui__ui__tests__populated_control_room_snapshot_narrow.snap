@@ -1,0 +1,16 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / CONTROL ROOM                2 RUNNING  1 FAIL  0 GATED"
+"┌ runs ────────────────────────────────────────────────────┐"
+"│REPO         AGENT   TASK           STATE       GATE      │"
+"│  kit        codex   port guard.js  RUN 2m      --        │"
+"│  kit        grok    frame clock    RUN 2m      --        │"
+"│▶ trenchwire codex   fix red CI     DONE        FAIL      │"
+"│                         ^ tsc: 3 e                       │"
+"│  guardian   claude  855-case suite DONE        PASS      │"
+"│                                                          │"
+"│                                                          │"
+"└──────────────────────────────────────────────────────────┘"
+" [↑↓] select  [d]ispatch  [b]oard  [enter] open  [g]ate     "

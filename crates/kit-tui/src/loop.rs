@@ -27,10 +27,43 @@ use tokio::time::{MissedTickBehavior, interval};
 
 type Term = Terminal<CrosstermBackend<Stdout>>;
 
+/// How to start the Control Room.
+#[derive(Debug, Default)]
+pub struct LaunchConfig {
+    /// When true, seed the PRD §4.2 fixture runs so the product is dogfoodable
+    /// before the M1 engine exists.
+    pub demo: bool,
+    /// When set, dispatch/kill/retry actions are forwarded here for the engine.
+    pub engine_tx: Option<mpsc::Sender<crate::app::EngineCommand>>,
+    /// When true (default for interactive launch), probe coding agents for the header strip.
+    pub probe_agents: bool,
+}
+
 /// Run the Control Room until quit. Restores the terminal on every exit path.
 pub async fn run(run_rx: mpsc::Receiver<(RunId, RunDelta)>) -> Result<()> {
+    run_configured(LaunchConfig::default(), run_rx).await
+}
+
+/// Run with explicit launch options (demo fixture, engine channel).
+pub async fn run_configured(
+    config: LaunchConfig,
+    run_rx: mpsc::Receiver<(RunId, RunDelta)>,
+) -> Result<()> {
     let mut terminal = setup_terminal()?;
-    let result = run_with_terminal(&mut terminal, run_rx).await;
+    let mut app = App::new();
+    if config.probe_agents {
+        let probe = kit_agents::probe_all().await;
+        app.set_agents_probe(
+            probe
+                .into_iter()
+                .map(|s| (s.kind.binary().to_string(), s.is_ready()))
+                .collect(),
+        );
+    }
+    if config.demo {
+        app.load_prd_fixture();
+    }
+    let result = run_with_terminal(&mut terminal, app, run_rx, config.engine_tx).await;
     restore_terminal(&mut terminal)?;
     result
 }
@@ -38,9 +71,10 @@ pub async fn run(run_rx: mpsc::Receiver<(RunId, RunDelta)>) -> Result<()> {
 /// Event loop body, factored so tests can inject a backend later if needed.
 async fn run_with_terminal(
     terminal: &mut Term,
+    mut app: App,
     mut run_rx: mpsc::Receiver<(RunId, RunDelta)>,
+    engine_tx: Option<mpsc::Sender<crate::app::EngineCommand>>,
 ) -> Result<()> {
-    let mut app = App::new();
     let mut term_events = EventStream::new();
     let mut tick = interval(TICK_INTERVAL);
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -80,6 +114,35 @@ async fn run_with_terminal(
         };
 
         let action = app.update(event);
+
+        // Engine seams — forward start/kill/retry when a channel is wired (kit-cli).
+        match &action {
+            Action::DispatchSubmitted { jobs } => {
+                if let Some(tx) = &engine_tx {
+                    for job in jobs {
+                        let _ = tx.send(crate::app::EngineCommand::Start(job.clone())).await;
+                    }
+                }
+            }
+            Action::KillSelected { id } => {
+                if let Some(tx) = &engine_tx {
+                    let _ = tx
+                        .send(crate::app::EngineCommand::Kill { id: id.clone() })
+                        .await;
+                }
+            }
+            Action::RetrySelected { source_id, job } => {
+                if let Some(tx) = &engine_tx {
+                    let _ = tx
+                        .send(crate::app::EngineCommand::Retry {
+                            source_id: source_id.clone(),
+                            job: job.clone(),
+                        })
+                        .await;
+                }
+            }
+            Action::Quit | Action::None | Action::AttachSelected => {}
+        }
 
         if app.is_dirty() {
             terminal.draw(|f| ui::draw(f, &app))?;
@@ -195,10 +258,6 @@ mod tests {
     }
 
     /// Regression: a closed run channel must disable its `select!` arm.
-    ///
-    /// `mpsc::Receiver::recv` yields `None` immediately and forever once every
-    /// sender is dropped. If the arm stays enabled, `select!` picks it on every
-    /// iteration and the loop busy-spins at 100% CPU.
     #[test]
     fn a_closed_run_channel_closes_the_arm() {
         let (event, still_open) = map_run_item(None);
@@ -210,8 +269,6 @@ mod tests {
     async fn recv_on_a_closed_channel_is_immediately_ready_forever() {
         let (tx, mut rx) = mpsc::channel::<(RunId, RunDelta)>(4);
         drop(tx);
-        // Both calls return without ever pending — the exact behaviour that
-        // makes an unguarded select arm spin.
         for _ in 0..2 {
             let got = rx.recv().await;
             assert!(got.is_none());

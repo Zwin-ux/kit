@@ -1,0 +1,24 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / CONTROL ROOM                                    2 RUNNING  1 FAIL  0 GATED"
+"┌ runs ────────────────────────────────────────────────────────────────────────┐"
+"│REPO ┌ help ────────────────────────────────────────────────────────────┐     │"
+"│  kit│Kit Control Room — keys                                           │     │"
+"│  kit│                                                                  │     │"
+"│▶ tre│Global                                                            │     │"
+"│     │  ?          toggle this help                                     │     │"
+"│  gua│  Esc        back / close help                                    │     │"
+"│     │  q          quit (Control Room only; disabled while attached)    │     │"
+"│     │                                                                  │     │"
+"│     │Control Room                                                      │     │"
+"│     │  ↑↓         move selection                                       │     │"
+"│     │  Enter      open run detail (stream)                             │     │"
+"│     │  g          open gate log                                        │     │"
+"│     │  d          dispatch fan-out                                     │     │"
+"│     │  b          board (prefill list)                                 │     │"
+"│     │  k          kill selected run                                    │     │"
+"│     └──────────────────────────────────────────────────────────────────┘     │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [↑↓] select  [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry        "

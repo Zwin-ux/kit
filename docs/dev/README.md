@@ -15,5 +15,6 @@ These notes support people changing Kit itself. End users can ignore this folder
 | [REGISTRY_API.md](REGISTRY_API.md) | Catalog / Railway service |
 | [TESTING.md](TESTING.md) | Test commands and gates |
 | [PIXEL_ART.md](PIXEL_ART.md) | Mascot and marketing art rules |
+| [LAUNCH-PRESENTATION.md](LAUNCH-PRESENTATION.md) | GitHub Page / presentation — **must use [scroll-world](https://github.com/oso95/scroll-world)** |
 
 Public product docs: [../README.md](../README.md) · [../packs.md](../packs.md)
