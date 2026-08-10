@@ -17,6 +17,7 @@ Schema details for contributors: [docs/dev/SKILL_SCHEMA.md](../docs/dev/SKILL_SC
 | `code-review` | Review a change for correctness, risk, and clarity. |
 | `data-check` | Review data scripts and notebooks for clarity, leakage, and reproducibility. |
 | `deps-hygiene` | Clean up dependency drift, unused packages, and risky version ranges. |
+| `error-ux` | Improve user-facing error messages so failures are actionable. |
 | `fix-bug` | Find root cause and fix a bug without drive-by refactors. |
 | `pr-ready` | Prepare a clear pull request summary, test plan, and risk notes. |
 | `project-setup` | Set up a clean project baseline for agents and humans. |
