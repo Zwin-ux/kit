@@ -22,6 +22,7 @@ All agents on this repo should use **addyosmani/agent-skills** under `.agents/sk
 | Session start | `using-agent-skills` |
 | New feature | `spec-driven-development` → `planning-and-task-breakdown` |
 | Implementation | `incremental-implementation` + `test-driven-development` |
+| After implement | `completeness-qa` (`skills/completeness-qa`) — stubs / untested public fns are not done |
 | TUI screens | `frontend-ui-engineering` (interaction language, a11y) |
 | Contracts / seams | `api-and-interface-design` + Claude-only contract rule |
 | Before PR | `code-review-and-quality` + `code-simplification` |

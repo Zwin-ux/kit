@@ -75,15 +75,59 @@ pub fn looks_like_skill_pack(dir: &Path) -> bool {
 }
 
 /// Copy skill pack into the worktree when absent. Returns how many skill dirs linked/copied.
+///
+/// If the primary pack is `.agents/skills`, also overlay any extra catalog
+/// skills from `<repo>/skills/` that are not already present (so essentials
+/// skills such as `completeness-qa` ride along with a coding router pack).
 pub fn install_into_worktree(worktree: &Path, skills_src: &Path) -> std::io::Result<usize> {
     let dest = worktree.join(".agents").join("skills");
-    if dest.is_dir() {
-        // Already present (e.g. repo already vendors skills).
-        return Ok(count_skills(&dest));
+    if !dest.is_dir() {
+        fs::create_dir_all(dest.parent().unwrap_or(worktree))?;
+        copy_dir_recursive(skills_src, &dest)?;
     }
-    fs::create_dir_all(dest.parent().unwrap_or(worktree))?;
-    copy_dir_recursive(skills_src, &dest)?;
+    for extra in extra_skill_roots(skills_src) {
+        overlay_missing_skills(&extra, &dest)?;
+    }
     Ok(count_skills(&dest))
+}
+
+/// Sibling catalog roots to merge after the primary pack.
+fn extra_skill_roots(skills_src: &Path) -> Vec<PathBuf> {
+    let mut extra = Vec::new();
+    if let Some(parent) = skills_src.parent()
+        && parent.file_name().is_some_and(|name| name == ".agents")
+        && let Some(repo) = parent.parent()
+    {
+        let catalog = repo.join("skills");
+        if catalog != skills_src && looks_like_skill_pack(&catalog) {
+            extra.push(catalog);
+        }
+    }
+    extra
+}
+
+/// Copy skill folders that exist in `src` but not yet in `dest`. Never overwrites.
+fn overlay_missing_skills(src: &Path, dest: &Path) -> std::io::Result<usize> {
+    fs::create_dir_all(dest)?;
+    let mut added = 0;
+    let entries = match fs::read_dir(src) {
+        Ok(rd) => rd,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(err) => return Err(err),
+    };
+    for entry in entries {
+        let entry = entry?;
+        if !entry.path().join("SKILL.md").is_file() {
+            continue;
+        }
+        let to = dest.join(entry.file_name());
+        if to.join("SKILL.md").is_file() {
+            continue;
+        }
+        copy_dir_recursive(&entry.path(), &to)?;
+        added += 1;
+    }
+    Ok(added)
 }
 
 /// Ensure a minimal AGENTS.md exists so agents discover Kit conventions.
@@ -166,7 +210,7 @@ Before coding, apply the workflow from **using-agent-skills**:
 | Implementation | incremental-implementation + test-driven-development |
 | UI | frontend-ui-engineering |
 | Bug | debugging-and-error-recovery |
-| Before claiming done | code-review-and-quality + code-simplification |
+| Before claiming done | completeness-qa (inventory stubs / untested public fns), then code-review-and-quality + code-simplification |
 
 Core behaviors: surface assumptions · stop on confusion · simplicity first · scope discipline · verify with evidence."#
         }
@@ -251,6 +295,42 @@ mod tests {
         assert!(p.contains("fix the flaky test"));
         assert!(p.contains("using-agent-skills"));
         assert!(p.contains("incremental-implementation"));
+        assert!(p.contains("completeness-qa"));
+    }
+
+    #[test]
+    fn overlay_adds_catalog_skills_without_clobbering() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let root = std::env::temp_dir().join(format!("kit-overlay-{stamp}"));
+        let agents = root
+            .join(".agents")
+            .join("skills")
+            .join("using-agent-skills");
+        fs::create_dir_all(&agents).unwrap();
+        fs::write(agents.join("SKILL.md"), "# router\n").unwrap();
+        let catalog = root.join("skills").join("completeness-qa");
+        fs::create_dir_all(&catalog).unwrap();
+        fs::write(catalog.join("SKILL.md"), "# completeness\n").unwrap();
+        let wt = root.join("wt");
+        fs::create_dir_all(&wt).unwrap();
+        let n = install_into_worktree(&wt, &root.join(".agents").join("skills")).unwrap();
+        assert_eq!(n, 2);
+        let dest = wt.join(".agents").join("skills");
+        assert!(dest.join("using-agent-skills").join("SKILL.md").is_file());
+        assert!(dest.join("completeness-qa").join("SKILL.md").is_file());
+        // second install must not overwrite an existing catalog skill
+        fs::write(
+            dest.join("completeness-qa").join("SKILL.md"),
+            "# already here\n",
+        )
+        .unwrap();
+        install_into_worktree(&wt, &root.join(".agents").join("skills")).unwrap();
+        let kept = fs::read_to_string(dest.join("completeness-qa").join("SKILL.md")).unwrap();
+        assert!(kept.contains("already here"));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

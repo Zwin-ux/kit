@@ -44,6 +44,7 @@ This repo installs **[addyosmani/agent-skills](https://github.com/addyosmani/age
 | Build | `frontend-ui-engineering` | TUI interaction language, a11y, fixed geometry |
 | Build | `api-and-interface-design` | Frozen contracts only; never edit contracts as Grok |
 | Build | `doubt-driven-development` | PTY, gate semantics, cross-crate seams |
+| Verify | `completeness-qa` | After implement, before claiming done. Run `node skills/completeness-qa/scripts/inventory.mjs --root .` — stubs mean not done |
 | Verify | `debugging-and-error-recovery` | Repro → localize → fix → guard |
 | Review | `code-review-and-quality` | Before every PR |
 | Review | `code-simplification` | After green, before ship |

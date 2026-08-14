@@ -37,6 +37,8 @@ Or clone/copy `skills/` into the target repo root (Harness layout). Kit resolves
 3. `<repo>/skills` (if it contains at least one `*/SKILL.md`)
 4. Walk up from cwd
 
+When the primary pack is `.agents/skills`, Kit also **overlays** extra skills from `<repo>/skills/` into the worktree (missing names only). That is how catalog skills such as `completeness-qa` ride along with the addyosmani coding router.
+
 ### MCP (host, not Kit)
 
 Configure Harness MCP on the host agent runtime (Claude Code settings, etc.).

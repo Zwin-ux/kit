@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `completeness-qa` to essentials: inventory public functions, flag stubs, and name the next SWE skill. Live runs overlay catalog skills onto `.agents/skills` and require completeness-qa before claiming done.
 - Add local Ollama model discovery through `GET /api/tags`.
 - Run Ollama models through its official Codex bridge with the existing
   inspect/build sandbox.
