@@ -145,7 +145,7 @@ First-run state lives in `~/.kit/config.json`.
 
 | Pack | Project fit | Skills |
 |------|-------------|--------|
-| `essentials` | Any repo | add-readme, project-setup, code-review, write-tests, fix-bug |
+| `essentials` | Any repo | add-readme, project-setup, code-review, completeness-qa, write-tests, fix-bug |
 | `web-app` | Apps and sites | essentials + ship-checklist, a11y-pass |
 | `library` | Libraries and SDKs | add-readme, api-docs, changelog, write-tests, code-review |
 

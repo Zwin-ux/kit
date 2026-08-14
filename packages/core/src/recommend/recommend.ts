@@ -77,6 +77,7 @@ export async function recommendToolkits(
   bumpSkill("project-setup", 4, "Baseline project hygiene");
   bumpSkill("add-readme", 3, "Every project needs a clear README");
   bumpSkill("code-review", 3, "Review loop for agent work");
+  bumpSkill("completeness-qa", 5, "Catch half-done functions before claiming done");
   bumpSkill("pr-ready", 4, "Ship changes with a clean PR write-up");
 
   // --- package.json / JS-TS ecosystem ---
@@ -362,6 +363,7 @@ export async function recommendToolkits(
     "add-readme": "essentials",
     "project-setup": "essentials",
     "code-review": "essentials",
+    "completeness-qa": "essentials",
     "write-tests": "essentials",
     "fix-bug": "essentials",
     "pr-ready": "essentials",

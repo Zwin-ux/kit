@@ -2,7 +2,7 @@
 name: essentials
 title: Essentials
 description: Core skills every coding project should have.
-version: 0.1.0
+version: 0.2.0
 tags:
   - starter
   - general
@@ -12,6 +12,7 @@ skills:
   - add-readme
   - project-setup
   - code-review
+  - completeness-qa
   - write-tests
   - fix-bug
   - pr-ready
@@ -21,5 +22,5 @@ skills:
 
 **Install this first on most repos.** Kit’s default toolkit.
 
-It covers setup, docs, review, tests, bug fixing, and PR-ready write-ups.
+It covers setup, docs, review, completeness QA, tests, bug fixing, and PR-ready write-ups.
 Other starter packs **extend** Essentials so you always get these base skills.

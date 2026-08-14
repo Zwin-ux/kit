@@ -84,6 +84,11 @@ describe("recommendToolkits", () => {
     ).toBe(true);
     expect(result.value.summary.length).toBeGreaterThan(0);
     expect(result.value.skillRecommendations.length).toBeGreaterThan(0);
+    expect(
+      result.value.skillRecommendations.some(
+        (s) => s.skillName === "completeness-qa",
+      ),
+    ).toBe(true);
   });
 
   it("suggests cli skills when package.bin is set", async () => {

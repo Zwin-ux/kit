@@ -15,6 +15,7 @@ Schema details for contributors: [docs/dev/SKILL_SCHEMA.md](../docs/dev/SKILL_SC
 | `changelog` | Write a clear changelog entry for a release or notable change. |
 | `cli-help` | Improve CLI help text, usage examples, and flag documentation. |
 | `code-review` | Review a change for correctness, risk, and clarity. |
+| `completeness-qa` | Inventory public functions, flag stubs and untested symbols, and name the next skills that raise SWE quality for this change. |
 | `data-check` | Review data scripts and notebooks for clarity, leakage, and reproducibility. |
 | `deps-hygiene` | Clean up dependency drift, unused packages, and risky version ranges. |
 | `fix-bug` | Find root cause and fix a bug without drive-by refactors. |

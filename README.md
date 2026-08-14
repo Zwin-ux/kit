@@ -245,6 +245,7 @@ Short instruction files. Agents load them when the task matches.
 | **project-setup** | Clean baseline for agents and humans |
 | **workspace-setup** | Monorepo / multi-package layout |
 | **code-review** | Correctness, risk, clarity |
+| **completeness-qa** | Inventory public functions, flag stubs, name the next SWE skill |
 | **write-tests** | Tests for important behavior |
 | **fix-bug** | Root cause + fix without drive-by refactors |
 | **pr-ready** | PR summary, test plan, risk |

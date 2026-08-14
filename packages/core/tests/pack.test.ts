@@ -54,9 +54,9 @@ describe("official packs", () => {
     const result = await validatePack("essentials", { packsRoot, skillsRoot });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // base + pr-ready
-    expect(result.value.pack.skillNames).toHaveLength(6);
-    expect(result.value.skills).toHaveLength(6);
+    // base + completeness-qa + pr-ready
+    expect(result.value.pack.skillNames).toHaveLength(7);
+    expect(result.value.skills).toHaveLength(7);
   });
 
   it("merges extends so dependency skills install with stack packs", async () => {
@@ -67,13 +67,14 @@ describe("official packs", () => {
     expect(lib.ok).toBe(true);
     expect(cli.ok).toBe(true);
     if (!web.ok || !lib.ok || !cli.ok) return;
-    // essentials(6) + extras (web:3, lib:3, cli:2) with de-dupe of pr-ready
+    // essentials(7) + extras (web:3, lib:3, cli:2) with de-dupe of pr-ready
     expect(web.value.pack.extends).toEqual(["essentials"]);
     expect(web.value.skills.map((s) => s.name)).toContain("project-setup");
     expect(web.value.skills.map((s) => s.name)).toContain("a11y-pass");
-    expect(web.value.skills.length).toBe(8);
-    expect(lib.value.skills.length).toBe(8);
-    expect(cli.value.skills.length).toBe(7);
+    expect(web.value.skills.map((s) => s.name)).toContain("completeness-qa");
+    expect(web.value.skills.length).toBe(9);
+    expect(lib.value.skills.length).toBe(9);
+    expect(cli.value.skills.length).toBe(8);
   });
 });
 
@@ -89,7 +90,7 @@ describe("install and apply pack", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.installed.length).toBe(6);
+    expect(result.value.installed.length).toBe(7);
 
     const index = await readFile(
       path.join(kitHome, "library.json"),
@@ -97,6 +98,7 @@ describe("install and apply pack", () => {
     );
     expect(index).toContain("add-readme");
     expect(index).toContain("fix-bug");
+    expect(index).toContain("completeness-qa");
 
     const packsIndex = await readFile(
       path.join(kitHome, "installed-packs.json"),
