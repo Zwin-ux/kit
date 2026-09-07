@@ -121,16 +121,16 @@ fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 
     let widths = if area.width < 70 {
         [
-            Constraint::Percentage(20),
-            Constraint::Percentage(12),
-            Constraint::Percentage(32),
+            Constraint::Percentage(18),
+            Constraint::Percentage(16),
+            Constraint::Percentage(30),
             Constraint::Percentage(18),
             Constraint::Percentage(18),
         ]
     } else {
         [
-            Constraint::Percentage(22),
-            Constraint::Percentage(12),
+            Constraint::Percentage(20),
+            Constraint::Percentage(14),
             Constraint::Percentage(36),
             Constraint::Percentage(15),
             Constraint::Percentage(15),
@@ -178,7 +178,7 @@ fn row_for(run: &RunRow, selected: bool, app: &App, theme: &Theme) -> Row<'stati
 
     Row::new(vec![
         Cell::from(repo).style(base),
-        Cell::from(truncate(&run.agent, 10)).style(base),
+        Cell::from(truncate(&run.agent_cell(), 12)).style(base),
         Cell::from(truncate(&run.task, 28)).style(base),
         Cell::from(state_label).style(state_style),
         Cell::from(gate_label).style(gate_style),
@@ -186,7 +186,7 @@ fn row_for(run: &RunRow, selected: bool, app: &App, theme: &Theme) -> Row<'stati
 }
 
 fn annotation_row(summary: &str, selected: bool, theme: &Theme) -> Row<'static> {
-    let text = format!("    ^ {}", truncate(summary, 48));
+    let text = format!("^ {}", truncate(summary, 52));
     let style = if selected {
         Style::default().add_modifier(Modifier::REVERSED | Modifier::DIM)
     } else {

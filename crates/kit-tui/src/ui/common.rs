@@ -47,7 +47,7 @@ pub fn too_small(area: Rect) -> bool {
 /// Full-area message when the terminal is unusably small.
 pub fn draw_too_small(frame: &mut Frame, area: Rect, theme: &Theme) {
     let msg = format!(
-        "terminal too small — need {MIN_WIDTH}×{MIN_HEIGHT} (now {}×{})",
+        "need {MIN_WIDTH}×{MIN_HEIGHT} — maximize this terminal (now {}×{})",
         area.width, area.height
     );
     frame.render_widget(
@@ -136,8 +136,11 @@ pub fn draw_footer(frame: &mut Frame, area: Rect, theme: &Theme, hints: &str, st
     );
 }
 
-/// Drop lower-priority trailing tokens so the footer stays readable at 60 cols.
+/// Drop lower-priority tokens so the footer stays readable at 80 and 60 cols.
 /// Tokens are split on `"  ["` boundaries (kit footer grammar).
+///
+/// Keep `[?]help`, `[r]etry`, `[k]ill`, and `[d]ispatch` before dropping
+/// `[b]oard` / `[f]ilter` / `[enter] open`. Never drop mid-token.
 pub fn fit_footer_hints(hints: &str, max_chars: usize) -> String {
     if max_chars == 0 {
         return String::new();
@@ -145,7 +148,6 @@ pub fn fit_footer_hints(hints: &str, max_chars: usize) -> String {
     if hints.chars().count() <= max_chars {
         return hints.to_string();
     }
-    // Always try to keep leading space + tokens; drop from the end.
     let parts: Vec<&str> = hints.split("  [").collect();
     if parts.is_empty() {
         return truncate(hints, max_chars);
@@ -165,9 +167,20 @@ pub fn fit_footer_hints(hints: &str, max_chars: usize) -> String {
         if candidate.chars().count() <= max_chars {
             return candidate;
         }
-        tokens.pop();
+        // Drop board / filter / enter first so help, retry, kill, dispatch survive.
+        // Other screens keep the original drop-from-the-end behavior.
+        if let Some(i) = tokens.iter().position(|t| is_dispensable_footer_token(t)) {
+            tokens.remove(i);
+        } else {
+            tokens.pop();
+        }
     }
     truncate(&tokens.join("  "), max_chars)
+}
+
+fn is_dispensable_footer_token(token: &str) -> bool {
+    let t = token.trim();
+    t.starts_with("[b]oard") || t.starts_with("[f]ilter") || t.starts_with("[enter]")
 }
 
 /// Empty-state body: one primary message + one action hint.
@@ -244,11 +257,11 @@ mod tests {
         assert!(!too_small(Rect::new(0, 0, 80, 24)));
     }
 
+    const CR_FOOTER: &str = " [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate  [k]ill  [r]etry  [?]help";
+
     #[test]
     fn fit_footer_drops_trailing_tokens_not_mid_token() {
-        let full =
-            " [↑↓] select  [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry  [?]help";
-        let fitted = fit_footer_hints(full, 50);
+        let fitted = fit_footer_hints(CR_FOOTER, 50);
         assert!(fitted.chars().count() <= 50);
         assert!(
             !fitted.ends_with('…') || fitted.contains('['),
@@ -256,5 +269,49 @@ mod tests {
         );
         // Still starts with select / primary grammar when possible.
         assert!(fitted.contains("select") || fitted.contains("dispatch"));
+    }
+
+    #[test]
+    fn fit_footer_keeps_retry_help_kill_dispatch_at_80() {
+        let fitted = fit_footer_hints(CR_FOOTER, 80);
+        assert!(fitted.chars().count() <= 80, "{fitted}");
+        assert!(
+            fitted.contains("[r]etry") || fitted.contains("[r]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[?]help") || fitted.contains("[?]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[k]ill") || fitted.contains("[k]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[d]ispatch") || fitted.contains("[d]"),
+            "{fitted}"
+        );
+    }
+
+    #[test]
+    fn fit_footer_keeps_retry_help_kill_dispatch_at_60() {
+        let fitted = fit_footer_hints(CR_FOOTER, 60);
+        assert!(fitted.chars().count() <= 60, "{fitted}");
+        assert!(
+            fitted.contains("[r]etry") || fitted.contains("[r]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[?]help") || fitted.contains("[?]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[k]ill") || fitted.contains("[k]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[d]ispatch") || fitted.contains("[d]"),
+            "{fitted}"
+        );
     }
 }

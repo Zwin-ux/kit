@@ -2,12 +2,12 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / BOARD                                                      2 open  3 total"
-"┌ queue ───────────────────────────────────────────────────────────────────────┐"
-"│#        TASK                          REPO           ROLE         STATE      │"
-"│▶ 1      port guard.js                 kit            codex·eng    OPEN       │"
-"│  2      frame clock                   kit            grok·design  OPEN       │"
-"│  3      fix red CI                    trenchwire     codex·eng    DONE       │"
+"KIT / BOARD                                                      0 open  0 total"
+"┌──────────────────────────────────────────────────────────────────────────────┐"
+"│                                                                              │"
+"│                                Nothing queued                                │"
+"│       n adds a task  ·  Enter sends it to Dispatch  ·  not a live queue      │"
+"│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"

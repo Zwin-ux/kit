@@ -1,4 +1,4 @@
-//! Dispatch form — repos × agents × one task (1.0 craft).
+//! Dispatch form — repos × agents × personas × one task (1.0 craft).
 
 use super::common::{draw_footer, draw_header, draw_too_small, too_small, truncate};
 use crate::app::{App, DispatchFocus};
@@ -40,24 +40,56 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     let body = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([
+            Constraint::Percentage(34),
+            Constraint::Percentage(33),
+            Constraint::Percentage(33),
+        ])
         .split(chunks[1]);
 
+    let cwd = std::env::current_dir().ok();
+    let repo_items: Vec<(String, bool)> = app
+        .dispatch
+        .repos
+        .iter()
+        .map(|(path, on)| (crate::app::format_repo_label(path, cwd.as_deref()), *on))
+        .collect();
     draw_toggle_list(
         frame,
         body[0],
         " repos (space) ",
-        &app.dispatch.repos,
+        &repo_items,
         app.dispatch.focus == DispatchFocus::Repos,
         app.dispatch.list_cursor,
         &theme,
     );
+    let agent_items: Vec<(String, bool)> = app
+        .dispatch
+        .agents
+        .iter()
+        .map(|(id, on)| (agent_display_label(id, &app.agents_probe), *on))
+        .collect();
     draw_toggle_list(
         frame,
         body[1],
         " agents (space) ",
-        &app.dispatch.agents,
+        &agent_items,
         app.dispatch.focus == DispatchFocus::Agents,
+        app.dispatch.list_cursor,
+        &theme,
+    );
+    let persona_items: Vec<(String, bool)> = app
+        .dispatch
+        .personas
+        .iter()
+        .map(|(p, on)| (p.label().to_string(), *on))
+        .collect();
+    draw_toggle_list(
+        frame,
+        body[2],
+        " personas (space) ",
+        &persona_items,
+        app.dispatch.focus == DispatchFocus::Personas,
         app.dispatch.list_cursor,
         &theme,
     );
@@ -114,6 +146,23 @@ pub fn draw(frame: &mut Frame, app: &App) {
         " [esc] back  [tab] field  [space] toggle  [enter] submit",
         "",
     );
+}
+
+/// Annotate readiness when a probe is present. Stored agent ids stay bare.
+fn agent_display_label(id: &str, probe: &[(String, bool)]) -> String {
+    if probe.is_empty() {
+        return id.to_string();
+    }
+    let ready = probe
+        .iter()
+        .find(|(n, _)| n == id)
+        .map(|(_, ok)| *ok)
+        .unwrap_or(false);
+    if ready {
+        format!("{id}  ready")
+    } else {
+        format!("{id}  missing")
+    }
 }
 
 fn draw_toggle_list(

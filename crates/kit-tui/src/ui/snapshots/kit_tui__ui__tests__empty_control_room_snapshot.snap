@@ -1,5 +1,6 @@
 ---
 source: crates/kit-tui/src/ui/mod.rs
+assertion_line: 153
 expression: frame
 ---
 "KIT / CONTROL ROOM                             [ALL]  0 RUNNING  0 FAIL  0 GATED"
@@ -13,4 +14,4 @@ expression: frame
 "│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate  [k]ill       "
+" [↑↓] select  [d]ispatch  [enter] open  [g]ate  [k]ill  [r]etry  [?]help        "

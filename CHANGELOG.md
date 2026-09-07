@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## 1.0.0-alpha.1 — Control Room
+
+Not 1.0.0. npm `@mzwin/kit` is still the 0.1 workbench. This is the Rust Control Room: dispatch, gate, receipt.
+
+### Added
+- Control Room TUI (dispatch, FAIL wash + first-error line, kill/retry, filter, help)
+- Isolated git worktrees and immutable receipts under `~/.kit/runs/`
+- `kit.toml` on this repo (fmt + clippy + `cargo test --workspace`, 15m)
+- `kit doctor`, `kit run`, `kit receipt list/show`
+- Repo shims (`kit.cmd` / `kit.ps1`) so this checkout launches the Rust binary
+
+### Fixed
+- `kit --demo` opens the Control Room (was `unknown command: --demo`)
+
+### Changed
+- README is Control Room first. 0.1 npm workbench is documented as legacy.
+
+### Not yet
+- Clean-machine installer, PTY attach, live Session B dogfood, tagging 1.0.0
+
+## Unreleased (0.1 workbench)
 
 - Add `completeness-qa` to essentials: inventory public functions, flag stubs, and name the next SWE skill. Live runs overlay catalog skills onto `.agents/skills` and require completeness-qa before claiming done.
 - Add local Ollama model discovery through `GET /api/tags`.

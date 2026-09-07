@@ -5,9 +5,12 @@
 
 ## Before
 
+Windows: `.\kit.cmd doctor` (or `.\kit.ps1 doctor`). To make the `kit` verb Rust for this session: `. .\scripts\use-rust-kit.ps1`. Bare `kit` on this Windows PATH is still npm `@mzwin/kit@0.1.3` until you dot-source `scripts/use-rust-kit.ps1` or put `target\release` on PATH.
+
 ```bash
 cargo build -p kit-cli --release
-./target/release/kit doctor
+.\kit.cmd doctor                 # Windows shim → Rust binary
+./target/release/kit doctor      # explicit binary (any OS)
 ./target/release/kit receipt list --limit 5
 ```
 
@@ -21,7 +24,7 @@ Note which agents are `ready`. You need at least two for a real fan-out.
 ./target/release/kit receipt show <id> --output
 ```
 
-Expect: receipt under `~/.kit/runs/`, vacuous dry-run may report `gateVacuous: true`.
+Expect: receipt under `~/.kit/runs/`. This repo now has `kit.toml`, so dry-run is **not** vacuous — it runs fmt + clippy + test (budget 15m).
 
 ## Session B — live single agent
 
@@ -36,6 +39,7 @@ Record: did worktree clean? gate PASS / FAIL / UNCONFIGURED?
 ## Session C — Control Room fan-out (product moment)
 
 ```bash
+.\kit.cmd --demo                # Windows: do not type bare `kit` (see PATH warning above)
 ./target/release/kit --demo     # confirm FAIL selected + annotation
 ./target/release/kit            # empty/live room
 ```
@@ -63,7 +67,8 @@ Create `docs/dev/dogfood-notes/YYYY-MM-DD.md` (or a private note) with:
 
 ## Done when
 
-- [ ] Sessions A–C completed once  
+- [x] Session A (offline dry-run) — 2026-08-16 receipt `01M06A2PXBBH43ZFF3GJ9VQW94`, `gateVacuous: false`, PASS. (2026-08-13 was vacuous-era.)
+- [ ] Sessions B–C completed once  
 - [ ] Notes written  
 - [ ] Bugs filed or fixed  
 - [ ] Ready to tag `v1.0.0-alpha.2`  

@@ -19,6 +19,7 @@ pub mod app;
 pub mod event;
 #[path = "loop.rs"]
 pub mod event_loop;
+pub mod persona;
 pub mod theme;
 pub mod ui;
 
@@ -28,3 +29,4 @@ pub use app::{
 };
 pub use event::{AppEvent, Clock, TICK_HZ, TICK_INTERVAL, motion_enabled};
 pub use event_loop::{LaunchConfig, run, run_configured};
+pub use persona::Persona;

@@ -2,17 +2,15 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / BOARD                                                      2 open  3 total"
-"┌ queue ───────────────────────────────────────────────────────────────────────┐"
-"│#        TASK                          REPO           ROLE         STATE      │"
-"│▶ 1      port guard.js                 kit            codex·eng    OPEN       │"
-"│  2      frame clock                   kit            grok·design  OPEN       │"
-"│  3      fix red CI                    trenchwire     codex·eng    DONE       │"
+"KIT / CONTROL ROOM                 codex·claude·grok·ollama missing — kit doctor"
+"┌──────────────────────────────────────────────────────────────────────────────┐"
 "│                                                                              │"
+"│                           No coding agents on PATH                           │"
+"│     install codex / claude / grok / ollama  ·  kit doctor  ·  kit --demo     │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" [esc] back  [n]ew  [enter] dispatch  [space] done  [x] remove  prefill-only 1.0"
+" [↑↓] select  [d]ispatch  [enter] open  [g]ate  [k]ill  [r]etry  [?]help        "
