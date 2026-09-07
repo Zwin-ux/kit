@@ -1,0 +1,16 @@
+# Kit-on-Kit definition of done.
+# Matches CI (.github/workflows/rust.yml) so a run cannot claim PASS
+# unless this workspace would go green. Timeout is the whole gate.
+
+[gate]
+format    = "cargo fmt --all --check"
+typecheck = "cargo clippy --workspace --all-targets -- -D warnings"
+test      = "cargo test --workspace"
+timeout   = "15m"
+
+[gate.scope]
+allow = ["crates/**", "docs/**", "tasks/**", "wiki/**", "*.md", "kit.toml"]
+deny  = [".github/**", "packages/**", "catalog/**"]
+
+[firewall]
+mode = "block"

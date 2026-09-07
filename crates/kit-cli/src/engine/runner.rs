@@ -577,7 +577,6 @@ pub fn parse_agent(s: &str) -> Result<AgentKind> {
 mod tests {
     use super::*;
     use crate::engine::paths::kit_home_test_lock;
-    use std::path::PathBuf;
 
     /// Holding a std Mutex across await is intentional here: tests must not
     /// interleave KIT_HOME mutation. Clippy would prefer tokio::Mutex; that
@@ -599,16 +598,9 @@ mod tests {
         out
     }
 
-    fn kit_repo_root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .expect("workspace root")
-    }
-
     #[tokio::test]
     async fn dry_run_writes_receipt_and_cleans_worktree() {
-        let root = kit_repo_root();
+        let root = crate::engine::paths::bare_git_fixture();
         let home = std::env::temp_dir().join(format!(
             "kit-test-home-{}-{}",
             std::process::id(),
@@ -648,6 +640,7 @@ mod tests {
         assert!(result.receipt_dir.starts_with(&home));
 
         let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -658,7 +651,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_before_start_yields_killed() {
-        let root = kit_repo_root();
+        let root = crate::engine::paths::bare_git_fixture();
         let home = std::env::temp_dir().join(format!(
             "kit-test-kill-{}-{}",
             std::process::id(),
@@ -693,5 +686,6 @@ mod tests {
         assert!(raw.contains("\"killed\"") || raw.contains("killed"));
 
         let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

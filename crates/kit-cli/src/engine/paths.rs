@@ -12,6 +12,48 @@ pub fn kit_home_test_lock() -> std::sync::MutexGuard<'static, ()> {
     m.lock().unwrap_or_else(|p| p.into_inner())
 }
 
+/// Tiny git repo **without** `kit.toml`, for dry-run / supervisor tests.
+///
+/// Engine tests must not load this workspace's product gate (fmt + clippy +
+/// test). A real `kit.toml` here would turn the P3 12-job harness into 12
+/// full workspace builds.
+#[cfg(test)]
+pub fn bare_git_fixture() -> std::path::PathBuf {
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let dir = std::env::temp_dir().join(format!(
+        "kit-bare-repo-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("bare fixture dir");
+    std::fs::write(dir.join("README.md"), "kit test fixture\n").expect("fixture file");
+
+    let git = |args: &[&str]| {
+        Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .env("GIT_AUTHOR_NAME", "kit")
+            .env("GIT_AUTHOR_EMAIL", "kit@test")
+            .env("GIT_COMMITTER_NAME", "kit")
+            .env("GIT_COMMITTER_EMAIL", "kit@test")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .expect("git")
+    };
+    assert!(git(&["init", "-q"]).success(), "git init");
+    let _ = git(&["checkout", "-q", "-b", "main"]);
+    assert!(git(&["add", "."]).success(), "git add");
+    assert!(git(&["commit", "-q", "-m", "init"]).success(), "git commit");
+    dir
+}
+
 use std::path::PathBuf;
 
 /// Resolve Kit's home directory.

@@ -226,15 +226,7 @@ pub async fn proof_dispatch_n(
 mod tests {
     use super::*;
     use crate::engine::paths::kit_home_test_lock;
-    use std::path::PathBuf;
     use std::time::Duration;
-
-    fn kit_repo_root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .expect("workspace root")
-    }
 
     /// Full P3 harness: 12 dry-run jobs through the real supervisor path.
     #[allow(clippy::await_holding_lock)]
@@ -255,13 +247,15 @@ mod tests {
             std::env::set_var("KIT_HOME", &home);
         }
 
-        let repo = kit_repo_root().to_string_lossy().into_owned();
+        let fixture = crate::engine::paths::bare_git_fixture();
+        let repo = fixture.to_string_lossy().into_owned();
         let result = proof_dispatch_n(12, repo, Duration::from_secs(180)).await;
 
         unsafe {
             std::env::remove_var("KIT_HOME");
         }
         let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&fixture);
 
         let probe = result.expect("p3 proof");
         assert_eq!(
