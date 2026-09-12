@@ -41,12 +41,14 @@ pub async fn run_supervisor(
                 }
             }
             EngineCommand::Start(job) | EngineCommand::Retry { job, .. } => {
+                // Register before the task exists: a Kill queued right behind
+                // this Start must find the run, not race the task's first poll.
+                let cancel = CancelHandle::new();
+                registry.register(job.id.clone(), cancel.clone()).await;
                 let tx = delta_tx.clone();
                 let registry = registry.clone();
                 let limiter = limiter.clone();
-                let cancel = CancelHandle::new();
                 tokio::spawn(async move {
-                    registry.register(job.id.clone(), cancel.clone()).await;
                     // Honest fan-out: the run is Queued until a slot frees.
                     let _ = tx
                         .send((job.id.clone(), RunDelta::State(RunState::Queued)))
@@ -497,5 +499,28 @@ mod tests {
             assert_eq!(receipt(&job.id).state, RunState::Pass);
         }
         assert!(!worktrees_dir().join(&victim.0).exists());
+    }
+
+    /// A Kill right behind its Start must still find the run. Current-thread
+    /// flavor: the job task cannot run before the supervisor has handled both
+    /// commands, so registering inside the task would lose this kill every time.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn kill_right_after_start_is_not_lost() {
+        let _lock = kit_home_test_lock();
+        let fx = LatchedRepo::new("killstart");
+        // A lost kill should fail fast as a Pass, not wait on the latch.
+        fx.open();
+        let job = fx.jobs("KILLSTART", 1).remove(0);
+        let mut h = Harness::start();
+        h.send(EngineCommand::Start(job.clone())).await;
+        h.send(EngineCommand::Kill { id: job.id.clone() }).await;
+        h.drain().await;
+        assert_eq!(
+            h.ledger.states[&job.id],
+            [RunState::Queued, RunState::Killed]
+        );
+        assert_eq!(receipt(&job.id).state, RunState::Killed);
+        assert!(!worktrees_dir().join(&job.id.0).exists());
     }
 }
