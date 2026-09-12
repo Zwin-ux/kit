@@ -18,10 +18,15 @@ timeout 120 target/debug/kit.exe run --agent grok --live --json --repo target/se
 
 | Fact | Evidence |
 |------|----------|
-| New `~/.kit/runs` id | `01M2A7DVMF9N1RX7XYQGX2A5Q4` (07:13:37Z → 07:14:01Z) |
-| `gate.checks` non-empty | `{"label":"test","command":"echo ok","status":"pass","exit_code":0}`, `gate.passed: true` |
-| `output.log` has spawn and exit | L2 `kit: spawning grok -p --cwd C:\Users\mzwin\.kit\worktrees\01M2A7DVMF9N1RX7XYQGX2A5Q4 --always-approve`; L207 `kit: grok exited with code 0` |
-| Not a dry-run | `output.log` starts with `kit: installed 39 skills for grok` |
+| (a) New `~/.kit/runs` id | `01M2A7DVMF9N1RX7XYQGX2A5Q4` (07:13:37Z → 07:14:01Z). `01KILLQ0006` is a leaked test receipt, not this run. |
+| (b) `gate.checks` non-empty | one check: `{"label":"test","command":"echo ok","status":"pass","exit_code":0,"summary":null}`, `gate.passed: true` |
+| (c) Every check passed, none skipped | `status: pass` with `exit_code: 0`. kit-gate writes that only when the command ran and exited 0; a missing command becomes `status: skipped`, `exit_code: null`. |
+| (d) `output.log` has spawn and exit code 0 | L2 `kit: spawning grok -p --cwd C:\Users\mzwin\.kit\worktrees\01M2A7DVMF9N1RX7XYQGX2A5Q4 --always-approve`; L207 `kit: grok exited with code 0` |
+| (e) Not a dry-run | `output.log` starts with `kit: installed 39 skills for grok` |
+
+Why `echo` really ran: `echo ok` has no shell syntax, so kit-gate spawns `echo` directly, not through `cmd /C`. Kit was launched from Git Bash, whose PATH has `/usr/bin/echo.exe` (`C:\Program Files\Git\usr\bin\echo.exe`).
+
+A plain PowerShell PATH on this host has no `echo.exe`. There the same check would be `skipped`, and kit-gate counts `skipped` as passed. For runs outside Git Bash, use a check that resolves everywhere (e.g. `git --version`).
 
 The diff adds `session-b ok` to `README.md`.
 
