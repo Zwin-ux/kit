@@ -2,12 +2,12 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / BOARD                                                      2 open  3 total"
+"KIT / BOARD  · FAIL · enter open · r retry                       2 open  3 total"
 "┌ queue ───────────────────────────────────────────────────────────────────────┐"
-"│#        TASK                          REPO           AGENT        STATE      │"
-"│▶ 1      port guard.js                 kit            codex        OPEN       │"
-"│  2      frame clock                   kit            grok         OPEN       │"
-"│  3      fix red CI                    trenchwire     codex        DONE       │"
+"│#        TASK                          REPO           ROLE         STATE      │"
+"│▶ 1      port guard.js                 kit            codex·eng    OPEN       │"
+"│  2      frame clock                   kit            grok·design  OPEN       │"
+"│  3      fix red CI                    trenchwire     codex·eng    DONE       │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"

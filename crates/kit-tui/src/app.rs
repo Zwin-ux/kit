@@ -8,9 +8,17 @@
 //! reducer; engine work leaves as [`Action`] for the event loop to fulfill.
 
 use crate::event::{AppEvent, Clock, TICK_HZ, motion_enabled};
+use crate::persona::{Persona, default_persona_toggles};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use kit_core::{GateOutcome, RunDelta, RunId, RunState};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Known neighbor checkouts shown on Dispatch when they are git repos.
+const KNOWN_DISPATCH_SIBLINGS: &[&str] =
+    &["kit", "guardian", "trenchwire", "board-world-app", "wiki"];
+
+/// Hard cap on the Dispatch repo list (cwd + siblings).
+const DISPATCH_REPO_CAP: usize = 8;
 
 /// Local display cap for streamed output (Principle 1: bounded by default).
 /// Engine may already cap; the TUI never holds more than this for rendering.
@@ -19,7 +27,7 @@ pub const OUTPUT_DISPLAY_CAP_BYTES: usize = 512 * 1024;
 /// Flash banner lifetime in ticks (~2 seconds at [`TICK_HZ`]).
 const FLASH_TICKS: u64 = TICK_HZ * 2;
 
-/// Maximum repo×agent combinations a single dispatch may create (UI guard).
+/// Maximum repo×agent×persona combinations a single dispatch may create (UI guard).
 pub const DISPATCH_FANOUT_CAP: usize = 16;
 
 /// A run the engine should start (UI already inserted a Queued row).
@@ -108,7 +116,7 @@ pub enum Screen {
     /// Terminal would be owned by the agent PTY. Stub until B2-pty.
     /// Esc detaches back to RunDetail without killing.
     Attached,
-    /// Fan-out form: repos × agents × one task.
+    /// Fan-out form: repos × agents × personas × one task.
     Dispatch,
     /// Shared work queue (orchestrator view).
     Board,
@@ -120,6 +128,7 @@ pub enum DispatchFocus {
     #[default]
     Repos,
     Agents,
+    Personas,
     Task,
 }
 
@@ -170,22 +179,24 @@ impl RunFilter {
 pub struct DispatchForm {
     pub repos: Vec<(String, bool)>,
     pub agents: Vec<(String, bool)>,
+    pub personas: Vec<(Persona, bool)>,
     pub task: String,
     pub focus: DispatchFocus,
-    /// Cursor index into `repos` or `agents` when that column is focused.
+    /// Cursor index into the focused list column.
     pub list_cursor: usize,
 }
 
 impl Default for DispatchForm {
     fn default() -> Self {
         Self {
-            repos: default_dispatch_repos(),
+            repos: seed_dispatch_repos(),
             agents: vec![
                 ("codex".into(), true),
                 ("claude".into(), false),
                 ("grok".into(), false),
                 ("ollama".into(), false),
             ],
+            personas: default_persona_toggles(),
             task: String::new(),
             focus: DispatchFocus::Repos,
             list_cursor: 0,
@@ -193,27 +204,98 @@ impl Default for DispatchForm {
     }
 }
 
-/// Prefer cwd repo name first, then known neighbors when present on disk.
-fn default_dispatch_repos() -> Vec<(String, bool)> {
+/// Seed Dispatch repos: cwd first (selected), then parent git siblings.
+///
+/// Stored values are **absolute paths** so the engine can resolve them.
+/// The TUI displays [`format_repo_label`] (basename, ` · this` for cwd).
+fn seed_dispatch_repos() -> Vec<(String, bool)> {
     let mut repos: Vec<(String, bool)> = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+
     if let Ok(cwd) = std::env::current_dir() {
-        if let Some(name) = cwd.file_name().and_then(|n| n.to_str()) {
-            repos.push((name.to_string(), true));
-        }
+        push_repo_path(&mut repos, &mut seen, cwd.clone(), true);
         if let Some(parent) = cwd.parent() {
-            for sibling in ["kit", "guardian", "trenchwire", "board-world-app"] {
-                let p = parent.join(sibling);
-                if p.is_dir() && !repos.iter().any(|(n, _)| n == sibling) && p.join(".git").exists()
-                {
-                    repos.push((sibling.to_string(), false));
+            for name in KNOWN_DISPATCH_SIBLINGS {
+                if repos.len() >= DISPATCH_REPO_CAP {
+                    break;
+                }
+                let p = parent.join(name);
+                if is_dispatch_sibling(&p) {
+                    push_repo_path(&mut repos, &mut seen, p, false);
+                }
+            }
+            if repos.len() < DISPATCH_REPO_CAP
+                && let Ok(entries) = std::fs::read_dir(parent)
+            {
+                let mut extras: Vec<PathBuf> = entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| is_dispatch_sibling(p) && p.join("kit.toml").is_file())
+                    .collect();
+                extras.sort();
+                for p in extras {
+                    if repos.len() >= DISPATCH_REPO_CAP {
+                        break;
+                    }
+                    push_repo_path(&mut repos, &mut seen, p, false);
                 }
             }
         }
     }
+
     if repos.is_empty() {
         repos.push((".".into(), true));
     }
     repos
+}
+
+fn is_git_repo(path: &Path) -> bool {
+    path.join(".git").exists()
+}
+
+/// Parent sibling eligible for Dispatch: a git repo that is either a known
+/// neighbor or contains `kit.toml`.
+fn is_dispatch_sibling(path: &Path) -> bool {
+    if !path.is_dir() || !is_git_repo(path) {
+        return false;
+    }
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    KNOWN_DISPATCH_SIBLINGS.contains(&name) || path.join("kit.toml").is_file()
+}
+
+fn push_repo_path(
+    repos: &mut Vec<(String, bool)>,
+    seen: &mut std::collections::BTreeSet<String>,
+    path: PathBuf,
+    on: bool,
+) {
+    let stored = path.to_string_lossy().into_owned();
+    if seen.insert(stored.clone()) {
+        repos.push((stored, on));
+    }
+}
+
+/// Basename of a stored Dispatch repo path (or the string itself if nameless).
+pub(crate) fn repo_basename(stored: &str) -> &str {
+    Path::new(stored)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(stored)
+}
+
+/// TUI label for a stored repo path: basename, plus ` · this` when it is cwd.
+pub(crate) fn format_repo_label(stored: &str, cwd: Option<&Path>) -> String {
+    let base = repo_basename(stored);
+    if let Some(cwd) = cwd
+        && Path::new(stored) == cwd
+    {
+        return format!("{base} · this");
+    }
+    base.to_string()
+}
+
+fn repo_matches_hint(stored: &str, hint: &str) -> bool {
+    stored == hint || repo_basename(stored) == hint
 }
 
 impl DispatchForm {
@@ -233,8 +315,16 @@ impl DispatchForm {
             .collect()
     }
 
+    pub fn selected_personas(&self) -> Vec<Persona> {
+        self.personas
+            .iter()
+            .filter(|(_, on)| *on)
+            .map(|(p, _)| *p)
+            .collect()
+    }
+
     pub fn fanout_count(&self) -> usize {
-        self.selected_repos().len() * self.selected_agents().len()
+        self.selected_repos().len() * self.selected_agents().len() * self.selected_personas().len()
     }
 }
 
@@ -245,6 +335,7 @@ pub struct BoardTask {
     pub title: String,
     pub repo_hint: String,
     pub agent_hint: String,
+    pub persona: Persona,
     pub done: bool,
 }
 
@@ -299,6 +390,8 @@ pub struct RunRow {
     pub id: RunId,
     pub repo: String,
     pub agent: String,
+    /// Role this run is acting as. TUI-local; not on the engine contract.
+    pub persona: Persona,
     pub task: String,
     pub state: RunState,
     pub gate: Option<GateOutcome>,
@@ -329,6 +422,7 @@ impl RunRow {
             id,
             repo: repo.into(),
             agent: agent.into(),
+            persona: Persona::Eng,
             task: task.into(),
             state: RunState::Queued,
             gate: None,
@@ -371,6 +465,11 @@ impl RunRow {
             return Some(format!("scope: {scope}"));
         }
         Some("gate failed".into())
+    }
+
+    /// Control Room AGENT cell: `codex·eng`.
+    pub fn agent_cell(&self) -> String {
+        format!("{}·{}", self.agent, self.persona.label())
     }
 
     /// Append an output chunk, keeping the tail within the display cap.
@@ -442,7 +541,24 @@ impl App {
     /// Seed launch-time agent readiness (from `kit_agents::probe_all`).
     pub fn set_agents_probe(&mut self, probe: Vec<(String, bool)>) {
         self.agents_probe = probe;
+        self.apply_dispatch_agent_defaults();
         self.dirty = true;
+    }
+
+    /// When a probe is present, select the first ready agent and deselect the rest.
+    /// Empty probe (tests / `--demo` without probe) keeps the form default (codex on).
+    pub fn apply_dispatch_agent_defaults(&mut self) {
+        if self.agents_probe.is_empty() {
+            return;
+        }
+        let first_ready = self
+            .agents_probe
+            .iter()
+            .find(|(_, ok)| *ok)
+            .map(|(n, _)| n.clone());
+        for (name, on) in &mut self.dispatch.agents {
+            *on = first_ready.as_ref() == Some(name);
+        }
     }
 
     /// Compact strip for the Control Room header, e.g. `codex·claude·grok ready`.
@@ -521,14 +637,15 @@ impl App {
         let marks_dirty = match &event {
             AppEvent::AnimationTick => {
                 let next = self.clock.tick.wrapping_add(1);
-                // Elapsed labels: once per second. Flash expiry: every tick while live.
                 let flash_active = self.flash.is_some();
-                let elapsed_tick = next.is_multiple_of(TICK_HZ)
-                    && self
-                        .runs
-                        .iter()
-                        .any(|r| matches!(r.state, RunState::Running | RunState::Gating));
-                self.motion && (elapsed_tick || flash_active)
+                let live = self
+                    .runs
+                    .iter()
+                    .any(|r| matches!(r.state, RunState::Running | RunState::Gating));
+                // Spinner advances every 2 ticks (10 Hz at TICK_HZ=20). Idle rooms
+                // still skip redraw. KIT_MOTION=off keeps the resting label.
+                let spinner_tick = live && next.is_multiple_of(2);
+                self.motion && (spinner_tick || flash_active)
             }
             other => other.is_redraw_worthy(),
         };
@@ -643,7 +760,7 @@ impl App {
             }
             KeyCode::Char('k') | KeyCode::Char('K') => self.request_kill(),
             KeyCode::Char('r') | KeyCode::Char('R') => self.request_retry(),
-            KeyCode::Char('f') => {
+            KeyCode::Char('f') | KeyCode::Char('F') => {
                 self.run_filter = self.run_filter.next();
                 self.set_flash(format!("filter {}", self.run_filter.label()));
                 // Keep selection valid under the new filter.
@@ -679,7 +796,8 @@ impl App {
             KeyCode::Tab => {
                 self.dispatch.focus = match self.dispatch.focus {
                     DispatchFocus::Repos => DispatchFocus::Agents,
-                    DispatchFocus::Agents => DispatchFocus::Task,
+                    DispatchFocus::Agents => DispatchFocus::Personas,
+                    DispatchFocus::Personas => DispatchFocus::Task,
                     DispatchFocus::Task => DispatchFocus::Repos,
                 };
                 self.dispatch.list_cursor = 0;
@@ -689,14 +807,15 @@ impl App {
                 self.dispatch.focus = match self.dispatch.focus {
                     DispatchFocus::Repos => DispatchFocus::Task,
                     DispatchFocus::Agents => DispatchFocus::Repos,
-                    DispatchFocus::Task => DispatchFocus::Agents,
+                    DispatchFocus::Personas => DispatchFocus::Agents,
+                    DispatchFocus::Task => DispatchFocus::Personas,
                 };
                 self.dispatch.list_cursor = 0;
                 Action::None
             }
             KeyCode::Up => {
                 match self.dispatch.focus {
-                    DispatchFocus::Repos | DispatchFocus::Agents => {
+                    DispatchFocus::Repos | DispatchFocus::Agents | DispatchFocus::Personas => {
                         self.dispatch.list_cursor = self.dispatch.list_cursor.saturating_sub(1);
                     }
                     DispatchFocus::Task => {}
@@ -711,6 +830,10 @@ impl App {
                     }
                     DispatchFocus::Agents => {
                         let max = self.dispatch.agents.len().saturating_sub(1);
+                        self.dispatch.list_cursor = (self.dispatch.list_cursor + 1).min(max);
+                    }
+                    DispatchFocus::Personas => {
+                        let max = self.dispatch.personas.len().saturating_sub(1);
                         self.dispatch.list_cursor = (self.dispatch.list_cursor + 1).min(max);
                     }
                     DispatchFocus::Task => {}
@@ -748,6 +871,11 @@ impl App {
                     *on = !*on;
                 }
             }
+            DispatchFocus::Personas => {
+                if let Some((_, on)) = self.dispatch.personas.get_mut(self.dispatch.list_cursor) {
+                    *on = !*on;
+                }
+            }
             DispatchFocus::Task => {}
         }
     }
@@ -771,11 +899,16 @@ impl App {
             .into_iter()
             .map(str::to_string)
             .collect::<Vec<_>>();
+        let personas = self.dispatch.selected_personas();
         if repos.is_empty() || agents.is_empty() {
             self.set_flash("select at least one repo and one agent");
             return Action::None;
         }
-        let n = repos.len() * agents.len();
+        if personas.is_empty() {
+            self.set_flash("select at least one persona — eng / product / design / qa");
+            return Action::None;
+        }
+        let n = repos.len() * agents.len() * personas.len();
         if n > DISPATCH_FANOUT_CAP {
             self.set_flash(format!(
                 "fan-out {n} exceeds cap {DISPATCH_FANOUT_CAP} — deselect some"
@@ -787,19 +920,22 @@ impl App {
         let mut jobs = Vec::with_capacity(n);
         for repo in &repos {
             for agent in &agents {
-                let id = RunId::new();
-                if first_id.is_none() {
-                    first_id = Some(id.clone());
+                for persona in &personas {
+                    let id = RunId::new();
+                    if first_id.is_none() {
+                        first_id = Some(id.clone());
+                    }
+                    jobs.push(DispatchJob {
+                        id: id.clone(),
+                        repo: repo.clone(),
+                        agent: agent.clone(),
+                        task: persona.wrap_task(&task),
+                    });
+                    let mut row = RunRow::new(id, repo.clone(), agent.clone(), task.clone());
+                    row.persona = *persona;
+                    row.state = RunState::Queued;
+                    self.upsert_run(row);
                 }
-                jobs.push(DispatchJob {
-                    id: id.clone(),
-                    repo: repo.clone(),
-                    agent: agent.clone(),
-                    task: task.clone(),
-                });
-                let mut row = RunRow::new(id, repo.clone(), agent.clone(), task.clone());
-                row.state = RunState::Queued;
-                self.upsert_run(row);
             }
         }
         if let Some(id) = first_id {
@@ -845,9 +981,8 @@ impl App {
                         .dispatch
                         .selected_repos()
                         .first()
-                        .copied()
-                        .unwrap_or("kit")
-                        .to_string(),
+                        .map(|p| repo_basename(p).to_string())
+                        .unwrap_or_else(|| "kit".into()),
                     agent_hint: self
                         .dispatch
                         .selected_agents()
@@ -855,6 +990,12 @@ impl App {
                         .copied()
                         .unwrap_or("codex")
                         .to_string(),
+                    persona: self
+                        .dispatch
+                        .selected_personas()
+                        .first()
+                        .copied()
+                        .unwrap_or_default(),
                     done: false,
                 });
                 self.board_selected = self.board.len().saturating_sub(1);
@@ -879,20 +1020,28 @@ impl App {
                 self.prepare_dispatch_repos();
                 self.dispatch.task = item.title;
                 for (name, on) in &mut self.dispatch.repos {
-                    *on = *name == item.repo_hint;
+                    *on = repo_matches_hint(name, &item.repo_hint);
                 }
                 if !self
                     .dispatch
                     .repos
                     .iter()
-                    .any(|(n, _)| n == &item.repo_hint)
+                    .any(|(n, _)| repo_matches_hint(n, &item.repo_hint))
                 {
-                    self.dispatch
-                        .repos
-                        .insert(0, (item.repo_hint.clone(), true));
+                    let hint = Path::new(&item.repo_hint);
+                    if hint.is_absolute() && hint.is_dir() {
+                        self.dispatch
+                            .repos
+                            .insert(0, (item.repo_hint.clone(), true));
+                    } else if let Some((_, on)) = self.dispatch.repos.first_mut() {
+                        *on = true;
+                    }
                 }
                 for (name, on) in &mut self.dispatch.agents {
                     *on = *name == item.agent_hint;
+                }
+                for (persona, on) in &mut self.dispatch.personas {
+                    *on = *persona == item.persona;
                 }
                 self.dispatch.focus = DispatchFocus::Task;
                 self.screen = Screen::Dispatch;
@@ -1026,6 +1175,7 @@ impl App {
                 .map(|&i| self.runs[i].id.clone());
         }
         if self.selected_id.is_none() {
+            self.set_flash("no runs — press d to dispatch  ·  kit --demo");
             return;
         }
         self.screen = Screen::RunDetail { pane };
@@ -1115,10 +1265,11 @@ impl App {
             id: new_id.clone(),
             repo: row.repo.clone(),
             agent: row.agent.clone(),
-            task: task.clone(),
+            task: row.persona.wrap_task(&task),
         };
 
         let mut queued = RunRow::new(new_id.clone(), row.repo, row.agent, task);
+        queued.persona = row.persona;
         queued.seq = self.runs.len() as u64;
         self.runs.push(queued);
         self.selected_id = Some(new_id);
@@ -1172,45 +1323,10 @@ impl App {
         idxs
     }
 
-    /// Seed Dispatch repos from cwd + sibling git checkouts + recent run repos.
+    /// Seed Dispatch repos from cwd + honest sibling paths, then apply agent defaults.
     fn prepare_dispatch_repos(&mut self) {
-        let mut seen = std::collections::BTreeSet::new();
-        let mut repos: Vec<(String, bool)> = Vec::new();
-
-        // Cwd first (selected).
-        if let Ok(cwd) = std::env::current_dir() {
-            if let Some(name) = cwd.file_name().and_then(|n| n.to_str()) {
-                push_repo(&mut repos, &mut seen, name.to_string(), true);
-            }
-            if let Some(parent) = cwd.parent() {
-                for sibling in ["kit", "guardian", "trenchwire", "board-world-app", "wiki"] {
-                    let p = parent.join(sibling);
-                    if p.is_dir() && p.join(".git").exists() {
-                        push_repo(&mut repos, &mut seen, sibling.to_string(), false);
-                    }
-                }
-            }
-        }
-
-        // Recent run repos (labels already short names from engine).
-        for run in &self.runs {
-            if !run.repo.is_empty() {
-                push_repo(&mut repos, &mut seen, run.repo.clone(), false);
-            }
-        }
-
-        // Keep any user-toggled extras already on the form.
-        for (name, on) in &self.dispatch.repos {
-            push_repo(&mut repos, &mut seen, name.clone(), *on);
-        }
-
-        if repos.is_empty() {
-            repos.push((".".into(), true));
-        } else if !repos.iter().any(|(_, on)| *on) {
-            repos[0].1 = true;
-        }
-
-        self.dispatch.repos = repos;
+        self.dispatch.repos = seed_dispatch_repos();
+        self.apply_dispatch_agent_defaults();
         self.dispatch.list_cursor = 0;
         self.dispatch.focus = DispatchFocus::Repos;
     }
@@ -1246,6 +1362,9 @@ impl App {
             }
             if row.worktree.is_none() {
                 row.worktree = existing.worktree.clone();
+            }
+            if row.persona == Persona::Eng && existing.persona != Persona::Eng {
+                row.persona = existing.persona;
             }
             *existing = row;
         } else {
@@ -1370,6 +1489,7 @@ impl App {
             "tests: pending",
         ]
         .join("\n");
+        r0.persona = Persona::Eng;
         r0.seq = 0;
         self.upsert_run(r0);
 
@@ -1379,10 +1499,11 @@ impl App {
             "grok",
             "frame clock",
         );
-        r1.state = RunState::Running;
+        r1.state = RunState::Gating;
         r1.active_since_tick = Some(0);
         r1.worktree = Some(PathBuf::from("/tmp/kit-wt-01FIXRUN1"));
-        r1.output = "grok: event loop select! arms online\nredraw policy: idle quiet".into();
+        r1.output = "grok: running kit.toml gate\nfmt ok\nclippy …\ncargo test --workspace".into();
+        r1.persona = Persona::Eng;
         r1.seq = 1;
         self.upsert_run(r1);
 
@@ -1418,6 +1539,7 @@ impl App {
             firewall_blocks: vec![],
             duration: Duration::from_secs(12),
         });
+        r2.persona = Persona::Eng;
         r2.seq = 2;
         self.upsert_run(r2);
 
@@ -1471,13 +1593,14 @@ impl App {
             firewall_blocks: vec![],
             duration: Duration::from_secs(10),
         });
+        r3.persona = Persona::Eng;
         r3.seq = 3;
         let fail_id = r3.id.clone();
         self.upsert_run(r3);
 
         // Product moment: land on FAIL so gate wash + `r` retry are visible immediately.
         self.selected_id = Some(fail_id);
-        self.set_flash("FAIL selected — enter open · r retry with gate context");
+        self.set_flash("FAIL · enter open · r retry");
 
         // Board fixture items for F4 snapshots / QA.
         self.board = vec![
@@ -1486,6 +1609,7 @@ impl App {
                 title: "port guard.js".into(),
                 repo_hint: "kit".into(),
                 agent_hint: "codex".into(),
+                persona: Persona::Eng,
                 done: false,
             },
             BoardTask {
@@ -1493,6 +1617,7 @@ impl App {
                 title: "frame clock".into(),
                 repo_hint: "kit".into(),
                 agent_hint: "grok".into(),
+                persona: Persona::Design,
                 done: false,
             },
             BoardTask {
@@ -1500,28 +1625,13 @@ impl App {
                 title: "fix red CI".into(),
                 repo_hint: "trenchwire".into(),
                 agent_hint: "codex".into(),
+                persona: Persona::Eng,
                 done: true,
             },
         ];
         self.board_seq = 4;
         self.board_selected = 0;
         self.dirty = true;
-    }
-}
-
-fn push_repo(
-    repos: &mut Vec<(String, bool)>,
-    seen: &mut std::collections::BTreeSet<String>,
-    name: String,
-    on: bool,
-) {
-    if seen.insert(name.clone()) {
-        repos.push((name, on));
-    } else if on {
-        // Prefer selected if we see the name again with on=true.
-        if let Some((_, flag)) = repos.iter_mut().find(|(n, _)| n == &name) {
-            *flag = true;
-        }
     }
 }
 
@@ -1567,8 +1677,13 @@ fn gate_log_line_count(run: &RunRow) -> usize {
     gate_log_lines(run).len()
 }
 
+/// Braille spinner — Unicode, not a Nerd Font. Resting frame is unused
+/// when motion is off (label stays `RUN 2m` so snapshots and reduced-motion
+/// users see a still Control Room).
+const RUN_SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
+
 /// Public helpers used by the UI for state/gate labels.
-pub fn format_state_label(run: &RunRow, clock: &Clock) -> String {
+pub fn format_state_label(run: &RunRow, clock: &Clock, motion: bool) -> String {
     let label = match run.state {
         RunState::Queued => "QUEUED",
         RunState::Running => "RUN",
@@ -1579,11 +1694,19 @@ pub fn format_state_label(run: &RunRow, clock: &Clock) -> String {
         RunState::Error => "ERROR",
     };
     let elapsed = run.elapsed_label(clock);
-    if matches!(run.state, RunState::Running | RunState::Gating) && !elapsed.is_empty() {
-        format!("{label} {elapsed}")
-    } else {
-        label.to_string()
+    let live = matches!(run.state, RunState::Running | RunState::Gating);
+    let mut out = String::new();
+    if motion && live {
+        let i = clock.frame(RUN_SPINNER.len(), 2);
+        out.push(RUN_SPINNER[i]);
+        out.push(' ');
     }
+    out.push_str(label);
+    if live && !elapsed.is_empty() {
+        out.push(' ');
+        out.push_str(&elapsed);
+    }
+    out
 }
 
 pub fn format_gate_label(run: &RunRow) -> String {
@@ -1699,7 +1822,28 @@ mod tests {
     }
 
     #[test]
-    fn active_run_dirties_once_per_second_for_elapsed() {
+    fn motion_off_running_row_does_not_dirty_on_tick() {
+        let mut app = App::with_motion(false);
+        let id = RunId("01MOTIONOFF000000000000000".into());
+        app.upsert_run({
+            let mut r = RunRow::new(id, "kit", "codex", "tick");
+            r.state = RunState::Running;
+            r.active_since_tick = Some(0);
+            r
+        });
+        app.clear_dirty();
+        for _ in 0..=TICK_HZ {
+            app.update(AppEvent::AnimationTick);
+        }
+        assert!(
+            !app.is_dirty(),
+            "KIT_MOTION=off must keep a RUNNING row on its resting frame"
+        );
+        assert_eq!(app.clock.tick, TICK_HZ + 1);
+    }
+
+    #[test]
+    fn active_run_dirties_on_spinner_cadence() {
         let mut app = App::with_motion(true);
         let id = RunId("01ACTIVE000000000000000000".into());
         app.upsert_run({
@@ -1709,12 +1853,44 @@ mod tests {
             r
         });
         app.clear_dirty();
-        for _ in 0..19 {
-            app.update(AppEvent::AnimationTick);
-        }
-        assert!(!app.is_dirty());
         app.update(AppEvent::AnimationTick);
-        assert!(app.is_dirty());
+        assert!(
+            !app.is_dirty(),
+            "odd ticks must not redraw (spinner every 2)"
+        );
+        app.update(AppEvent::AnimationTick);
+        assert!(app.is_dirty(), "even ticks redraw a live RUNNING row");
+    }
+
+    #[test]
+    fn running_label_spins_only_when_motion_on() {
+        let mut run = RunRow::new(
+            RunId("01SPIN00000000000000000000".into()),
+            "kit",
+            "codex",
+            "t",
+        );
+        run.state = RunState::Running;
+        run.active_since_tick = Some(0);
+        let clock = Clock { tick: 2 };
+        let moving = format_state_label(&run, &clock, true);
+        let still = format_state_label(&run, &clock, false);
+        assert!(
+            moving.starts_with('⠙') && moving.contains("RUN"),
+            "motion-on RUNNING uses the clock frame: {moving}"
+        );
+        assert_eq!(still, "RUN 0s", "motion-off keeps the resting word+elapsed");
+        let done = RunRow::new(
+            RunId("01DONE00000000000000000000".into()),
+            "kit",
+            "codex",
+            "t",
+        );
+        assert_eq!(
+            format_state_label(&done, &clock, true),
+            "QUEUED",
+            "idle states never spin"
+        );
     }
 
     #[test]
@@ -2017,6 +2193,12 @@ mod tests {
             Action::RetrySelected { source_id, job } => {
                 assert_eq!(source_id, fail_id);
                 assert!(job.task.contains("Previous gate failure"));
+                assert_eq!(
+                    job.task.matches("# Kit persona:").count(),
+                    1,
+                    "retry must wrap the persona brief once: {}",
+                    job.task
+                );
             }
             other => panic!("expected RetrySelected, got {other:?}"),
         }
@@ -2031,7 +2213,7 @@ mod tests {
         let all_n = app.display_order().len();
         assert!(all_n >= 3);
 
-        app.update(key('f'));
+        app.update(key('F'));
         assert_eq!(app.run_filter, RunFilter::Fail);
         let fail_n = app.display_order().len();
         assert_eq!(fail_n, 1);
@@ -2071,6 +2253,23 @@ mod tests {
     }
 
     #[test]
+    fn empty_room_enter_and_g_flash_instead_of_silent() {
+        let mut app = App::with_motion(false);
+        assert!(app.runs.is_empty());
+        app.update(code(KeyCode::Enter));
+        assert_eq!(app.screen, Screen::ControlRoom);
+        assert!(
+            app.flash_message()
+                .is_some_and(|m| m.contains("press d") && m.contains("demo")),
+            "enter on empty room must teach the next key: {:?}",
+            app.flash_message()
+        );
+        app.update(key('g'));
+        assert_eq!(app.screen, Screen::ControlRoom);
+        assert!(app.flash_message().is_some_and(|m| m.contains("press d")));
+    }
+
+    #[test]
     fn d_opens_dispatch_and_esc_returns() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
@@ -2087,6 +2286,74 @@ mod tests {
         app.update(key('b'));
         assert_eq!(app.screen, Screen::Board);
         assert!(!app.board.is_empty());
+    }
+
+    #[test]
+    fn seed_dispatch_repos_stores_absolute_cwd() {
+        let repos = seed_dispatch_repos();
+        assert!(!repos.is_empty());
+        assert!(repos[0].1, "cwd is selected");
+        assert!(
+            Path::new(&repos[0].0).is_absolute() || repos[0].0 == ".",
+            "stored repo must be an absolute path (or fallback .): {:?}",
+            repos[0].0
+        );
+        assert!(repos.len() <= DISPATCH_REPO_CAP);
+    }
+
+    #[test]
+    fn format_repo_label_uses_basename_and_this_suffix() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let stored = cwd.to_string_lossy();
+        let base = cwd.file_name().and_then(|n| n.to_str()).expect("basename");
+        assert_eq!(
+            format_repo_label(&stored, Some(&cwd)),
+            format!("{base} · this")
+        );
+        assert_eq!(format_repo_label("/tmp/guardian", Some(&cwd)), "guardian");
+    }
+
+    #[test]
+    fn dispatch_agent_defaults_select_first_ready() {
+        let mut app = App::with_motion(false);
+        assert!(
+            app.dispatch
+                .agents
+                .iter()
+                .any(|(n, on)| n == "codex" && *on),
+            "empty probe keeps the codex default"
+        );
+        app.set_agents_probe(vec![("codex".into(), false), ("claude".into(), true)]);
+        app.apply_dispatch_agent_defaults();
+        assert_eq!(app.dispatch.selected_agents(), vec!["claude"]);
+        assert!(
+            !app.dispatch
+                .agents
+                .iter()
+                .any(|(n, on)| n == "codex" && *on)
+        );
+    }
+
+    #[test]
+    fn dispatch_submit_sends_bare_agent_ids() {
+        let mut app = App::with_motion(false);
+        app.set_agents_probe(vec![("codex".into(), false), ("claude".into(), true)]);
+        app.apply_dispatch_agent_defaults();
+        app.dispatch.repos = vec![("kit".into(), true)];
+        app.dispatch.task = "prove it".into();
+        app.screen = Screen::Dispatch;
+        match app.update(code(KeyCode::Enter)) {
+            Action::DispatchSubmitted { jobs } => {
+                assert_eq!(jobs.len(), 1);
+                assert_eq!(jobs[0].agent, "claude");
+                assert!(
+                    !jobs[0].agent.contains("ready") && !jobs[0].agent.contains("missing"),
+                    "submit must send the bare agent id, got {:?}",
+                    jobs[0].agent
+                );
+            }
+            other => panic!("expected DispatchSubmitted, got {other:?}"),
+        }
     }
 
     #[test]
@@ -2114,6 +2381,58 @@ mod tests {
     }
 
     #[test]
+    fn dispatch_fans_out_personas_and_keeps_row_task_clean() {
+        let mut app = App::with_motion(false);
+        app.dispatch.repos = vec![("kit".into(), true)];
+        app.dispatch.agents = vec![("grok".into(), true)];
+        for (p, on) in &mut app.dispatch.personas {
+            *on = matches!(*p, Persona::Product | Persona::Design | Persona::Eng);
+        }
+        app.dispatch.task = "empty room first paint".into();
+        app.screen = Screen::Dispatch;
+        match app.update(code(KeyCode::Enter)) {
+            Action::DispatchSubmitted { jobs } => {
+                assert_eq!(jobs.len(), 3);
+                assert!(jobs.iter().all(|j| j.agent == "grok"));
+                assert!(jobs.iter().all(|j| j.task.contains("# Kit persona:")));
+                assert!(jobs.iter().any(|j| j.task.contains("persona: product")));
+                assert!(jobs.iter().any(|j| j.task.contains("persona: design")));
+                assert!(jobs.iter().any(|j| j.task.contains("persona: eng")));
+                assert!(
+                    jobs.iter()
+                        .all(|j| j.task.contains("## Task\nempty room first paint"))
+                );
+            }
+            other => panic!("expected DispatchSubmitted, got {other:?}"),
+        }
+        assert_eq!(app.runs.len(), 3);
+        assert!(app.runs.iter().all(|r| r.task == "empty room first paint"));
+        let roles: Vec<_> = app.runs.iter().map(|r| r.persona).collect();
+        assert!(roles.contains(&Persona::Product));
+        assert!(roles.contains(&Persona::Design));
+        assert!(roles.contains(&Persona::Eng));
+    }
+
+    #[test]
+    fn dispatch_requires_a_persona() {
+        let mut app = App::with_motion(false);
+        app.dispatch.repos = vec![("kit".into(), true)];
+        app.dispatch.agents = vec![("codex".into(), true)];
+        for (_, on) in &mut app.dispatch.personas {
+            *on = false;
+        }
+        app.dispatch.task = "no role".into();
+        app.screen = Screen::Dispatch;
+        assert!(matches!(app.update(code(KeyCode::Enter)), Action::None));
+        assert_eq!(app.screen, Screen::Dispatch);
+        assert!(
+            app.flash_message().is_some_and(|m| m.contains("persona")),
+            "empty persona set must teach the next key: {:?}",
+            app.flash_message()
+        );
+    }
+
+    #[test]
     fn board_enter_prefills_dispatch() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
@@ -2121,17 +2440,25 @@ mod tests {
         app.update(code(KeyCode::Enter));
         assert_eq!(app.screen, Screen::Dispatch);
         assert_eq!(app.dispatch.task, "port guard.js");
+        assert_eq!(app.dispatch.selected_personas(), vec![Persona::Eng]);
     }
 
     #[test]
     fn prd_fixture_matches_section_4_2_shape() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
-        assert_eq!(app.running_count(), 2);
+        assert_eq!(app.running_count(), 1);
+        assert_eq!(app.gated_count(), 1);
+        assert_eq!(app.fail_count(), 1);
         assert_eq!(app.runs.len(), 4);
         let order = app.display_order();
         assert_eq!(app.runs[order[0]].state, RunState::Running);
+        assert_eq!(app.runs[order[1]].state, RunState::Gating);
         assert_eq!(app.runs[order[2]].state, RunState::Fail);
+        assert!(
+            app.runs.iter().all(|r| r.persona == Persona::Eng),
+            "demo table is ENG-only so AGENT reads vendor, not a third axis"
+        );
         let fail = app.runs.iter().find(|r| r.state == RunState::Fail).unwrap();
         assert_eq!(
             fail.gate_summary().as_deref(),

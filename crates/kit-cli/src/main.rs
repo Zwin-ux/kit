@@ -9,6 +9,9 @@ use anyhow::{Context, Result};
 use engine::{RunOptions, execute, parse_agent, spawn_production};
 use kit_core::{Bounds, RunDelta, RunId, RunState};
 use kit_tui::{EngineCommand, LaunchConfig, run_configured};
+use std::collections::HashSet;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -29,12 +32,14 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    match args.first().map(String::as_str) {
-        None | Some("tui") | Some("ui") | Some("control-room") => {
-            let demo = wants_demo(&args) || std::env::var_os("KIT_DEMO").is_some();
-            launch_tui(demo).await
-        }
-        Some("demo") => launch_tui(true).await,
+    let first = args.first().map(String::as_str);
+    if is_tui_invocation(first) {
+        let demo =
+            wants_demo(&args) || first == Some("demo") || std::env::var_os("KIT_DEMO").is_some();
+        return launch_tui(demo).await;
+    }
+
+    match first {
         Some("run") => cmd_run(&args[1..]).await,
         Some("doctor") => {
             let json = args.iter().any(|a| a == "--json");
@@ -52,11 +57,25 @@ async fn main() -> Result<()> {
             print_help(version);
             std::process::exit(2);
         }
+        None => unreachable!("empty argv is a TUI launch"),
     }
 }
 
 fn wants_demo(args: &[String]) -> bool {
     args.iter().any(|a| a == "--demo" || a == "-d")
+}
+
+/// `kit`, `kit --demo`, `kit -d`, `kit demo`, and `kit tui` all open the Control Room.
+fn is_tui_invocation(first: Option<&str>) -> bool {
+    matches!(
+        first,
+        None | Some("tui")
+            | Some("ui")
+            | Some("control-room")
+            | Some("demo")
+            | Some("--demo")
+            | Some("-d")
+    )
 }
 
 async fn launch_tui(demo: bool) -> Result<()> {
@@ -230,8 +249,8 @@ fn print_help(version: &str) {
     println!("  KIT_SKILLS_DIR=…         Override skills pack path");
     println!();
     println!("Keys (Control Room):");
-    println!("  ↑↓ select   Enter open   g gate   d dispatch   b board");
-    println!("  k kill      r retry (fail only)   q quit");
+    println!("  ↑↓ select   f filter   Enter open   g gate   d dispatch   b board");
+    println!("  k kill      r retry (fail only)   ? help   q quit");
     println!();
     println!("Docs: docs/dev/PRD-1.0.md  ·  docs/dev/CURRENT.md  ·  docs/json-contract.md");
 }
@@ -409,12 +428,136 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
     }
 }
 
+/// Names that collide with this binary on PATH (npm 0.1 ships `kit` + `kit.cmd`).
+#[cfg(windows)]
+const KIT_PATH_NAMES: &[&str] = &["kit.exe", "kit.cmd", "kit"];
+#[cfg(not(windows))]
+const KIT_PATH_NAMES: &[&str] = &["kit"];
+
+fn same_kit_file(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    if let (Ok(ca), Ok(cb)) = (std::fs::canonicalize(a), std::fs::canonicalize(b))
+        && ca == cb
+    {
+        return true;
+    }
+    same_file_identity(a, b)
+}
+
+/// True when `a` and `b` are the same inode / NTFS file index (hardlinks).
+fn same_file_identity(a: &Path, b: &Path) -> bool {
+    match (file_identity(a), file_identity(b)) {
+        (Some(ia), Some(ib)) => ia == ib,
+        _ => {
+            #[cfg(windows)]
+            {
+                a.as_os_str().eq_ignore_ascii_case(b.as_os_str())
+            }
+            #[cfg(not(windows))]
+            {
+                false
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn file_identity(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.dev(), meta.ino()))
+}
+
+/// Volume serial + file index via `GetFileInformationByHandle` (stable).
+#[cfg(windows)]
+fn file_identity(path: &Path) -> Option<(u32, u64)> {
+    use std::fs::File;
+    use std::os::windows::io::AsRawHandle;
+
+    #[repr(C)]
+    struct FileTime {
+        dw_low_date_time: u32,
+        dw_high_date_time: u32,
+    }
+    #[repr(C)]
+    struct ByHandleFileInformation {
+        dw_file_attributes: u32,
+        ft_creation_time: FileTime,
+        ft_last_access_time: FileTime,
+        ft_last_write_time: FileTime,
+        dw_volume_serial_number: u32,
+        n_file_size_high: u32,
+        n_file_size_low: u32,
+        n_number_of_links: u32,
+        n_file_index_high: u32,
+        n_file_index_low: u32,
+    }
+
+    unsafe extern "system" {
+        fn GetFileInformationByHandle(
+            handle: *mut std::ffi::c_void,
+            info: *mut ByHandleFileInformation,
+        ) -> i32;
+    }
+
+    let file = File::open(path).ok()?;
+    let mut info = unsafe { std::mem::zeroed::<ByHandleFileInformation>() };
+    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle().cast(), &mut info) };
+    if ok == 0 {
+        return None;
+    }
+    let index = (u64::from(info.n_file_index_high) << 32) | u64::from(info.n_file_index_low);
+    Some((info.dw_volume_serial_number, index))
+}
+
+#[cfg(not(any(windows, unix)))]
+fn file_identity(_path: &Path) -> Option<(u64, u64)> {
+    None
+}
+
+/// Other `kit` / `kit.exe` / `kit.cmd` files on `path_env` that are not `current`.
+fn other_kits_on_path(current: &Path, path_env: &OsStr) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for dir in std::env::split_paths(path_env) {
+        for name in KIT_PATH_NAMES {
+            let candidate = dir.join(name);
+            if !candidate.is_file() {
+                continue;
+            }
+            if same_kit_file(&candidate, current) {
+                continue;
+            }
+            let key = std::fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.clone());
+            if !seen.insert(key) {
+                continue;
+            }
+            out.push(candidate);
+        }
+    }
+    out
+}
+
 fn print_doctor(version: &str, json: bool) {
     let kit_home = engine::paths::kit_home();
     let skills = kit_agents::skills::resolve_skills_dir(std::path::Path::new("."));
     let statuses = tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(kit_agents::probe_all())
     });
+
+    let binary_path = std::env::current_exe().ok();
+    let collisions = match (&binary_path, std::env::var_os("PATH")) {
+        (Some(current), Some(path_env)) => other_kits_on_path(current, &path_env),
+        (None, Some(path_env)) => other_kits_on_path(Path::new(""), &path_env),
+        _ => Vec::new(),
+    };
+    let binary_display = binary_path
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "(unknown)".into());
+    let path_collisions: Vec<String> = collisions.iter().map(|p| p.display().to_string()).collect();
 
     if json {
         let agents: Vec<serde_json::Value> = statuses
@@ -431,6 +574,8 @@ fn print_doctor(version: &str, json: bool) {
         let data = serde_json::json!({
             "version": version,
             "binary": "ok",
+            "binaryPath": binary_display,
+            "pathCollisions": path_collisions,
             "controlRoom": "ok",
             "gateEngine": "ok",
             "runEngine": "ok",
@@ -450,6 +595,7 @@ fn print_doctor(version: &str, json: bool) {
     println!();
     println!("status:");
     println!("  binary          ok (rust)");
+    println!("  binary path     {binary_display}");
     println!("  control room    ok (kit-tui)");
     println!("  gate engine     ok (kit-gate)");
     println!("  run engine      ok (worktree + adapters + receipt)");
@@ -458,6 +604,14 @@ fn print_doctor(version: &str, json: bool) {
         println!("  skills pack     {}", s.display());
     } else {
         println!("  skills pack     missing (.agents/skills)");
+    }
+    if !collisions.is_empty() {
+        println!();
+        println!("warning:");
+        println!("  another kit on PATH (likely npm 0.1) — this binary is the Rust control room");
+        for p in &collisions {
+            println!("    {}", p.display());
+        }
     }
     println!();
     println!("agents:");
@@ -471,7 +625,94 @@ fn print_doctor(version: &str, json: bool) {
     }
     println!();
     println!("try:");
-    println!("  cargo run -p kit-cli -- run --dry-run --task \"smoke\" --json");
-    println!("  cargo run -p kit-cli -- run --agent codex --task \"…\"");
-    println!("  cargo run -p kit-cli   # Dispatch (d) spins live agents + skills");
+    println!("  kit --demo");
+    println!("  kit run --dry-run --task \"smoke\" --json");
+    println!("  kit run --agent codex --task \"…\"");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn scratch(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "kit-doctor-path-{}-{}-{}",
+            label,
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("scratch dir");
+        dir
+    }
+
+    fn join_path(dirs: &[PathBuf]) -> OsString {
+        std::env::join_paths(dirs).expect("join PATH")
+    }
+
+    #[test]
+    fn demo_flag_is_tui_not_unknown_command() {
+        assert!(is_tui_invocation(None));
+        assert!(is_tui_invocation(Some("--demo")));
+        assert!(is_tui_invocation(Some("-d")));
+        assert!(is_tui_invocation(Some("demo")));
+        assert!(is_tui_invocation(Some("tui")));
+        assert!(!is_tui_invocation(Some("run")));
+        assert!(!is_tui_invocation(Some("unify")));
+        assert!(wants_demo(&["--demo".into()]));
+    }
+
+    fn write_kit(dir: &Path, name: &str) -> PathBuf {
+        let path = dir.join(name);
+        fs::write(&path, b"kit-test-stub\n").expect("stub kit");
+        path
+    }
+
+    #[test]
+    fn other_kits_skips_current_and_same_file() {
+        let dir = scratch("self");
+        let name = if cfg!(windows) { "kit.exe" } else { "kit" };
+        let current = write_kit(&dir, name);
+        let hits = other_kits_on_path(&current, &join_path(&[dir]));
+        assert!(hits.is_empty(), "current exe is not a collision: {hits:?}");
+    }
+
+    #[test]
+    fn other_kits_reports_foreign_kit_cmd() {
+        let mine = scratch("mine");
+        let other = scratch("other");
+        let current_name = if cfg!(windows) { "kit.exe" } else { "kit" };
+        let other_name = if cfg!(windows) { "kit.cmd" } else { "kit" };
+        let current = write_kit(&mine, current_name);
+        let collision = write_kit(&other, other_name);
+        let hits = other_kits_on_path(&current, &join_path(&[mine, other]));
+        assert_eq!(hits, vec![collision]);
+    }
+
+    #[test]
+    fn other_kits_empty_path_is_clean() {
+        let hits = other_kits_on_path(Path::new("/no/such/kit"), OsStr::new(""));
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn other_kits_skips_hardlink_of_current() {
+        let dir = scratch("hardlink");
+        let other_dir = scratch("hardlink-other");
+        let name = if cfg!(windows) { "kit.exe" } else { "kit" };
+        let current = write_kit(&dir, name);
+        let alias = other_dir.join(name);
+        std::fs::hard_link(&current, &alias).expect("hardlink");
+        let hits = other_kits_on_path(&current, &join_path(&[dir, other_dir]));
+        assert!(
+            hits.is_empty(),
+            "hardlink of current is the same file: {hits:?}"
+        );
+    }
 }

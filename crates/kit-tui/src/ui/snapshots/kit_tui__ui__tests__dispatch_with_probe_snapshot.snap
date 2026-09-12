@@ -1,0 +1,20 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / DISPATCH                                                         fan-out 1"
+"┌ repos (space) ───┐┌ agents (space) ────────────┐┌ personas (space) ──────────┐"
+"│▶ [x] kit         ││  [ ] codex  missing        ││  [x] eng                   │"
+"│  [ ] guardian    ││  [x] claude  ready         ││  [ ] product               │"
+"│                  ││  [ ] grok  missing         ││  [ ] design                │"
+"│                  ││  [ ] ollama  missing       ││  [ ] qa                    │"
+"│                  ││                            ││                            │"
+"│                  ││                            ││                            │"
+"│                  ││                            ││                            │"
+"│                  ││                            ││                            │"
+"│                  ││                            ││                            │"
+"└──────────────────┘└────────────────────────────┘└────────────────────────────┘"
+"┌ task ────────────────────────────────────────────────────────────────────────┐"
+"│port guard.js across the monorepo                                             │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [esc] back  [tab] field  [↑↓] move  [space] toggle  [enter] submit             "

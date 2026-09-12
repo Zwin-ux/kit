@@ -1,6 +1,35 @@
 # Changelog
 
-## Unreleased
+## 1.0.0-alpha.1 — Control Room
+
+Not 1.0.0. npm `@mzwin/kit` is still the 0.1 workbench. This is the Rust Control Room: dispatch, gate, receipt.
+
+### Added
+- Control Room TUI (dispatch, FAIL wash + first-error line, kill/retry, filter, help)
+- Isolated git worktrees and immutable receipts under `~/.kit/runs/`
+- `kit.toml` on this repo (fmt + clippy + `cargo test --workspace`, 15m)
+- `kit doctor`, `kit run`, `kit receipt list/show`
+- Repo shims (`kit.cmd` / `kit.ps1`) so this checkout launches the Rust binary
+
+### Fixed
+- `kit --demo` opens the Control Room (was `unknown command: --demo`)
+- Control Room FAIL annotation is full-width so `^ tsc: 3 errors` stays readable at 60×12
+- Dispatch footer includes `↑↓`; one-repo layouts no longer leave a vacant left well
+- Run detail / attach headers use `vendor·role` (`codex·eng`), matching Control Room and Board
+- RUNNING/GATING rows breathe with a Braille spinner on the one animation clock; `KIT_MOTION=off` stays still
+- `--demo` includes a GATING row; header says `GATING` never `0 GATED`; README first paint is the FAIL still-frame, not the fox
+- Selected FAIL keeps wash (not reverse); 60-col run detail keeps `GATE FAIL` + `[r]etry`; demo flash fits the 80-col header; help overlay covers the frame; `[b]oard` stays at 80
+- Gate/run children isolate `CARGO_TARGET_DIR` to the worktree (parent cargo artifacts stay honest)
+- `KIT_THEME` unchanged; without truecolor, Control Room falls back to ANSI16 (FAIL wash still paints)
+- Node CI path-filtered to `packages/**`; 0.1 keep-alive is workflow_dispatch only
+
+### Changed
+- README is Control Room first. 0.1 npm workbench is documented as legacy.
+
+### Not yet
+- Clean-machine installer, PTY attach, live Session B dogfood, tagging 1.0.0
+
+## Unreleased (0.1 workbench)
 
 - Add `completeness-qa` to essentials: inventory public functions, flag stubs, and name the next SWE skill. Live runs overlay catalog skills onto `.agents/skills` and require completeness-qa before claiming done.
 - Add local Ollama model discovery through `GET /api/tags`.

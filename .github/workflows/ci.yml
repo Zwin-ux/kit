@@ -5,8 +5,22 @@ name: CI
 on:
   push:
     branches: [main]
+    paths:
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "scripts/**"
+      - ".github/workflows/ci.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "scripts/**"
+      - ".github/workflows/ci.yml"
 
 # Only cancel overlapping runs of THIS workflow on the same ref.
 # Does not affect other workflows or repositories.

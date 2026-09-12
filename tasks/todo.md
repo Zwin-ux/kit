@@ -1,50 +1,78 @@
-# Kit surface / ship todo
+# Kit execution board
 
-## Done (main / PR #11)
+Spec (all items + parked): [`docs/dev/SPEC-next.md`](../docs/dev/SPEC-next.md)  
+Plan (order + task cards): [`tasks/plan.md`](plan.md)
 
-- [x] F1–F3 Control Room + run detail + attach stub
-- [x] Dispatch + Board prefill + theme craft
-- [x] M1 engine: worktree → stream → gate → receipt
-- [x] Live adapters + skills inject
-- [x] P1 kill/retry/timeout/max-8
-- [x] P2 vacuous → UNCONFIGURED
-- [x] P3 concurrency proof
-- [x] P4 JSON envelope (`run` + `doctor`)
-- [x] Land PR #11 on main
-- [x] Product polish: README 1.0-first, demo FAIL, agent strip
-- [x] Optional Harness / `skills/` packs
-- [x] `kit receipt list|show` (+ `--json`, `--output`)
+## Done (do not redo)
 
-## Horizon 0 — stabilize truth
+- [x] Control Room / Detail / Dispatch / Board + filter + help
+- [x] `kit.toml` + bare-git engine fixtures
+- [x] Session A — receipt `01M06A2PXBBH43ZFF3GJ9VQW94`, `gateVacuous: false`
+- [x] Shims + doctor PATH warning + `use-rust-kit.ps1`
+- [x] `kit --demo` launches TUI (was unknown command)
+- [x] Idle CPU ~0.31% of one core; motion-off RUNNING test
+- [x] Personas (ENG default) — **do not expand**
+- [x] QA note `docs/dev/dogfood-notes/2026-08-16-qa.md`
 
-- [ ] Dogfood day: multi-agent fan-out on Kit (checklist in `docs/dev/DOGFOOD.md`)
-- [ ] Tag `v1.0.0-alpha.2` after dogfood notes
-- [ ] Fix dogfood bugs as they appear
+## Horizon 0 — Identity and land (now)
 
-## Horizon 1 — 1.0.0 trust box
+- [ ] **I1** GitHub About + topics + v0.1.4 “not 1.0” note *(human)*
+- [ ] **I2** Commit + PR when asked (no self-merge)
+- [ ] **I3** Session B — live `kit run --agent <ready>` + receipt id
+- [ ] **I4** Session C — `.\kit.cmd --demo` then dispatch; `k` or `r` once
+- [ ] **I5** Session D — dogfood table filled; “open tomorrow?”
+- [x] **I6** README/CURRENT never tell a stranger to type bare `kit` on Windows
+- [x] **I7** Honest-state addendum + DOGFOOD Session A checkbox (2026-08-16)
 
-- [ ] Gate inference hardening + documented PASS meaning
-- [ ] Dispatch real multi-repo paths (not fixture names only)
-- [ ] Filter `f` ALL/FAIL/RUNNING/DONE
-- [ ] npm platform binaries + release CI
-- [ ] curl installer + checksums
-- [ ] 60s demo GIF (FAIL → retry)
-- [ ] Third-party clean-machine install
-- [ ] Tag **v1.0.0**
+## Horizon 1 — Proof
 
-## Horizon 2 — 1.0.1
+- [x] **P1** Isolate `CARGO_TARGET_DIR` in run/gate worktrees
+- [ ] **P2** CI startup beyond `kit --version` *(Factory)*
+- [ ] **P3** Repeatable idle-CPU script
+- [ ] **P4** Doctor `installed` vs `ready` *(ask CEO — JSON)*
+- [ ] **P5** Live kill once + receipt `killed`
+- [ ] **P6** Vacuous JSON `state: pass` — document or CEO change
+- [ ] **P7** Mock-binary adapter test
 
-- [ ] B2-pty attach (Esc detach without kill)
-- [ ] Optional skill multi-select on Dispatch
+## Horizon 2 — Stop paying for 0.1
 
-## Horizon 3 — 1.1
+- [x] **N1** Path-filter Node CI / disable keep-alive
+- [ ] **N2** CHANGELOG `1.0.0-alpha.1` section
+- [ ] **N3** npm `@mzwin/kit` bin decision *(human)*
+- [ ] **N4** Linguist / `packages/` vendored or archived *(ask first)*
 
-- [ ] Board pull-queue / persistence
-- [ ] Cross-restart recovery
-- [ ] Gate modes strict/warn/off
+## Horizon 3 — TUI (one slice at a time)
 
-## Explicit non-goals (still)
+- [x] **U1** FAIL annotation readable at 80 and 60
+- [x] **U2** Dispatch footer includes `↑↓`
+- [x] **U3** Dispatch column density
+- [x] **U4** `vendor·role` voice everywhere
+- [x] **U5** Empty / too-small / Board copy
+- [x] **U6** `KIT_THEME=high` documented + snapshot
+- [x] **U7** Personas frozen (ENG default)
 
-- Marketplace / registry / accounts
-- Services / trading plugins
-- Mascot-as-product before dogfood
+## Horizon 4 — Ship (after Horizon 0 checkpoint)
+
+- [ ] **S1** Tag `v1.0.0-alpha.2`
+- [ ] **S2** 60s gate-catch demo
+- [ ] **S3** Installer (npm/cargo/curl)
+- [ ] **S4** Tag `v1.0.0` only when PRD §10 is true
+
+## Parked
+
+- [ ] Z1 PTY attach (1.0.1)
+- [ ] Z2 Board pull-queue (1.1)
+- [ ] Z3 Recommended vs vibe (1.1, CEO)
+- [ ] Z4 F6 hit-testing
+- [ ] Z5 `app.rs` / `kit-gate` split
+- [ ] Z6 Guardian 855-case expansion
+- [ ] Z7 Dispatch path browser
+- [ ] Z8 Marketplace
+- [ ] Z9 Mascot-as-product
+- [ ] Z10 Live 8-agent harness
+
+## Non-goals
+
+- Skill marketplace / registry / accounts
+- Weakening `kit.toml`
+- Editing `event.rs` as Power

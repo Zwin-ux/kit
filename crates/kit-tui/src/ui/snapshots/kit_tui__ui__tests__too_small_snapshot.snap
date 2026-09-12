@@ -1,0 +1,12 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"          need 60×12 (now 40×8)         "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "

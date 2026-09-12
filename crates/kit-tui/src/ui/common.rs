@@ -46,10 +46,17 @@ pub fn too_small(area: Rect) -> bool {
 
 /// Full-area message when the terminal is unusably small.
 pub fn draw_too_small(frame: &mut Frame, area: Rect, theme: &Theme) {
-    let msg = format!(
-        "terminal too small — need {MIN_WIDTH}×{MIN_HEIGHT} (now {}×{})",
-        area.width, area.height
-    );
+    let msg = if area.width < 48 {
+        format!(
+            "need {MIN_WIDTH}×{MIN_HEIGHT} (now {}×{})",
+            area.width, area.height
+        )
+    } else {
+        format!(
+            "need {MIN_WIDTH}×{MIN_HEIGHT} — maximize this terminal (now {}×{})",
+            area.width, area.height
+        )
+    };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(msg, theme.warn()))).centered(),
         area,
@@ -68,20 +75,15 @@ pub fn draw_header(
 ) {
     let width = area.width as usize;
     let mut left = title.to_string();
-    if let Some(f) = flash {
-        let tag = format!("  · {f}");
-        if left.chars().count() + tag.chars().count()
-            < width.saturating_sub(stats.chars().count() + 2)
-        {
-            left.push_str(&tag);
-        }
-    } else if let Some(e) = error {
-        let tag = format!("  ! {e}");
-        if left.chars().count() + tag.chars().count()
-            < width.saturating_sub(stats.chars().count() + 2)
-        {
-            left.push_str(&tag);
-        }
+    let leftover = width.saturating_sub(title.chars().count() + stats.chars().count() + 2);
+    if let Some(f) = flash
+        && leftover >= 4
+    {
+        left.push_str(&truncate(&format!("  · {f}"), leftover));
+    } else if let Some(e) = error
+        && leftover >= 4
+    {
+        left.push_str(&truncate(&format!("  ! {e}"), leftover));
     }
 
     let left_n = left.chars().count();
@@ -136,8 +138,11 @@ pub fn draw_footer(frame: &mut Frame, area: Rect, theme: &Theme, hints: &str, st
     );
 }
 
-/// Drop lower-priority trailing tokens so the footer stays readable at 60 cols.
+/// Drop lower-priority tokens so the footer stays readable at 80 and 60 cols.
 /// Tokens are split on `"  ["` boundaries (kit footer grammar).
+///
+/// Keep `[?]help`, `[r]etry`, `[k]ill`, and `[d]ispatch` before dropping
+/// `[b]oard` / `[f]ilter` / `[enter] open`. Never drop mid-token.
 pub fn fit_footer_hints(hints: &str, max_chars: usize) -> String {
     if max_chars == 0 {
         return String::new();
@@ -145,7 +150,6 @@ pub fn fit_footer_hints(hints: &str, max_chars: usize) -> String {
     if hints.chars().count() <= max_chars {
         return hints.to_string();
     }
-    // Always try to keep leading space + tokens; drop from the end.
     let parts: Vec<&str> = hints.split("  [").collect();
     if parts.is_empty() {
         return truncate(hints, max_chars);
@@ -165,9 +169,34 @@ pub fn fit_footer_hints(hints: &str, max_chars: usize) -> String {
         if candidate.chars().count() <= max_chars {
             return candidate;
         }
-        tokens.pop();
+        // Drop board / filter / enter first so help, retry, kill, dispatch survive.
+        // Other screens keep the original drop-from-the-end behavior.
+        if let Some(i) = drop_footer_index(&tokens) {
+            tokens.remove(i);
+        } else {
+            tokens.pop();
+        }
     }
     truncate(&tokens.join("  "), max_chars)
+}
+
+/// Drop filter/enter/panes before Board, so 80-col CR keeps `[b]oard`.
+fn drop_footer_index(tokens: &[String]) -> Option<usize> {
+    const ORDER: &[&str] = &[
+        "[f]ilter",
+        "[enter]",
+        "[a]ttach",
+        "[3]diff",
+        "[2]gate",
+        "[1]stream",
+        "[b]oard",
+    ];
+    for prefix in ORDER {
+        if let Some(i) = tokens.iter().position(|t| t.trim().starts_with(prefix)) {
+            return Some(i);
+        }
+    }
+    None
 }
 
 /// Empty-state body: one primary message + one action hint.
@@ -244,11 +273,11 @@ mod tests {
         assert!(!too_small(Rect::new(0, 0, 80, 24)));
     }
 
+    const CR_FOOTER: &str = " [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate  [k]ill  [r]etry  [?]help";
+
     #[test]
     fn fit_footer_drops_trailing_tokens_not_mid_token() {
-        let full =
-            " [↑↓] select  [d]ispatch  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry  [?]help";
-        let fitted = fit_footer_hints(full, 50);
+        let fitted = fit_footer_hints(CR_FOOTER, 50);
         assert!(fitted.chars().count() <= 50);
         assert!(
             !fitted.ends_with('…') || fitted.contains('['),
@@ -256,5 +285,53 @@ mod tests {
         );
         // Still starts with select / primary grammar when possible.
         assert!(fitted.contains("select") || fitted.contains("dispatch"));
+    }
+
+    #[test]
+    fn fit_footer_keeps_retry_help_kill_dispatch_at_80() {
+        let fitted = fit_footer_hints(CR_FOOTER, 80);
+        assert!(fitted.chars().count() <= 80, "{fitted}");
+        assert!(
+            fitted.contains("[r]etry") || fitted.contains("[r]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[?]help") || fitted.contains("[?]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[k]ill") || fitted.contains("[k]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[d]ispatch") || fitted.contains("[d]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[b]oard") || fitted.contains("[b]"),
+            "80-col Control Room must keep Board: {fitted}"
+        );
+    }
+
+    #[test]
+    fn fit_footer_keeps_retry_help_kill_dispatch_at_60() {
+        let fitted = fit_footer_hints(CR_FOOTER, 60);
+        assert!(fitted.chars().count() <= 60, "{fitted}");
+        assert!(
+            fitted.contains("[r]etry") || fitted.contains("[r]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[?]help") || fitted.contains("[?]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[k]ill") || fitted.contains("[k]"),
+            "{fitted}"
+        );
+        assert!(
+            fitted.contains("[d]ispatch") || fitted.contains("[d]"),
+            "{fitted}"
+        );
     }
 }

@@ -2,7 +2,7 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / ATTACHED  trenchwire · codex · fix red CI                        PTY 1.0.1"
+"KIT / ATTACHED  trenchwire · codex·eng · fix red CI  · PTY not conne…  PTY 1.0.1"
 "                                                                                "
 "┌ attach ──────────────────────────────────────────────────────────────────────┐"
 "│PTY attach ships in 1.0.1                                                     │"
@@ -13,4 +13,4 @@ expression: frame
 "│PTY not connected yet — Esc detaches                                          │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" [esc] detach (without kill)                                                    "
+" [esc] detach  [?] help                                                         "

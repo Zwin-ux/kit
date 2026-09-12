@@ -908,10 +908,17 @@ fn build_command(command: &str, worktree: &Path) -> Option<Command> {
         child
     };
     process.current_dir(worktree);
+    isolate_cargo_target_dir(&mut process, worktree);
     // A whole-gate timeout must also stop the timed-out child rather than leave
     // a check running after its verdict has been recorded.
     process.kill_on_drop(true);
     Some(process)
+}
+
+/// Point cargo at `{worktree}/target` so a Kit-on-Kit gate cannot compile into
+/// the parent process's `CARGO_TARGET_DIR` (stale workspace test binaries).
+fn isolate_cargo_target_dir(process: &mut Command, worktree: &Path) {
+    process.env("CARGO_TARGET_DIR", worktree.join("target"));
 }
 
 fn skipped_check(label: &str, command: &str, duration: Duration, why: &str) -> GateCheck {
@@ -1186,6 +1193,124 @@ mod tests {
                 .iter()
                 .all(|check| check.status == CheckStatus::TimedOut)
         );
+    }
+
+    #[test]
+    fn build_command_sets_worktree_cargo_target_dir() {
+        let worktree = env::temp_dir().join("kit-gate-wt-target");
+        let cmd = build_command("cargo test --workspace", &worktree).expect("command");
+        let isolated = cmd
+            .as_std()
+            .get_envs()
+            .find(|(key, _)| *key == "CARGO_TARGET_DIR")
+            .and_then(|(_, value)| value.map(ToOwned::to_owned));
+        assert_eq!(
+            isolated.as_deref(),
+            Some(worktree.join("target").as_os_str()),
+            "gate children must not inherit the parent CARGO_TARGET_DIR"
+        );
+    }
+
+    #[tokio::test]
+    async fn gate_child_does_not_write_parent_cargo_target_dir() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let parent_target = env::temp_dir().join(format!(
+            "kit-gate-parent-target-{}-{stamp}",
+            std::process::id()
+        ));
+        let worktree = env::temp_dir().join(format!("kit-gate-wt-{}-{stamp}", std::process::id()));
+        let _ = fs::remove_dir_all(&parent_target);
+        let _ = fs::remove_dir_all(&worktree);
+        fs::create_dir_all(&parent_target).unwrap();
+        fs::create_dir_all(&worktree).unwrap();
+        let sentinel = parent_target.join("sentinel");
+        fs::write(&sentinel, b"parent-target\n").unwrap();
+
+        #[cfg(windows)]
+        let probe = {
+            fs::write(
+                worktree.join("p1-probe.cmd"),
+                "@echo off\r\nif not exist \"%CARGO_TARGET_DIR%\" mkdir \"%CARGO_TARGET_DIR%\"\r\necho p1>\"%CARGO_TARGET_DIR%\\p1-marker\"\r\n",
+            )
+            .unwrap();
+            "cmd /C p1-probe.cmd"
+        };
+        #[cfg(not(windows))]
+        let probe = {
+            fs::write(
+                worktree.join("p1-probe.sh"),
+                "#!/bin/sh\nmkdir -p \"$CARGO_TARGET_DIR\"\necho p1 > \"$CARGO_TARGET_DIR/p1-marker\"\n",
+            )
+            .unwrap();
+            "sh p1-probe.sh"
+        };
+
+        let before_count = fs::read_dir(&parent_target).unwrap().count();
+        let before_dir_mtime = fs::metadata(&parent_target).unwrap().modified().unwrap();
+        let before_sentinel = fs::metadata(&sentinel).unwrap().modified().unwrap();
+
+        let prev = env::var_os("CARGO_TARGET_DIR");
+        unsafe {
+            env::set_var("CARGO_TARGET_DIR", &parent_target);
+        }
+        struct Restore(Option<std::ffi::OsString>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(v) => unsafe { env::set_var("CARGO_TARGET_DIR", v) },
+                    None => unsafe { env::remove_var("CARGO_TARGET_DIR") },
+                }
+            }
+        }
+        let _restore = Restore(prev);
+
+        let config = GateConfig {
+            test: Some(probe.to_owned()),
+            timeout: Duration::from_secs(30),
+            ..GateConfig::default()
+        };
+        let outcome = KitGate::new().evaluate(&worktree, &config).await;
+        drop(_restore);
+
+        let after_count = fs::read_dir(&parent_target).unwrap().count();
+        let after_dir_mtime = fs::metadata(&parent_target).unwrap().modified().unwrap();
+        let after_sentinel = fs::metadata(&sentinel).unwrap().modified().unwrap();
+        println!(
+            "parent target count {before_count}->{after_count} dir_mtime {before_dir_mtime:?}->{after_dir_mtime:?}"
+        );
+        assert_eq!(outcome.checks.len(), 1);
+        assert_eq!(
+            outcome.checks[0].status,
+            CheckStatus::Pass,
+            "probe must actually run: {:?}",
+            outcome.checks[0]
+        );
+        assert_eq!(
+            after_count, before_count,
+            "parent CARGO_TARGET_DIR file count changed"
+        );
+        assert_eq!(
+            after_sentinel, before_sentinel,
+            "parent sentinel mtime changed"
+        );
+        assert_eq!(
+            after_dir_mtime, before_dir_mtime,
+            "parent target dir mtime changed"
+        );
+        assert!(
+            !parent_target.join("p1-marker").exists(),
+            "probe wrote into the parent CARGO_TARGET_DIR"
+        );
+        assert!(
+            worktree.join("target").join("p1-marker").is_file(),
+            "probe should write into the worktree-local target"
+        );
+
+        let _ = fs::remove_dir_all(&parent_target);
+        let _ = fs::remove_dir_all(&worktree);
     }
 
     #[test]

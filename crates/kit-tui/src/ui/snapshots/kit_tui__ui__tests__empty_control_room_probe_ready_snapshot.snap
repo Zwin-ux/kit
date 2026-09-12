@@ -1,0 +1,16 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / CONTROL ROOM                                codex ready  ·  claude missing"
+"┌──────────────────────────────────────────────────────────────────────────────┐"
+"│                                                                              │"
+"│                               Ready to dispatch                              │"
+"│    press d to fan out agents  ·  kit --demo to see FAIL + retry  ·  ? help   │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [↑↓] select  [d]ispatch  [b]oard  [g]ate  [k]ill  [r]etry  [?]help             "

@@ -1,12 +1,13 @@
-# Repo-root shim so `.\kit.ps1` / `kit` works without a global install.
+# Repo-root shim: Rust Control Room (1.0), not the Node 0.1 skill launcher.
 $ErrorActionPreference = "Stop"
 $KitRoot = $PSScriptRoot
-$KitBin = Join-Path $KitRoot "packages\cli\dist\bin.js"
-
+$KitBin = Join-Path $KitRoot "target\release\kit.exe"
 if (-not (Test-Path $KitBin)) {
-  Write-Error "kit: CLI not built. Run: pnpm build"
-  exit 1
+    $KitBin = Join-Path $KitRoot "target\debug\kit.exe"
 }
-
-& node $KitBin @args
+if (-not (Test-Path $KitBin)) {
+    Write-Error "kit: Rust binary not built.`n  cargo build -p kit-cli --release`nThen run: kit --demo"
+    exit 1
+}
+& $KitBin @args
 exit $LASTEXITCODE

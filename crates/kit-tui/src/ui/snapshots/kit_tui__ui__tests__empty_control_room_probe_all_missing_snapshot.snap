@@ -1,0 +1,16 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / CONTROL ROOM                 codex·claude·grok·ollama missing — kit doctor"
+"┌──────────────────────────────────────────────────────────────────────────────┐"
+"│                                                                              │"
+"│                           No coding agents on PATH                           │"
+"│     install codex / claude / grok / ollama  ·  kit doctor  ·  kit --demo     │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [↑↓] select  [d]ispatch  [b]oard  [g]ate  [k]ill  [r]etry  [?]help             "

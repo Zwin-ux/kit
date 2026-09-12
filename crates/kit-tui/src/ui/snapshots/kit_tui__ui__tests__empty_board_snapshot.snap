@@ -1,0 +1,18 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / BOARD                                                      0 open  0 total"
+"┌──────────────────────────────────────────────────────────────────────────────┐"
+"│                                                                              │"
+"│                                Nothing queued                                │"
+"│     press n to add  ·  Enter prefills Dispatch  ·  not a live pull-queue     │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [esc] back  [n]ew  [enter] dispatch  [space] done  [x] remove  prefill-only 1.0"
