@@ -40,11 +40,18 @@ Nothing here is 1.0.
 | luna | security shard (read-only) | report + scratch probe | `cmd /C` injection mechanism real | real mechanism, unreachable in the shipped prompt shape |
 | skeptic | fail-closed verification | 8 reports | Brief ground truth 12/12. Found the 13f9ca9 regression, the gate skip trap and the run-store leak | — |
 
-After the rebase the CEO checked the combined tip:
+After the rebase, the CEO and Skeptic each checked the combined tip independently.
+
+CEO checks:
 - `6365179` is an ancestor of `d50e1d9`.
 - e613bfb's guard survives at `runner.rs:567`.
 - Queued adds only `kit-cli/src/engine/{mod,paths,runner,supervisor,worktree}.rs` and `tests/run_json_stdout.rs` on top of session-b.
 - The root `Cargo.toml`, `kit-core` and `kit-tui` are unchanged since 815e5d7.
+
+Skeptic re-check (2g), verdict APPROVE `d50e1d9`:
+- `supervisor.rs`, `worktree.rs` and `tests/run_json_stdout.rs` have the same blob ids (CRLF-normalized) as the files Skeptic reviewed.
+- `runner.rs` is the reviewed file plus exactly e613bfb's hunks: the guard at `:540`, `:567` and `:579`, and its test at `:898` and `:968`.
+- There are no frozen-contract or version changes anywhere in `815e5d7..d50e1d9`.
 
 ## Session B — RECEIPT
 
