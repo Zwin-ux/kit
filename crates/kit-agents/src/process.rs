@@ -105,6 +105,10 @@ pub async fn spawn_streaming(
 }
 
 /// Spawn with stdin fed a prompt (ollama).
+///
+/// Readers start first and the prompt is written from its own task. A child
+/// that fills stderr before reading stdin (`ollama run` pulling a model) would
+/// otherwise block spawn, and the run timeout only starts once spawn returns.
 pub async fn spawn_streaming_with_stdin(
     kind: AgentKind,
     mut cmd: Command,
@@ -124,15 +128,17 @@ pub async fn spawn_streaming_with_stdin(
 
     let tree = ProcessTree::attach(&child);
 
-    if let Some(mut stdin) = child.stdin.take() {
-        use tokio::io::AsyncWriteExt;
-        let _ = stdin.write_all(stdin_body.as_bytes()).await;
-        let _ = stdin.shutdown().await;
-    }
-
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     spawn_stream_tasks(stdout, stderr, tx);
+
+    if let Some(mut stdin) = child.stdin.take() {
+        tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            let _ = stdin.write_all(stdin_body.as_bytes()).await;
+            let _ = stdin.shutdown().await;
+        });
+    }
 
     Ok(Box::new(ChildHandle {
         child: tokio::sync::Mutex::new(child),
@@ -599,5 +605,58 @@ mod tests {
             prettify_line(r#"{"type":"end","stopReason":"end_turn"}"#),
             "event:end"
         );
+    }
+
+    /// ollama gets its prompt on stdin. A prompt bigger than the pipe buffer,
+    /// sent to a child that writes stderr before reading stdin (`pulling
+    /// manifest …`), must not block spawn: the run timeout only starts once
+    /// spawn returns.
+    #[tokio::test]
+    async fn large_stdin_prompt_does_not_deadlock_on_early_child_stderr() {
+        let (tx, mut rx) = mpsc::channel(1024);
+        // Drain like the runner does; note whether the child got past stdin.
+        let saw_done = tokio::spawn(async move {
+            let mut saw_done = false;
+            while let Some(delta) = rx.recv().await {
+                if matches!(&delta, RunDelta::Output(line) if line.trim() == "done") {
+                    saw_done = true;
+                }
+            }
+            saw_done
+        });
+        let cmd = if cfg!(windows) {
+            let mut c = Command::new("cmd");
+            c.args([
+                "/C",
+                "(for /L %i in (1,1,50000) do @echo pulling manifest %i 1>&2) & findstr /C:kit-absent >nul & echo done",
+            ]);
+            c
+        } else {
+            let mut c = Command::new("sh");
+            c.args([
+                "-c",
+                "i=0; while [ \"$i\" -lt 50000 ]; do echo \"pulling manifest $i\" >&2; i=$((i+1)); done; cat >/dev/null; echo done",
+            ]);
+            c
+        };
+        // ~8 MiB: past tokio's 2 MiB blocking-write buffer (Windows) and any pipe.
+        let prompt =
+            "kit prompt line, padded so the body overflows any pipe buffer\n".repeat(128 * 1024);
+
+        let run = async {
+            let mut handle = spawn_streaming_with_stdin(AgentKind::Ollama, cmd, prompt, tx)
+                .await
+                .expect("spawn");
+            handle.wait().await.expect("wait")
+        };
+        let code = tokio::time::timeout(Duration::from_secs(30), run)
+            .await
+            .expect("deadlock: prompt on stdin vs child writing stderr first");
+        assert_eq!(code, 0);
+        let saw_done = tokio::time::timeout(Duration::from_secs(10), saw_done)
+            .await
+            .expect("output streams never closed")
+            .expect("drain task");
+        assert!(saw_done, "child never got past reading its whole stdin");
     }
 }
