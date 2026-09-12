@@ -43,6 +43,22 @@ pub fn command_with_args(binary: &str, args: &[&str]) -> Command {
     cmd
 }
 
+/// Keep cargo artifacts inside the child worktree.
+///
+/// Inherited `CARGO_TARGET_DIR` from the parent session makes `cargo test` in a
+/// Kit worktree compile into the host target dir; later workspace tests lie.
+fn isolate_cargo_target_dir(cmd: &mut Command) {
+    let local_target = cmd.as_std().get_current_dir().map(|dir| dir.join("target"));
+    match local_target {
+        Some(dir) => {
+            cmd.env("CARGO_TARGET_DIR", dir);
+        }
+        None => {
+            cmd.env_remove("CARGO_TARGET_DIR");
+        }
+    }
+}
+
 /// Prepare OS-level process grouping before spawn (tree kill support).
 fn configure_tree_kill(cmd: &mut Command) {
     #[cfg(unix)]
@@ -65,6 +81,7 @@ pub async fn spawn_streaming(
     mut cmd: Command,
     tx: mpsc::Sender<RunDelta>,
 ) -> Result<Box<dyn AgentHandle>, SpawnError> {
+    isolate_cargo_target_dir(&mut cmd);
     configure_tree_kill(&mut cmd);
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -94,6 +111,7 @@ pub async fn spawn_streaming_with_stdin(
     stdin_body: String,
     tx: mpsc::Sender<RunDelta>,
 ) -> Result<Box<dyn AgentHandle>, SpawnError> {
+    isolate_cargo_target_dir(&mut cmd);
     configure_tree_kill(&mut cmd);
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -422,6 +440,22 @@ pub fn full_auto() -> bool {
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn isolate_cargo_target_dir_points_at_worktree() {
+        let dir = std::env::temp_dir().join(format!("kit-agent-target-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cmd = Command::new("true");
+        cmd.current_dir(&dir);
+        isolate_cargo_target_dir(&mut cmd);
+        let got = cmd
+            .as_std()
+            .get_envs()
+            .find(|(k, _)| *k == "CARGO_TARGET_DIR")
+            .and_then(|(_, v)| v.map(ToOwned::to_owned));
+        assert_eq!(got.as_deref(), Some(dir.join("target").as_os_str()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[tokio::test]
     async fn kill_stops_long_running_child_within_two_seconds() {

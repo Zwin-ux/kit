@@ -577,6 +577,7 @@ pub fn parse_agent(s: &str) -> Result<AgentKind> {
 mod tests {
     use super::*;
     use crate::engine::paths::kit_home_test_lock;
+    use kit_core::CheckStatus;
 
     /// Holding a std Mutex across await is intentional here: tests must not
     /// interleave KIT_HOME mutation. Clippy would prefer tokio::Mutex; that
@@ -647,6 +648,135 @@ mod tests {
     fn parse_agent_labels() {
         assert!(matches!(parse_agent("codex").unwrap(), AgentKind::Codex));
         assert!(parse_agent("nope").is_err());
+    }
+
+    #[tokio::test]
+    async fn dry_run_gate_does_not_write_parent_cargo_target_dir() {
+        let root = crate::engine::paths::bare_git_fixture();
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let home = std::env::temp_dir().join(format!(
+            "kit-test-home-target-{}-{stamp}",
+            std::process::id()
+        ));
+        let parent_target =
+            std::env::temp_dir().join(format!("kit-parent-target-{}-{stamp}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&parent_target);
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&parent_target).unwrap();
+        let sentinel = parent_target.join("sentinel");
+        std::fs::write(&sentinel, b"parent-target\n").unwrap();
+
+        #[cfg(windows)]
+        let script = home.join("p1-probe.cmd");
+        #[cfg(not(windows))]
+        let script = home.join("p1-probe.sh");
+        #[cfg(windows)]
+        std::fs::write(
+            &script,
+            "@echo off\r\nif not exist \"%CARGO_TARGET_DIR%\" mkdir \"%CARGO_TARGET_DIR%\"\r\necho p1>\"%CARGO_TARGET_DIR%\\p1-marker\"\r\n",
+        )
+        .unwrap();
+        #[cfg(not(windows))]
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nmkdir -p \"$CARGO_TARGET_DIR\"\necho p1 > \"$CARGO_TARGET_DIR/p1-marker\"\n",
+        )
+        .unwrap();
+        #[cfg(windows)]
+        let test_cmd = format!("cmd /C \"{}\"", script.display());
+        #[cfg(not(windows))]
+        let test_cmd = format!("sh \"{}\"", script.display());
+        let kit_toml = format!("[gate]\ntest = '{test_cmd}'\ntimeout = \"30s\"\n");
+        std::fs::write(root.join("kit.toml"), kit_toml).unwrap();
+        let loaded = crate::engine::store::load_kit_config(&root);
+        assert!(
+            !loaded.gate.is_empty(),
+            "fixture kit.toml must parse so the probe actually runs"
+        );
+
+        let before_count = std::fs::read_dir(&parent_target).unwrap().count();
+        let before_dir_mtime = std::fs::metadata(&parent_target)
+            .unwrap()
+            .modified()
+            .unwrap();
+        let before_sentinel = std::fs::metadata(&sentinel).unwrap().modified().unwrap();
+
+        let result = with_kit_home(&home, || async {
+            let prev = std::env::var_os("CARGO_TARGET_DIR");
+            unsafe {
+                std::env::set_var("CARGO_TARGET_DIR", &parent_target);
+            }
+            struct Restore(Option<std::ffi::OsString>);
+            impl Drop for Restore {
+                fn drop(&mut self) {
+                    match &self.0 {
+                        Some(v) => unsafe { std::env::set_var("CARGO_TARGET_DIR", v) },
+                        None => unsafe { std::env::remove_var("CARGO_TARGET_DIR") },
+                    }
+                }
+            }
+            let _restore = Restore(prev);
+            let opts = RunOptions {
+                repo: root.to_string_lossy().into_owned(),
+                agent: AgentKind::Codex,
+                task: "p1 cargo target isolation".into(),
+                dry_run: Some(true),
+                bounds: Bounds::default(),
+            };
+            execute(opts, None, None).await.expect("execute")
+        })
+        .await;
+
+        let after_count = std::fs::read_dir(&parent_target).unwrap().count();
+        let after_dir_mtime = std::fs::metadata(&parent_target)
+            .unwrap()
+            .modified()
+            .unwrap();
+        let after_sentinel = std::fs::metadata(&sentinel).unwrap().modified().unwrap();
+        println!(
+            "parent target count {before_count}->{after_count} dir_mtime {before_dir_mtime:?}->{after_dir_mtime:?}"
+        );
+
+        let gate = result.gate.as_ref().expect("dry-run still runs the gate");
+        assert_eq!(
+            gate.checks.len(),
+            1,
+            "probe check must run, got {:?}",
+            gate.checks
+        );
+        assert_eq!(
+            gate.checks[0].status,
+            CheckStatus::Pass,
+            "probe must actually run: {:?}",
+            gate.checks[0]
+        );
+        assert_eq!(
+            after_count, before_count,
+            "parent CARGO_TARGET_DIR file count changed"
+        );
+        assert_eq!(
+            after_sentinel, before_sentinel,
+            "parent sentinel mtime changed"
+        );
+        assert_eq!(
+            after_dir_mtime, before_dir_mtime,
+            "parent target dir mtime changed"
+        );
+        assert!(
+            !parent_target.join("p1-marker").exists(),
+            "probe wrote into the parent CARGO_TARGET_DIR"
+        );
+
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&parent_target);
+        let _ = std::fs::remove_dir_all(&root);
+        if let Some(wt) = result.worktree {
+            let _ = std::fs::remove_dir_all(&wt);
+        }
     }
 
     #[tokio::test]

@@ -26,7 +26,7 @@ Plan (order + task cards): [`tasks/plan.md`](plan.md)
 
 ## Horizon 1 — Proof
 
-- [ ] **P1** Isolate `CARGO_TARGET_DIR` in run/gate worktrees
+- [x] **P1** Isolate `CARGO_TARGET_DIR` in run/gate worktrees
 - [ ] **P2** CI startup beyond `kit --version` *(Factory)*
 - [ ] **P3** Repeatable idle-CPU script
 - [ ] **P4** Doctor `installed` vs `ready` *(ask CEO — JSON)*
@@ -36,7 +36,7 @@ Plan (order + task cards): [`tasks/plan.md`](plan.md)
 
 ## Horizon 2 — Stop paying for 0.1
 
-- [ ] **N1** Path-filter Node CI / disable keep-alive
+- [x] **N1** Path-filter Node CI / disable keep-alive
 - [ ] **N2** CHANGELOG `1.0.0-alpha.1` section
 - [ ] **N3** npm `@mzwin/kit` bin decision *(human)*
 - [ ] **N4** Linguist / `packages/` vendored or archived *(ask first)*

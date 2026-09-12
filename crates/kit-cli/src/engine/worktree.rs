@@ -91,6 +91,15 @@ fn git(cwd: &Path) -> Command {
     c.current_dir(cwd);
     // Avoid interactive prompts in CI/agent environments.
     c.env("GIT_TERMINAL_PROMPT", "0");
+    // Discover .git from `cwd`. Inherited GIT_DIR would operate on the parent
+    // checkout (this workspace's kit.toml) instead of the run's repo.
+    c.env_remove("GIT_DIR");
+    c.env_remove("GIT_WORK_TREE");
+    c.env_remove("GIT_INDEX_FILE");
+    c.env_remove("GIT_OBJECT_DIRECTORY");
+    c.env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES");
+    c.env_remove("GIT_COMMON_DIR");
+    c.env_remove("GIT_PREFIX");
     c
 }
 
@@ -125,8 +134,7 @@ pub fn resolve_repo(token: &str) -> Result<PathBuf> {
     };
     let abs = abs.canonicalize().unwrap_or(abs);
     let git_ok = abs.join(".git").exists()
-        || Command::new("git")
-            .current_dir(&abs)
+        || git(&abs)
             .args(["rev-parse", "--is-inside-work-tree"])
             .output()
             .map(|o| o.status.success())

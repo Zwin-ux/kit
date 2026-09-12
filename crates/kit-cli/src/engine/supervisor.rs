@@ -134,9 +134,16 @@ pub async fn run_supervisor(
                             now <= MAX_CONCURRENT_RUNS,
                             "concurrency breach: {now} > {MAX_CONCURRENT_RUNS}"
                         );
-                        // Hold the slot briefly so the 12-job harness saturates
-                        // the pool (dry-run alone can finish before the 9th starts).
-                        tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+                        // Hold until the pool saturates. Dry-run alone can
+                        // finish before the 9th job acquires a permit.
+                        let hold =
+                            tokio::time::Instant::now() + std::time::Duration::from_millis(250);
+                        while p.max_seen() < MAX_CONCURRENT_RUNS
+                            && tokio::time::Instant::now() < hold
+                        {
+                            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
                     }
 
                     let agent = parse_agent(&job.agent).unwrap_or(kit_core::AgentKind::Codex);
@@ -229,6 +236,7 @@ mod tests {
     use std::time::Duration;
 
     /// Full P3 harness: 12 dry-run jobs through the real supervisor path.
+    /// Probe stats print with libtest `--no-capture` (legacy `--nocapture` is a filter).
     #[allow(clippy::await_holding_lock)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn p3_twelve_jobs_never_exceed_eight_concurrent() {
@@ -248,32 +256,43 @@ mod tests {
         }
 
         let fixture = crate::engine::paths::bare_git_fixture();
+        assert!(
+            !fixture.join("kit.toml").exists(),
+            "bare_git_fixture must not carry workspace kit.toml"
+        );
+        assert!(
+            crate::engine::store::load_kit_config(&fixture)
+                .gate
+                .is_empty(),
+            "P3 fixture must not load the product gate"
+        );
         let repo = fixture.to_string_lossy().into_owned();
+        let resolved = crate::engine::worktree::resolve_repo(&repo).expect("resolve fixture");
+        let fixture_abs = fixture.canonicalize().unwrap_or_else(|_| fixture.clone());
+        assert_eq!(
+            resolved, fixture_abs,
+            "P3 must run on the bare fixture, not cwd/workspace"
+        );
+
         let result = proof_dispatch_n(12, repo, Duration::from_secs(180)).await;
+        let probe = result.expect("p3 proof");
+        println!(
+            "p3 probe: max_seen={} finished={} in_flight={}",
+            probe.max_seen(),
+            probe.finished_count(),
+            probe.in_flight_now()
+        );
 
         unsafe {
             std::env::remove_var("KIT_HOME");
         }
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&fixture);
-
-        let probe = result.expect("p3 proof");
         assert_eq!(
             probe.finished_count(),
             12,
             "all 12 jobs must reach a terminal path"
         );
-        assert!(
-            probe.max_seen() <= MAX_CONCURRENT_RUNS,
-            "max in-flight {} exceeds cap {}",
-            probe.max_seen(),
-            MAX_CONCURRENT_RUNS
-        );
-        assert!(
-            probe.max_seen() >= 1,
-            "expected at least one concurrent slot used"
-        );
-        // With 12 jobs and worktree work, we should saturate the pool.
         assert_eq!(
             probe.max_seen(),
             MAX_CONCURRENT_RUNS,

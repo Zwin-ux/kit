@@ -1,11 +1,9 @@
-# Weekly catalog keep-alive: validate skills, promote one queued skill, open PR.
+# 0.1 catalog keep-alive. Not the 1.0 Control Room.
+# Opt-in only so Rust PRs do not pay Node catalog tax every week.
 # Never force-pushes main. Distinct concurrency group from CI.
 name: Keep-alive
 
 on:
-  schedule:
-    # Mondays 15:00 UTC
-    - cron: "0 15 * * 1"
   workflow_dispatch:
 
 concurrency:
