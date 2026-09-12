@@ -284,11 +284,9 @@ pub async fn execute_cancellable(
     } else {
         RunState::Fail
     };
-    send(&tx, &id, RunDelta::State(state)).await;
-
-    write_terminal(
+    let result = write_terminal(
         opts,
-        id,
+        id.clone(),
         repo,
         Some(branch),
         Some(wt_path),
@@ -297,9 +295,11 @@ pub async fn execute_cancellable(
         output,
         truncated,
         Some(gate),
-        tx,
     )
-    .await
+    .await?;
+    // Proof first: the terminal state goes out only once its receipt exists.
+    send(&tx, &id, RunDelta::State(state)).await;
+    Ok(result)
 }
 
 fn cancelled(cancel: &Option<Arc<CancelHandle>>) -> bool {
@@ -326,10 +326,9 @@ async fn finalize_killed(
         note,
     );
     send(&tx, &id, RunDelta::Output(note.into())).await;
-    send(&tx, &id, RunDelta::State(RunState::Killed)).await;
-    write_terminal(
+    let result = write_terminal(
         opts,
-        id,
+        id.clone(),
         repo,
         Some(branch),
         Some(wt_path),
@@ -338,9 +337,10 @@ async fn finalize_killed(
         output,
         truncated,
         None,
-        tx,
     )
-    .await
+    .await?;
+    send(&tx, &id, RunDelta::State(RunState::Killed)).await;
+    Ok(result)
 }
 
 /// Terminal path for a run killed before it started: still queued on the
@@ -353,9 +353,44 @@ pub(crate) async fn finalize_killed_before_start(
     tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
 ) -> Result<RunResult> {
     let note = "kit: run killed while queued (never started)\n";
+    let result = finalize_outside_run(opts, id.clone(), RunState::Killed, note, &tx).await?;
+    send(&tx, &id, RunDelta::State(RunState::Killed)).await;
+    Ok(result)
+}
+
+/// Terminal path for a run whose own path failed before it reported a
+/// terminal state (runner paths send one only after their receipt is
+/// written). The error goes into the stream and an `Error` receipt, and
+/// `Error` is sent even if that receipt cannot be written, so the run's row
+/// never stays active.
+pub(crate) async fn finalize_failed(
+    opts: RunOptions,
+    id: RunId,
+    err: &anyhow::Error,
+    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
+) -> Result<RunResult> {
+    let note = format!("kit: run failed: {err:#}\n");
+    let result = finalize_outside_run(opts, id.clone(), RunState::Error, &note, &tx).await;
+    send(&tx, &id, RunDelta::State(RunState::Error)).await;
+    result
+}
+
+/// Receipt for a run that ends outside its own run path, with `note` in the
+/// stream and the log. A worktree the run got before failing is diffed and
+/// removed if clean; the start time is not known here, so none is recorded.
+async fn finalize_outside_run(
+    opts: RunOptions,
+    id: RunId,
+    state: RunState,
+    note: &str,
+    tx: &Option<mpsc::Sender<(RunId, RunDelta)>>,
+) -> Result<RunResult> {
     // Record the repo the way a started run would; keep the raw token if it
-    // no longer resolves (the run is over either way).
+    // does not resolve (the run is over either way).
     let repo = resolve_repo(&opts.repo).unwrap_or_else(|_| PathBuf::from(&opts.repo));
+    let wt = worktrees_dir().join(&id.0);
+    let wt_path = wt.is_dir().then_some(wt);
+    let branch = wt_path.as_ref().map(|_| branch_name(&id.0));
     let mut output = String::new();
     let mut truncated = false;
     append_capped(
@@ -364,28 +399,15 @@ pub(crate) async fn finalize_killed_before_start(
         opts.bounds.output_cap_bytes,
         note,
     );
-    send(&tx, &id, RunDelta::Output(note.into())).await;
-    let result = write_terminal(
-        opts,
-        id.clone(),
-        repo,
-        None,
-        None,
-        None,
-        RunState::Killed,
-        output,
-        truncated,
-        None,
-        None,
+    send(tx, &id, RunDelta::Output(note.into())).await;
+    write_terminal(
+        opts, id, repo, branch, wt_path, None, state, output, truncated, None,
     )
-    .await;
-    // Sent even if the write failed: the run is over, and the error is returned.
-    send(&tx, &id, RunDelta::State(RunState::Killed)).await;
-    result
+    .await
 }
 
 /// Persist the receipt, then remove the worktree if the run left it clean.
-/// `wt_path` is `None` only for a run killed before it started.
+/// `wt_path` is `None` when the run never got a worktree.
 #[allow(clippy::too_many_arguments)]
 async fn write_terminal(
     opts: RunOptions,
@@ -398,7 +420,6 @@ async fn write_terminal(
     output: String,
     truncated: bool,
     gate: Option<GateOutcome>,
-    _tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
 ) -> Result<RunResult> {
     let ended_at = SystemTime::now();
     let diff = wt_path

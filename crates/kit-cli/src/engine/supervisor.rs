@@ -7,7 +7,10 @@
 
 use super::cancel::CancelHandle;
 use super::registry::{RunRegistry, concurrency_limiter};
-use super::runner::{RunOptions, execute_cancellable, finalize_killed_before_start, parse_agent};
+use super::runner::{
+    RunOptions, RunResult, execute_cancellable, finalize_failed, finalize_killed_before_start,
+    parse_agent,
+};
 use kit_core::{Bounds, RunDelta, RunId, RunState};
 use kit_tui::EngineCommand;
 use std::sync::Arc;
@@ -69,33 +72,55 @@ pub async fn run_supervisor(
                         _ = cancel.cancelled() => None,
                         p = limiter.acquire_owned() => Some(p.expect("limiter alive")),
                     };
-                    let result = match permit {
+                    match permit {
                         Some(permit) if !cancel.is_cancelled() => {
                             let result = execute_cancellable(
-                                opts,
+                                opts.clone(),
                                 Some(job.id.clone()),
-                                Some(tx),
+                                Some(tx.clone()),
                                 Some(cancel),
                             )
                             .await;
+                            // The slot stays taken until the run's terminal state is out.
+                            end_if_failed(result, opts, &job.id, tx).await;
                             drop(permit);
-                            result
                         }
                         // Killed while queued, or between permit and execute:
                         // nothing started, so free the slot, then write the
                         // receipt before `Killed` goes out.
                         unused => {
                             drop(unused);
-                            finalize_killed_before_start(opts, job.id.clone(), Some(tx)).await
+                            let result = finalize_killed_before_start(
+                                opts.clone(),
+                                job.id.clone(),
+                                Some(tx.clone()),
+                            )
+                            .await;
+                            end_if_failed(result, opts, &job.id, tx).await;
                         }
-                    };
-                    if let Err(err) = result {
-                        eprintln!("kit engine: {err:#}");
                     }
                     registry.unregister(&job.id).await;
                 });
             }
         }
+    }
+}
+
+/// Runner paths send their terminal state only after their receipt is
+/// written, so an `Err` means the run has not ended yet. End it here as
+/// `Error`, with a receipt when the disk allows, rather than strand its row.
+async fn end_if_failed(
+    result: anyhow::Result<RunResult>,
+    opts: RunOptions,
+    id: &RunId,
+    tx: mpsc::Sender<(RunId, RunDelta)>,
+) {
+    let Err(err) = result else {
+        return;
+    };
+    eprintln!("kit engine: {err:#}");
+    if let Err(receipt_err) = finalize_failed(opts, id.clone(), &err, Some(tx)).await {
+        eprintln!("kit engine: {receipt_err:#}");
     }
 }
 
@@ -363,11 +388,23 @@ mod tests {
 
         /// Close the command pipe and record the rest of the stream. It ends
         /// only once the supervisor and every job task have dropped their
-        /// senders, which is after the last receipt is on disk.
+        /// senders, which is after the last receipt is on disk. By then every
+        /// run must have ended: a terminal state (`record` forbids a second
+        /// one) and a receipt.
         async fn drain(&mut self) {
             self.cmd_tx = None;
             while let Some((id, delta)) = self.next("the stream closed").await {
                 self.ledger.record(id, delta);
+            }
+            for (id, seen) in &self.ledger.states {
+                assert!(
+                    seen.last().is_some_and(|s| s.is_terminal()),
+                    "{id} never ended: {seen:?}"
+                );
+                assert!(
+                    run_dir(&id.0).join("receipt.json").is_file(),
+                    "{id} ended without a receipt"
+                );
             }
         }
 
@@ -569,5 +606,37 @@ mod tests {
         );
         assert_eq!(receipt(&job.id).state, RunState::Killed);
         assert!(!worktrees_dir().join(&job.id.0).exists());
+    }
+
+    /// A run whose own path fails (here its repo cannot resolve) still ends:
+    /// the error is in its stream and log, it gets an `Error` receipt, and it
+    /// sends one terminal state instead of sticking at Queued or Running.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn failed_run_ends_with_error_receipt() {
+        let _lock = kit_home_test_lock();
+        let fx = LatchedRepo::new("fail");
+        // A plain file is never a git checkout, whatever directory holds it.
+        let not_a_repo = fx.home.join("not-a-repo.txt");
+        std::fs::write(&not_a_repo, b"plain file\n").unwrap();
+        let mut job = fx.jobs("FAIL", 1).remove(0);
+        job.repo = not_a_repo.to_string_lossy().into_owned();
+        let mut h = Harness::start();
+        h.send(EngineCommand::Start(job.clone())).await;
+        h.drain().await;
+        assert_eq!(
+            h.ledger.states[&job.id],
+            [RunState::Queued, RunState::Error]
+        );
+        assert!(
+            h.ledger.output[&job.id].contains("not a git repository"),
+            "{}",
+            h.ledger.output[&job.id]
+        );
+        let failed = receipt(&job.id);
+        assert_eq!(failed.state, RunState::Error);
+        assert!(failed.ended_at.is_some(), "an error receipt needs ended_at");
+        let log = std::fs::read_to_string(run_dir(&job.id.0).join("output.log")).unwrap();
+        assert!(log.contains("not a git repository"), "{log}");
     }
 }
