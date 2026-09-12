@@ -7,11 +7,12 @@ mod engine;
 
 use anyhow::{Context, Result};
 use engine::{RunOptions, execute, parse_agent, spawn_production};
-use kit_core::{Bounds, RunDelta, RunId, RunState};
+use kit_core::{AgentKind, Bounds, RunDelta, RunId, RunState};
 use kit_tui::{EngineCommand, LaunchConfig, run_configured};
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -137,15 +138,24 @@ async fn cmd_run(args: &[String]) -> Result<()> {
         anyhow::bail!("missing task — use --task \"…\" or a positional string");
     }
 
+    let kind = parse_agent(&agent)?;
     let opts = RunOptions {
         repo,
-        agent: parse_agent(&agent)?,
+        agent: kind,
         task,
         dry_run,
         bounds: Bounds::default(),
     };
 
-    let result = execute(opts, None, None).await?;
+    // Stream agent output, state changes and silence notices to stderr while the
+    // run is live. Stdout stays the result: exactly one envelope under --json.
+    let (delta_tx, delta_rx) = mpsc::channel::<(RunId, RunDelta)>(256);
+    let echo = tokio::spawn(echo_deltas(delta_rx, kind, QUIET_NOTICE, |line| {
+        eprint!("{line}")
+    }));
+    let result = execute(opts, None, Some(delta_tx)).await;
+    let _ = echo.await;
+    let result = result?;
 
     let gate_vacuous = result
         .gate
@@ -204,6 +214,60 @@ async fn cmd_run(args: &[String]) -> Result<()> {
         std::process::exit(code);
     }
     Ok(())
+}
+
+/// Silence longer than this gets a stderr notice, so a stalled agent is visible.
+const QUIET_NOTICE: Duration = Duration::from_secs(30);
+
+/// Echo run deltas through `emit` until the engine drops its sender.
+///
+/// Session B stalled with no output at all: every delta was discarded, so a
+/// working agent and a hung one looked the same. Output chunks and state
+/// changes are echoed as they arrive; each `quiet` stretch adds a notice.
+async fn echo_deltas(
+    mut rx: mpsc::Receiver<(RunId, RunDelta)>,
+    agent: AgentKind,
+    quiet: Duration,
+    mut emit: impl FnMut(&str),
+) {
+    let mut state = RunState::Queued;
+    let mut silent = Duration::ZERO;
+    loop {
+        match tokio::time::timeout(quiet, rx.recv()).await {
+            Ok(Some((_, delta))) => {
+                silent = Duration::ZERO;
+                if let RunDelta::State(next) = &delta {
+                    state = *next;
+                }
+                if let Some(line) = delta_line(&delta) {
+                    emit(&line);
+                }
+            }
+            Ok(None) => return,
+            Err(_) => {
+                silent += quiet;
+                emit(&format!(
+                    "kit: still {} ({agent}), no output for {}s — Ctrl-C to abort\n",
+                    state_label(state),
+                    silent.as_secs()
+                ));
+            }
+        }
+    }
+}
+
+/// Stderr text for one delta; `None` for deltas the final result reports.
+fn delta_line(delta: &RunDelta) -> Option<String> {
+    match delta {
+        RunDelta::Output(chunk) if chunk.ends_with('\n') => Some(chunk.clone()),
+        RunDelta::Output(chunk) => Some(format!("{chunk}\n")),
+        RunDelta::State(state) => Some(format!("kit: state {}\n", state_label(*state))),
+        RunDelta::Worktree(_) | RunDelta::Gate(_) => None,
+    }
+}
+
+fn state_label(state: RunState) -> String {
+    format!("{state:?}").to_ascii_lowercase()
 }
 
 /// CEO stamp P4 — thin JSON envelope (`schemaVersion: 1`, camelCase).
@@ -713,6 +777,53 @@ mod tests {
         assert!(
             hits.is_empty(),
             "hardlink of current is the same file: {hits:?}"
+        );
+    }
+
+    #[test]
+    fn delta_line_echoes_output_and_state_only() {
+        assert_eq!(
+            delta_line(&RunDelta::Output("kit: spawning grok\n".into())).as_deref(),
+            Some("kit: spawning grok\n")
+        );
+        assert_eq!(
+            delta_line(&RunDelta::Output("text: done".into())).as_deref(),
+            Some("text: done\n")
+        );
+        assert_eq!(
+            delta_line(&RunDelta::State(RunState::Gating)).as_deref(),
+            Some("kit: state gating\n")
+        );
+        assert_eq!(delta_line(&RunDelta::Worktree(PathBuf::from("wt"))), None);
+    }
+
+    /// Session B: a live run is never silent. Deltas stream, silence is
+    /// reported, and the echo ends once the engine drops its sender.
+    #[tokio::test]
+    async fn echo_deltas_streams_flags_silence_and_ends_with_sender() {
+        let (tx, rx) = mpsc::channel(8);
+        let id = RunId::default();
+        tx.send((id.clone(), RunDelta::State(RunState::Running)))
+            .await
+            .unwrap();
+        tx.send((id, RunDelta::Output("text: working\n".into())))
+            .await
+            .unwrap();
+        let mut lines = Vec::new();
+        let echo = echo_deltas(rx, AgentKind::Grok, Duration::from_millis(20), |line| {
+            lines.push(line.to_string())
+        });
+        let hold_then_drop = async move {
+            tokio::time::sleep(Duration::from_millis(90)).await;
+            drop(tx);
+        };
+        tokio::join!(echo, hold_then_drop);
+        assert_eq!(lines[..2], ["kit: state running\n", "text: working\n"]);
+        assert!(
+            lines[2..]
+                .iter()
+                .any(|l| l.starts_with("kit: still running (grok), no output for")),
+            "silence must be reported: {lines:?}"
         );
     }
 }
