@@ -17,6 +17,8 @@ pub fn create_worktree(repo: &Path, dest: &Path, branch: &str) -> Result<()> {
             .with_context(|| format!("create worktree parent {}", parent.display()))?;
     }
 
+    // git narrates on stdout ("HEAD is now at …") and kit's stdout carries
+    // `--json`, so git's stdout goes to our stderr, where people still see it.
     let status = git(repo)
         .args([
             "worktree",
@@ -25,6 +27,7 @@ pub fn create_worktree(repo: &Path, dest: &Path, branch: &str) -> Result<()> {
             dest.to_str().context("worktree path utf-8")?,
             "HEAD",
         ])
+        .stdout(std::io::stderr())
         .status()
         .context("git worktree add")?;
 
@@ -39,6 +42,7 @@ pub fn create_worktree(repo: &Path, dest: &Path, branch: &str) -> Result<()> {
                 dest.to_str().context("worktree path utf-8")?,
                 "HEAD",
             ])
+            .stdout(std::io::stderr())
             .status()
             .context("git worktree add -B")?;
         if !status.success() {
@@ -72,6 +76,7 @@ pub fn remove_if_clean(repo: &Path, worktree: &Path) -> Result<bool> {
     if !is_clean(worktree)? {
         return Ok(false);
     }
+    // Same rule as create_worktree: nothing from git on kit's stdout.
     let _ = git(repo)
         .args([
             "worktree",
@@ -79,6 +84,7 @@ pub fn remove_if_clean(repo: &Path, worktree: &Path) -> Result<bool> {
             "--force",
             worktree.to_str().context("worktree path utf-8")?,
         ])
+        .stdout(std::io::stderr())
         .status();
     if worktree.exists() {
         let _ = std::fs::remove_dir_all(worktree);
