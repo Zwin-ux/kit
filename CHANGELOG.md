@@ -20,6 +20,7 @@ Not 1.0.0. npm `@mzwin/kit` is still the 0.1 workbench. This is the Rust Control
 - `--demo` includes a GATING row; header says `GATING` never `0 GATED`; README first paint is the FAIL still-frame, not the fox
 - Selected FAIL keeps wash (not reverse); 60-col run detail keeps `GATE FAIL` + `[r]etry`; demo flash fits the 80-col header; help overlay covers the frame; `[b]oard` stays at 80
 - Gate/run children isolate `CARGO_TARGET_DIR` to the worktree (parent cargo artifacts stay honest)
+- `KIT_THEME` unchanged; without truecolor, Control Room falls back to ANSI16 (FAIL wash still paints)
 - Node CI path-filtered to `packages/**`; 0.1 keep-alive is workflow_dispatch only
 
 ### Changed
