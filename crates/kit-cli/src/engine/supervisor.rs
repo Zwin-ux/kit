@@ -220,12 +220,48 @@ mod tests {
         fn drop(&mut self) {
             // Never strand a gate child, even after a failed assertion.
             let _ = std::fs::write(&self.release, b"open\n");
+            // A test that panics before `drain` leaves its job tasks running
+            // until the runtime shuts down. Unsetting KIT_HOME now would send
+            // their receipts and worktrees into the real ~/.kit, so on a panic
+            // KIT_HOME stays on this scratch home and the dirs are kept.
+            if std::thread::panicking() {
+                return;
+            }
             unsafe {
                 std::env::remove_var("KIT_HOME");
             }
             let _ = std::fs::remove_dir_all(&self.home);
             let _ = std::fs::remove_dir_all(&self.repo);
         }
+    }
+
+    /// After a panic, teardown leaves KIT_HOME on the scratch home (and keeps
+    /// that home), so a failed test's stray jobs cannot reach the real ~/.kit.
+    #[test]
+    fn panicking_teardown_keeps_kit_home_on_scratch() {
+        let _lock = kit_home_test_lock();
+        let mut dirs = None;
+        let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let fx = LatchedRepo::new("panic");
+            dirs = Some((fx.home.clone(), fx.repo.clone()));
+            panic!("simulated test failure before drain");
+        }));
+        assert!(failed.is_err());
+        let (home, repo) = dirs.expect("fixture was built");
+        assert_eq!(
+            std::env::var_os("KIT_HOME"),
+            Some(home.clone().into_os_string())
+        );
+        assert!(
+            home.is_dir(),
+            "a panicking teardown must keep the scratch home"
+        );
+        // Clean up what the panicking teardown deliberately kept.
+        unsafe {
+            std::env::remove_var("KIT_HOME");
+        }
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     /// The delta stream in channel order: exactly what the Control Room sees.
@@ -239,8 +275,11 @@ mod tests {
     }
 
     impl Ledger {
-        /// Checks the stream invariants on every delta: each run is announced
-        /// `Queued` first, and no more than the cap are ever `Running` at once.
+        /// Checks the stream invariants on every delta. A run opens with
+        /// `Queued` and never sees it again: a late Queued would regress a
+        /// Running row, or revive a finished one, in the Control Room. Nothing
+        /// follows a terminal state, and no more than the cap are ever
+        /// `Running` at once.
         fn record(&mut self, id: RunId, delta: RunDelta) {
             match delta {
                 RunDelta::State(state) => {
@@ -248,6 +287,14 @@ mod tests {
                     assert!(
                         !seen.is_empty() || state == RunState::Queued,
                         "{id}: first state {state:?}, expected Queued"
+                    );
+                    assert!(
+                        seen.is_empty() || state != RunState::Queued,
+                        "{id}: Queued after {seen:?}"
+                    );
+                    assert!(
+                        !seen.last().is_some_and(|s| s.is_terminal()),
+                        "{id}: {state:?} after terminal {seen:?}"
                     );
                     seen.push(state);
                     if state == RunState::Running {
