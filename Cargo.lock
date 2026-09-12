@@ -502,6 +502,7 @@ name = "kit-cli"
 version = "1.0.0-alpha.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "kit-agents",
  "kit-core",
  "kit-gate",

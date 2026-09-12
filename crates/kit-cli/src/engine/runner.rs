@@ -465,6 +465,10 @@ async fn live_agent(
     // First tick is immediate; consume so we do not race spawn.
     poll.tick().await;
 
+    // The adapter's pipe readers hold the only senders. Once the agent exits
+    // they drop, and a closed channel is always ready: under `biased` it would
+    // starve the exit poll below (Session B: kit spun until the run timeout).
+    let mut pipes_open = true;
     let outcome = loop {
         if cancel.is_some_and(|c| c.is_cancelled()) {
             let _ = handle.kill().await;
@@ -491,7 +495,7 @@ async fn live_agent(
                 let _ = handle.kill().await;
                 break AgentPhase::TimedOut;
             }
-            maybe = local_rx.recv() => {
+            maybe = local_rx.recv(), if pipes_open => {
                 match maybe {
                     Some(delta) => {
                         if let RunDelta::Output(chunk) = &delta {
@@ -503,6 +507,7 @@ async fn live_agent(
                     }
                     None => {
                         // Output pipes closed; keep polling exit until done/kill/timeout.
+                        pipes_open = false;
                     }
                 }
             }
@@ -817,5 +822,109 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Real child that exits at once. As in kit-agents' `spawn_streaming`, the
+    /// only sender lives in the stdout reader and drops at EOF (agent exit).
+    struct ExitAtOnce;
+
+    #[async_trait::async_trait]
+    impl Agent for ExitAtOnce {
+        fn kind(&self) -> AgentKind {
+            AgentKind::Codex
+        }
+
+        async fn probe(&self) -> kit_agents::AgentStatus {
+            kit_agents::AgentStatus::missing(AgentKind::Codex)
+        }
+
+        async fn spawn(
+            &self,
+            _spec: &RunSpec,
+            worktree: &std::path::Path,
+            tx: mpsc::Sender<RunDelta>,
+        ) -> std::result::Result<Box<dyn kit_agents::AgentHandle>, kit_agents::SpawnError> {
+            let mut cmd = if cfg!(windows) {
+                let mut c = tokio::process::Command::new("cmd");
+                c.args(["/C", "exit", "0"]);
+                c
+            } else {
+                tokio::process::Command::new("true")
+            };
+            let mut child = cmd
+                .current_dir(worktree)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+                .map_err(|source| kit_agents::SpawnError::Io {
+                    kind: AgentKind::Codex,
+                    source,
+                })?;
+            let stdout = child.stdout.take().expect("piped stdout");
+            tokio::spawn(async move {
+                use tokio::io::AsyncBufReadExt;
+                let mut lines = tokio::io::BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let _ = tx.send(RunDelta::Output(format!("{line}\n"))).await;
+                }
+            });
+            Ok(Box::new(ExitHandle(std::sync::Mutex::new(child))))
+        }
+    }
+
+    /// `AgentHandle` must be `Sync`; `tokio::process::Child` is not.
+    struct ExitHandle(std::sync::Mutex<tokio::process::Child>);
+
+    #[async_trait::async_trait]
+    impl kit_agents::AgentHandle for ExitHandle {
+        async fn wait(&mut self) -> std::io::Result<i32> {
+            let child = self.0.get_mut().expect("child");
+            Ok(child.wait().await?.code().unwrap_or(1))
+        }
+
+        async fn kill(&mut self) -> std::io::Result<()> {
+            self.0.get_mut().expect("child").kill().await
+        }
+
+        async fn try_wait(&mut self) -> std::io::Result<Option<i32>> {
+            let child = self.0.get_mut().expect("child");
+            Ok(child.try_wait()?.map(|status| status.code().unwrap_or(1)))
+        }
+    }
+
+    /// Session B: once the agent exits its pipes close and `recv()` yields
+    /// `None` on every poll. The biased select must still reach the exit poll.
+    #[tokio::test]
+    async fn live_agent_sees_exit_after_output_pipes_close() {
+        let dir = std::env::temp_dir();
+        let opts = RunOptions {
+            task: "exit at once".into(),
+            dry_run: Some(false),
+            bounds: Bounds {
+                timeout: Duration::from_secs(10),
+                ..Bounds::default()
+            },
+            ..RunOptions::default()
+        };
+        let id = RunId::default();
+        let (mut output, mut truncated) = (String::new(), false);
+        let run = live_agent(
+            &ExitAtOnce,
+            &opts,
+            &id,
+            &dir,
+            &dir,
+            &None,
+            &mut output,
+            &mut truncated,
+            None,
+        );
+        let phase = tokio::time::timeout(Duration::from_secs(2), run)
+            .await
+            .expect("exit poll starved: live_agent never saw the agent exit")
+            .expect("live_agent");
+        assert_eq!(phase, AgentPhase::Ok);
+        assert!(output.contains("kit: codex exited with code 0"), "{output}");
     }
 }
