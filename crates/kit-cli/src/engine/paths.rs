@@ -20,11 +20,16 @@ pub fn kit_home_test_lock() -> std::sync::MutexGuard<'static, ()> {
 #[cfg(test)]
 pub fn bare_git_fixture() -> std::path::PathBuf {
     use std::process::Command;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    // Parallel tests can read the same clock tick; without the counter two
+    // fixtures share a dir and one wipes the other mid-`git init`.
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "kit-bare-repo-{}-{}",
+        "kit-bare-repo-{}-{}-{}",
         std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
