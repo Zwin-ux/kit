@@ -1,10 +1,11 @@
 //! Grok Build adapter — `grok -p` single-turn with always-approve.
 
-use crate::process::{command_for, probe_binary, spawn_streaming};
+use crate::process::{probe_binary, spawn_streaming};
 use crate::skills;
 use crate::{Agent, AgentHandle, AgentStatus, SpawnError};
 use kit_core::{AgentKind, RunDelta, RunSpec};
 use std::path::Path;
+use tokio::process::Command;
 use tokio::sync::mpsc;
 
 pub struct GrokAgent;
@@ -45,18 +46,27 @@ impl Agent for GrokAgent {
             )))
             .await;
 
-        let mut cmd = command_for("grok");
-        cmd.arg("-p")
-            .arg(&prompt)
-            .arg("--cwd")
-            .arg(worktree)
-            .arg("--always-approve");
-        // Prefer streaming JSON when available; harmless if ignored.
-        cmd.arg("--output-format").arg("streaming-json");
-        cmd.current_dir(worktree);
-
-        spawn_streaming(AgentKind::Grok, cmd, tx).await
+        spawn_streaming(AgentKind::Grok, grok_command(&prompt, worktree), tx).await
     }
+}
+
+/// `grok -p <prompt> --cwd <worktree> …`, spawned directly — never via `cmd /C`.
+///
+/// Grok Build ships a native binary, so it needs no npm shim. `cmd.exe` ends a
+/// `/C` command line at the first newline: the multi-line Kit prompt was cut to
+/// its title and every flag after it never reached grok (Session B stall).
+fn grok_command(prompt: &str, worktree: &Path) -> Command {
+    let mut cmd = Command::new("grok");
+    cmd.arg("-p")
+        .arg(prompt)
+        .arg("--cwd")
+        .arg(worktree)
+        .arg("--always-approve")
+        // NDJSON, one ACP session update per line (grok 1.0.25 `--help`).
+        .arg("--output-format")
+        .arg("streaming-json");
+    cmd.current_dir(worktree);
+    cmd
 }
 
 async fn install_skills(
@@ -76,5 +86,37 @@ async fn install_skills(
             Some(src)
         }
         Err(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    /// Session B: through `cmd /C` the prompt stopped at its first newline and
+    /// `--cwd`, `--always-approve` and `--output-format` were dropped with it.
+    #[test]
+    fn grok_command_hands_multiline_prompt_and_flags_to_grok_itself() {
+        let worktree = Path::new("wt");
+        let prompt = "# Kit Control Room\n\n## User task\n\nsay \"hi\" & exit\n";
+        let command = grok_command(prompt, worktree);
+        let std_cmd = command.as_std();
+        assert_eq!(std_cmd.get_program(), OsStr::new("grok"));
+        let args: Vec<&OsStr> = std_cmd.get_args().collect();
+        assert_eq!(
+            args,
+            [
+                "-p",
+                prompt,
+                "--cwd",
+                "wt",
+                "--always-approve",
+                "--output-format",
+                "streaming-json",
+            ]
+            .map(OsStr::new)
+        );
+        assert_eq!(std_cmd.get_current_dir(), Some(worktree));
     }
 }
