@@ -320,7 +320,14 @@ mod tests {
         assert_eq!(t.warn, Color::Yellow);
         assert_eq!(t.fail_wash, Color::Black);
         for c in [
-            t.bg, t.fg, t.muted, t.accent, t.success, t.danger, t.warn, t.fail_wash,
+            t.bg,
+            t.fg,
+            t.muted,
+            t.accent,
+            t.success,
+            t.danger,
+            t.warn,
+            t.fail_wash,
         ] {
             assert!(!matches!(c, Color::Rgb(_, _, _)), "{c:?}");
         }
