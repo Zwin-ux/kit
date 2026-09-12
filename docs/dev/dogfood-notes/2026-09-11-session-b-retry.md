@@ -64,6 +64,36 @@ So Session B's grok got only the prompt title. It never received `--cwd`, `--alw
 
 The fix spawns the native `grok.exe` directly. Still open: codex (`codex.rs:68`) and claude (`claude.rs:49`) pass the same multi-line prompt through `cmd /C`.
 
+### codex and claude (zero-credit probe, not fixed)
+
+Same `cmd /C` launch and argv as the adapters, with stand-ins first on PATH that print what they receive. The codex stand-in is an npm-style `codex.cmd` forwarding `%*`. The claude stand-in is a `claude.exe`, which is what `cmd` finds first on this host.
+
+```
+codex:  argc=9  exec -C <wt> -s workspace-write --json --color never "# Kit Control Room — agent run"
+claude: argc=2  -p "# Kit Control Room — agent run"    (--dangerously-skip-permissions dropped)
+```
+
+Codex gets its flags but only the prompt title. That fits the historical codex receipt `01KYZZ06CZZ3TJCJ70457JYNJ9` (empty diff, vacuous gate). Both are npm `.cmd` shims, which cannot take a multi-line argument directly, so they likely need the prompt on stdin or in a file.
+
+## Ollama prompt on stdin could deadlock spawn (fixed on this branch)
+
+`spawn_streaming_with_stdin` wrote the whole prompt before starting the stdout/stderr readers, and the runner arms the run timeout only after spawn returns.
+
+Zero-credit repro through the real `OllamaAgent::spawn`, with a stand-in `ollama.cmd` that writes stderr before reading stdin:
+
+```
+256 KiB prompt,  5,000 stderr lines: spawn returned after 121 ms, child exit 0
+8 MiB prompt,   50,000 stderr lines: DEADLOCK: spawn still blocked after 20.0 s
+```
+
+On Windows, tokio buffers up to 2 MiB of a stdin write; on Unix a 64 KiB pipe is enough to block. The fix starts the readers first and writes the prompt from its own task.
+
+## Grok leader / daemon
+
+No grok leader or daemon outlived the run. At 06:43:01Z grok 28556 had no child processes, and `grok leader list` reported none.
+
+Kit's delta channel had closed, meaning both pipe readers hit EOF. With the channel still open, `poll.tick()` would have seen grok's exit. That closure is what sends `live_agent` into its spin.
+
 ## Also found
 
 - `--json` stdout is not a single envelope. `git worktree add` inherits kit's stdout (`engine/worktree.rs`, `.status()`), so stdout starts with `HEAD is now at 65e1a9b init fixture`.
