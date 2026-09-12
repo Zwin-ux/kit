@@ -1,0 +1,18 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / CONTROL ROOM                             [ALL]  2 RUNNING  1 FAIL  0 GATED"
+"┌ runs ────────────────────────────────────────────────────────────────────────┐"
+"│REPO           AGENT        TASK                     STATE       GATE         │"
+"│  kit          codex·eng    port guard.js            ⠋ RUN 2m    --           │"
+"│  kit          grok·design  frame clock              ⠋ RUN 2m    --           │"
+"│▶ trenchwire   codex·eng    fix red CI               DONE        FAIL         │"
+"│^ tsc: 3 errors — Type 'string' is not assignable                             │"
+"│  guardian     claude·qa    855-case suite           DONE        PASS         │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [↑↓] select  [d]ispatch  [enter] open  [g]ate  [k]ill  [r]etry  [?]help        "

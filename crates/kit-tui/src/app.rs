@@ -637,14 +637,15 @@ impl App {
         let marks_dirty = match &event {
             AppEvent::AnimationTick => {
                 let next = self.clock.tick.wrapping_add(1);
-                // Elapsed labels: once per second. Flash expiry: every tick while live.
                 let flash_active = self.flash.is_some();
-                let elapsed_tick = next.is_multiple_of(TICK_HZ)
-                    && self
-                        .runs
-                        .iter()
-                        .any(|r| matches!(r.state, RunState::Running | RunState::Gating));
-                self.motion && (elapsed_tick || flash_active)
+                let live = self
+                    .runs
+                    .iter()
+                    .any(|r| matches!(r.state, RunState::Running | RunState::Gating));
+                // Spinner advances every 2 ticks (10 Hz at TICK_HZ=20). Idle rooms
+                // still skip redraw. KIT_MOTION=off keeps the resting label.
+                let spinner_tick = live && next.is_multiple_of(2);
+                self.motion && (spinner_tick || flash_active)
             }
             other => other.is_redraw_worthy(),
         };
@@ -1676,8 +1677,13 @@ fn gate_log_line_count(run: &RunRow) -> usize {
     gate_log_lines(run).len()
 }
 
+/// Braille spinner — Unicode, not a Nerd Font. Resting frame is unused
+/// when motion is off (label stays `RUN 2m` so snapshots and reduced-motion
+/// users see a still Control Room).
+const RUN_SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
+
 /// Public helpers used by the UI for state/gate labels.
-pub fn format_state_label(run: &RunRow, clock: &Clock) -> String {
+pub fn format_state_label(run: &RunRow, clock: &Clock, motion: bool) -> String {
     let label = match run.state {
         RunState::Queued => "QUEUED",
         RunState::Running => "RUN",
@@ -1688,11 +1694,19 @@ pub fn format_state_label(run: &RunRow, clock: &Clock) -> String {
         RunState::Error => "ERROR",
     };
     let elapsed = run.elapsed_label(clock);
-    if matches!(run.state, RunState::Running | RunState::Gating) && !elapsed.is_empty() {
-        format!("{label} {elapsed}")
-    } else {
-        label.to_string()
+    let live = matches!(run.state, RunState::Running | RunState::Gating);
+    let mut out = String::new();
+    if motion && live {
+        let i = clock.frame(RUN_SPINNER.len(), 2);
+        out.push(RUN_SPINNER[i]);
+        out.push(' ');
     }
+    out.push_str(label);
+    if live && !elapsed.is_empty() {
+        out.push(' ');
+        out.push_str(&elapsed);
+    }
+    out
 }
 
 pub fn format_gate_label(run: &RunRow) -> String {
@@ -1829,7 +1843,7 @@ mod tests {
     }
 
     #[test]
-    fn active_run_dirties_once_per_second_for_elapsed() {
+    fn active_run_dirties_on_spinner_cadence() {
         let mut app = App::with_motion(true);
         let id = RunId("01ACTIVE000000000000000000".into());
         app.upsert_run({
@@ -1839,12 +1853,44 @@ mod tests {
             r
         });
         app.clear_dirty();
-        for _ in 0..19 {
-            app.update(AppEvent::AnimationTick);
-        }
-        assert!(!app.is_dirty());
         app.update(AppEvent::AnimationTick);
-        assert!(app.is_dirty());
+        assert!(
+            !app.is_dirty(),
+            "odd ticks must not redraw (spinner every 2)"
+        );
+        app.update(AppEvent::AnimationTick);
+        assert!(app.is_dirty(), "even ticks redraw a live RUNNING row");
+    }
+
+    #[test]
+    fn running_label_spins_only_when_motion_on() {
+        let mut run = RunRow::new(
+            RunId("01SPIN00000000000000000000".into()),
+            "kit",
+            "codex",
+            "t",
+        );
+        run.state = RunState::Running;
+        run.active_since_tick = Some(0);
+        let clock = Clock { tick: 2 };
+        let moving = format_state_label(&run, &clock, true);
+        let still = format_state_label(&run, &clock, false);
+        assert!(
+            moving.starts_with('⠙') && moving.contains("RUN"),
+            "motion-on RUNNING uses the clock frame: {moving}"
+        );
+        assert_eq!(still, "RUN 0s", "motion-off keeps the resting word+elapsed");
+        let done = RunRow::new(
+            RunId("01DONE00000000000000000000".into()),
+            "kit",
+            "codex",
+            "t",
+        );
+        assert_eq!(
+            format_state_label(&done, &clock, true),
+            "QUEUED",
+            "idle states never spin"
+        );
     }
 
     #[test]

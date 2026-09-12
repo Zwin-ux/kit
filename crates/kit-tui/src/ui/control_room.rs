@@ -182,7 +182,7 @@ fn data_line(
 ) -> Line<'static> {
     let marker = if selected { "▶ " } else { "  " };
     let repo = format!("{marker}{}", run.repo);
-    let state_label = format_state_label(run, &app.clock);
+    let state_label = format_state_label(run, &app.clock, app.motion_enabled());
     let gate_label = format_gate_label(run);
     let base = if selected {
         theme.selected_row()

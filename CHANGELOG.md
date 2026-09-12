@@ -16,6 +16,7 @@ Not 1.0.0. npm `@mzwin/kit` is still the 0.1 workbench. This is the Rust Control
 - Control Room FAIL annotation is full-width so `^ tsc: 3 errors` stays readable at 60×12
 - Dispatch footer includes `↑↓`; one-repo layouts no longer leave a vacant left well
 - Run detail / attach headers use `vendor·role` (`codex·eng`), matching Control Room and Board
+- RUNNING/GATING rows breathe with a Braille spinner on the one animation clock; `KIT_MOTION=off` stays still
 
 ### Changed
 - README is Control Room first. 0.1 npm workbench is documented as legacy.

@@ -202,6 +202,22 @@ mod tests {
             frame.contains("^ tsc: 3 errors"),
             "FAIL first-error must stay readable at 80×14: {frame}"
         );
+        assert!(
+            !frame.contains('⠋') && !frame.contains('⠙'),
+            "motion-off snapshots must rest: {frame}"
+        );
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
+    fn populated_control_room_motion_on_snapshot() {
+        let mut app = App::with_motion(true);
+        app.load_prd_fixture();
+        let frame = render_to_string(&app, 80, 14);
+        assert!(
+            frame.contains('⠋') && frame.contains("RUN"),
+            "motion-on RUNNING must breathe: {frame}"
+        );
         insta::assert_snapshot!(frame);
     }
 

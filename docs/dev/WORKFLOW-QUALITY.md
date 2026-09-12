@@ -137,6 +137,7 @@ Use `scheduler_create` / UI schedules. Prefer **audit** on a timer so implement 
 |----------|------|
 | `kit-luna-storm` | Older P0–P2 diagnose storm (still useful) |
 | `kit-quality-cycle` | **Primary** quality ladder (this doc) |
+| `kit-craft-cycle` | Design + product + eng in parallel, then optional Power slice. Use before TUI/motion work. |
 
 ---
 

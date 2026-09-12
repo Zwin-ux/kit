@@ -63,7 +63,7 @@ Env flags:
 | `KIT_FULL_AUTO=1` | Bypass agent approval prompts (dangerous — sandboxes only) |
 | `KIT_SKILLS_DIR=…` | Override skill pack root (see Skills) |
 | `KIT_OLLAMA_MODEL=…` | Model for Ollama adapter (default `llama3.2`) |
-| `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
+| `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion (RUNNING stays a still `RUN` label) |
 | `KIT_THEME=high` | High-contrast ANSI palette (`high-contrast` / `hc` also work) |
 
 Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md) · honest state: [`docs/dev/design-package/00-HONEST-STATE.md`](docs/dev/design-package/00-HONEST-STATE.md) · PRD: [`docs/dev/PRD-1.0.md`](docs/dev/PRD-1.0.md)

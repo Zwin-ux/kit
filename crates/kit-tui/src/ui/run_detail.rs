@@ -122,7 +122,7 @@ fn draw_run_header(frame: &mut Frame, app: &App, run: &RunRow, area: Rect, theme
         .constraints([Constraint::Length(1), Constraint::Length(1)])
         .split(area);
 
-    let state = format_state_label(run, &app.clock);
+    let state = format_state_label(run, &app.clock, app.motion_enabled());
     let gate = format_gate_label(run);
     let l1 = format!(
         "KIT / RUN  {} · {} · {}",

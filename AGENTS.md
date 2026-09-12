@@ -27,7 +27,10 @@ See **`docs/dev/ORCHESTRATION.md`**.
 Workflow sketch: `.grok/workflows/kit-luna-storm.rhai` (local; `.grok` may be gitignored).  
 **Quality ladder (long-running):** `docs/dev/WORKFLOW-QUALITY.md` + workflow `kit-quality-cycle`  
   (audit → skeptic → plan → implement → prove). Git copy: `docs/dev/workflows/kit-quality-cycle.rhai`.  
+**Craft ladder (design | product first):** workflow `kit-craft-cycle` before TUI/motion slices. Git copy: `docs/dev/workflows/kit-craft-cycle.rhai`.  
 CEO brief template: `docs/dev/tasks/CEO-BRIEF-next.md`.
+
+Claude-grade coding practice (always): Karpathy surgical diffs and tests-as-success; addyosmani spec → plan → TDD → five-axis review; frozen contracts stay Claude-only; motion is live-work only (RUNNING/GATING spinner); mascot is parked.
 
 ## Engineering skills (always)
 
@@ -113,7 +116,7 @@ Legacy Node packages still exist under `packages/` (0.1.x); 1.0 is the Rust bina
 | Done | In flight / next |
 |------|------------------|
 | M0 event loop (F1) | F4 Dispatch + Board |
-| F2 Control Room table | F5 Theme / motion / mascot |
+| F2 Control Room table | F5 Theme / motion (mascot parked) |
 | F3 Run detail | F6 Layout + hit-testing |
 | M3 gate port (Codex) | M1 engine (Codex) enables live runs |
 
