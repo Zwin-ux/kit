@@ -82,7 +82,7 @@ Semantic tokens (truecolor default). Map to ANSI16 when truecolor unavailable; d
 
 Kit 0.1 jittered because eight widgets each owned a timer. 1.0 has one clock (`AppEvent::AnimationTick`, 20 Hz). Motion is a **product signal**, not decoration:
 
-- **What moves:** RUNNING and GATING rows only — a one-cell Braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧`) plus the elapsed word. FAIL/DONE/idle rooms stay still.
+- **What moves:** RUNNING and GATING rows only — a one-cell Braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧`) plus the elapsed word. FAIL/DONE/idle rooms stay still. `--demo` includes one GATING row so motion means “checking done,” not “session manager.”
 - **Cadence:** spinner frame every 2 ticks (10 Hz). Redraw only then, or while a flash is live. Idle Control Room does not paint on tick.
 - **Reduced motion:** `KIT_MOTION=off` or `NO_COLOR` → no spinner, no dirty-on-tick for live rows. The word `RUN` still carries the state (never color-alone).
 - **Not motion:** mascot GIF, blink, progress % columns, Nerd Font glyphs.

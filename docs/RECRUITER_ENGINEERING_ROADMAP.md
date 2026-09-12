@@ -1,5 +1,8 @@
 # Recruiter Engineering Roadmap
 
+> **0.1 workbench. Not the 1.0 product.**  
+> Kit 1.0 is the Control Room: dispatch, gate, receipt. This page is the old pack/ready/link/unify installer track. Do not use it as the GitHub first paint or build a landing page from it.
+
 KIT already has a real monorepo, core tests, a published CLI package, packs, adapters, and a TUI. The next releases should prove production behavior: safe writes, cross-platform execution, machine-readable output, and a reproducible release.
 
 ## Release 1 — Cross-platform end-to-end harness

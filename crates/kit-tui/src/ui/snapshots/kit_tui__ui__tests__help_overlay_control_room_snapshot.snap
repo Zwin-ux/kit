@@ -2,7 +2,7 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / ┌ help ────────────────────────────────────────────────────────────┐ GATED"
+"KIT / ┌ help ────────────────────────────────────────────────────────────┐1 FAIL"
 "┌ runs│Kit Control Room — keys                                           │─────┐"
 "│REPO │Global                                                            │     │"
 "│  kit│  ?          toggle this help                                     │     │"

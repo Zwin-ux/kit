@@ -1,8 +1,4 @@
 <p align="center">
-  <img src="docs/assets/readme-banner.png" alt="KIT — multi-agent control room" width="720" />
-</p>
-
-<p align="center">
   <strong>Dispatch many agents. Watch them in one place. Nothing ships unproven.</strong><br />
   Local Control Room for Codex, Claude, Grok, and Ollama — worktrees, gates, receipts.
 </p>
@@ -12,16 +8,27 @@
   <img src="https://img.shields.io/badge/status-1.0%20alpha-00E6CC?style=for-the-badge" alt="1.0 alpha" />
 </p>
 
+`--demo` lands on FAIL. `r` retries with the gate context. That is the product.
+
+```
+KIT / CONTROL ROOM                    [ALL]  1 RUNNING  1 GATING  1 FAIL
+┌ runs ─────────────────────────────────────────────────────────────────┐
+│  kit          codex·eng  port guard.js            RUN 2m      --      │
+│  kit          grok·eng   frame clock              GATING 2m   --      │
+│▶ trenchwire   codex·eng  fix red CI               DONE        FAIL    │
+│^ tsc: 3 errors — Type 'string' is not assignable                      │
+│  guardian     claude·eng 855-case suite           DONE        PASS    │
+└───────────────────────────────────────────────────────────────────────┘
+ [↑↓] select  [d]ispatch  [enter] open  [g]ate  [k]ill  [r]etry  [?]help
+```
+
 ---
 
 ## 30 seconds
 
 ```bash
-# From this repo
-cargo run -p kit-cli -- doctor          # which agents are ready
-cargo run -p kit-cli -- --demo          # Control Room with FAIL + retry fixture
-cargo run -p kit-cli                    # empty room; d = dispatch live agents
-cargo run -p kit-cli -- run --dry-run --task "smoke" --json
+# From this repo — lands on FAIL, r retries
+cargo run -p kit-cli -- --demo
 ```
 
 Repo shims (`.\kit.cmd` / `.\kit.ps1`, or `. .\scripts\use-rust-kit.ps1`) launch the Rust binary. Bare `kit` on this Windows PATH is still npm `@mzwin/kit@0.1.3` until you dot-source `scripts/use-rust-kit.ps1` or put `target\release` on PATH.

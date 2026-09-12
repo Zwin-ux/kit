@@ -203,6 +203,10 @@ mod tests {
             "FAIL first-error must stay readable at 80×14: {frame}"
         );
         assert!(
+            frame.contains("GATING") && !frame.contains("GATED"),
+            "header must say GATING, never 0 GATED: {frame}"
+        );
+        assert!(
             !frame.contains('⠋') && !frame.contains('⠙'),
             "motion-off snapshots must rest: {frame}"
         );
@@ -215,8 +219,8 @@ mod tests {
         app.load_prd_fixture();
         let frame = render_to_string(&app, 80, 14);
         assert!(
-            frame.contains('⠋') && frame.contains("RUN"),
-            "motion-on RUNNING must breathe: {frame}"
+            frame.contains('⠋') && frame.contains("GATING") && frame.contains("RUN"),
+            "motion-on live work must breathe; GATING is the wedge: {frame}"
         );
         insta::assert_snapshot!(frame);
     }
@@ -234,6 +238,10 @@ mod tests {
         assert!(
             frame.contains("^ tsc: 3 errors"),
             "FAIL first-error must stay readable at 60×12: {frame}"
+        );
+        assert!(
+            frame.contains("GATING"),
+            "60-col STATE must keep GATING: {frame}"
         );
         insta::assert_snapshot!(frame);
     }

@@ -1499,11 +1499,11 @@ impl App {
             "grok",
             "frame clock",
         );
-        r1.state = RunState::Running;
+        r1.state = RunState::Gating;
         r1.active_since_tick = Some(0);
         r1.worktree = Some(PathBuf::from("/tmp/kit-wt-01FIXRUN1"));
-        r1.output = "grok: event loop select! arms online\nredraw policy: idle quiet".into();
-        r1.persona = Persona::Design;
+        r1.output = "grok: running kit.toml gate\nfmt ok\nclippy …\ncargo test --workspace".into();
+        r1.persona = Persona::Eng;
         r1.seq = 1;
         self.upsert_run(r1);
 
@@ -1539,7 +1539,7 @@ impl App {
             firewall_blocks: vec![],
             duration: Duration::from_secs(12),
         });
-        r2.persona = Persona::Qa;
+        r2.persona = Persona::Eng;
         r2.seq = 2;
         self.upsert_run(r2);
 
@@ -2447,11 +2447,18 @@ mod tests {
     fn prd_fixture_matches_section_4_2_shape() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
-        assert_eq!(app.running_count(), 2);
+        assert_eq!(app.running_count(), 1);
+        assert_eq!(app.gated_count(), 1);
+        assert_eq!(app.fail_count(), 1);
         assert_eq!(app.runs.len(), 4);
         let order = app.display_order();
         assert_eq!(app.runs[order[0]].state, RunState::Running);
+        assert_eq!(app.runs[order[1]].state, RunState::Gating);
         assert_eq!(app.runs[order[2]].state, RunState::Fail);
+        assert!(
+            app.runs.iter().all(|r| r.persona == Persona::Eng),
+            "demo table is ENG-only so AGENT reads vendor, not a third axis"
+        );
         let fail = app.runs.iter().find(|r| r.state == RunState::Fail).unwrap();
         assert_eq!(
             fail.gate_summary().as_deref(),

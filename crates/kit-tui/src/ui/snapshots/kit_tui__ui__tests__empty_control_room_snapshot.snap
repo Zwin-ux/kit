@@ -1,9 +1,8 @@
 ---
 source: crates/kit-tui/src/ui/mod.rs
-assertion_line: 153
 expression: frame
 ---
-"KIT / CONTROL ROOM                             [ALL]  0 RUNNING  0 FAIL  0 GATED"
+"KIT / CONTROL ROOM                            [ALL]  0 RUNNING  0 GATING  0 FAIL"
 "┌──────────────────────────────────────────────────────────────────────────────┐"
 "│                                                                              │"
 "│                                  No runs yet                                 │"

@@ -35,20 +35,20 @@ pub fn draw(frame: &mut Frame, app: &App) {
     let filter = app.run_filter.label();
     let stats = if agents.is_empty() {
         format!(
-            "[{filter}]  {} RUNNING  {} FAIL  {} GATED",
+            "[{filter}]  {} RUNNING  {} GATING  {} FAIL",
             app.running_count(),
-            app.fail_count(),
-            app.gated_count()
+            app.gated_count(),
+            app.fail_count()
         )
     } else if app.runs.is_empty() {
         agents
     } else {
         format!(
-            "[{filter}]  {}  ·  {}R {}F {}G",
+            "[{filter}]  {}  ·  {}R {}G {}F",
             agents,
             app.running_count(),
-            app.fail_count(),
-            app.gated_count()
+            app.gated_count(),
+            app.fail_count()
         )
     };
     draw_header(
@@ -143,11 +143,16 @@ fn column_widths(total: u16) -> [usize; 5] {
         used += w[i];
     }
     w[4] = usable.saturating_sub(used).max(1);
-    // `codex·eng` / `grok·design` must not collapse before TASK does.
+    // `codex·eng` and `GATING 2m` must not collapse before TASK does.
     if w[1] < 12 && w[2] > 20 {
         let need = 12 - w[1];
         w[2] -= need;
         w[1] += need;
+    }
+    if w[3] < 12 && w[2] > 16 {
+        let need = 12 - w[3];
+        w[2] -= need;
+        w[3] += need;
     }
     w
 }

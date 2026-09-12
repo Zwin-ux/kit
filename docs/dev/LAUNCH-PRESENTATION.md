@@ -1,5 +1,7 @@
 # Kit launch presentation / GitHub Pages
 
+> **Parked for 1.0.** The public surface is the Control Room TUI and the README still-frame of FAIL → retry. Do not ship a scroll-world homepage, fox mascot hero, or pack/ready/link installer story as the first paint.
+
 **Must-include:** build the public scroll landing page with **[scroll-world](https://github.com/oso95/scroll-world)** ([oso95/scroll-world](https://github.com/oso95/scroll-world)).
 
 ## Requirement

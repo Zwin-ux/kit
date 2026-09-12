@@ -2,11 +2,11 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / CONTROL ROOM         [ALL]  2 RUNNING  1 FAIL  0 GATED"
+"KIT / CONTROL ROOM        [ALL]  1 RUNNING  1 GATING  1 FAIL"
 "┌ runs ────────────────────────────────────────────────────┐"
 "│REPO      AGENT    TASK             STATE     GATE        │"
 "│  kit     codex·e… port guard.js    RUN 2m    --          │"
-"│  kit     grok·de… frame clock      RUN 2m    --          │"
+"│  kit     grok·eng frame clock      GATING 2m --          │"
 "│▶ trench… codex·e… fix red CI       DONE      FAIL        │"
 "│^ tsc: 3 errors — Type 'string' is not assignable         │"
 "│  guardi… claude·… 855-case suite   DONE      PASS        │"
