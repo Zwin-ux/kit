@@ -1,4 +1,4 @@
-# Session B retry — 2026-09-11 (still blocked, not a receipt)
+# Session B retry — 2026-09-11/12 (receipt `01M2A7DVMF9N1RX7XYQGX2A5Q4`)
 
 Factory, branch `factory/opus5-session-b` (base `815e5d7`). Fixture: fresh git repo, one commit with `README.md` and
 
@@ -7,16 +7,58 @@ Factory, branch `factory/opus5-session-b` (base `815e5d7`). Fixture: fresh git r
 test = 'echo ok'
 ```
 
-## Result
+## Receipt (2026-09-12, after `e613bfb`)
 
-No new receipt. Live grok run `01M2A5KZ7G5ARQ0A06S4V3WB8N` did the task: its worktree `README.md` gained `session-b ok` at 06:42:25Z. Grok exited about 06:42:35Z. Kit then spun until `timeout 120` killed it (exit 124, 2m0s). `~/.kit/runs/01M2A5KZ7G5ARQ0A06S4V3WB8N` does not exist. `KIT_FULL_AUTO` was not set.
+One live grok run, `KIT_FULL_AUTO` not set, exit 0 in 24.7 s:
 
 ```sh
 timeout 120 target/debug/kit.exe run --agent grok --live --json --repo target/session-b-fixture \
   --task "Append exactly one line 'session-b ok' to README.md. It is a one-line docs edit: do not run tests or explore."
 ```
 
-The run is no longer silent. Stderr now streams deltas and reports silence (`8eb9784`):
+| Fact | Evidence |
+|------|----------|
+| New `~/.kit/runs` id | `01M2A7DVMF9N1RX7XYQGX2A5Q4` (07:13:37Z → 07:14:01Z) |
+| `gate.checks` non-empty | `{"label":"test","command":"echo ok","status":"pass","exit_code":0}`, `gate.passed: true` |
+| `output.log` has spawn and exit | L2 `kit: spawning grok -p --cwd C:\Users\mzwin\.kit\worktrees\01M2A7DVMF9N1RX7XYQGX2A5Q4 --always-approve`; L207 `kit: grok exited with code 0` |
+| Not a dry-run | `output.log` starts with `kit: installed 39 skills for grok` |
+
+The diff adds `session-b ok` to `README.md`.
+
+Stdout carried git's `HEAD is now at 65e1a9b init fixture` before the envelope. It is stripped below; the `engine/worktree.rs` fix belongs to factory-queued.
+
+```json
+{
+  "command": "run",
+  "data": {
+    "gatePassed": true,
+    "gateVacuous": false,
+    "id": "01M2A7DVMF9N1RX7XYQGX2A5Q4",
+    "receiptDir": "C:\\Users\\mzwin\\.kit\\runs\\01M2A7DVMF9N1RX7XYQGX2A5Q4",
+    "state": "pass",
+    "worktreeRemoved": false
+  },
+  "error": null,
+  "ok": true,
+  "schemaVersion": 1,
+  "warnings": []
+}
+```
+
+Stderr shows the whole run: `kit: state running`, skills, `kit: spawning grok …`, grok's `thought:` / `text:` stream, `kit: grok exited with code 0`, `kit: state gating`, `kit: state pass`.
+
+Zero-credit second proof against the same bar: `KIT_OLLAMA_MODEL=llama3.1`, task `Reply with the single word ok.`, exit 0 in 18.7 s.
+
+- New id `01M2A7H6HX5PYN18RV4EP0A4EC`; `gate.checks` holds the same `echo ok` pass.
+- `output.log` L2 `kit: spawning ollama run llama3.1 (cwd …)`, L25 `kit: ollama exited with code 0`; first line `kit: installed 39 skills for ollama context`.
+- Envelope: `state: pass`, `gatePassed: true`, `gateVacuous: false`.
+- The diff is empty, yet `worktreeRemoved` is false: kit's own untracked `.agents/` and `AGENTS.md` keep the worktree from counting as clean.
+
+## First retry (2026-09-11, blocked)
+
+No new receipt. Same command as above. Live grok run `01M2A5KZ7G5ARQ0A06S4V3WB8N` did the task: its worktree `README.md` gained `session-b ok` at 06:42:25Z. Grok exited about 06:42:35Z. Kit then spun until `timeout 120` killed it (exit 124, 2m0s). `~/.kit/runs/01M2A5KZ7G5ARQ0A06S4V3WB8N` does not exist.
+
+The run was no longer silent. Stderr streamed deltas and reported silence (`8eb9784`):
 
 ```
 kit: state running
@@ -33,7 +75,7 @@ kit: still running (grok), no output for 30s — Ctrl-C to abort
 kit: still running (grok), no output for 60s — Ctrl-C to abort
 ```
 
-## Root cause 1 — engine exit poll starves (blocks Session B; engine-owned, not edited)
+## Root cause 1 — engine exit poll starved (fixed, `e613bfb`)
 
 `crates/kit-cli/src/engine/runner.rs`, `live_agent` (`815e5d7`, lines 478-538): `tokio::select! { biased; … maybe = local_rx.recv() => { … None => {} } _ = poll.tick() => try_wait … }`.
 
@@ -52,7 +94,9 @@ Evidence:
 
 - Session B (22:34 and 22:41 local) is consistent with this. Both grok processes logged `handle_prompt.done` and `worker_join` (05:37:38Z, 05:43:45Z), and kit never wrote a receipt.
 
-Suggested fix for the engine owner: `let mut pipes_open = true;` and `maybe = local_rx.recv(), if pipes_open => match maybe { Some(delta) => …, None => pipes_open = false }`.
+Fix: `let mut pipes_open = true;` and `maybe = local_rx.recv(), if pipes_open => match maybe { Some(delta) => …, None => pipes_open = false }`.
+
+`live_agent_sees_exit_after_output_pipes_close` drives `live_agent` with a real child that exits at once. It failed on the old loop (`exit poll starved … Elapsed(())` after 2.00 s) and passes with the guard.
 
 ## Root cause 2 — `cmd /C` cut the prompt at its first newline (fixed, `3150cd8`)
 
@@ -66,16 +110,16 @@ The fix spawns the native `grok.exe` directly. Still open: codex (`codex.rs:68`)
 
 ### codex and claude (zero-credit probe, not fixed)
 
-Same `cmd /C` launch and argv as the adapters, with stand-ins first on PATH that print what they receive. The codex stand-in is an npm-style `codex.cmd` forwarding `%*`. The claude stand-in is a `claude.exe`, which is what `cmd` finds first on this host.
+Same `cmd /C` launch and argv as the adapters, with stand-ins first on PATH that print what they receive. On this host `codex` resolves to the npm `codex.cmd` shim, which forwards `%*`. `claude` resolves to the native `~/.local/bin/claude.exe`; an npm `claude.cmd` is also installed.
 
 ```
 codex:  argc=9  exec -C <wt> -s workspace-write --json --color never "# Kit Control Room — agent run"
 claude: argc=2  -p "# Kit Control Room — agent run"    (--dangerously-skip-permissions dropped)
 ```
 
-Codex gets its flags but only the prompt title. That fits the historical codex receipt `01KYZZ06CZZ3TJCJ70457JYNJ9` (empty diff, vacuous gate). Both are npm `.cmd` shims, which cannot take a multi-line argument directly, so they likely need the prompt on stdin or in a file.
+Codex gets its flags but only the prompt title. That fits the historical codex receipt `01KYZZ06CZZ3TJCJ70457JYNJ9` (empty diff, vacuous gate). A `.cmd` shim cannot take a multi-line argument directly, so both likely need the prompt on stdin or in a file.
 
-## Ollama prompt on stdin could deadlock spawn (fixed on this branch)
+## Ollama prompt on stdin could deadlock spawn (fixed, `aab7e4f`)
 
 `spawn_streaming_with_stdin` wrote the whole prompt before starting the stdout/stderr readers, and the runner arms the run timeout only after spawn returns.
 
@@ -84,26 +128,22 @@ Zero-credit repro through the real `OllamaAgent::spawn`, with a stand-in `ollama
 ```
 256 KiB prompt,  5,000 stderr lines: spawn returned after 121 ms, child exit 0
 8 MiB prompt,   50,000 stderr lines: DEADLOCK: spawn still blocked after 20.0 s
+after aab7e4f, 8 MiB / 50,000:       spawn returned after 32 ms, child exit 0 after 1.4 s
 ```
 
 On Windows, tokio buffers up to 2 MiB of a stdin write; on Unix a 64 KiB pipe is enough to block. The fix starts the readers first and writes the prompt from its own task.
+
+`large_stdin_prompt_does_not_deadlock_on_early_child_stderr` failed on the old code (timeout after 30 s) and passes with the fix.
 
 ## Grok leader / daemon
 
 No grok leader or daemon outlived the run. At 06:43:01Z grok 28556 had no child processes, and `grok leader list` reported none.
 
-Kit's delta channel had closed, meaning both pipe readers hit EOF. With the channel still open, `poll.tick()` would have seen grok's exit. That closure is what sends `live_agent` into its spin.
+Kit's delta channel had closed, meaning both pipe readers hit EOF. With the channel still open, `poll.tick()` would have seen grok's exit. That closure is what sent `live_agent` into its spin.
 
 ## Also found
 
 - `--json` stdout is not a single envelope. `git worktree add` inherits kit's stdout (`engine/worktree.rs`, `.status()`), so stdout starts with `HEAD is now at 65e1a9b init fixture`.
 - An `execute` error prints no `--json` envelope; the error goes to stderr only.
 - Ollama's default `llama3.2` is not pulled on this host. The run now fails in 0.2 s with the remedy (`063336c`).
-
-## Retry once the engine fix lands
-
-```sh
-cargo build -p kit-cli
-timeout 120 target/debug/kit.exe run --agent grok --live --json --repo <fixture> --task "<one-line edit>"
-target/debug/kit.exe receipt show <new id> --json   # gate.checks must list test: echo ok
-```
+- `~/.kit/runs` holds `01KILLQ0006` (codex, repo `kit-bare-repo-…`, task `KILLQ task 0006`): a test wrote into the real kit home.
