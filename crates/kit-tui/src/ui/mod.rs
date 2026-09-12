@@ -13,6 +13,7 @@ use ratatui::text::Line;
 
 use crate::theme::Theme;
 use common::draw_help_overlay;
+use ratatui::widgets::Clear;
 
 /// Paint the active screen into `frame`.
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -26,12 +27,18 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if app.help_open {
         let theme = Theme::resolve();
         let area = frame.area();
-        // 12% gutters clip kill/retry at 14 rows. Use no vertical chrome
-        // on short frames so the 30-second keys stay on screen.
-        let v_gutter = if area.height < 18 {
+        frame.render_widget(Clear, area);
+        // At the 80×14 contract, gutters mash header/footer through the panel.
+        let tight = area.width < 90 || area.height < 18;
+        let v_gutter = if tight {
             Constraint::Length(0)
         } else {
             Constraint::Percentage(12)
+        };
+        let h_gutter = if tight {
+            Constraint::Length(0)
+        } else {
+            Constraint::Percentage(8)
         };
         let v = Layout::default()
             .direction(Direction::Vertical)
@@ -39,11 +46,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
             .split(area);
         let h = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(8),
-                Constraint::Percentage(84),
-                Constraint::Percentage(8),
-            ])
+            .constraints([h_gutter, Constraint::Min(20), h_gutter])
             .split(v[1]);
         draw_help_overlay(frame, h[1], &theme, help_lines(app));
     }
@@ -210,6 +213,11 @@ mod tests {
             !frame.contains('⠋') && !frame.contains('⠙'),
             "motion-off snapshots must rest: {frame}"
         );
+        let header = frame.lines().next().unwrap_or("");
+        assert!(
+            header.contains("FAIL ·") || header.contains("r retry"),
+            "80-col header must keep the demo FAIL flash: {header}"
+        );
         insta::assert_snapshot!(frame);
     }
 
@@ -298,6 +306,15 @@ mod tests {
         app.load_prd_fixture();
         app.update(code(KeyCode::Enter));
         let frame = render_to_string(&app, 60, 12);
+        assert!(
+            frame.contains("GATE FAIL"),
+            "60-col run detail must keep GATE FAIL: {frame}"
+        );
+        let footer = snapshot_footer(&frame);
+        assert!(
+            footer.contains("[r]etry") || footer.contains("[r]"),
+            "60-col run detail must keep retry: {footer}"
+        );
         insta::assert_snapshot!(frame);
     }
 
@@ -423,6 +440,10 @@ mod tests {
         assert!(
             !frame.contains("j/k"),
             "help must not advertise j/k nav while k=kill: {frame}"
+        );
+        assert!(
+            !frame.contains("KIT / CONTROL ROOM") && !frame.contains("[↑↓] select"),
+            "help overlay must cover the Control Room chrome: {frame}"
         );
         assert!(
             frame.contains("kill"),

@@ -1600,7 +1600,7 @@ impl App {
 
         // Product moment: land on FAIL so gate wash + `r` retry are visible immediately.
         self.selected_id = Some(fail_id);
-        self.set_flash("FAIL selected — enter open · r retry with gate context");
+        self.set_flash("FAIL · enter open · r retry");
 
         // Board fixture items for F4 snapshots / QA.
         self.board = vec![

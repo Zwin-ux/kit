@@ -17,4 +17,4 @@ expression: frame
 "│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" [esc] back  [1]stream [2]gate [3]diff  [a]ttach  [k]ill  [r]etry follow        "
+" [esc] back  [1]stream  [2]gate  [3]diff  [a]ttach  [k]ill  [r]etry       follow"

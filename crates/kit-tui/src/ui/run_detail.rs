@@ -40,13 +40,13 @@ pub fn draw(frame: &mut Frame, app: &App, pane: DetailPane) {
     draw_run_header(frame, app, run, chunks[0], &theme);
     draw_tabs(frame, pane, chunks[1], &theme);
     draw_body(frame, app, run, pane, chunks[2], &theme);
-    let follow = if app.stream_follow { " follow" } else { "" };
+    let follow = if app.stream_follow { "follow" } else { "" };
     draw_footer(
         frame,
         chunks[3],
         &theme,
-        &format!(" [esc] back  [1]stream [2]gate [3]diff  [a]ttach  [k]ill  [r]etry{follow}"),
-        "",
+        " [esc] back  [1]stream  [2]gate  [3]diff  [a]ttach  [k]ill  [r]etry",
+        follow,
     );
 }
 
@@ -113,7 +113,7 @@ pub fn draw_attached(frame: &mut Frame, app: &App) {
         ),
         chunks[1],
     );
-    draw_footer(frame, chunks[2], &theme, " [esc] detach (without kill)", "");
+    draw_footer(frame, chunks[2], &theme, " [esc] detach  [?] help", "");
 }
 
 fn draw_run_header(frame: &mut Frame, app: &App, run: &RunRow, area: Rect, theme: &Theme) {
@@ -124,12 +124,11 @@ fn draw_run_header(frame: &mut Frame, app: &App, run: &RunRow, area: Rect, theme
 
     let state = format_state_label(run, &app.clock, app.motion_enabled());
     let gate = format_gate_label(run);
-    let l1 = format!(
-        "KIT / RUN  {} · {} · {}",
-        run.repo,
-        run.agent_cell(),
-        truncate(&run.task, 28)
-    );
+    let suffix = format!("  {state}  GATE {gate}");
+    let title_budget = (area.width as usize).saturating_sub(suffix.chars().count());
+    let prefix = format!("KIT / RUN  {} · {} · ", run.repo, run.agent_cell());
+    let task_budget = title_budget.saturating_sub(prefix.chars().count());
+    let l1 = format!("{prefix}{}", truncate(&run.task, task_budget));
 
     let wt = run
         .worktree

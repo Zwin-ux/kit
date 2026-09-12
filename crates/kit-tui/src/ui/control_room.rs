@@ -10,7 +10,7 @@ use crate::theme::Theme;
 use kit_core::RunState;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
@@ -185,39 +185,54 @@ fn data_line(
     theme: &Theme,
     widths: [usize; 5],
 ) -> Line<'static> {
+    let fail = matches!(run.state, RunState::Fail | RunState::Error);
     let marker = if selected { "▶ " } else { "  " };
     let repo = format!("{marker}{}", run.repo);
     let state_label = format_state_label(run, &app.clock, app.motion_enabled());
     let gate_label = format_gate_label(run);
-    let base = if selected {
+    let base = if fail {
+        theme.fail_row(selected)
+    } else if selected {
         theme.selected_row()
-    } else if run.state == RunState::Fail {
-        theme.fail_row(false)
     } else {
         theme.body()
     };
-    let state_style = if selected {
+    let state_style = if fail {
+        theme.state_style(run.state)
+    } else if selected {
         theme.selected_row()
     } else {
         theme.state_style(run.state)
     };
-    let gate_style = if selected {
+    let gate_style = if fail {
+        theme.gate_style(&gate_label)
+    } else if selected {
         theme.selected_row()
     } else {
         theme.gate_style(&gate_label)
     };
+    let repo_cell = pad_cell(&repo, widths[0]);
+    let mut spans = Vec::with_capacity(11);
+    if selected {
+        // Cyan focus rail: the caret, then the rest of the row.
+        let rail: String = repo_cell.chars().take(2).collect();
+        let rest: String = repo_cell.chars().skip(2).collect();
+        spans.push(Span::styled(
+            rail,
+            theme.accent().add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(rest, base));
+    } else {
+        spans.push(Span::styled(repo_cell, base));
+    }
     let parts = [
-        (pad_cell(&repo, widths[0]), base),
         (pad_cell(&run.agent_cell(), widths[1]), base),
         (pad_cell(&run.task, widths[2]), base),
         (pad_cell(&state_label, widths[3]), state_style),
         (pad_cell(&gate_label, widths[4]), gate_style),
     ];
-    let mut spans = Vec::with_capacity(9);
-    for (i, (cell, style)) in parts.into_iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(" ", base));
-        }
+    for (cell, style) in parts {
+        spans.push(Span::styled(" ", base));
         spans.push(Span::styled(cell, style));
     }
     Line::from(spans)
@@ -232,7 +247,7 @@ fn annotation_line(
     let budget = inner_width.saturating_sub(2); // "^ "
     let text = format!("^ {}", truncate(summary, budget.saturating_sub(2)));
     let style = if selected {
-        Style::default().add_modifier(Modifier::REVERSED | Modifier::DIM)
+        theme.fail_row(true).add_modifier(Modifier::DIM)
     } else {
         theme.annotation()
     };

@@ -75,20 +75,15 @@ pub fn draw_header(
 ) {
     let width = area.width as usize;
     let mut left = title.to_string();
-    if let Some(f) = flash {
-        let tag = format!("  · {f}");
-        if left.chars().count() + tag.chars().count()
-            < width.saturating_sub(stats.chars().count() + 2)
-        {
-            left.push_str(&tag);
-        }
-    } else if let Some(e) = error {
-        let tag = format!("  ! {e}");
-        if left.chars().count() + tag.chars().count()
-            < width.saturating_sub(stats.chars().count() + 2)
-        {
-            left.push_str(&tag);
-        }
+    let leftover = width.saturating_sub(title.chars().count() + stats.chars().count() + 2);
+    if let Some(f) = flash
+        && leftover >= 4
+    {
+        left.push_str(&truncate(&format!("  · {f}"), leftover));
+    } else if let Some(e) = error
+        && leftover >= 4
+    {
+        left.push_str(&truncate(&format!("  ! {e}"), leftover));
     }
 
     let left_n = left.chars().count();
@@ -176,7 +171,7 @@ pub fn fit_footer_hints(hints: &str, max_chars: usize) -> String {
         }
         // Drop board / filter / enter first so help, retry, kill, dispatch survive.
         // Other screens keep the original drop-from-the-end behavior.
-        if let Some(i) = tokens.iter().position(|t| is_dispensable_footer_token(t)) {
+        if let Some(i) = drop_footer_index(&tokens) {
             tokens.remove(i);
         } else {
             tokens.pop();
@@ -185,9 +180,23 @@ pub fn fit_footer_hints(hints: &str, max_chars: usize) -> String {
     truncate(&tokens.join("  "), max_chars)
 }
 
-fn is_dispensable_footer_token(token: &str) -> bool {
-    let t = token.trim();
-    t.starts_with("[b]oard") || t.starts_with("[f]ilter") || t.starts_with("[enter]")
+/// Drop filter/enter/panes before Board, so 80-col CR keeps `[b]oard`.
+fn drop_footer_index(tokens: &[String]) -> Option<usize> {
+    const ORDER: &[&str] = &[
+        "[f]ilter",
+        "[enter]",
+        "[a]ttach",
+        "[3]diff",
+        "[2]gate",
+        "[1]stream",
+        "[b]oard",
+    ];
+    for prefix in ORDER {
+        if let Some(i) = tokens.iter().position(|t| t.trim().starts_with(prefix)) {
+            return Some(i);
+        }
+    }
+    None
 }
 
 /// Empty-state body: one primary message + one action hint.
@@ -297,6 +306,10 @@ mod tests {
         assert!(
             fitted.contains("[d]ispatch") || fitted.contains("[d]"),
             "{fitted}"
+        );
+        assert!(
+            fitted.contains("[b]oard") || fitted.contains("[b]"),
+            "80-col Control Room must keep Board: {fitted}"
         );
     }
 

@@ -175,13 +175,18 @@ impl Theme {
     }
 
     pub fn fail_row(&self, selected: bool) -> Style {
-        if selected {
-            return self.selected_row();
-        }
         if self.monochrome {
-            Style::default().add_modifier(Modifier::BOLD)
+            return if selected {
+                Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+            } else {
+                Style::default().add_modifier(Modifier::BOLD)
+            };
+        }
+        let style = Style::default().fg(self.fg).bg(self.fail_wash);
+        if selected {
+            style.add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(self.fg).bg(self.fail_wash)
+            style
         }
     }
 
@@ -255,6 +260,16 @@ mod tests {
         let t = Theme::kit();
         assert!(!t.monochrome);
         assert_eq!(t.accent, Color::Rgb(0x00, 0xe6, 0xcc));
+    }
+
+    #[test]
+    fn selected_fail_row_keeps_wash_not_reverse() {
+        let t = Theme::kit();
+        let selected = t.fail_row(true);
+        assert_eq!(selected.bg, Some(t.fail_wash));
+        assert!(selected.add_modifier.contains(Modifier::BOLD));
+        assert!(!selected.add_modifier.contains(Modifier::REVERSED));
+        assert_ne!(selected, t.selected_row());
     }
 
     #[test]

@@ -18,6 +18,7 @@ Not 1.0.0. npm `@mzwin/kit` is still the 0.1 workbench. This is the Rust Control
 - Run detail / attach headers use `vendor·role` (`codex·eng`), matching Control Room and Board
 - RUNNING/GATING rows breathe with a Braille spinner on the one animation clock; `KIT_MOTION=off` stays still
 - `--demo` includes a GATING row; header says `GATING` never `0 GATED`; README first paint is the FAIL still-frame, not the fox
+- Selected FAIL keeps wash (not reverse); 60-col run detail keeps `GATE FAIL` + `[r]etry`; demo flash fits the 80-col header; help overlay covers the frame; `[b]oard` stays at 80
 
 ### Changed
 - README is Control Room first. 0.1 npm workbench is documented as legacy.
