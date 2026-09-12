@@ -290,9 +290,9 @@ pub async fn execute_cancellable(
         opts,
         id,
         repo,
-        branch,
-        wt_path,
-        started_at,
+        Some(branch),
+        Some(wt_path),
+        Some(started_at),
         state,
         output,
         truncated,
@@ -331,9 +331,9 @@ async fn finalize_killed(
         opts,
         id,
         repo,
-        branch,
-        wt_path,
-        started_at,
+        Some(branch),
+        Some(wt_path),
+        Some(started_at),
         RunState::Killed,
         output,
         truncated,
@@ -343,14 +343,57 @@ async fn finalize_killed(
     .await
 }
 
+/// Terminal path for a run killed before it started: still queued on the
+/// concurrency limiter, or cancelled between permit and execute. Nothing was
+/// created (no worktree, branch, or start time), yet the run still gets a
+/// receipt, and `Killed` is sent only once that receipt is written.
+pub(crate) async fn finalize_killed_before_start(
+    opts: RunOptions,
+    id: RunId,
+    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
+) -> Result<RunResult> {
+    let note = "kit: run killed while queued (never started)\n";
+    // Record the repo the way a started run would; keep the raw token if it
+    // no longer resolves (the run is over either way).
+    let repo = resolve_repo(&opts.repo).unwrap_or_else(|_| PathBuf::from(&opts.repo));
+    let mut output = String::new();
+    let mut truncated = false;
+    append_capped(
+        &mut output,
+        &mut truncated,
+        opts.bounds.output_cap_bytes,
+        note,
+    );
+    send(&tx, &id, RunDelta::Output(note.into())).await;
+    let result = write_terminal(
+        opts,
+        id.clone(),
+        repo,
+        None,
+        None,
+        None,
+        RunState::Killed,
+        output,
+        truncated,
+        None,
+        None,
+    )
+    .await;
+    // Sent even if the write failed: the run is over, and the error is returned.
+    send(&tx, &id, RunDelta::State(RunState::Killed)).await;
+    result
+}
+
+/// Persist the receipt, then remove the worktree if the run left it clean.
+/// `wt_path` is `None` only for a run killed before it started.
 #[allow(clippy::too_many_arguments)]
 async fn write_terminal(
     opts: RunOptions,
     id: RunId,
     repo: PathBuf,
-    branch: String,
-    wt_path: PathBuf,
-    started_at: SystemTime,
+    branch: Option<String>,
+    wt_path: Option<PathBuf>,
+    started_at: Option<SystemTime>,
     state: RunState,
     output: String,
     truncated: bool,
@@ -358,7 +401,10 @@ async fn write_terminal(
     _tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
 ) -> Result<RunResult> {
     let ended_at = SystemTime::now();
-    let diff = worktree::worktree_diff(&wt_path).unwrap_or_default();
+    let diff = wt_path
+        .as_deref()
+        .map(|wt| worktree::worktree_diff(wt).unwrap_or_default())
+        .unwrap_or_default();
 
     let receipt = Receipt {
         version: Receipt::VERSION,
@@ -367,11 +413,11 @@ async fn write_terminal(
             repo: repo.clone(),
             agent: opts.agent,
             task: opts.task.clone(),
-            branch: Some(branch),
+            branch,
             bounds: opts.bounds.clone(),
         },
         state,
-        started_at: Some(started_at),
+        started_at,
         ended_at: Some(ended_at),
         diff,
         gate: gate.clone(),
@@ -379,13 +425,15 @@ async fn write_terminal(
     };
 
     let receipt_dir = write_receipt(&receipt, &output)?;
-    let removed = remove_if_clean(&repo, &wt_path).unwrap_or(false);
+    let removed = wt_path
+        .as_deref()
+        .is_some_and(|wt| remove_if_clean(&repo, wt).unwrap_or(false));
 
     Ok(RunResult {
         id,
         state,
         receipt_dir,
-        worktree: if removed { None } else { Some(wt_path) },
+        worktree: if removed { None } else { wt_path },
         worktree_removed: removed,
         gate,
     })

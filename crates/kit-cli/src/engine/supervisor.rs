@@ -7,7 +7,7 @@
 
 use super::cancel::CancelHandle;
 use super::registry::{RunRegistry, concurrency_limiter};
-use super::runner::{RunOptions, execute_cancellable, parse_agent};
+use super::runner::{RunOptions, execute_cancellable, finalize_killed_before_start, parse_agent};
 use kit_core::{Bounds, RunDelta, RunId, RunState};
 use kit_tui::EngineCommand;
 use std::sync::Arc;
@@ -45,39 +45,12 @@ pub async fn run_supervisor(
                 let registry = registry.clone();
                 let limiter = limiter.clone();
                 let cancel = CancelHandle::new();
-                let job_id = job.id.clone();
-                let reg_for_register = registry.clone();
-                let cancel_for_register = cancel.clone();
                 tokio::spawn(async move {
-                    reg_for_register
-                        .register(job_id.clone(), cancel_for_register)
-                        .await;
+                    registry.register(job.id.clone(), cancel.clone()).await;
                     // Honest fan-out: the run is Queued until a slot frees.
                     let _ = tx
-                        .send((job_id.clone(), RunDelta::State(RunState::Queued)))
+                        .send((job.id.clone(), RunDelta::State(RunState::Queued)))
                         .await;
-
-                    // Owned permit: holds a slot until dropped (end of job or kill).
-                    let permit = tokio::select! {
-                        biased;
-                        _ = cancel.cancelled() => {
-                            registry.unregister(&job_id).await;
-                            let _ = tx
-                                .send((job_id.clone(), RunDelta::State(RunState::Killed)))
-                                .await;
-                            return;
-                        }
-                        p = limiter.clone().acquire_owned() => p.expect("limiter alive"),
-                    };
-
-                    if cancel.is_cancelled() {
-                        drop(permit);
-                        registry.unregister(&job_id).await;
-                        let _ = tx
-                            .send((job_id.clone(), RunDelta::State(RunState::Killed)))
-                            .await;
-                        return;
-                    }
 
                     let agent = parse_agent(&job.agent).unwrap_or(kit_core::AgentKind::Codex);
                     let opts = RunOptions {
@@ -87,13 +60,36 @@ pub async fn run_supervisor(
                         dry_run: if force_dry { Some(true) } else { None },
                         bounds: Bounds::default(),
                     };
-                    if let Err(err) =
-                        execute_cancellable(opts, Some(job.id.clone()), Some(tx), Some(cancel))
-                            .await
-                    {
+
+                    // Owned permit: holds a slot until dropped (end of job or kill).
+                    let permit = tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => None,
+                        p = limiter.acquire_owned() => Some(p.expect("limiter alive")),
+                    };
+                    let result = match permit {
+                        Some(permit) if !cancel.is_cancelled() => {
+                            let result = execute_cancellable(
+                                opts,
+                                Some(job.id.clone()),
+                                Some(tx),
+                                Some(cancel),
+                            )
+                            .await;
+                            drop(permit);
+                            result
+                        }
+                        // Killed while queued, or between permit and execute:
+                        // nothing started, so free the slot, then write the
+                        // receipt before `Killed` goes out.
+                        unused => {
+                            drop(unused);
+                            finalize_killed_before_start(opts, job.id.clone(), Some(tx)).await
+                        }
+                    };
+                    if let Err(err) = result {
                         eprintln!("kit engine: {err:#}");
                     }
-                    drop(permit);
                     registry.unregister(&job.id).await;
                 });
             }
@@ -448,5 +444,58 @@ mod tests {
             }
         }
         assert_eq!(dests.len(), jobs.len());
+    }
+
+    /// Kill a run still waiting for a permit: it never starts and gets no
+    /// worktree, yet its killed receipt is on disk before `Killed` is sent.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn kill_while_queued_writes_receipt_without_worktree() {
+        let _lock = kit_home_test_lock();
+        let fx = LatchedRepo::new("killq");
+        let jobs = fx.jobs("KILLQ", MAX_CONCURRENT_RUNS + 1);
+        let mut h = Harness::start();
+        for job in &jobs {
+            h.send(EngineCommand::Start(job.clone())).await;
+        }
+        h.until("the pool filled", |l| {
+            l.ids(RunState::Gating).len() == MAX_CONCURRENT_RUNS
+                && l.ids(RunState::Queued).len() == 1
+        })
+        .await;
+        let victim = h.ledger.ids(RunState::Queued).remove(0);
+
+        h.send(EngineCommand::Kill { id: victim.clone() }).await;
+        h.until("the queued run was killed", |l| {
+            l.states[&victim].last() == Some(&RunState::Killed)
+        })
+        .await;
+        // Read the moment `Killed` arrives: the receipt must already exist.
+        let killed = receipt(&victim);
+        assert_eq!(killed.state, RunState::Killed);
+        assert!(killed.ended_at.is_some(), "a killed receipt needs ended_at");
+        assert_eq!(killed.started_at, None, "a queued run never started");
+        assert_eq!(killed.spec.branch, None, "no worktree, so no branch");
+        assert!(killed.diff.is_empty());
+        assert!(killed.gate.is_none());
+        let log = std::fs::read_to_string(run_dir(&victim.0).join("output.log")).unwrap();
+        assert!(log.contains("killed while queued"), "{log}");
+        assert_eq!(
+            h.ledger.states[&victim],
+            [RunState::Queued, RunState::Killed]
+        );
+        assert!(!h.ledger.worktrees.contains_key(&victim));
+        assert!(
+            !worktrees_dir().join(&victim.0).exists(),
+            "a queued kill must not create a worktree"
+        );
+
+        fx.open();
+        h.drain().await;
+        for job in jobs.iter().filter(|j| j.id != victim) {
+            assert_eq!(h.ledger.states[&job.id], PASSED, "{}", job.id);
+            assert_eq!(receipt(&job.id).state, RunState::Pass);
+        }
+        assert!(!worktrees_dir().join(&victim.0).exists());
     }
 }
