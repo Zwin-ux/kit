@@ -417,6 +417,8 @@ fn prettify_line(line: &str) -> String {
             .pointer("/item/text")
             .or_else(|| v.pointer("/message"))
             .or_else(|| v.pointer("/text"))
+            // Grok `--output-format streaming-json`: {"type":"text","data":"…"}.
+            .or_else(|| v.pointer("/data"))
             .and_then(|x| x.as_str())
         {
             return format!("{t}: {msg}");
@@ -584,5 +586,18 @@ mod tests {
         }
 
         let _ = std::fs::remove_file(&marker);
+    }
+
+    #[test]
+    fn prettify_reads_grok_streaming_json_data() {
+        assert_eq!(
+            prettify_line(r#"{"type":"text","data":"done"}"#),
+            "text: done"
+        );
+        // Updates without text (usage, end) stay one short event line.
+        assert_eq!(
+            prettify_line(r#"{"type":"end","stopReason":"end_turn"}"#),
+            "event:end"
+        );
     }
 }
