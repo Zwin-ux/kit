@@ -46,10 +46,17 @@ pub fn too_small(area: Rect) -> bool {
 
 /// Full-area message when the terminal is unusably small.
 pub fn draw_too_small(frame: &mut Frame, area: Rect, theme: &Theme) {
-    let msg = format!(
-        "need {MIN_WIDTH}×{MIN_HEIGHT} — maximize this terminal (now {}×{})",
-        area.width, area.height
-    );
+    let msg = if area.width < 48 {
+        format!(
+            "need {MIN_WIDTH}×{MIN_HEIGHT} (now {}×{})",
+            area.width, area.height
+        )
+    } else {
+        format!(
+            "need {MIN_WIDTH}×{MIN_HEIGHT} — maximize this terminal (now {}×{})",
+            area.width, area.height
+        )
+    };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(msg, theme.warn()))).centered(),
         area,

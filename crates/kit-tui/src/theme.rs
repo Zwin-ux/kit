@@ -258,6 +258,17 @@ mod tests {
     }
 
     #[test]
+    fn high_contrast_uses_ansi_brights_not_kit_rgb() {
+        let t = Theme::high_contrast();
+        assert!(!t.monochrome);
+        assert_eq!(t.bg, Color::Black);
+        assert_eq!(t.fg, Color::White);
+        assert_eq!(t.accent, Color::Cyan);
+        assert_eq!(t.danger, Color::LightRed);
+        assert_ne!(t.accent, Theme::kit().accent);
+    }
+
+    #[test]
     fn state_styles_differ_in_color_mode() {
         let t = Theme::kit();
         assert_ne!(

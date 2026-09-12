@@ -2,7 +2,7 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / RUN  trenchwire · codex · fix red CI  DONE  GATE FAIL                     "
+"KIT / RUN  trenchwire · codex·eng · fix red CI  DONE  GATE FAIL                 "
 "worktree  /tmp/kit-wt-01FIXRUN3                                                 "
 " stream  │  gate  │  diff                                                       "
 "┌ gate ────────────────────────────────────────────────────────────────────────┐"

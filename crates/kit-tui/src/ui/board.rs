@@ -45,7 +45,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
             chunks[1],
             &theme,
             "Nothing queued",
-            "n adds a task  ·  Enter sends it to Dispatch  ·  not a live queue",
+            "press n to add  ·  Enter prefills Dispatch  ·  not a live pull-queue",
         );
     } else {
         draw_table(frame, app, chunks[1], &theme);

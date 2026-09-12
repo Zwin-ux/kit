@@ -21,7 +21,7 @@ Plan (order + task cards): [`tasks/plan.md`](plan.md)
 - [ ] **I3** Session B — live `kit run --agent <ready>` + receipt id
 - [ ] **I4** Session C — `.\kit.cmd --demo` then dispatch; `k` or `r` once
 - [ ] **I5** Session D — dogfood table filled; “open tomorrow?”
-- [ ] **I6** README/CURRENT never tell a stranger to type bare `kit` on Windows
+- [x] **I6** README/CURRENT never tell a stranger to type bare `kit` on Windows
 - [x] **I7** Honest-state addendum + DOGFOOD Session A checkbox (2026-08-16)
 
 ## Horizon 1 — Proof
@@ -43,12 +43,12 @@ Plan (order + task cards): [`tasks/plan.md`](plan.md)
 
 ## Horizon 3 — TUI (one slice at a time)
 
-- [ ] **U1** FAIL annotation readable at 80 and 60
-- [ ] **U2** Dispatch footer includes `↑↓`
-- [ ] **U3** Dispatch column density
-- [ ] **U4** `vendor·role` voice everywhere
-- [ ] **U5** Empty / too-small / Board copy
-- [ ] **U6** `KIT_THEME=high` documented + snapshot
+- [x] **U1** FAIL annotation readable at 80 and 60
+- [x] **U2** Dispatch footer includes `↑↓`
+- [x] **U3** Dispatch column density
+- [x] **U4** `vendor·role` voice everywhere
+- [x] **U5** Empty / too-small / Board copy
+- [x] **U6** `KIT_THEME=high` documented + snapshot
 - [x] **U7** Personas frozen (ENG default)
 
 ## Horizon 4 — Ship (after Horizon 0 checkpoint)

@@ -38,15 +38,6 @@ pub fn draw(frame: &mut Frame, app: &App) {
         None,
     );
 
-    let body = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(34),
-            Constraint::Percentage(33),
-            Constraint::Percentage(33),
-        ])
-        .split(chunks[1]);
-
     let cwd = std::env::current_dir().ok();
     let repo_items: Vec<(String, bool)> = app
         .dispatch
@@ -54,6 +45,22 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .iter()
         .map(|(path, on)| (crate::app::format_repo_label(path, cwd.as_deref()), *on))
         .collect();
+    // One repo should not own a third of the screen. Size that column to
+    // the longest label, then let agents/personas take the remaining well.
+    let repo_label_w = repo_items
+        .iter()
+        .map(|(s, _)| s.chars().count())
+        .max()
+        .unwrap_or(4);
+    let repo_col = ((repo_label_w + 8) as u16).clamp(20, chunks[1].width / 3);
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(repo_col),
+            Constraint::Fill(1),
+            Constraint::Fill(1),
+        ])
+        .split(chunks[1]);
     draw_toggle_list(
         frame,
         body[0],
@@ -143,7 +150,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         frame,
         chunks[3],
         &theme,
-        " [esc] back  [tab] field  [space] toggle  [enter] submit",
+        " [esc] back  [tab] field  [↑↓] move  [space] toggle  [enter] submit",
         "",
     );
 }

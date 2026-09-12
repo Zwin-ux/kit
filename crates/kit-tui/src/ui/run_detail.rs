@@ -71,7 +71,7 @@ pub fn draw_attached(frame: &mut Frame, app: &App) {
         Some(r) => format!(
             "KIT / ATTACHED  {} · {} · {}",
             r.repo,
-            r.agent,
+            r.agent_cell(),
             truncate(&r.task, 24)
         ),
         None => "KIT / ATTACHED".into(),
@@ -127,7 +127,7 @@ fn draw_run_header(frame: &mut Frame, app: &App, run: &RunRow, area: Rect, theme
     let l1 = format!(
         "KIT / RUN  {} · {} · {}",
         run.repo,
-        run.agent,
+        run.agent_cell(),
         truncate(&run.task, 28)
     );
 

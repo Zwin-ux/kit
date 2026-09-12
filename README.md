@@ -28,12 +28,12 @@ Repo shims (`.\kit.cmd` / `.\kit.ps1`, or `. .\scripts\use-rust-kit.ps1`) launch
 
 | Command | What it does |
 |---------|----------------|
-| `kit` / `kit --demo` | Control Room TUI |
-| `kit run --task "…"` | One isolated run (live agent if on PATH) |
-| `kit doctor` | Probe codex / claude / grok / ollama + skills pack |
-| `kit run --dry-run --json` | Offline path (worktree → stream → **this repo's gate** → receipt) |
-| `kit receipt list` | Browse proof under `~/.kit/runs/` |
-| `kit receipt show <id>` | One receipt (+ `--output` for log tail) |
+| `cargo run -p kit-cli -- --demo` / `.\kit.cmd --demo` | Control Room TUI |
+| `cargo run -p kit-cli -- run --task "…"` | One isolated run (live agent if on PATH) |
+| `cargo run -p kit-cli -- doctor` | Probe codex / claude / grok / ollama + skills pack |
+| `cargo run -p kit-cli -- run --dry-run --json` | Offline path (worktree → stream → **this repo's gate** → receipt) |
+| `cargo run -p kit-cli -- receipt list` | Browse proof under `~/.kit/runs/` |
+| `cargo run -p kit-cli -- receipt show <id>` | One receipt (+ `--output` for log tail) |
 
 **Product loop:** dispatch → table of runs → FAIL wash + first error → `r` retry with gate context → receipt under `~/.kit/runs/<id>/`.
 
@@ -64,6 +64,7 @@ Env flags:
 | `KIT_SKILLS_DIR=…` | Override skill pack root (see Skills) |
 | `KIT_OLLAMA_MODEL=…` | Model for Ollama adapter (default `llama3.2`) |
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
+| `KIT_THEME=high` | High-contrast ANSI palette (`high-contrast` / `hc` also work) |
 
 Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md) · honest state: [`docs/dev/design-package/00-HONEST-STATE.md`](docs/dev/design-package/00-HONEST-STATE.md) · PRD: [`docs/dev/PRD-1.0.md`](docs/dev/PRD-1.0.md)
 

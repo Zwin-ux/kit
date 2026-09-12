@@ -92,6 +92,7 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
         Screen::Dispatch => {
             lines.extend([
                 Line::from("Dispatch"),
+                Line::from("  ↑↓         move in the focused list"),
                 Line::from("  Tab        next field"),
                 Line::from("  Space      toggle repo/agent/persona"),
                 Line::from("  type       task prompt"),
@@ -182,10 +183,25 @@ mod tests {
     }
 
     #[test]
+    fn too_small_snapshot() {
+        let app = App::with_motion(false);
+        let frame = render_to_string(&app, 40, 8);
+        assert!(
+            frame.contains("need 60×12") && frame.contains("40×8"),
+            "too-small floor must teach the next action: {frame}"
+        );
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
     fn populated_control_room_snapshot() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
         let frame = render_to_string(&app, 80, 14);
+        assert!(
+            frame.contains("^ tsc: 3 errors"),
+            "FAIL first-error must stay readable at 80×14: {frame}"
+        );
         insta::assert_snapshot!(frame);
     }
 
@@ -198,6 +214,10 @@ mod tests {
         assert!(
             footer.contains('?') && footer.contains('r'),
             "60-col footer must keep help and retry: {footer}"
+        );
+        assert!(
+            frame.contains("^ tsc: 3 errors"),
+            "FAIL first-error must stay readable at 60×12: {frame}"
         );
         insta::assert_snapshot!(frame);
     }
@@ -214,6 +234,10 @@ mod tests {
             }
         ));
         let frame = render_to_string(&app, 80, 16);
+        assert!(
+            frame.contains("codex·eng"),
+            "run detail header must use vendor·role: {frame}"
+        );
         insta::assert_snapshot!(frame);
     }
 
@@ -264,6 +288,10 @@ mod tests {
         )));
         assert_eq!(app.screen, Screen::Attached);
         let frame = render_to_string(&app, 80, 12);
+        assert!(
+            frame.contains("codex·eng"),
+            "attach header must use vendor·role: {frame}"
+        );
         insta::assert_snapshot!(frame);
     }
 
@@ -277,6 +305,10 @@ mod tests {
             KeyModifiers::NONE,
         )));
         let frame = render_to_string(&app, 80, 16);
+        assert!(
+            frame.contains("[↑↓]"),
+            "dispatch footer must include move keys: {frame}"
+        );
         insta::assert_snapshot!(frame);
     }
 
