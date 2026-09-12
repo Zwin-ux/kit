@@ -1,7 +1,8 @@
 //! Kit terminal theme — semantic tokens for the Control Room surface.
 //!
 //! Design source: `docs/dev/DESIGN-tui.md` + concept art under `docs/dev/assets/`.
-//! Color is enhancement; monochrome (`NO_COLOR`) must remain fully usable.
+//! Truecolor default; ANSI-16 when `COLORTERM` is not `truecolor`/`24bit`;
+//! monochrome (`NO_COLOR`) must remain fully usable.
 
 use kit_core::RunState;
 use ratatui::style::{Color, Modifier, Style};
@@ -73,7 +74,22 @@ impl Theme {
         }
     }
 
-    /// Pick theme from environment once per process (tests can call variants directly).
+    /// Named ANSI-16 mapping of the Kit tokens (no RGB).
+    pub fn ansi16() -> Self {
+        Self {
+            bg: Color::Reset,
+            fg: Color::White,
+            muted: Color::Gray,
+            accent: Color::LightCyan,
+            success: Color::LightGreen,
+            danger: Color::LightRed,
+            warn: Color::Yellow,
+            fail_wash: Color::Black,
+            monochrome: false,
+        }
+    }
+
+    /// Pick theme from environment once per process (tests call variants directly).
     pub fn resolve() -> Self {
         if std::env::var_os("NO_COLOR").is_some() {
             return Self::monochrome();
@@ -81,7 +97,8 @@ impl Theme {
         match std::env::var("KIT_THEME").as_deref() {
             Ok("high") | Ok("high-contrast") | Ok("hc") => Self::high_contrast(),
             Ok("mono") | Ok("monochrome") => Self::monochrome(),
-            _ => Self::kit(),
+            _ if colorterm_is_truecolor() => Self::kit(),
+            _ => Self::ansi16(),
         }
     }
 
@@ -231,6 +248,13 @@ impl Theme {
     }
 }
 
+fn colorterm_is_truecolor() -> bool {
+    std::env::var("COLORTERM").is_ok_and(|v| {
+        let v = v.trim();
+        v.eq_ignore_ascii_case("truecolor") || v.eq_ignore_ascii_case("24bit")
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,11 +308,51 @@ mod tests {
     }
 
     #[test]
+    fn ansi16_maps_kit_tokens_to_named_ansi() {
+        let t = Theme::ansi16();
+        assert!(!t.monochrome);
+        assert_eq!(t.bg, Color::Reset);
+        assert_eq!(t.fg, Color::White);
+        assert_eq!(t.muted, Color::Gray);
+        assert_eq!(t.accent, Color::LightCyan);
+        assert_eq!(t.success, Color::LightGreen);
+        assert_eq!(t.danger, Color::LightRed);
+        assert_eq!(t.warn, Color::Yellow);
+        assert_eq!(t.fail_wash, Color::Black);
+        for c in [
+            t.bg, t.fg, t.muted, t.accent, t.success, t.danger, t.warn, t.fail_wash,
+        ] {
+            assert!(!matches!(c, Color::Rgb(_, _, _)), "{c:?}");
+        }
+        assert_ne!(t.accent, Theme::kit().accent);
+        assert_ne!(t, Theme::high_contrast());
+        assert_ne!(t, Theme::monochrome());
+    }
+
+    #[test]
+    fn ansi16_fail_row_keeps_wash_not_reverse() {
+        let t = Theme::ansi16();
+        let selected = t.fail_row(true);
+        assert_eq!(selected.bg, Some(t.fail_wash));
+        assert!(selected.add_modifier.contains(Modifier::BOLD));
+        assert!(!selected.add_modifier.contains(Modifier::REVERSED));
+        assert_ne!(selected, t.selected_row());
+    }
+
+    #[test]
     fn state_styles_differ_in_color_mode() {
         let t = Theme::kit();
         assert_ne!(
             t.state_style(RunState::Running),
             t.state_style(RunState::Fail)
         );
+        let a = Theme::ansi16();
+        assert_ne!(
+            a.state_style(RunState::Running),
+            a.state_style(RunState::Fail)
+        );
+        assert_eq!(a.state_style(RunState::Fail).fg, Some(a.danger));
+        let m = Theme::monochrome();
+        assert_eq!(m.state_style(RunState::Fail).fg, None);
     }
 }
