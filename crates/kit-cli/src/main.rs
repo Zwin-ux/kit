@@ -235,7 +235,10 @@ async fn cmd_run(args: &[String]) -> Result<()> {
         println!("  state     {}", state_label(result.state));
         println!("  receipt   {}", result.receipt_dir.display());
         if let Some(wt) = &result.worktree {
-            println!("  worktree  {} (kept — dirty)", wt.display());
+            println!(
+                "  worktree  {} (kept: it has the run's changes)",
+                wt.display()
+            );
         } else if result.worktree_removed {
             println!("  worktree  removed (clean)");
         }
