@@ -1,54 +1,158 @@
-//! Conservative gate inference when `kit.toml` has no checks (CEO stamp P2).
+//! Gate detection: one source of truth for `kit init` and live-run inference.
 //!
-//! Only emit a check when the tooling is verifiably on PATH and (for npm) the
-//! script actually exists. A wrong inferred command is worse than no check.
+//! [`detect`] reads files only (no PATH, no processes) and proposes checkers,
+//! never writers. `kit init` writes the proposal to `kit.toml`; a live run with
+//! no gate uses [`infer_gate`], which is the same proposal minus commands whose
+//! program is not on PATH. A wrong inferred command is worse than no check.
+
+mod node;
+mod python;
+#[cfg(test)]
+pub(crate) mod tests;
 
 use kit_core::GateConfig;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
-/// Infer gate checks from repo signals. Returns empty config when nothing is safe.
-pub fn infer_gate(repo: &Path) -> GateConfig {
-    let mut gate = GateConfig::default();
+/// The root toolchain the gate was built for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Toolchain {
+    Rust,
+    Go,
+    Node,
+    Python,
+}
 
-    if repo.join("Cargo.toml").is_file() && on_path("cargo") {
-        gate.format = Some("cargo fmt --all --check".into());
-        gate.typecheck = Some("cargo clippy --workspace --all-targets -- -D warnings".into());
-        gate.test = Some("cargo test --workspace".into());
-        return gate;
-    }
-
-    let pkg = repo.join("package.json");
-    if pkg.is_file() {
-        let runner = npm_runner(repo);
-        if let Some(runner) = runner
-            && let Ok(raw) = std::fs::read_to_string(&pkg)
-            && let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw)
-        {
-            let scripts = v.get("scripts").cloned().unwrap_or(serde_json::json!({}));
-            if scripts.get("format").is_some() || scripts.get("format:check").is_some() {
-                let script = if scripts.get("format:check").is_some() {
-                    "format:check"
-                } else {
-                    "format"
-                };
-                gate.format = Some(format!("{runner} run {script}"));
-            }
-            if scripts.get("typecheck").is_some() || scripts.get("lint").is_some() {
-                let script = if scripts.get("typecheck").is_some() {
-                    "typecheck"
-                } else {
-                    "lint"
-                };
-                gate.typecheck = Some(format!("{runner} run {script}"));
-            }
-            if scripts.get("test").is_some() {
-                gate.test = Some(format!("{runner} test"));
-            }
+impl Toolchain {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Rust => "rust",
+            Self::Go => "go",
+            Self::Node => "node",
+            Self::Python => "python",
         }
     }
 
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Rust => "Rust",
+            Self::Go => "Go",
+            Self::Node => "Node",
+            Self::Python => "Python",
+        }
+    }
+}
+
+/// What [`detect`] found in a repo.
+#[derive(Debug, Clone)]
+pub struct Detection {
+    pub toolchain: Option<Toolchain>,
+    /// The file that selected the toolchain, e.g. `Cargo.toml`.
+    pub marker: Option<String>,
+    pub gate: GateConfig,
+    /// Why a candidate was used or left out, in plain words.
+    pub notes: Vec<String>,
+    /// Other projects in the repo that are not in the gate.
+    pub skipped: Vec<String>,
+}
+
+/// Root markers in priority order: the first match is the root toolchain.
+const MARKERS: &[(Toolchain, &[&str])] = &[
+    (Toolchain::Rust, &["Cargo.toml"]),
+    (Toolchain::Go, &["go.mod"]),
+    (Toolchain::Node, &["package.json"]),
+    (
+        Toolchain::Python,
+        &[
+            "pyproject.toml",
+            "setup.cfg",
+            "setup.py",
+            "requirements.txt",
+            "Pipfile",
+        ],
+    ),
+];
+
+/// Folders never searched for nested projects.
+const IGNORED_DIRS: &[&str] = &[
+    "node_modules",
+    "target",
+    "vendor",
+    "dist",
+    "build",
+    "venv",
+    "__pycache__",
+];
+
+/// Propose a gate from repo files. Reads files only; runs nothing.
+pub fn detect(repo: &Path) -> Detection {
+    let mut det = Detection {
+        toolchain: None,
+        marker: None,
+        gate: GateConfig::default(),
+        notes: Vec::new(),
+        skipped: Vec::new(),
+    };
+    for (tc, files) in MARKERS {
+        let Some(found) = files.iter().find(|f| repo.join(f).is_file()) else {
+            continue;
+        };
+        if det.toolchain.is_some() {
+            det.skipped
+                .push(format!("{found} ({}) at the repo root", tc.title()));
+            continue;
+        }
+        det.toolchain = Some(*tc);
+        det.marker = Some((*found).to_string());
+    }
+    nested_projects(repo, &mut det.skipped);
+
+    let (gate, notes) = (&mut det.gate, &mut det.notes);
+    match det.toolchain {
+        Some(Toolchain::Rust) => {
+            gate.format = Some("cargo fmt --all --check".into());
+            gate.typecheck = Some("cargo clippy --workspace --all-targets -- -D warnings".into());
+            gate.test = Some("cargo test --workspace".into());
+            gate.timeout = Duration::from_secs(15 * 60);
+        }
+        Some(Toolchain::Go) => {
+            // `gofmt -l` exits 0 even when it lists files; `-d` exits 1 on a diff
+            // and needs no shell pipe, so it works under cmd and sh.
+            gate.format = Some("gofmt -d .".into());
+            gate.typecheck = Some("go vet ./...".into());
+            gate.test = Some("go test ./...".into());
+            gate.timeout = Duration::from_secs(10 * 60);
+        }
+        Some(Toolchain::Node) => node::detect(repo, gate, notes),
+        Some(Toolchain::Python) => python::detect(repo, gate, notes),
+        None => {}
+    }
+    det
+}
+
+/// Live-run inference: the [`detect`] proposal, minus commands whose program
+/// is not on PATH. Returns an empty gate when nothing is safe.
+pub fn infer_gate(repo: &Path) -> GateConfig {
+    let mut gate = detect(repo).gate;
+    let runnable = |c: &String| on_path(program(c));
+    gate.format = gate.format.filter(runnable);
+    gate.typecheck = gate.typecheck.filter(runnable);
+    gate.test = gate.test.filter(runnable);
+    gate.extra.retain(runnable);
     gate
+}
+
+/// Programs the gate needs that are not on PATH, in check order, no repeats.
+pub fn missing_programs(gate: &GateConfig) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (_, cmd) in gate.checks() {
+        let p = program(cmd);
+        if !out.iter().any(|o| o == p) && !on_path(p) {
+            out.push(p.to_string());
+        }
+    }
+    out
 }
 
 /// True when outcome is a vacuous pass (no checks, no violations) — CEO: render UNCONFIGURED.
@@ -59,34 +163,82 @@ pub fn is_vacuous(outcome: &kit_core::GateOutcome) -> bool {
         && outcome.firewall_blocks.is_empty()
 }
 
-fn npm_runner(repo: &Path) -> Option<&'static str> {
-    if repo.join("pnpm-lock.yaml").is_file() && on_path("pnpm") {
-        return Some("pnpm");
-    }
-    if repo.join("yarn.lock").is_file() && on_path("yarn") {
-        return Some("yarn");
-    }
-    if on_path("npm") {
-        return Some("npm");
-    }
-    None
+/// True when a command changes files instead of checking them: a write/fix
+/// flag, or a formatter called without a check flag.
+pub fn is_writer(body: &str) -> bool {
+    const WRITE_FLAGS: &[&str] = &["--write", "-w", "--fix", "--apply", "--apply-unsafe"];
+    const CHECK_FLAGS: &[&str] = &["--check", "-c", "--list-different", "-l", "--diff", "-d"];
+    const FORMATTERS: &[&[&str]] = &[
+        &["prettier"],
+        &["black"],
+        &["rustfmt"],
+        &["gofmt"],
+        &["cargo", "fmt"],
+        &["go", "fmt"],
+        &["ruff", "format"],
+        &["biome", "format"],
+        &["dprint", "fmt"],
+        &["deno", "fmt"],
+    ];
+    body.split(['&', '|', ';']).any(|segment| {
+        let toks: Vec<&str> = segment.split_whitespace().collect();
+        if toks
+            .iter()
+            .any(|t| WRITE_FLAGS.contains(t) || t.starts_with("--fix="))
+        {
+            return true;
+        }
+        let formats = FORMATTERS
+            .iter()
+            .any(|f| toks.windows(f.len()).any(|w| w == *f));
+        formats && !toks.iter().any(|t| CHECK_FLAGS.contains(t))
+    })
 }
 
-fn on_path(bin: &str) -> bool {
+/// First word of a command: the program the gate starts.
+pub fn program(command: &str) -> &str {
+    command.split_whitespace().next().unwrap_or("")
+}
+
+/// Projects one folder down that the root gate does not cover.
+fn nested_projects(repo: &Path, skipped: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(repo) else {
+        return;
+    };
+    let mut dirs: Vec<_> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| !n.starts_with('.') && !IGNORED_DIRS.contains(&n.as_str()))
+        .collect();
+    dirs.sort();
+    for dir in dirs {
+        for (tc, files) in MARKERS {
+            if let Some(f) = files.iter().find(|f| repo.join(&dir).join(f).is_file()) {
+                skipped.push(format!("{dir}/{f} ({})", tc.title()));
+                break;
+            }
+        }
+        if skipped.len() >= 10 {
+            break;
+        }
+    }
+}
+
+pub fn on_path(bin: &str) -> bool {
+    if bin.is_empty() {
+        return false;
+    }
     // Prefer a real lookup; avoid shelling for speed and sandbox friendliness.
     if let Some(paths) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&paths) {
-            let candidate = dir.join(bin);
-            if candidate.is_file() {
+            if dir.join(bin).is_file() {
                 return true;
             }
             #[cfg(windows)]
-            {
-                for ext in ["exe", "cmd", "bat", "com"] {
-                    let p = dir.join(format!("{bin}.{ext}"));
-                    if p.is_file() {
-                        return true;
-                    }
+            for ext in ["exe", "cmd", "bat", "com"] {
+                if dir.join(format!("{bin}.{ext}")).is_file() {
+                    return true;
                 }
             }
         }
@@ -99,47 +251,4 @@ fn on_path(bin: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use kit_core::GateOutcome;
-    use std::time::Duration;
-
-    #[test]
-    fn vacuous_detection() {
-        assert!(is_vacuous(&GateOutcome::vacuous()));
-        let real = GateOutcome {
-            passed: true,
-            checks: vec![kit_core::GateCheck {
-                label: "test".into(),
-                command: "cargo test".into(),
-                status: kit_core::CheckStatus::Pass,
-                exit_code: Some(0),
-                summary: None,
-                duration: Duration::from_millis(1),
-            }],
-            scope_violations: vec![],
-            firewall_blocks: vec![],
-            duration: Duration::from_millis(1),
-        };
-        assert!(!is_vacuous(&real));
-    }
-
-    #[test]
-    fn infer_cargo_workspace_root() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .unwrap();
-        if !on_path("cargo") {
-            return;
-        }
-        let g = infer_gate(&root);
-        assert!(!g.is_empty(), "kit workspace should infer cargo checks");
-        assert!(g.test.as_deref().unwrap().contains("cargo test"));
-    }
-
-    use std::path::PathBuf;
 }
