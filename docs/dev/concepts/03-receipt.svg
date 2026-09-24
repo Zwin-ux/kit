@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 720" role="img" aria-labelledby="title desc">
+  <title id="title">Kit receipt concept</title>
+  <desc id="desc">Terminal output follows the human-readable kit receipt show format and names gate checks and stored artifacts.</desc>
+  <rect width="1100" height="720" fill="#0B0E12"/>
+  <style>text{font-family:Consolas,'SFMono-Regular',monospace;fill:#F0F1E3}.muted{fill:#8D969A}.accent{fill:#00E6CC}.fail{fill:#FF3B4E}.small{font-size:16px}.body{font-size:21px}.label{font-size:13px;letter-spacing:3px}.head{font-size:28px;font-weight:700}</style>
+  <text x="48" y="56" class="label accent">KIT / PROOF ARTIFACT</text>
+  <text x="48" y="98" class="head">A run leaves a record you can inspect.</text>
+  <text x="48" y="126" class="small muted">Illustrative values / command and field layout match the CLI</text>
+  <rect x="48" y="163" width="1004" height="495" rx="8" fill="#12171C" stroke="#344047"/>
+  <circle cx="77" cy="188" r="4" fill="#344047"/>
+  <circle cx="95" cy="188" r="4" fill="#344047"/>
+  <circle cx="113" cy="188" r="4" fill="#344047"/>
+  <text x="812" y="194" class="label muted">TERMINAL / KIT</text>
+  <path d="M48 211h1004" stroke="#344047"/>
+  <text x="78" y="253" class="body">$ kit receipt show 01J9Z4X8C6</text>
+  <text x="78" y="298" class="body accent">receipt 01J9Z4X8C6V5B3N2M1K7Q8R9ST</text>
+  <text x="78" y="335" class="body">  dir       /home/ava/.kit/runs/01J9Z4X8C6V5B3N2M1K7Q8R9ST</text>
+  <text x="78" y="370" class="body">  state     fail</text>
+  <text x="78" y="405" class="body">  agent     codex</text>
+  <text x="78" y="440" class="body">  repo      /work/trenchwire</text>
+  <text x="78" y="475" class="body">  task      fix red CI</text>
+  <text x="78" y="510" class="body fail">  gate      FAIL  (2 checks)</text>
+  <text x="78" y="545" class="body">            Pass  format</text>
+  <text x="78" y="580" class="body fail">            Fail  typecheck  tsc: 3 errors</text>
+  <text x="78" y="627" class="small muted">  tip  kit receipt show 01J9Z4X8C6V5B3N2M1K7Q8R9ST --output</text>
+  <text x="48" y="693" class="small muted">Stored files: receipt.json, output.log, and optional gate.json and diff.patch.</text>
+</svg>
