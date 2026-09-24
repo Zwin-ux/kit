@@ -21,7 +21,7 @@ Every `kit … --json` payload:
 | Field | Type | Notes |
 |-------|------|--------|
 | `schemaVersion` | integer | Always `1` for this generation |
-| `command` | string | `run`, `doctor`, … |
+| `command` | string | `run`, `init`, `doctor`, … |
 | `ok` | bool | Process-level success for this command |
 | `data` | object | Command-specific payload |
 | `error` | string \| null | Human-readable failure when `ok` is false |
@@ -40,6 +40,24 @@ Every `kit … --json` payload:
 
 Exit code: `0` pass, `1` fail or vacuous (unless `--allow-vacuous` / `--dry-run`), `2` other.
 
+## `kit init --json` → `data`
+
+| Field | Type |
+|-------|------|
+| `repo` | path |
+| `path` | path to `kit.toml` |
+| `toolchain` | `rust`, `go`, `node` or `python` |
+| `marker` | file that selected the toolchain (`Cargo.toml`, `package.json`, …) |
+| `existed` | bool: a `kit.toml` was there before this command |
+| `written` | bool: false with `--print` |
+| `toml` | string: the exact file text |
+| `checks` | `null` without `--check`; else array of `{ label, command, result, exitCode, summary, durationMs }`, `result` is `pass`, `fail`, `missing`, `timeout` or `refused` |
+| `skipped` | strings: other projects not in the gate |
+| `notes` | strings: why a script or tool was used or left out |
+
+`warnings` names each program the gate needs that is not on PATH.  
+Exit code: `0` written or printed. `2` when no check is safe to propose, `kit.toml` exists without `--force`, or no check passed under `--check` (stdout: one `ok: false` envelope).
+
 ## Errors
 
 When any `--json` command fails before it has a result (not a git repo, agent not installed, invalid `kit.toml`, unknown command), stdout still holds exactly one envelope: `ok: false`, `data: null`, `error` set. Exit code `2`.
@@ -56,6 +74,7 @@ When any `--json` command fails before it has a result (not a git repo, agent no
 | `pathCollisions` | paths of other `kit` programs on PATH (the npm 1.x shim is not one) |
 | `skillsPack` | path \| null |
 | `agents` | array of `{ agent, ready, version, remedy }` |
+| `kitToml` | path to `./kit.toml` \| null |
 
 ## `kit receipt list --json` → `data`
 

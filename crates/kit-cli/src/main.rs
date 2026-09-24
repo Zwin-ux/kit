@@ -4,6 +4,7 @@
 //! headless path: worktree → dry-run stream → gate → receipt.
 
 mod engine;
+mod init;
 
 use anyhow::{Context, Result};
 use engine::{RunOptions, execute, parse_agent, spawn_production};
@@ -78,6 +79,7 @@ async fn dispatch(args: &[String]) -> Result<()> {
 
     match first {
         Some("run") => cmd_run(&args[1..]).await,
+        Some("init") => init::cmd_init(&args[1..]).await,
         Some("doctor") => {
             let json = args.iter().any(|a| a == "--json");
             print_doctor(version, json);
@@ -178,6 +180,10 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     }
 
     let kind = parse_agent(&agent)?;
+    // Stderr only: under --json, stdout holds one envelope.
+    if let Some(hint) = init_hint(Path::new(&repo)) {
+        eprintln!("kit: {hint}");
+    }
     let opts = RunOptions {
         repo,
         agent: kind,
@@ -305,6 +311,12 @@ fn delta_line(delta: &RunDelta) -> Option<String> {
     }
 }
 
+/// One line that points to `kit init` when `repo` is a folder with no kit.toml.
+fn init_hint(repo: &Path) -> Option<String> {
+    (repo.is_dir() && !repo.join("kit.toml").exists())
+        .then(|| "no kit.toml in this repo. Run `kit init` to write a gate.".to_string())
+}
+
 fn state_label(state: RunState) -> String {
     format!("{state:?}").to_ascii_lowercase()
 }
@@ -316,13 +328,24 @@ fn json_envelope(
     data: serde_json::Value,
     error: Option<String>,
 ) -> serde_json::Value {
+    envelope(command, ok, data, error, Vec::new())
+}
+
+/// [`json_envelope`] with warnings.
+pub(crate) fn envelope(
+    command: &str,
+    ok: bool,
+    data: serde_json::Value,
+    error: Option<String>,
+    warnings: Vec<String>,
+) -> serde_json::Value {
     serde_json::json!({
         "schemaVersion": 1,
         "command": command,
         "ok": ok,
         "data": data,
         "error": error,
-        "warnings": [],
+        "warnings": warnings,
     })
 }
 
@@ -331,6 +354,7 @@ fn print_help(version: &str) {
     println!();
     println!("Usage:");
     println!("  kit                      Open the Control Room");
+    println!("  kit init                 Write kit.toml: a gate for this repo");
     println!("  kit --demo               Control Room with sample runs");
     println!("  kit run --task \"…\"       One isolated run: agent, then gate, then receipt");
     println!("  kit run --agent codex --task \"…\" [--dry-run] [--json]");
@@ -338,6 +362,16 @@ fn print_help(version: &str) {
     println!("  kit receipt list [--limit N] [--json]");
     println!("  kit receipt show <id> [--json] [--output]");
     println!("  kit --version            Print version");
+    println!();
+    println!("Init flags:");
+    println!("  --print / -p             Print the proposal only. Write nothing");
+    println!("  --force / -f             Replace an existing kit.toml");
+    println!(
+        "  --check                  Run each command once first. Keep only the checks that pass"
+    );
+    println!("  --timeout <5m>           Limit for each command under --check");
+    println!("  --repo / -C <path>       Target repo (default .)");
+    println!("  --json                   One JSON result on stdout");
     println!();
     println!("Run flags:");
     println!("  --repo / -C <path>       Target git repo (default .)");
@@ -354,7 +388,9 @@ fn print_help(version: &str) {
     println!("  ↑↓ select   f filter   Enter open   g gate   d dispatch   b board");
     println!("  k kill      r retry (fail only)   ? help   q quit");
     println!();
-    println!("Gate: add kit.toml to your repo. Docs: https://github.com/Zwin-ux/kit#readme");
+    println!(
+        "Gate: run `kit init` in your repo to write kit.toml. Docs: https://github.com/Zwin-ux/kit#readme"
+    );
 }
 
 /// `kit receipt list|show …` — proof browser for `~/.kit/runs/<id>/`.
@@ -714,6 +750,8 @@ fn print_doctor(version: &str, json: bool) {
         .as_ref()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "(unknown)".into());
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let kit_toml = Some(cwd.join("kit.toml")).filter(|p| p.is_file());
     let path_collisions: Vec<String> = collisions
         .iter()
         .map(|(p, _)| p.display().to_string())
@@ -743,6 +781,7 @@ fn print_doctor(version: &str, json: bool) {
             "kitHome": kit_home,
             "skillsPack": skills.as_ref().map(|p| p.display().to_string()),
             "agents": agents,
+            "kitToml": kit_toml.as_ref().map(|p| p.display().to_string()),
         });
         let envelope = json_envelope("doctor", true, data, None);
         println!(
@@ -766,6 +805,13 @@ fn print_doctor(version: &str, json: bool) {
         println!("  skills pack     {}", s.display());
     } else {
         println!("  skills pack     missing (.agents/skills)");
+    }
+    match &kit_toml {
+        Some(p) => println!("  kit.toml        {}", p.display()),
+        None if cwd.join(".git").exists() => {
+            println!("  kit.toml        missing. Run `kit init` to write a gate")
+        }
+        None => {}
     }
     if !collisions.is_empty() {
         println!();
@@ -792,6 +838,9 @@ fn print_doctor(version: &str, json: bool) {
     }
     println!();
     println!("try:");
+    if kit_toml.is_none() {
+        println!("  kit init");
+    }
     println!("  kit --demo");
     println!("  kit run --dry-run --task \"smoke\" --json");
     println!("  kit run --agent codex --task \"…\"");

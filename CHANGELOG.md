@@ -3,9 +3,14 @@
 ## Unreleased — npm distribution
 
 ### Added
+- `kit init` proposes a gate and writes `kit.toml`. It detects Rust, Go, Node (package manager from `packageManager` or the lockfile) and Python (ruff, black, mypy, pytest only when configured). It uses only scripts that exist and do not write: a `format` script that runs `prettier --write` is not the format check. `--print` only prints, `--force` replaces, `--check` runs each command once and keeps the ones that pass, `--json` returns the `init` envelope. Mixed repos use the root toolchain and name the rest
+- `kit run` (on stderr) and `kit doctor` point to `kit init` when the repo has no `kit.toml`; `kit doctor --json` has `kitToml`
 - npm: `@mzwin/kit` 1.x is a launcher plus one binary package per platform (Windows x64, macOS arm64/x64, Linux x64/arm64 glibc 2.17+). Prereleases publish to `alpha`; `latest` stays 0.1 until 1.0.0
 - `scripts/npm-smoke.mjs` installs the packed tarballs and runs `kit` through the npm shim; CI runs it on Linux, macOS and Windows
 - `kit doctor` shows how kit was installed and warns only about the old 0.1 Node app, not its own npm shim
+
+### Changed
+- Live gate inference and `kit init` share one detector. Inference no longer uses a `format` script that writes files or runs `lint` as the typecheck; `lint` is an `extra` check. A pnpm, yarn or bun repo is no longer checked with npm when that tool is missing
 
 ### Fixed
 - A run whose agent is not installed stops before any worktree. It used to fall back to a dry run, which could PASS the gate on an unchanged tree
