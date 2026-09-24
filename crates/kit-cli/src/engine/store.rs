@@ -183,15 +183,18 @@ pub fn ensure_layout() -> Result<()> {
 }
 
 /// Load kit.toml from a repo root if present; otherwise defaults.
-pub fn load_kit_config(repo: &Path) -> kit_core::KitConfig {
+/// The repo's `kit.toml`, or the default when there is none.
+///
+/// A file that exists but does not parse is an error, never the default:
+/// one typo (an unknown key) would otherwise switch the gate off in silence.
+pub fn load_kit_config(repo: &Path) -> anyhow::Result<kit_core::KitConfig> {
     let path = repo.join("kit.toml");
     if !path.exists() {
-        return kit_core::KitConfig::default();
+        return Ok(kit_core::KitConfig::default());
     }
-    match fs::read_to_string(&path) {
-        Ok(raw) => toml::from_str(&raw).unwrap_or_default(),
-        Err(_) => kit_core::KitConfig::default(),
-    }
+    let raw = fs::read_to_string(&path)
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
+    toml::from_str(&raw).map_err(|e| anyhow::anyhow!("{} is not valid: {}", path.display(), e))
 }
 
 #[cfg(test)]
@@ -200,6 +203,20 @@ mod tests {
     use crate::engine::paths::kit_home_test_lock;
     use kit_core::{AgentKind, Bounds, RunId, RunSpec, RunState};
     use std::time::{Duration, SystemTime};
+
+    /// `lint` is not a gate key. A typo must stop the run, not turn the gate off.
+    #[test]
+    fn broken_kit_toml_is_an_error_not_an_empty_gate() {
+        let root = std::env::temp_dir().join(format!("kit-bad-toml-{}", RunId::default().0));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("kit.toml"), "[gate]\nlint = \"cargo clippy\"\n").unwrap();
+        let err = load_kit_config(&root).unwrap_err().to_string();
+        assert!(err.contains("kit.toml is not valid"), "{err}");
+        assert!(err.contains("lint"), "{err}");
+        fs::remove_dir_all(&root).unwrap();
+        // No file at all is still the default, not an error.
+        assert!(load_kit_config(&root).unwrap().gate.is_empty());
+    }
 
     #[test]
     fn list_and_read_roundtrip() {
@@ -266,7 +283,7 @@ mod tests {
             .join("../..")
             .canonicalize()
             .expect("workspace root");
-        let cfg = load_kit_config(&root);
+        let cfg = load_kit_config(&root).expect("kit.toml");
         assert!(
             !cfg.gate.is_empty(),
             "kit.toml must exist and declare checks so Kit-on-Kit is not vacuous"

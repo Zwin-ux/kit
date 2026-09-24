@@ -23,6 +23,7 @@ pub fn create_worktree(repo: &Path, dest: &Path, branch: &str) -> Result<()> {
         .args([
             "worktree",
             "add",
+            "--quiet",
             "--detach",
             dest.to_str().context("worktree path utf-8")?,
             "HEAD",
@@ -37,6 +38,7 @@ pub fn create_worktree(repo: &Path, dest: &Path, branch: &str) -> Result<()> {
             .args([
                 "worktree",
                 "add",
+                "--quiet",
                 "-B",
                 branch,
                 dest.to_str().context("worktree path utf-8")?,
@@ -109,6 +111,19 @@ fn git(cwd: &Path) -> Command {
     c
 }
 
+/// `C:\x` instead of `\\?\C:\x`. Windows `canonicalize` returns verbatim
+/// paths, which leak into errors and receipts and confuse other tools.
+/// UNC (`\\?\UNC\…`) and non-Windows paths are unchanged.
+pub(crate) fn strip_verbatim(path: PathBuf) -> PathBuf {
+    let Some(text) = path.to_str() else {
+        return path;
+    };
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
 /// Sanitize a run id into a short branch segment.
 pub fn branch_name(run_id: &str) -> String {
     let short: String = run_id.chars().take(12).collect();
@@ -138,7 +153,7 @@ pub fn resolve_repo(token: &str) -> Result<PathBuf> {
             cwd
         }
     };
-    let abs = abs.canonicalize().unwrap_or(abs);
+    let abs = strip_verbatim(abs.canonicalize().unwrap_or(abs));
     let git_ok = abs.join(".git").exists()
         || git(&abs)
             .args(["rev-parse", "--is-inside-work-tree"])
@@ -152,4 +167,23 @@ pub fn resolve_repo(token: &str) -> Result<PathBuf> {
         );
     }
     Ok(abs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verbatim_drive_paths_lose_the_prefix() {
+        assert_eq!(
+            strip_verbatim(PathBuf::from(r"\\?\C:\work\repo")),
+            PathBuf::from(r"C:\work\repo")
+        );
+        let unc = PathBuf::from(r"\\?\UNC\server\share");
+        assert_eq!(strip_verbatim(unc.clone()), unc);
+        assert_eq!(
+            strip_verbatim(PathBuf::from("/home/me/repo")),
+            PathBuf::from("/home/me/repo")
+        );
+    }
 }

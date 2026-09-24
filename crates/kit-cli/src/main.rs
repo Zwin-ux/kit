@@ -16,9 +16,45 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let version = env!("CARGO_PKG_VERSION");
+async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Err(err) = dispatch(&args).await {
+        // Under --json, stdout carries exactly one envelope, failures included.
+        if args.iter().any(|a| a == "--json") {
+            let envelope = json_envelope(
+                &command_name(&args),
+                false,
+                serde_json::Value::Null,
+                Some(format!("{err:#}")),
+            );
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&envelope).unwrap_or_default()
+            );
+        } else {
+            eprintln!("kit: {err:#}");
+        }
+        std::process::exit(2);
+    }
+}
+
+/// The `command` field of a JSON envelope for this argv.
+fn command_name(args: &[String]) -> String {
+    match args.first().map(String::as_str) {
+        Some("receipt") | Some("receipts") => {
+            let sub = match args.get(1).map(String::as_str) {
+                Some("show") | Some("get") => "show",
+                _ => "list",
+            };
+            format!("receipt.{sub}")
+        }
+        Some(first) if !first.starts_with('-') => first.to_string(),
+        _ => "kit".to_string(),
+    }
+}
+
+async fn dispatch(args: &[String]) -> Result<()> {
+    let version = env!("CARGO_PKG_VERSION");
 
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("kit {version}");
@@ -36,7 +72,7 @@ async fn main() -> Result<()> {
     let first = args.first().map(String::as_str);
     if is_tui_invocation(first) {
         let demo =
-            wants_demo(&args) || first == Some("demo") || std::env::var_os("KIT_DEMO").is_some();
+            wants_demo(args) || first == Some("demo") || std::env::var_os("KIT_DEMO").is_some();
         return launch_tui(demo).await;
     }
 
@@ -52,12 +88,7 @@ async fn main() -> Result<()> {
             println!("kit {version}");
             Ok(())
         }
-        Some(other) => {
-            eprintln!("unknown command: {other}");
-            eprintln!();
-            print_help(version);
-            std::process::exit(2);
-        }
+        Some(other) => anyhow::bail!("unknown command: {other}. Run `kit --help`"),
         None => unreachable!("empty argv is a TUI launch"),
     }
 }
@@ -80,6 +111,14 @@ fn is_tui_invocation(first: Option<&str>) -> bool {
 }
 
 async fn launch_tui(demo: bool) -> Result<()> {
+    use std::io::IsTerminal;
+    // Without a terminal the TUI would draw into a pipe and wait for keys
+    // that never come.
+    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+        anyhow::bail!(
+            "the Control Room needs an interactive terminal. In scripts, use `kit run --task \"…\" --json`"
+        );
+    }
     let (delta_tx, delta_rx) = mpsc::channel::<(RunId, RunDelta)>(256);
     let (cmd_tx, cmd_rx) = mpsc::channel::<EngineCommand>(64);
 
@@ -185,7 +224,7 @@ async fn cmd_run(args: &[String]) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&envelope)?);
     } else {
         println!("run {}", result.id);
-        println!("  state     {:?}", result.state);
+        println!("  state     {}", state_label(result.state));
         println!("  receipt   {}", result.receipt_dir.display());
         if let Some(wt) = &result.worktree {
             println!("  worktree  {} (kept — dirty)", wt.display());
@@ -292,8 +331,8 @@ fn print_help(version: &str) {
     println!();
     println!("Usage:");
     println!("  kit                      Open the Control Room");
-    println!("  kit --demo               Control Room with PRD fixture data");
-    println!("  kit run --task \"…\"       One isolated run (live agent if installed)");
+    println!("  kit --demo               Control Room with sample runs");
+    println!("  kit run --task \"…\"       One isolated run: agent, then gate, then receipt");
     println!("  kit run --agent codex --task \"…\" [--dry-run] [--json]");
     println!("  kit doctor [--json]      Environment / readiness");
     println!("  kit receipt list [--limit N] [--json]");
@@ -304,10 +343,9 @@ fn print_help(version: &str) {
     println!("  --repo / -C <path>       Target git repo (default .)");
     println!("  --agent / -a <name>      codex|claude|grok|ollama");
     println!("  --task / -t <text>       Prompt / task");
-    println!("  --dry-run                Offline stream (no external CLI)");
-    println!("  --allow-vacuous          Exit 0 even when gate is UNCONFIGURED");
-    println!("  --live                   Force live agent (error → dry-run if missing)");
-    println!("  --json                   Machine-readable result");
+    println!("  --dry-run                Test the pipeline without an agent (proves nothing)");
+    println!("  --allow-vacuous          Exit 0 when kit.toml has no gate checks");
+    println!("  --json                   One JSON result on stdout (errors too)");
     println!("  KIT_HOME=…               Data root (default ~/.kit)");
     println!("  KIT_FULL_AUTO=1          Bypass agent approval prompts (dangerous)");
     println!("  KIT_SKILLS_DIR=…         Override skills pack path");
@@ -316,7 +354,7 @@ fn print_help(version: &str) {
     println!("  ↑↓ select   f filter   Enter open   g gate   d dispatch   b board");
     println!("  k kill      r retry (fail only)   ? help   q quit");
     println!();
-    println!("Docs: docs/dev/PRD-1.0.md  ·  docs/dev/CURRENT.md  ·  docs/json-contract.md");
+    println!("Gate: add kit.toml to your repo. Docs: https://github.com/Zwin-ux/kit#readme");
 }
 
 /// `kit receipt list|show …` — proof browser for `~/.kit/runs/<id>/`.
@@ -436,7 +474,7 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
             } else {
                 println!("receipt {}", receipt.id);
                 println!("  dir       {}", dir.display());
-                println!("  state     {:?}", receipt.state);
+                println!("  state     {}", state_label(receipt.state));
                 println!("  agent     {}", receipt.spec.agent.label());
                 println!("  repo      {}", receipt.spec.repo.display());
                 println!(
@@ -444,7 +482,14 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
                     receipt.spec.task.lines().next().unwrap_or("")
                 );
                 if let Some(g) = &receipt.gate {
-                    let label = if g.passed { "PASS" } else { "FAIL" };
+                    // Same labels as `kit run`: zero checks proves nothing.
+                    let label = if engine::infer::is_vacuous(g) {
+                        "UNCONFIGURED"
+                    } else if g.passed {
+                        "PASS"
+                    } else {
+                        "FAIL"
+                    };
                     println!("  gate      {label}  ({} checks)", g.checks.len());
                     for c in &g.checks {
                         println!(
@@ -604,6 +649,41 @@ fn other_kits_on_path(current: &Path, path_env: &OsStr) -> Vec<PathBuf> {
     out
 }
 
+/// What a `kit` found on PATH runs, read from its npm shim or symlink target.
+#[derive(Debug, PartialEq, Eq)]
+enum PathKit {
+    /// npm `@mzwin/kit` 1.x: the launcher for this same binary.
+    Launcher,
+    /// npm `@mzwin/kit` 0.1.x: the old Node app.
+    Node01,
+    Other,
+}
+
+fn classify_path_kit(path: &Path) -> PathKit {
+    let mut text = std::fs::canonicalize(path)
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    // npm shims are a few hundred bytes; never read a binary.
+    if std::fs::metadata(path).is_ok_and(|m| m.len() <= 64 * 1024)
+        && let Ok(bytes) = std::fs::read(path)
+    {
+        text.push('\n');
+        text.push_str(&String::from_utf8_lossy(&bytes));
+    }
+    classify_shim_text(&text)
+}
+
+fn classify_shim_text(text: &str) -> PathKit {
+    let text = text.replace('\\', "/");
+    if text.contains("@mzwin/kit/bin/kit.js") {
+        PathKit::Launcher
+    } else if text.contains("@mzwin/kit/dist/bin.js") {
+        PathKit::Node01
+    } else {
+        PathKit::Other
+    }
+}
+
 fn print_doctor(version: &str, json: bool) {
     let kit_home = engine::paths::kit_home();
     let skills = kit_agents::skills::resolve_skills_dir(std::path::Path::new("."));
@@ -617,11 +697,27 @@ fn print_doctor(version: &str, json: bool) {
         (None, Some(path_env)) => other_kits_on_path(Path::new(""), &path_env),
         _ => Vec::new(),
     };
+    // The npm 1.x launcher runs this same binary: not a collision.
+    let collisions: Vec<(PathBuf, PathKit)> = collisions
+        .into_iter()
+        .map(|p| {
+            let kind = classify_path_kit(&p);
+            (p, kind)
+        })
+        .filter(|(_, kind)| *kind != PathKit::Launcher)
+        .collect();
+    let install = match std::env::var("KIT_LAUNCHER").as_deref() {
+        Ok("npm") => "npm",
+        _ => "binary",
+    };
     let binary_display = binary_path
         .as_ref()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "(unknown)".into());
-    let path_collisions: Vec<String> = collisions.iter().map(|p| p.display().to_string()).collect();
+    let path_collisions: Vec<String> = collisions
+        .iter()
+        .map(|(p, _)| p.display().to_string())
+        .collect();
 
     if json {
         let agents: Vec<serde_json::Value> = statuses
@@ -639,6 +735,7 @@ fn print_doctor(version: &str, json: bool) {
             "version": version,
             "binary": "ok",
             "binaryPath": binary_display,
+            "install": install,
             "pathCollisions": path_collisions,
             "controlRoom": "ok",
             "gateEngine": "ok",
@@ -660,6 +757,7 @@ fn print_doctor(version: &str, json: bool) {
     println!("status:");
     println!("  binary          ok (rust)");
     println!("  binary path     {binary_display}");
+    println!("  installed via   {install}");
     println!("  control room    ok (kit-tui)");
     println!("  gate engine     ok (kit-gate)");
     println!("  run engine      ok (worktree + adapters + receipt)");
@@ -672,9 +770,14 @@ fn print_doctor(version: &str, json: bool) {
     if !collisions.is_empty() {
         println!();
         println!("warning:");
-        println!("  another kit on PATH (likely npm 0.1) — this binary is the Rust control room");
-        for p in &collisions {
-            println!("    {}", p.display());
+        for (p, kind) in &collisions {
+            match kind {
+                PathKit::Node01 => {
+                    println!("  kit 0.1 (Node) is on PATH: {}", p.display());
+                    println!("    → npm install -g @mzwin/kit@alpha");
+                }
+                _ => println!("  another kit is on PATH: {}", p.display()),
+            }
         }
     }
     println!();
@@ -700,6 +803,35 @@ mod tests {
     use std::ffi::OsString;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// Last line of the real npm 0.1.3 `kit.cmd` shim (Windows, 2026-09-23).
+    const NODE01_CMD: &str = r#"endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & "%_prog%"  "%dp0%\node_modules\@mzwin\kit\dist\bin.js" %*"#;
+
+    #[test]
+    fn npm_shims_are_told_apart() {
+        assert_eq!(classify_shim_text(NODE01_CMD), PathKit::Node01);
+        let launcher_cmd = NODE01_CMD.replace(r"dist\bin.js", r"bin\kit.js");
+        assert_eq!(classify_shim_text(&launcher_cmd), PathKit::Launcher);
+        // Unix: the global bin is a symlink; canonicalize names the target.
+        assert_eq!(
+            classify_shim_text("/usr/lib/node_modules/@mzwin/kit/bin/kit.js"),
+            PathKit::Launcher
+        );
+        assert_eq!(classify_shim_text("/usr/local/bin/kit"), PathKit::Other);
+    }
+
+    #[test]
+    fn json_error_envelopes_name_the_command() {
+        let argv = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
+        assert_eq!(command_name(&argv("run --task x --json")), "run");
+        assert_eq!(command_name(&argv("doctor --json")), "doctor");
+        assert_eq!(
+            command_name(&argv("receipt show 01M --json")),
+            "receipt.show"
+        );
+        assert_eq!(command_name(&argv("receipt --json")), "receipt.list");
+        assert_eq!(command_name(&argv("--json")), "kit");
+    }
 
     fn scratch(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(

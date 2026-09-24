@@ -389,6 +389,9 @@ async fn try_probe(binary: &str, args: &[&str]) -> Option<Option<String>> {
         .stdin(Stdio::null())
         .kill_on_drop(true);
     match tokio::time::timeout(std::time::Duration::from_secs(4), cmd.output()).await {
+        // `cmd /C missing` prints "'x' is not recognized…" to stderr: output,
+        // but no binary. That must not read as installed.
+        Ok(Ok(out)) if is_command_not_found(out.status.code(), &out.stderr) => None,
         Ok(Ok(out)) if out.status.success() || !out.stdout.is_empty() || !out.stderr.is_empty() => {
             let text = String::from_utf8_lossy(&out.stdout);
             let text = if text.trim().is_empty() {
@@ -406,6 +409,14 @@ async fn try_probe(binary: &str, args: &[&str]) -> Option<Option<String>> {
         }
         _ => None,
     }
+}
+
+/// True when the shell could not find the program: cmd.exe exits 9009,
+/// POSIX shells exit 127.
+fn is_command_not_found(code: Option<i32>, stderr: &[u8]) -> bool {
+    matches!(code, Some(9009) | Some(127))
+        || String::from_utf8_lossy(stderr)
+            .contains("is not recognized as an internal or external command")
 }
 
 /// Collapse Codex/Grok JSONL noise into readable text when possible.
@@ -448,6 +459,25 @@ pub fn full_auto() -> bool {
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    /// On Windows every probe goes through `cmd /C`, which prints an error
+    /// for a missing program. That output once made missing agents "ready".
+    #[tokio::test]
+    async fn missing_program_is_not_installed() {
+        let (installed, version) = probe_binary("kit-no-such-agent-7f3a").await;
+        assert!(!installed, "probe claimed a missing program: {version:?}");
+    }
+
+    #[test]
+    fn shell_not_found_is_recognized() {
+        assert!(is_command_not_found(Some(9009), b""));
+        assert!(is_command_not_found(Some(127), b""));
+        assert!(is_command_not_found(
+            Some(1),
+            b"'grok' is not recognized as an internal or external command,"
+        ));
+        assert!(!is_command_not_found(Some(0), b"grok 1.0.34"));
+    }
 
     #[test]
     fn isolate_cargo_target_dir_points_at_worktree() {

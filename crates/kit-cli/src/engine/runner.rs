@@ -84,6 +84,12 @@ pub async fn execute_cancellable(
     ensure_layout()?;
     let id = id.unwrap_or_default();
     let repo = resolve_repo(&opts.repo)?;
+    // Read the gate before any agent runs: a broken kit.toml stops the run
+    // here, and nothing the agent does can change the gate it is held to.
+    let config = load_kit_config(&repo)?;
+    if opts.dry_run != Some(true) {
+        require_agent(adapter(opts.agent).probe().await)?;
+    }
     let started_at = SystemTime::now();
 
     send(&tx, &id, RunDelta::State(RunState::Running)).await;
@@ -114,54 +120,12 @@ pub async fn execute_cancellable(
     }
 
     // --- agent phase ---
-    let force_dry = opts.dry_run == Some(true);
-    let force_live = opts.dry_run == Some(false);
+    // Only an explicit --dry-run is offline; a missing agent was refused
+    // before the worktree was made (see `require_agent`).
+    let use_dry = opts.dry_run == Some(true);
     let agent_impl = adapter(opts.agent);
-    let status = agent_impl.probe().await;
-    let use_dry = if force_dry {
-        true
-    } else if force_live {
-        if !status.installed {
-            append_capped(
-                &mut output,
-                &mut truncated,
-                opts.bounds.output_cap_bytes,
-                &format!(
-                    "kit: {} not on PATH — cannot force live; install {}\n",
-                    opts.agent,
-                    opts.agent.binary()
-                ),
-            );
-            send(
-                &tx,
-                &id,
-                RunDelta::Output(format!(
-                    "kit: {} missing; falling back to dry-run\n",
-                    opts.agent.binary()
-                )),
-            )
-            .await;
-            true
-        } else {
-            false
-        }
-    } else {
-        // Auto: live when installed.
-        !status.installed
-    };
 
     let phase = if use_dry {
-        if !force_dry && !status.installed {
-            send(
-                &tx,
-                &id,
-                RunDelta::Output(format!(
-                    "kit: {} not installed — dry-run (install CLI for live agents)\n",
-                    opts.agent.binary()
-                )),
-            )
-            .await;
-        }
         dry_run_agent(
             &opts,
             &id,
@@ -235,7 +199,7 @@ pub async fn execute_cancellable(
 
     // --- gate phase ---
     send(&tx, &id, RunDelta::State(RunState::Gating)).await;
-    let mut config = load_kit_config(&repo);
+    let mut config = config;
     // CEO stamp P2: infer defaults on live runs only. Dry-run stays offline-fast
     // and is exempt from vacuous non-zero exit.
     if config.gate.is_empty() && !use_dry {
@@ -460,6 +424,22 @@ async fn write_terminal(
     })
 }
 
+/// Refuse a live run whose agent is not installed.
+///
+/// A silent dry-run fallback runs no agent, so the gate checks an unchanged
+/// tree and can PASS: a receipt that proves nothing. Stop before any worktree.
+fn require_agent(status: kit_agents::AgentStatus) -> Result<()> {
+    if status.installed {
+        return Ok(());
+    }
+    let agent = status.kind;
+    anyhow::bail!(
+        "{agent} is not installed. Install the {} CLI, choose another agent (--agent \
+         codex|claude|grok|ollama), or use --dry-run to test without an agent",
+        agent.binary()
+    )
+}
+
 async fn dry_run_agent(
     opts: &RunOptions,
     id: &RunId,
@@ -474,7 +454,6 @@ async fn dry_run_agent(
         format!("task: {}", opts.task),
         format!("worktree: {}", worktree.display()),
         "status: streaming (no external CLI invoked)".into(),
-        "hint: install codex/claude/grok/ollama for live TUI dispatch".into(),
     ];
     let deadline = tokio::time::Instant::now() + opts.bounds.timeout;
     for line in lines {
@@ -653,6 +632,20 @@ mod tests {
     use crate::engine::paths::kit_home_test_lock;
     use kit_core::CheckStatus;
 
+    /// A missing agent must stop the run, never fall back to a dry run that
+    /// could PASS the gate on an unchanged tree.
+    #[test]
+    fn missing_agent_is_refused_with_the_fix() {
+        let err = require_agent(kit_agents::AgentStatus::missing(AgentKind::Grok))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("grok is not installed"), "{err}");
+        assert!(err.contains("--dry-run"), "{err}");
+        let mut ready = kit_agents::AgentStatus::missing(AgentKind::Codex);
+        ready.installed = true;
+        assert!(require_agent(ready).is_ok());
+    }
+
     /// Holding a std Mutex across await is intentional here: tests must not
     /// interleave KIT_HOME mutation. Clippy would prefer tokio::Mutex; that
     /// would not prevent other threads from racing the env var.
@@ -766,7 +759,7 @@ mod tests {
         let test_cmd = format!("sh \"{}\"", script.display());
         let kit_toml = format!("[gate]\ntest = '{test_cmd}'\ntimeout = \"30s\"\n");
         std::fs::write(root.join("kit.toml"), kit_toml).unwrap();
-        let loaded = crate::engine::store::load_kit_config(&root);
+        let loaded = crate::engine::store::load_kit_config(&root).expect("kit.toml");
         assert!(
             !loaded.gate.is_empty(),
             "fixture kit.toml must parse so the probe actually runs"
