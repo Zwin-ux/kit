@@ -154,24 +154,52 @@ pub fn resolve_repo(token: &str) -> Result<PathBuf> {
         }
     };
     let abs = strip_verbatim(abs.canonicalize().unwrap_or(abs));
-    let git_ok = abs.join(".git").exists()
-        || git(&abs)
-            .args(["rev-parse", "--is-inside-work-tree"])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-    if !git_ok {
-        bail!(
+    if abs.join(".git").exists() {
+        return Ok(abs);
+    }
+    // From a subdirectory, use the repo root: the worktree is the whole repo,
+    // the gate runs at its root, so kit.toml must be read there too.
+    let top = git(&abs)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        .filter(|s| !s.is_empty());
+    match top {
+        Some(top) => {
+            let top = PathBuf::from(top);
+            Ok(strip_verbatim(top.canonicalize().unwrap_or(top)))
+        }
+        None => bail!(
             "not a git repository: {} (Kit runs require git for isolation)",
             abs.display()
-        );
+        ),
     }
-    Ok(abs)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `kit run` from `repo/src` must use `repo`: the gate and kit.toml live at the root.
+    #[test]
+    fn subdirectory_resolves_to_repo_root() {
+        let root = std::env::temp_dir().join(format!(
+            "kit-subdir-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let sub = root.join("src").join("deep");
+        std::fs::create_dir_all(&sub).unwrap();
+        assert!(git(&root).args(["init", "-q"]).status().unwrap().success());
+        let resolved = resolve_repo(sub.to_str().unwrap()).expect("inside a repo");
+        assert_eq!(resolved, strip_verbatim(root.canonicalize().unwrap()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn verbatim_drive_paths_lose_the_prefix() {

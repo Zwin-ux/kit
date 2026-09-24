@@ -14,6 +14,7 @@
 
 ### Fixed
 - A gate check whose program is not found (or cannot start) now FAILS the gate. It used to be "skipped", which counted as passed: a typo in kit.toml gave a PASS receipt with no check run
+- `kit run` from a subdirectory uses the repo root, so it reads the same `kit.toml` the gate runs against
 - `kit doctor` says `not ready` (not `missing`) for an installed agent that is logged out or has no model, and `--json` agents gain `installed`
 - A run whose agent is not installed stops before any worktree. It used to fall back to a dry run, which could PASS the gate on an unchanged tree
 - On Windows, a missing agent no longer shows as ready (`cmd /C` "is not recognized" output was read as a version)
