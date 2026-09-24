@@ -108,7 +108,7 @@ async fn execute_with(
 
     let wt_path = worktrees_dir().join(&id.0);
     let branch = branch_name(&id.0);
-    create_worktree(&repo, &wt_path, &branch)
+    let base = create_worktree(&repo, &wt_path, &branch)
         .with_context(|| format!("create worktree at {}", wt_path.display()))?;
     send(&tx, &id, RunDelta::Worktree(wt_path.clone())).await;
 
@@ -154,7 +154,7 @@ async fn execute_with(
         id.clone(),
         repo,
         Some(branch),
-        Some(wt_path),
+        Some((wt_path, Some(base))),
         Some(started_at),
         state,
         output,
@@ -302,8 +302,9 @@ pub(crate) async fn finalize_failed(
 }
 
 /// Receipt for a run that ends outside its own run path, with `note` in the
-/// stream and the log. A worktree the run got before failing is diffed and
-/// removed if clean; the start time is not known here, so none is recorded.
+/// stream and the log. A worktree the run got before failing is diffed against
+/// its HEAD and kept: its base commit is not known here, so Kit cannot prove
+/// the agent left no commit in it. The start time is not known either.
 async fn finalize_outside_run(
     opts: RunOptions,
     id: RunId,
@@ -315,7 +316,7 @@ async fn finalize_outside_run(
     // does not resolve (the run is over either way).
     let repo = resolve_repo(&opts.repo).unwrap_or_else(|_| PathBuf::from(&opts.repo));
     let wt = worktrees_dir().join(&id.0);
-    let wt_path = wt.is_dir().then_some(wt);
+    let wt_path = wt.is_dir().then_some((wt, None));
     let branch = wt_path.as_ref().map(|_| branch_name(&id.0));
     let mut output = String::new();
     let mut truncated = false;
@@ -333,14 +334,15 @@ async fn finalize_outside_run(
 }
 
 /// Persist the receipt, then remove the worktree if the run left it clean.
-/// `wt_path` is `None` when the run never got a worktree.
+/// `worktree` is `None` when the run never got one; else its path and base
+/// commit (`None` when not known, and then the worktree is always kept).
 #[allow(clippy::too_many_arguments)]
 async fn write_terminal(
     opts: RunOptions,
     id: RunId,
     repo: PathBuf,
     branch: Option<String>,
-    wt_path: Option<PathBuf>,
+    worktree: Option<(PathBuf, Option<String>)>,
     started_at: Option<SystemTime>,
     state: RunState,
     output: String,
@@ -348,10 +350,25 @@ async fn write_terminal(
     gate: Option<GateOutcome>,
 ) -> Result<RunResult> {
     let ended_at = SystemTime::now();
-    let diff = wt_path
-        .as_deref()
-        .map(|wt| worktree::worktree_diff(wt).unwrap_or_default())
-        .unwrap_or_default();
+    let (wt_path, base) = match worktree {
+        Some((wt, base)) => (Some(wt), base),
+        None => (None, None),
+    };
+    // Diff against the pinned base, so commits the agent made are in it.
+    // Without a base, the worktree HEAD is the best Kit knows.
+    let diff_base = base.clone().or_else(|| {
+        wt_path
+            .as_deref()
+            .and_then(|wt| worktree::head_commit(wt).ok())
+    });
+    let diff = match (wt_path.as_deref(), diff_base.as_deref()) {
+        (Some(wt), Some(b)) => worktree::worktree_diff(wt, b).unwrap_or_else(|err| {
+            // Loud: an empty diff here would under-report the run.
+            eprintln!("kit: cannot record the diff of {}: {err:#}", wt.display());
+            String::new()
+        }),
+        _ => String::new(),
+    };
 
     let receipt = Receipt {
         version: Receipt::VERSION,
@@ -371,12 +388,13 @@ async fn write_terminal(
         output_truncated: truncated,
     };
 
-    let written = write_receipt(&receipt, &output);
+    let written = write_receipt(&receipt, &output, base.as_deref());
     // A clean worktree holds nothing the receipt lacks, so it goes even when
     // the receipt write failed: an error never leaks a worktree.
-    let removed = wt_path
-        .as_deref()
-        .is_some_and(|wt| remove_if_clean(&repo, wt).unwrap_or(false));
+    let removed = match (wt_path.as_deref(), base.as_deref()) {
+        (Some(wt), Some(b)) => remove_if_clean(&repo, wt, b).unwrap_or(false),
+        _ => false,
+    };
     let receipt_dir = written?;
 
     Ok(RunResult {
@@ -1025,6 +1043,148 @@ mod tests {
         let log = log.expect("output.log");
         assert!(log.contains("program not found"), "{log}");
 
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Changes files in the worktree like a real agent, then exits 0:
+    /// edits a tracked file, creates a text file and a binary file, and
+    /// (when `commit` is set) commits the edit, as some agents do.
+    struct WritesFiles {
+        commit: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl Agent for WritesFiles {
+        fn kind(&self) -> AgentKind {
+            AgentKind::Codex
+        }
+
+        async fn probe(&self) -> kit_agents::AgentStatus {
+            let mut status = kit_agents::AgentStatus::missing(AgentKind::Codex);
+            status.installed = true;
+            status
+        }
+
+        async fn spawn(
+            &self,
+            spec: &RunSpec,
+            worktree: &std::path::Path,
+            tx: mpsc::Sender<RunDelta>,
+        ) -> std::result::Result<Box<dyn kit_agents::AgentHandle>, kit_agents::SpawnError> {
+            std::fs::write(worktree.join("README.md"), "kit test fixture\nedited\n").unwrap();
+            if self.commit {
+                let git = |args: &[&str]| {
+                    std::process::Command::new("git")
+                        .args(["-c", "user.name=kit", "-c", "user.email=kit@test"])
+                        .args(args)
+                        .current_dir(worktree)
+                        .env_remove("GIT_DIR")
+                        .env_remove("GIT_INDEX_FILE")
+                        .output()
+                        .unwrap()
+                };
+                git(&["commit", "-q", "-am", "agent commit"]);
+            }
+            std::fs::create_dir_all(worktree.join("src")).unwrap();
+            std::fs::write(worktree.join("src").join("created.txt"), "new file\n").unwrap();
+            std::fs::write(worktree.join("blob.bin"), [0u8, 159, 146, 150, 0, 255, 1]).unwrap();
+            ExitAtOnce.spawn(spec, worktree, tx).await
+        }
+    }
+
+    /// Run `agent` live against a fresh fixture; returns (result, receipt, repo, home).
+    async fn run_with_agent(
+        tag: &str,
+        agent: &dyn Agent,
+    ) -> (RunResult, Receipt, std::path::PathBuf, std::path::PathBuf) {
+        let root = crate::engine::paths::bare_git_fixture();
+        let home = std::env::temp_dir().join(format!(
+            "kit-test-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        let (result, receipt) = with_kit_home(&home, || async {
+            let opts = RunOptions {
+                repo: root.to_string_lossy().into_owned(),
+                agent: AgentKind::Codex,
+                task: "write files".into(),
+                dry_run: Some(false),
+                bounds: Bounds::default(),
+            };
+            let result = execute_with(opts, None, None, None, agent)
+                .await
+                .expect("run");
+            let receipt = crate::engine::store::read_receipt(&result.id.0)
+                .unwrap()
+                .unwrap();
+            (result, receipt)
+        })
+        .await;
+        (result, receipt, root, home)
+    }
+
+    /// `git apply --check` of `patch` against `repo`'s (clean) working tree.
+    fn applies_cleanly(repo: &std::path::Path, patch: &std::path::Path) -> (bool, String) {
+        let out = std::process::Command::new("git")
+            .args(["apply", "--check", "--binary"])
+            .arg(patch)
+            .current_dir(repo)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_INDEX_FILE")
+            .output()
+            .unwrap();
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    }
+
+    /// Proof gap: a file the agent CREATES must be in the receipt diff, binary
+    /// files too, and diff.patch must apply to the base commit. The worktree
+    /// is kept exactly when the diff is not empty.
+    #[tokio::test]
+    async fn receipt_diff_includes_new_and_binary_files() {
+        let (result, receipt, root, home) =
+            run_with_agent("newfiles", &WritesFiles { commit: false }).await;
+        assert!(receipt.diff.contains("src/created.txt"), "{}", receipt.diff);
+        assert!(receipt.diff.contains("blob.bin"), "{}", receipt.diff);
+        assert!(
+            receipt.diff.contains("GIT binary patch"),
+            "{}",
+            receipt.diff
+        );
+        assert!(receipt.diff.contains("+edited"), "{}", receipt.diff);
+        let patch = result.receipt_dir.join("diff.patch");
+        let (ok, err) = applies_cleanly(&root, &patch);
+        assert!(ok, "diff.patch does not apply to the base: {err}");
+        assert!(!result.worktree_removed, "a changed worktree is kept");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An agent that commits in the worktree moves its HEAD. The receipt diff
+    /// is taken against the base commit, so the committed edit is not lost.
+    #[tokio::test]
+    async fn receipt_diff_includes_agent_commits() {
+        let (result, receipt, root, home) =
+            run_with_agent("commits", &WritesFiles { commit: true }).await;
+        assert!(receipt.diff.contains("+edited"), "{}", receipt.diff);
+        assert!(receipt.diff.contains("src/created.txt"), "{}", receipt.diff);
+        let (ok, err) = applies_cleanly(&root, &result.receipt_dir.join("diff.patch"));
+        assert!(ok, "diff.patch does not apply to the base: {err}");
+        // The agent's commit is only reachable from the worktree: keep it.
+        assert!(
+            !result.worktree_removed,
+            "worktree with a commit was removed"
+        );
+        assert!(result.worktree.as_ref().is_some_and(|w| w.is_dir()));
+        let base = crate::engine::store::read_base(&result.receipt_dir).expect("base.txt");
+        assert_eq!(base, worktree::head_commit(&root).unwrap());
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -14,7 +14,15 @@ use super::paths::{run_dir, runs_dir};
 /// id fails and never replaces proof. `receipt.json` is published last, by
 /// rename, so a write that dies part way leaves no file that reads as a
 /// complete receipt (readers skip a dir without `receipt.json`).
-pub fn write_receipt(receipt: &Receipt, output: &str) -> Result<std::path::PathBuf> {
+///
+/// `base` is the commit the run's worktree started at. It goes in `base.txt`
+/// (the frozen `Receipt` shape has no field for it); `kit land` applies
+/// `diff.patch` onto it.
+pub fn write_receipt(
+    receipt: &Receipt,
+    output: &str,
+    base: Option<&str>,
+) -> Result<std::path::PathBuf> {
     let dir = run_dir(&receipt.id.0);
     if let Some(parent) = dir.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
@@ -35,6 +43,9 @@ pub fn write_receipt(receipt: &Receipt, output: &str) -> Result<std::path::PathB
     if !receipt.diff.is_empty() {
         write_new(&dir.join("diff.patch"), receipt.diff.as_bytes())?;
     }
+    if let Some(base) = base {
+        write_new(&dir.join(BASE_FILE), format!("{base}\n").as_bytes())?;
+    }
     if let Some(gate) = &receipt.gate {
         let g = serde_json::to_string_pretty(gate).context("serialize gate")?;
         write_new(&dir.join("gate.json"), g.as_bytes())?;
@@ -44,6 +55,16 @@ pub fn write_receipt(receipt: &Receipt, output: &str) -> Result<std::path::PathB
     write_new(&tmp, json.as_bytes())?;
     fs::rename(&tmp, dir.join("receipt.json")).context("publish receipt.json")?;
     Ok(dir)
+}
+
+/// Sidecar in the run dir: the base commit sha, one line.
+pub const BASE_FILE: &str = "base.txt";
+
+/// The base commit recorded for a run dir, if any.
+pub fn read_base(dir: &Path) -> Option<String> {
+    let raw = fs::read_to_string(dir.join(BASE_FILE)).ok()?;
+    let sha = raw.trim();
+    (!sha.is_empty()).then(|| sha.to_string())
 }
 
 /// Create `path` (never overwrite) and flush `bytes` to disk.
@@ -286,7 +307,7 @@ mod tests {
             gate: None,
             output_truncated: false,
         };
-        write_receipt(&receipt, "hello\n").unwrap();
+        write_receipt(&receipt, "hello\n", None).unwrap();
 
         let rows = list_receipts(10).unwrap();
         assert_eq!(rows.len(), 1);
@@ -363,16 +384,26 @@ mod tests {
         let _lock = kit_home_test_lock();
         let home = scratch_home("once");
         let id = "01TESTWRITEONCE000000000001";
-        let dir = write_receipt(&sample(id, RunState::Pass, "+pass\n"), "first\n").unwrap();
-        let files = ["receipt.json", "output.log", "diff.patch"];
+        let dir = write_receipt(
+            &sample(id, RunState::Pass, "+pass\n"),
+            "first\n",
+            Some("abc123"),
+        )
+        .unwrap();
+        assert_eq!(read_base(&dir).as_deref(), Some("abc123"));
+        let files = ["receipt.json", "output.log", "diff.patch", BASE_FILE];
         let before: Vec<Vec<u8>> = files
             .iter()
             .map(|f| fs::read(dir.join(f)).unwrap())
             .collect();
 
-        let err = write_receipt(&sample(id, RunState::Error, "+other\n"), "second\n")
-            .unwrap_err()
-            .to_string();
+        let err = write_receipt(
+            &sample(id, RunState::Error, "+other\n"),
+            "second\n",
+            Some("def456"),
+        )
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("already exists"), "{err}");
 
         let after: Vec<Vec<u8>> = files
@@ -398,6 +429,7 @@ mod tests {
         write_receipt(
             &sample("01TESTWHOLERECEIPT000000001", RunState::Pass, ""),
             "",
+            None,
         )
         .unwrap();
 
