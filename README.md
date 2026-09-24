@@ -61,13 +61,30 @@ This repo has a real [`kit.toml`](kit.toml) (fmt + clippy + `cargo test --worksp
 
 ## Install (1.0 alpha)
 
-After the first 1.x publish:
+Use one of these lines. Each installs the same `kit` binary.
+
+| Method | Command |
+|--------|---------|
+| npm (primary) | `npm install -g @mzwin/kit@alpha` |
+| Linux, macOS | `curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh \| sh -s -- --prerelease` |
+| Windows PowerShell | `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.ps1))) -Prerelease` |
+| Cargo | `cargo install --git https://github.com/Zwin-ux/kit kit-cli --locked` |
+
+- npm without `@alpha` installs the old 0.1 app until 1.0.0.
+- The install scripts need a GitHub Release with archives. The first one comes with the release after 1.0.0-alpha.1. Until then, use npm or Cargo.
+- The install scripts check the SHA-256 of the download against `SHA256SUMS` and stop if it does not match. They install to `~/.local/bin` (Windows: `%LOCALAPPDATA%\kit\bin`) and do not change `PATH`. If that directory is not on `PATH`, they show the line to add.
+- Linux builds need glibc 2.17 or newer. On musl (Alpine), use the Cargo line.
+- Do not use `cargo install kit-cli`. That crate on crates.io is a different project.
+
+Then:
 
 ```bash
-npm install -g @mzwin/kit@alpha
+kit doctor
 kit --demo
 cd your-repo && kit init
 ```
+
+Details: [`docs/dev/RELEASING.md`](docs/dev/RELEASING.md).
 
 From source:
 

@@ -1,8 +1,9 @@
 name: Release npm
 
-# Tag push (v1.0.0-alpha.2, v1.0.0, …) builds every platform and publishes.
-# Manual runs build everything and run `npm publish --dry-run` unless
-# `publish` is checked.
+# Tag push (v1.0.0-alpha.2, v1.0.0, …) builds every platform, publishes to
+# npm and creates the GitHub Release (archives + SHA256SUMS).
+# Manual runs build and pack everything, run `npm publish --dry-run` and
+# create no release, unless `publish` is checked.
 #
 # Prerelease versions publish under their prerelease word (alpha, beta, rc),
 # never `latest`, so `npm i -g @mzwin/kit` keeps serving 0.1.x until 1.0.0.
@@ -13,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish to npm (unchecked = dry run)
+        description: Publish to npm and GitHub Releases (unchecked = dry run)
         type: boolean
         default: false
 
@@ -127,10 +128,95 @@ jobs:
           chmod +x bins/${{ matrix.target }}/kit
           docker run --rm -v "$PWD/bins:/b:ro" amazonlinux:2 /b/${{ matrix.target }}/kit --version
 
+  # Archives + SHA256SUMS for scripts/install.sh and scripts/install.ps1.
+  # Runs next to `publish`. A dry run packs and checksums but creates no
+  # release. A real run needs the tag v<version> to exist on GitHub.
+  github-release:
+    name: github release
+    needs: [build, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload assets
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: bins
+
+      - name: Check tag matches Cargo version
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(node -e 'import("./scripts/npm-stage.mjs").then(m => console.log(m.cargoVersion()))')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $version" >&2
+            exit 1
+          fi
+
+      - name: Pack archives and SHA256SUMS
+        run: |
+          set -euo pipefail
+          version=$(node -e 'import("./scripts/npm-stage.mjs").then(m => console.log(m.cargoVersion()))')
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          mkdir -p dist/release
+          count=0
+          for target in x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-apple-darwin \
+                        x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            bindir="bins/$target"
+            name="kit-$version-$target"
+            stage="dist/stage/$name"
+            mkdir -p "$stage"
+            cp LICENSE README.md "$stage/"
+            case "$target" in
+              *windows*)
+                cp "$bindir/kit.exe" "$stage/"
+                (cd dist/stage && zip -qr "../release/$name.zip" "$name")
+                ;;
+              *)
+                cp "$bindir/kit" "$stage/"
+                chmod 755 "$stage/kit" # upload-artifact drops the mode bits
+                tar -C dist/stage -czf "dist/release/$name.tar.gz" "$name"
+                ;;
+            esac
+            count=$((count + 1))
+          done
+          [ "$count" -eq 5 ] || { echo "expected 5 targets, got $count" >&2; exit 1; }
+          (cd dist/release && sha256sum -- kit-* > SHA256SUMS && cat SHA256SUMS)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-archives
+          path: dist/release/
+          if-no-files-found: error
+
+      - name: Create or update release
+        if: github.event_name == 'push' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag exists: replacing assets"
+            gh release upload "$tag" dist/release/* --clobber
+            exit 0
+          fi
+          flags=(--verify-tag --title "Kit $VERSION")
+          case "$VERSION" in *-*) flags+=(--prerelease) ;; esac
+          cat > notes.md <<EOF
+          Changes: [CHANGELOG.md](https://github.com/$GH_REPO/blob/$tag/CHANGELOG.md)
+
+          Install: \`npm install -g @mzwin/kit@$VERSION\`, or \`scripts/install.sh\` / \`scripts/install.ps1\` with version $VERSION. Check the archives against \`SHA256SUMS\`.
+          EOF
+          gh release create "$tag" "${flags[@]}" --notes-file notes.md dist/release/*
+
   publish:
     name: publish
     needs: [build, verify]
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.publish.outputs.version }}
     permissions:
       contents: read
       id-token: write # npm provenance
@@ -158,14 +244,16 @@ jobs:
         run: node scripts/npm-stage.mjs --binaries bins
 
       - name: Publish
+        id: publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && !inputs.publish }}
         run: |
           set -euo pipefail
           version=$(node -p 'require("./dist/npm/kit/package.json").version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           case "$version" in
-            *-*) tag=$(echo "${version#*-}" | sed 's/[.0-9].*//'); tag=${tag:-next} ;;
+            *-*) tag=${version#*-}; tag=${tag%%[.0-9]*}; tag=${tag:-next} ;;
             *)   tag=latest ;;
           esac
           flags=(--access public --tag "$tag")
@@ -176,10 +264,35 @@ jobs:
           fi
           echo "version $version → dist-tag $tag (dry run: $DRY_RUN)"
 
+          # Published only if the registry returns exactly this version.
+          published() {
+            [ "$(npm view "$1@$version" version --prefer-online 2>/dev/null)" = "$version" ]
+          }
+
+          # A new package name can return 404 for minutes after a
+          # successful publish. Wait until the package document and the
+          # version both resolve, or fail after 15 minutes.
+          wait_visible() {
+            local name=$1 code deadline=$((SECONDS + 900))
+            while :; do
+              code=$(curl -s -o /dev/null -w '%{http_code}' "https://registry.npmjs.org/${name/\//%2f}")
+              if [ "$code" = 200 ] && published "$name"; then
+                echo "visible: $name@$version"
+                return
+              fi
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                echo "::error::$name@$version is not visible on the registry after 15 minutes (HTTP $code)"
+                return 1
+              fi
+              echo "waiting for $name@$version (HTTP $code)"
+              sleep 20
+            done
+          }
+
           publish() {
             local dir=$1 name
             name=$(node -p "require('./$dir/package.json').name")
-            if npm view "$name@$version" version >/dev/null 2>&1; then
+            if published "$name"; then
               echo "skip $name@$version (already published)"
               return
             fi
@@ -187,6 +300,79 @@ jobs:
           }
 
           # Platform packages first: the launcher must never point at
-          # versions that do not exist yet.
-          for dir in dist/npm/kit-*; do publish "$dir"; done
+          # versions that do not exist yet, so wait until every one of
+          # them resolves before the launcher goes out.
+          platforms=()
+          for dir in dist/npm/kit-*; do
+            publish "$dir"
+            platforms+=("$(node -p "require('./$dir/package.json').name")")
+          done
+          if [ "$DRY_RUN" != "true" ]; then
+            for name in "${platforms[@]}"; do wait_visible "$name"; done
+          fi
           publish dist/npm/kit
+          if [ "$DRY_RUN" != "true" ]; then
+            wait_visible "@mzwin/kit"
+          fi
+
+  # Install the published version from the registry the way users do,
+  # with an empty npm cache, on each OS.
+  npm-check:
+    name: npm install (${{ matrix.os }})
+    needs: publish
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install @mzwin/kit and run it
+        shell: bash
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/npm-check"
+          mkdir -p "$work"
+          cd "$work"
+          echo '{ "name": "npm-check", "private": true }' > package.json
+
+          deadline=$((SECONDS + 900))
+          until [ "$(npm view "@mzwin/kit@$VERSION" version --prefer-online 2>/dev/null)" = "$VERSION" ]; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::@mzwin/kit@$VERSION is not visible after 15 minutes"
+              exit 1
+            fi
+            sleep 20
+          done
+
+          npm install "@mzwin/kit@$VERSION" --cache "$work/npm-cache" --prefer-online --no-audit --no-fund
+
+          out=$(node_modules/.bin/kit --version)
+          echo "$out"
+          [ "$out" = "kit $VERSION" ] || { echo "::error::expected 'kit $VERSION', got '$out'"; exit 1; }
+
+          KIT_HOME="$work/kit-home" NO_COLOR=1 node_modules/.bin/kit doctor --json > doctor.json
+          node -e '
+            const j = require("./doctor.json");
+            if (j.ok !== true || j.data?.install !== "npm") {
+              console.error("::error::doctor: ok=" + j.ok + " install=" + j.data?.install);
+              process.exit(1);
+            }
+            console.log("doctor: ok, install=npm");
+          '
+
+      - name: Run through kit.cmd
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          $out = & "$env:RUNNER_TEMP\npm-check\node_modules\.bin\kit.cmd" --version
+          if ($out -ne "kit $env:VERSION") { throw "expected 'kit $env:VERSION', got '$out'" }
+          $out
