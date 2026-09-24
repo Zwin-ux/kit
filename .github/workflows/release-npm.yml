@@ -1,8 +1,9 @@
 name: Release npm
 
-# Tag push (v1.0.0-alpha.2, v1.0.0, …) builds every platform and publishes.
-# Manual runs build everything and run `npm publish --dry-run` unless
-# `publish` is checked.
+# Tag push (v1.0.0-alpha.2, v1.0.0, …) builds every platform, publishes to
+# npm and creates the GitHub Release (archives + SHA256SUMS).
+# Manual runs build and pack everything, run `npm publish --dry-run` and
+# create no release, unless `publish` is checked.
 #
 # Prerelease versions publish under their prerelease word (alpha, beta, rc),
 # never `latest`, so `npm i -g @mzwin/kit` keeps serving 0.1.x until 1.0.0.
@@ -13,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish to npm (unchecked = dry run)
+        description: Publish to npm and GitHub Releases (unchecked = dry run)
         type: boolean
         default: false
 
@@ -126,6 +127,88 @@ jobs:
         run: |
           chmod +x bins/${{ matrix.target }}/kit
           docker run --rm -v "$PWD/bins:/b:ro" amazonlinux:2 /b/${{ matrix.target }}/kit --version
+
+  # Archives + SHA256SUMS for scripts/install.sh and scripts/install.ps1.
+  # Runs next to `publish`. A dry run packs and checksums but creates no
+  # release. A real run needs the tag v<version> to exist on GitHub.
+  github-release:
+    name: github release
+    needs: [build, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload assets
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: bins
+
+      - name: Check tag matches Cargo version
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(node -e 'import("./scripts/npm-stage.mjs").then(m => console.log(m.cargoVersion()))')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $version" >&2
+            exit 1
+          fi
+
+      - name: Pack archives and SHA256SUMS
+        run: |
+          set -euo pipefail
+          version=$(node -e 'import("./scripts/npm-stage.mjs").then(m => console.log(m.cargoVersion()))')
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          mkdir -p dist/release
+          count=0
+          for bindir in bins/*/; do
+            target=$(basename "$bindir")
+            name="kit-$version-$target"
+            stage="dist/stage/$name"
+            mkdir -p "$stage"
+            cp LICENSE README.md "$stage/"
+            case "$target" in
+              *windows*)
+                cp "$bindir/kit.exe" "$stage/"
+                (cd dist/stage && zip -qr "../release/$name.zip" "$name")
+                ;;
+              *)
+                cp "$bindir/kit" "$stage/"
+                chmod 755 "$stage/kit" # upload-artifact drops the mode bits
+                tar -C dist/stage -czf "dist/release/$name.tar.gz" "$name"
+                ;;
+            esac
+            count=$((count + 1))
+          done
+          [ "$count" -eq 5 ] || { echo "expected 5 targets, got $count" >&2; exit 1; }
+          (cd dist/release && sha256sum -- kit-* > SHA256SUMS && cat SHA256SUMS)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-archives
+          path: dist/release/
+          if-no-files-found: error
+
+      - name: Create or update release
+        if: github.event_name == 'push' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag exists: replacing assets"
+            gh release upload "$tag" dist/release/* --clobber
+            exit 0
+          fi
+          flags=(--verify-tag --title "Kit $VERSION")
+          case "$VERSION" in *-*) flags+=(--prerelease) ;; esac
+          cat > notes.md <<EOF
+          Changes: [CHANGELOG.md](https://github.com/$GH_REPO/blob/$tag/CHANGELOG.md)
+
+          Install: \`npm install -g @mzwin/kit@$VERSION\`, or \`scripts/install.sh\` / \`scripts/install.ps1\` with version $VERSION. Check the archives against \`SHA256SUMS\`.
+          EOF
+          gh release create "$tag" "${flags[@]}" --notes-file notes.md dist/release/*
 
   publish:
     name: publish
