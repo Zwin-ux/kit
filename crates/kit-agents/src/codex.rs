@@ -1,5 +1,6 @@
 //! Codex CLI adapter — `codex exec` headless workflow.
 
+use crate::auth;
 use crate::process::{command_for, full_auto, probe_binary, spawn_streaming};
 use crate::skills;
 use crate::{Agent, AgentHandle, AgentStatus, SpawnError};
@@ -20,14 +21,14 @@ impl Agent for CodexAgent {
         if !installed {
             return AgentStatus::missing(AgentKind::Codex);
         }
-        AgentStatus {
-            kind: AgentKind::Codex,
-            installed: true,
-            // Codex auth is user-global; we do not read credentials (PRD principle 4).
-            authenticated: true,
-            version,
-            remedy: None,
-        }
+        // Ask codex itself; kit never reads credentials (PRD principle 4).
+        let login = match auth::run_status("codex", &["login", "status"]).await {
+            Some(out) => {
+                auth::parse_codex_status(out.success, &format!("{}\n{}", out.stdout, out.stderr))
+            }
+            None => auth::Login::Unknown("`codex login status` did not answer"),
+        };
+        auth::installed_status(AgentKind::Codex, version, login, "codex login")
     }
 
     async fn spawn(

@@ -413,7 +413,7 @@ async fn try_probe(binary: &str, args: &[&str]) -> Option<Option<String>> {
 
 /// True when the shell could not find the program: cmd.exe exits 9009,
 /// POSIX shells exit 127.
-fn is_command_not_found(code: Option<i32>, stderr: &[u8]) -> bool {
+pub(crate) fn is_command_not_found(code: Option<i32>, stderr: &[u8]) -> bool {
     matches!(code, Some(9009) | Some(127))
         || String::from_utf8_lossy(stderr)
             .contains("is not recognized as an internal or external command")

@@ -21,7 +21,7 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven — and th
 | Gate (Guardian) | Real, thin | ~50 firewall fixtures in one test — not the PRD's 855-case suite |
 | **kit.toml (this repo)** | **Real** | root `kit.toml` — fmt + clippy -D warnings + `cargo test --workspace`, 15m, firewall block |
 | Worktree + receipt | Real | `kit run --dry-run --json` |
-| Agent adapters | Live | codex / claude / grok / ollama — `probe()` reports authenticated if the binary exists |
+| Agent adapters | Live | codex / claude / grok / ollama — `probe()` checks login: `codex login status`, `claude auth status`; grok has no status command, so only a missing `~/.grok/auth.json` + `XAI_API_KEY` reads as logged out (else "login not checked") |
 | Skills injection | Live | `.agents/skills` → worktree + prompt |
 | PTY attach | Stub | 1.0.1 (CEO stamp) |
 | Kill mid-run | Wired | proven on dry-run handles, **not** yet on a live Codex dogfood |

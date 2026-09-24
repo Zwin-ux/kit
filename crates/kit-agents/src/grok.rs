@@ -1,5 +1,6 @@
 //! Grok Build adapter — `grok -p` single-turn with always-approve.
 
+use crate::auth;
 use crate::process::{probe_binary, spawn_streaming};
 use crate::skills;
 use crate::{Agent, AgentHandle, AgentStatus, SpawnError};
@@ -21,13 +22,9 @@ impl Agent for GrokAgent {
         if !installed {
             return AgentStatus::missing(AgentKind::Grok);
         }
-        AgentStatus {
-            kind: AgentKind::Grok,
-            installed: true,
-            authenticated: true,
-            version,
-            remedy: None,
-        }
+        let api_key = std::env::var_os("XAI_API_KEY").is_some_and(|k| !k.is_empty());
+        let login = auth::grok_login(auth::grok_home().as_deref(), api_key);
+        auth::installed_status(AgentKind::Grok, version, login, "grok login")
     }
 
     async fn spawn(

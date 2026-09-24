@@ -1,5 +1,6 @@
 //! Claude Code adapter — `claude -p` non-interactive.
 
+use crate::auth;
 use crate::process::{command_for, full_auto, probe_binary, spawn_streaming};
 use crate::skills;
 use crate::{Agent, AgentHandle, AgentStatus, SpawnError};
@@ -20,13 +21,11 @@ impl Agent for ClaudeAgent {
         if !installed {
             return AgentStatus::missing(AgentKind::Claude);
         }
-        AgentStatus {
-            kind: AgentKind::Claude,
-            installed: true,
-            authenticated: true,
-            version,
-            remedy: None,
-        }
+        let login = match auth::run_status("claude", &["auth", "status", "--json"]).await {
+            Some(out) => auth::parse_claude_status(&out.stdout),
+            None => auth::Login::Unknown("`claude auth status` did not answer"),
+        };
+        auth::installed_status(AgentKind::Claude, version, login, "claude auth login")
     }
 
     async fn spawn(
