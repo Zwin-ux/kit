@@ -5,6 +5,7 @@
 
 mod engine;
 mod init;
+mod land;
 
 use anyhow::{Context, Result};
 use engine::{RunOptions, execute, parse_agent, spawn_production};
@@ -80,6 +81,7 @@ async fn dispatch(args: &[String]) -> Result<()> {
     match first {
         Some("run") => cmd_run(&args[1..]).await,
         Some("init") => init::cmd_init(&args[1..]).await,
+        Some("land") => land::cmd_land(&args[1..]),
         Some("doctor") => {
             let json = args.iter().any(|a| a == "--json");
             print_doctor(version, json);
@@ -247,6 +249,15 @@ async fn cmd_run(args: &[String]) -> Result<()> {
             };
             println!("  gate      {label}");
         }
+        if let Some(step) = land_hint(
+            result.state,
+            gate_vacuous,
+            &result.receipt_dir,
+            &result.id.0,
+        ) {
+            println!();
+            println!("{step}");
+        }
     }
 
     let code = match result.state {
@@ -311,6 +322,12 @@ fn delta_line(delta: &RunDelta) -> Option<String> {
     }
 }
 
+/// The next step after a proven run with changes: `Next: kit land <id>`.
+fn land_hint(state: RunState, vacuous: bool, receipt_dir: &Path, id: &str) -> Option<String> {
+    (state == RunState::Pass && !vacuous && receipt_dir.join("diff.patch").is_file())
+        .then(|| format!("Next: kit land {id}"))
+}
+
 /// One line that points to `kit init` when `repo` is a folder with no kit.toml.
 fn init_hint(repo: &Path) -> Option<String> {
     (repo.is_dir() && !repo.join("kit.toml").exists())
@@ -358,6 +375,7 @@ fn print_help(version: &str) {
     println!("  kit --demo               Control Room with sample runs");
     println!("  kit run --task \"…\"       One isolated run: agent, then gate, then receipt");
     println!("  kit run --agent codex --task \"…\" [--dry-run] [--json]");
+    println!("  kit land <id>            Put a passed run's changes on a new branch kit/<id>");
     println!("  kit doctor [--json]      Environment / readiness");
     println!("  kit receipt list [--limit N] [--json]");
     println!("  kit receipt show <id> [--json] [--output]");
@@ -382,6 +400,19 @@ fn print_help(version: &str) {
     println!("  KIT_HOME=…               Data root (default ~/.kit)");
     println!("  KIT_FULL_AUTO=1          Bypass agent approval prompts (dangerous)");
     println!("  KIT_SKILLS_DIR=…         Override skills pack path");
+    println!();
+    println!("Land flags:");
+    println!(
+        "  (default)                Commit the diff on a new branch. Your branch and files do not change"
+    );
+    println!(
+        "  --branch / -b <name>     Name of the new branch (default kit/<first 12 chars of id>)"
+    );
+    println!("  --apply                  Apply the diff to your working tree. No commit");
+    println!(
+        "  --force / -f             Land a run the gate did not prove, or apply to a dirty tree"
+    );
+    println!("  --json                   One JSON result on stdout (errors too)");
     println!();
     println!("Keys (Control Room):");
     println!("  ↑↓ select   f filter   Enter open   g gate   d dispatch   b board");
@@ -555,6 +586,10 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
                 } else {
                     println!();
                     println!("  tip  kit receipt show {} --output", receipt.id);
+                }
+                let vacuous = receipt.gate.as_ref().is_none_or(engine::infer::is_vacuous);
+                if let Some(step) = land_hint(receipt.state, vacuous, &dir, &receipt.id.0) {
+                    println!("{step}");
                 }
             }
             Ok(())
@@ -905,6 +940,20 @@ mod tests {
 
     fn join_path(dirs: &[PathBuf]) -> OsString {
         std::env::join_paths(dirs).expect("join PATH")
+    }
+
+    /// Only a proven PASS with a diff points to `kit land`.
+    #[test]
+    fn land_hint_only_for_proven_runs_with_a_diff() {
+        let dir = scratch("landhint");
+        assert_eq!(land_hint(RunState::Pass, false, &dir, "01X"), None);
+        fs::write(dir.join("diff.patch"), "+x\n").unwrap();
+        assert_eq!(
+            land_hint(RunState::Pass, false, &dir, "01X").as_deref(),
+            Some("Next: kit land 01X")
+        );
+        assert_eq!(land_hint(RunState::Pass, true, &dir, "01X"), None);
+        assert_eq!(land_hint(RunState::Fail, false, &dir, "01X"), None);
     }
 
     #[test]
