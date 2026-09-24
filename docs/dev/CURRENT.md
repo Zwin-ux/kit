@@ -32,7 +32,7 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven — and th
 | Help overlay | Wired | `?` / Esc; arrows move, `k` kills (not j/k) |
 | Receipt browser | Wired | `kit receipt list` / `show` |
 | Dogfood | **Session A proven** | receipt `01M06A2PXBBH43ZFF3GJ9VQW94` — `gateVacuous: false`, fmt+clippy+test PASS. QA note: `docs/dev/dogfood-notes/2026-08-16-qa.md`. B still open |
-| Install / PATH | **In progress (2026-08-16)** | Repo `kit.cmd`/`kit.ps1` + `scripts/use-rust-kit.ps1` on disk. GitHub About/topics/release still sell 0.1 (human-only). No installer. |
+| Install / PATH | **In progress (2026-08-16)** | Repo `kit.cmd`/`kit.ps1` + `scripts/use-rust-kit.ps1` on disk. GitHub About/topics/release still sell 0.1 (human-only). npm platform packages staged + smoke-tested (`scripts/npm-smoke.mjs`, CI job `npm`); `release-npm.yml` publishes on a `v*` tag — not published yet, needs `NPM_TOKEN`. See [`RELEASE-npm.md`](RELEASE-npm.md). |
 | 0.1 Node tree | Legacy, still in repo | `packages/` + Node CI (6 jobs) + keep-alive catalog bot |
 
 ## Spine

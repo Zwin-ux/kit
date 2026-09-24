@@ -3,9 +3,9 @@ name: Rust
 on:
   push:
     branches: [main]
-    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/rust.yml']
+    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', 'npm/**', 'scripts/npm-*.mjs', '.github/workflows/rust.yml']
   pull_request:
-    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/rust.yml']
+    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', 'npm/**', 'scripts/npm-*.mjs', '.github/workflows/rust.yml']
 
 env:
   CARGO_TERM_COLOR: always
@@ -89,3 +89,26 @@ jobs:
           if mean_ms > budget:
               sys.exit(f"FAIL: exceeds the M0 startup budget by {mean_ms - budget:.1f}ms")
           PY
+
+  # npm is the primary install channel. Pack the packages, install the
+  # tarballs into a clean project, and run kit through the npm bin shim.
+  npm:
+    name: npm package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build release
+        run: cargo build --release -p kit-cli
+
+      - name: npm smoke
+        run: node scripts/npm-smoke.mjs

@@ -52,6 +52,15 @@ This repo has a real [`kit.toml`](kit.toml) (fmt + clippy + `cargo test --worksp
 
 ## Install (1.0 alpha)
 
+After the first 1.x publish:
+
+```bash
+npm install -g @mzwin/kit@alpha
+kit --demo
+```
+
+From source:
+
 ```bash
 git clone https://github.com/Zwin-ux/kit.git
 cd kit
