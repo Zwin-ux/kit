@@ -135,6 +135,13 @@ try {
   envelope = undefined;
 }
 check(envelope?.schemaVersion === 1 && envelope?.command === "doctor", "kit doctor --json returns the v1 envelope", doctor.stdout.slice(0, 200));
+check(envelope?.data?.install === "npm", "doctor reports the npm install", String(envelope?.data?.install));
+const shimDir = path.dirname(shim).toLowerCase();
+check(
+  (envelope?.data?.pathCollisions ?? []).every((p) => path.dirname(p).toLowerCase() !== shimDir),
+  "doctor does not flag its own npm shim as another kit",
+  JSON.stringify(envelope?.data?.pathCollisions),
+);
 
 // Call the installed launcher without a shell: on Windows, spawnSync's
 // shell mode joins args unquoted, which would test cmd.exe, not the launcher.

@@ -36,7 +36,7 @@ A run that fails the gate shows `FAIL` and the first error. Press `r` to retry w
 
 ## Platforms
 
-Prebuilt binaries: Windows x64, macOS arm64 and x64, Linux x64 and arm64 (glibc).
+Prebuilt binaries: Windows x64, macOS arm64 and x64, Linux x64 and arm64 (glibc 2.17+).
 
 npm installs one platform package (for example `@mzwin/kit-win32-x64`). If you install with `--omit=optional`, the binary is not installed and `kit` stops with an error.
 

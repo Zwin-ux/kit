@@ -9,9 +9,13 @@ const fs = require("node:fs");
 
 const PLATFORMS = require("../platforms.json");
 
+const VERSION = require("../package.json").version;
+
 function isMusl() {
   if (process.platform !== "linux") return false;
   try {
+    // Skip the network section: it can be slow on some hosts.
+    process.report.excludeNetwork = true;
     const report = process.report && process.report.getReport();
     return !(report && report.header && report.header.glibcVersionRuntime);
   } catch {
@@ -61,7 +65,8 @@ function resolveBinary() {
     fail([
       `${platform.package} is not installed.`,
       "npm skips it when optional dependencies are off (--omit=optional, --no-optional).",
-      "Reinstall: npm install -g @mzwin/kit",
+      // Pin the version: during the alpha, `latest` is still the 0.1 Node app.
+      `Reinstall: npm install -g @mzwin/kit@${VERSION}`,
     ]);
   }
 }
@@ -82,7 +87,12 @@ function ensureExecutable(file) {
 const binary = resolveBinary();
 ensureExecutable(binary);
 
-const child = spawn(binary, process.argv.slice(2), { stdio: "inherit", windowsHide: false });
+const child = spawn(binary, process.argv.slice(2), {
+  stdio: "inherit",
+  windowsHide: false,
+  // `kit doctor` reports the install channel from this.
+  env: { ...process.env, KIT_LAUNCHER: "npm" },
+});
 
 // The terminal sends Ctrl+C to the whole process group, so the child already
 // gets it. The launcher must stay alive until the child exits, or the shell

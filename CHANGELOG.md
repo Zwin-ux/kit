@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — npm distribution
+
+### Added
+- npm: `@mzwin/kit` 1.x is a launcher plus one binary package per platform (Windows x64, macOS arm64/x64, Linux x64/arm64 glibc 2.17+). Prereleases publish to `alpha`; `latest` stays 0.1 until 1.0.0
+- `scripts/npm-smoke.mjs` installs the packed tarballs and runs `kit` through the npm shim; CI runs it on Linux, macOS and Windows
+- `kit doctor` shows how kit was installed and warns only about the old 0.1 Node app, not its own npm shim
+
+### Fixed
+- A run whose agent is not installed stops before any worktree. It used to fall back to a dry run, which could PASS the gate on an unchanged tree
+- On Windows, a missing agent no longer shows as ready (`cmd /C` "is not recognized" output was read as a version)
+- A `kit.toml` that does not parse stops the run with the file path and the parse error. It used to switch the gate off without a message
+- `ollama` is ready only when its server answers and the model is pulled
+- `--json` errors print a `{ ok: false, error }` envelope on stdout and exit 2
+- `kit` without a terminal stops with a message instead of drawing into a pipe and waiting
+- `receipt show` labels a zero-check gate `UNCONFIGURED`, the same as `kit run`
+- No `\\?\` prefixes in Windows paths; git worktree chatter is quiet; states print in lowercase; help points to the README, not repo-only docs
+
 ## 1.0.0-alpha.1 — Control Room
 
 Not 1.0.0. npm `@mzwin/kit` is still the 0.1 workbench. This is the Rust Control Room: dispatch, gate, receipt.

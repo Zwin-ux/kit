@@ -42,13 +42,17 @@ jobs:
           - target: x86_64-apple-darwin
             os: macos-14
             bin: kit
-          # 22.04 sets the glibc floor at 2.35.
+          # zigbuild links against glibc 2.17, so the binary runs on
+          # Debian 11, Ubuntu 20.04, RHEL 8 and Amazon Linux 2, not only
+          # on hosts as new as the runner.
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
             bin: kit
+            zig: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04-arm
             bin: kit
+            zig: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -58,10 +62,27 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      - name: Install zig
+        if: matrix.zig
+        run: pip3 install --user ziglang cargo-zigbuild
+
       - name: Build
+        if: ${{ !matrix.zig }}
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
         run: cargo build --release --locked -p kit-cli --target ${{ matrix.target }}
+
+      - name: Build (glibc 2.17)
+        if: matrix.zig
+        run: cargo zigbuild --release --locked -p kit-cli --target ${{ matrix.target }}.2.17
+
+      - name: Check glibc floor
+        if: matrix.zig
+        run: |
+          # No versioned glibc symbol newer than 2.17 may be required.
+          newest=$(objdump -T target/${{ matrix.target }}/release/kit | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+          echo "newest glibc symbol: $newest"
+          [ "$(printf '%s\nGLIBC_2.17\n' "$newest" | sort -V | tail -1)" = "GLIBC_2.17" ]
 
       - name: Run the binary
         shell: bash
@@ -73,9 +94,42 @@ jobs:
           path: target/${{ matrix.target }}/release/${{ matrix.bin }}
           if-no-files-found: error
 
+  # Install the exact release artifacts the way users will, on each OS,
+  # before anything is published.
+  verify:
+    name: verify ${{ matrix.target }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { target: x86_64-pc-windows-msvc, os: windows-latest, bin: kit.exe }
+          - { target: aarch64-apple-darwin, os: macos-14, bin: kit }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, bin: kit }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm, bin: kit }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: bins/${{ matrix.target }}
+
+      - name: npm smoke on the release binary
+        run: node scripts/npm-smoke.mjs --binary bins/${{ matrix.target }}/${{ matrix.bin }}
+
+      - name: Runs on glibc 2.26 (Amazon Linux 2)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          chmod +x bins/${{ matrix.target }}/kit
+          docker run --rm -v "$PWD/bins:/b:ro" amazonlinux:2 /b/${{ matrix.target }}/kit --version
+
   publish:
     name: publish
-    needs: build
+    needs: [build, verify]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -111,7 +165,7 @@ jobs:
           set -euo pipefail
           version=$(node -p 'require("./dist/npm/kit/package.json").version')
           case "$version" in
-            *-*) tag=$(echo "${version#*-}" | sed 's/[.0-9].*//') ;;
+            *-*) tag=$(echo "${version#*-}" | sed 's/[.0-9].*//'); tag=${tag:-next} ;;
             *)   tag=latest ;;
           esac
           flags=(--access public --tag "$tag")

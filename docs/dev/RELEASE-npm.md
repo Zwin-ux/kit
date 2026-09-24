@@ -7,7 +7,7 @@
 | `@mzwin/kit` | launcher, `platforms.json`, README |
 | `@mzwin/kit-win32-x64` | `bin/kit.exe` (static CRT) |
 | `@mzwin/kit-darwin-arm64` / `-darwin-x64` | `bin/kit` |
-| `@mzwin/kit-linux-x64-gnu` / `-linux-arm64-gnu` | `bin/kit` (glibc 2.35+) |
+| `@mzwin/kit-linux-x64-gnu` / `-linux-arm64-gnu` | `bin/kit` (glibc 2.17+) |
 
 ## Check locally
 

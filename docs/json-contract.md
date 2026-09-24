@@ -40,6 +40,10 @@ Every `kit … --json` payload:
 
 Exit code: `0` pass, `1` fail or vacuous (unless `--allow-vacuous` / `--dry-run`), `2` other.
 
+## Errors
+
+When any `--json` command fails before it has a result (not a git repo, agent not installed, invalid `kit.toml`, unknown command), stdout still holds exactly one envelope: `ok: false`, `data: null`, `error` set. Exit code `2`.
+
 ## `kit doctor --json` → `data`
 
 | Field | Type |
@@ -47,6 +51,9 @@ Exit code: `0` pass, `1` fail or vacuous (unless `--allow-vacuous` / `--dry-run`
 | `version` | string |
 | `binary` / `controlRoom` / `gateEngine` / `runEngine` | status strings |
 | `kitHome` | path |
+| `binaryPath` | path |
+| `install` | `npm` (via the `@mzwin/kit` launcher) or `binary` |
+| `pathCollisions` | paths of other `kit` programs on PATH (the npm 1.x shim is not one) |
 | `skillsPack` | path \| null |
 | `agents` | array of `{ agent, ready, version, remedy }` |
 
