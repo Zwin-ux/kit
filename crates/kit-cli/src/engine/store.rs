@@ -8,22 +8,55 @@ use std::time::SystemTime;
 
 use super::paths::{run_dir, runs_dir};
 
-/// Persist a receipt and optional output log. Returns the run directory.
+/// Persist a receipt and its output log. Returns the run directory.
+///
+/// Write-once: the run dir must not exist yet, so a second write for the same
+/// id fails and never replaces proof. `receipt.json` is published last, by
+/// rename, so a write that dies part way leaves no file that reads as a
+/// complete receipt (readers skip a dir without `receipt.json`).
 pub fn write_receipt(receipt: &Receipt, output: &str) -> Result<std::path::PathBuf> {
     let dir = run_dir(&receipt.id.0);
-    fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
+    if let Some(parent) = dir.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    fs::create_dir(&dir).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            anyhow::anyhow!(
+                "receipt for run {} already exists at {} (receipts are write-once)",
+                receipt.id,
+                dir.display()
+            )
+        } else {
+            anyhow::Error::new(e).context(format!("create {}", dir.display()))
+        }
+    })?;
 
-    let json = serde_json::to_string_pretty(receipt).context("serialize receipt")?;
-    fs::write(dir.join("receipt.json"), json).context("write receipt.json")?;
-    fs::write(dir.join("output.log"), output).context("write output.log")?;
+    write_new(&dir.join("output.log"), output.as_bytes())?;
     if !receipt.diff.is_empty() {
-        fs::write(dir.join("diff.patch"), &receipt.diff).context("write diff.patch")?;
+        write_new(&dir.join("diff.patch"), receipt.diff.as_bytes())?;
     }
     if let Some(gate) = &receipt.gate {
         let g = serde_json::to_string_pretty(gate).context("serialize gate")?;
-        fs::write(dir.join("gate.json"), g).context("write gate.json")?;
+        write_new(&dir.join("gate.json"), g.as_bytes())?;
     }
+    let json = serde_json::to_string_pretty(receipt).context("serialize receipt")?;
+    let tmp = dir.join("receipt.json.tmp");
+    write_new(&tmp, json.as_bytes())?;
+    fs::rename(&tmp, dir.join("receipt.json")).context("publish receipt.json")?;
     Ok(dir)
+}
+
+/// Create `path` (never overwrite) and flush `bytes` to disk.
+fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .with_context(|| format!("create {}", path.display()))?;
+    file.write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .with_context(|| format!("write {}", path.display()))
 }
 
 /// Read a receipt by run id (full ULID or unique prefix).
@@ -275,6 +308,104 @@ mod tests {
             std::env::remove_var("KIT_HOME");
         }
         let _ = fs::remove_dir_all(&home);
+    }
+
+    /// Scratch `KIT_HOME` for one store test; callers hold the lock.
+    fn scratch_home(tag: &str) -> PathBuf {
+        let home = std::env::temp_dir().join(format!(
+            "kit-store-{tag}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&home);
+        // SAFETY: tests serialize KIT_HOME via kit_home_test_lock.
+        unsafe {
+            std::env::set_var("KIT_HOME", &home);
+        }
+        ensure_layout().unwrap();
+        home
+    }
+
+    fn drop_home(home: &Path) {
+        unsafe {
+            std::env::remove_var("KIT_HOME");
+        }
+        let _ = fs::remove_dir_all(home);
+    }
+
+    fn sample(id: &str, state: RunState, diff: &str) -> Receipt {
+        Receipt {
+            version: Receipt::VERSION,
+            id: RunId(id.into()),
+            spec: RunSpec {
+                repo: PathBuf::from("/tmp/kit"),
+                agent: AgentKind::Codex,
+                task: "write once".into(),
+                branch: None,
+                bounds: Bounds::default(),
+            },
+            state,
+            started_at: None,
+            ended_at: Some(SystemTime::now()),
+            diff: diff.into(),
+            gate: None,
+            output_truncated: false,
+        }
+    }
+
+    /// Proof is write-once: a second receipt for the same id is refused and
+    /// every byte of the first stays on disk.
+    #[test]
+    fn second_write_for_same_id_errors_and_keeps_original() {
+        let _lock = kit_home_test_lock();
+        let home = scratch_home("once");
+        let id = "01TESTWRITEONCE000000000001";
+        let dir = write_receipt(&sample(id, RunState::Pass, "+pass\n"), "first\n").unwrap();
+        let files = ["receipt.json", "output.log", "diff.patch"];
+        let before: Vec<Vec<u8>> = files
+            .iter()
+            .map(|f| fs::read(dir.join(f)).unwrap())
+            .collect();
+
+        let err = write_receipt(&sample(id, RunState::Error, "+other\n"), "second\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("already exists"), "{err}");
+
+        let after: Vec<Vec<u8>> = files
+            .iter()
+            .map(|f| fs::read(dir.join(f)).unwrap())
+            .collect();
+        assert_eq!(before, after, "the first receipt was changed");
+        assert_eq!(read_receipt(id).unwrap().unwrap().state, RunState::Pass);
+        assert!(!dir.join("receipt.json.tmp").exists());
+        drop_home(&home);
+    }
+
+    /// A run dir without `receipt.json` (a write that died before publish)
+    /// is not a receipt: list skips it and read does not find it.
+    #[test]
+    fn reader_ignores_dir_without_receipt_json() {
+        let _lock = kit_home_test_lock();
+        let home = scratch_home("torn");
+        let torn = run_dir("01TESTTORNRECEIPT0000000001");
+        fs::create_dir_all(&torn).unwrap();
+        fs::write(torn.join("output.log"), "half\n").unwrap();
+        fs::write(torn.join("receipt.json.tmp"), "{\"version\": 1").unwrap();
+        write_receipt(
+            &sample("01TESTWHOLERECEIPT000000001", RunState::Pass, ""),
+            "",
+        )
+        .unwrap();
+
+        let rows = list_receipts(0).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "01TESTWHOLERECEIPT000000001");
+        assert!(read_receipt("01TESTTORN").is_err());
+        drop_home(&home);
     }
 
     #[test]
