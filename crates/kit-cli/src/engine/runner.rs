@@ -123,6 +123,7 @@ async fn execute_with(
         &id,
         &repo,
         &wt_path,
+        &base,
         config,
         &tx,
         cancel.as_ref(),
@@ -131,13 +132,18 @@ async fn execute_with(
         &mut truncated,
     )
     .await;
-    let (state, gate, note) = match ending {
-        Ok(Ending::Killed(note)) => (RunState::Killed, None, Some(note)),
-        Ok(Ending::Gated { state, gate }) => (state, Some(gate), None),
+    let (state, gate, note, agent_diff) = match ending {
+        Ok(Ending::Killed(note)) => (RunState::Killed, None, Some(note), None),
+        Ok(Ending::Gated {
+            state,
+            gate,
+            agent_diff,
+        }) => (state, Some(gate), None, agent_diff),
         Err(err) => (
             RunState::Error,
             None,
             Some(format!("kit: run failed: {err:#}\n")),
+            None,
         ),
     };
     if let Some(note) = note {
@@ -160,6 +166,7 @@ async fn execute_with(
         output,
         truncated,
         gate,
+        agent_diff,
     )
     .await?;
     // Proof first: the terminal state goes out only once its receipt exists.
@@ -172,7 +179,12 @@ enum Ending {
     /// Killed by the user or the timeout; the note says which.
     Killed(String),
     /// The gate ran; `state` also records an agent that exited non-zero.
-    Gated { state: RunState, gate: GateOutcome },
+    /// `agent_diff` is the tree as the agent left it, taken before the gate.
+    Gated {
+        state: RunState,
+        gate: GateOutcome,
+        agent_diff: Option<String>,
+    },
 }
 
 fn cancelled(cancel: Option<&Arc<CancelHandle>>) -> bool {
@@ -187,6 +199,7 @@ async fn agent_and_gate(
     id: &RunId,
     repo: &std::path::Path,
     wt_path: &std::path::Path,
+    base: &str,
     mut config: kit_core::KitConfig,
     tx: &Option<mpsc::Sender<(RunId, RunDelta)>>,
     cancel: Option<&Arc<CancelHandle>>,
@@ -248,6 +261,9 @@ async fn agent_and_gate(
             config.gate = inferred;
         }
     }
+    // The receipt records what the agent made. Files the gate writes
+    // (coverage, reports, build output) are not the run's work.
+    let agent_diff = worktree::worktree_diff(wt_path, base).ok();
     let gate = if config.gate.is_empty() {
         // Still empty after inference → vacuous (TUI: UNCONFIGURED, never PASS).
         let line = "gate: no checks configured and none inferred (vacuous — UNCONFIGURED)\n";
@@ -258,6 +274,11 @@ async fn agent_and_gate(
         KitGate::new().evaluate(wt_path, &config.gate).await
     };
     send(tx, id, RunDelta::Gate(gate.clone())).await;
+    if agent_diff.is_some() && worktree::worktree_diff(wt_path, base).ok() != agent_diff {
+        let line = "gate: the gate changed files in the worktree; the receipt keeps only the agent's changes\n";
+        append_capped(output, truncated, cap, line);
+        send(tx, id, RunDelta::Output(line.into())).await;
+    }
 
     let state = if phase == AgentPhase::Failed {
         RunState::Error
@@ -266,7 +287,11 @@ async fn agent_and_gate(
     } else {
         RunState::Fail
     };
-    Ok(Ending::Gated { state, gate })
+    Ok(Ending::Gated {
+        state,
+        gate,
+        agent_diff,
+    })
 }
 
 /// Terminal path for a run killed before it started: still queued on the
@@ -328,7 +353,7 @@ async fn finalize_outside_run(
     );
     send(tx, &id, RunDelta::Output(note.into())).await;
     write_terminal(
-        opts, id, repo, branch, wt_path, None, state, output, truncated, None,
+        opts, id, repo, branch, wt_path, None, state, output, truncated, None, None,
     )
     .await
 }
@@ -348,6 +373,7 @@ async fn write_terminal(
     output: String,
     truncated: bool,
     gate: Option<GateOutcome>,
+    agent_diff: Option<String>,
 ) -> Result<RunResult> {
     let ended_at = SystemTime::now();
     let (wt_path, base) = match worktree {
@@ -361,8 +387,9 @@ async fn write_terminal(
             .as_deref()
             .and_then(|wt| worktree::head_commit(wt).ok())
     });
-    let diff = match (wt_path.as_deref(), diff_base.as_deref()) {
-        (Some(wt), Some(b)) => worktree::worktree_diff(wt, b).unwrap_or_else(|err| {
+    let diff = match (agent_diff, wt_path.as_deref(), diff_base.as_deref()) {
+        (Some(d), _, _) => d,
+        (None, Some(wt), Some(b)) => worktree::worktree_diff(wt, b).unwrap_or_else(|err| {
             // Loud: an empty diff here would under-report the run.
             eprintln!("kit: cannot record the diff of {}: {err:#}", wt.display());
             String::new()
@@ -1163,6 +1190,63 @@ mod tests {
         let (ok, err) = applies_cleanly(&root, &patch);
         assert!(ok, "diff.patch does not apply to the base: {err}");
         assert!(!result.worktree_removed, "a changed worktree is kept");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Files the gate writes (coverage, reports) are not the agent's work:
+    /// the receipt, and so `kit land`, must hold only what the agent made.
+    #[tokio::test]
+    async fn gate_output_files_stay_out_of_the_receipt() {
+        if std::process::Command::new("node")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let root = crate::engine::paths::bare_git_fixture();
+        std::fs::write(
+            root.join("kit.toml"),
+            "[gate]\ntest = \"node -e \\\"require('fs').writeFileSync('gate-artifact.txt','x')\\\"\"\n",
+        )
+        .unwrap();
+        let home = std::env::temp_dir().join(format!(
+            "kit-test-gatefiles-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        let (result, receipt, log) = with_kit_home(&home, || async {
+            let opts = RunOptions {
+                repo: root.to_string_lossy().into_owned(),
+                agent: AgentKind::Codex,
+                task: "write files".into(),
+                dry_run: Some(false),
+                bounds: Bounds::default(),
+            };
+            let agent = WritesFiles { commit: false };
+            let result = execute_with(opts, None, None, None, &agent)
+                .await
+                .expect("run");
+            let receipt = crate::engine::store::read_receipt(&result.id.0)
+                .unwrap()
+                .unwrap();
+            let log = std::fs::read_to_string(result.receipt_dir.join("output.log")).unwrap();
+            (result, receipt, log)
+        })
+        .await;
+        assert_eq!(result.state, RunState::Pass, "{log}");
+        assert!(receipt.diff.contains("src/created.txt"), "{}", receipt.diff);
+        assert!(
+            !receipt.diff.contains("gate-artifact.txt"),
+            "gate output leaked into the receipt: {}",
+            receipt.diff
+        );
+        assert!(log.contains("the gate changed files"), "{log}");
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -14,6 +14,7 @@
 - GitHub Release per tag: `kit-<version>-<target>.tar.gz` / `.zip` and `SHA256SUMS`
 - `scripts/install.sh` (Linux glibc, macOS) and `scripts/install.ps1` (Windows x64): download from the GitHub Release, stop on a SHA-256 mismatch, install without sudo and without changing `PATH`. CI tests both against a local release (`installers.yml`)
 - Release: the launcher is published only after every platform package is visible on the registry; a new job installs the published version on Linux, macOS and Windows and runs it
+- The receipt (and so `kit land`) holds only what the agent changed. Files the gate writes, such as coverage or reports, stay out, and the run log says when the gate changed files
 - Release docs cover all channels: [`docs/dev/RELEASING.md`](docs/dev/RELEASING.md) (was `RELEASE-npm.md`)
 
 ### Changed
