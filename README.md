@@ -36,11 +36,20 @@ Repo shims (`.\kit.cmd` / `.\kit.ps1`, or `. .\scripts\use-rust-kit.ps1`) launch
 | Command | What it does |
 |---------|----------------|
 | `cargo run -p kit-cli -- --demo` / `.\kit.cmd --demo` | Control Room TUI |
+| `cargo run -p kit-cli -- init` | Write `kit.toml`: a gate for the repo (`--print`, `--check`, `--force`) |
 | `cargo run -p kit-cli -- run --task "…"` | One isolated run (live agent if on PATH) |
 | `cargo run -p kit-cli -- doctor` | Probe codex / claude / grok / ollama + skills pack |
 | `cargo run -p kit-cli -- run --dry-run --json` | Offline path (worktree → stream → **this repo's gate** → receipt) |
 | `cargo run -p kit-cli -- receipt list` | Browse proof under `~/.kit/runs/` |
 | `cargo run -p kit-cli -- receipt show <id>` | One receipt (+ `--output` for log tail) |
+
+**Your repo:** `kit init` reads `Cargo.toml`, `go.mod`, `package.json` or `pyproject.toml`, prints the `kit.toml` gate it proposes and writes it. It uses only commands that check and do not change files. `kit init --print` shows the proposal only; `kit init --check` runs each command once and keeps the ones that pass; `--force` replaces an existing file.
+
+```bash
+cd your-repo
+kit init --check
+kit run --agent codex --task "fix the failing test"
+```
 
 **Product loop:** dispatch → table of runs → FAIL wash + first error → `r` retry with gate context → receipt under `~/.kit/runs/<id>/`.
 
@@ -57,6 +66,7 @@ After the first 1.x publish:
 ```bash
 npm install -g @mzwin/kit@alpha
 kit --demo
+cd your-repo && kit init
 ```
 
 From source:
