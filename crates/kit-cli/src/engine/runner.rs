@@ -81,6 +81,18 @@ pub async fn execute_cancellable(
     tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
     cancel: Option<Arc<CancelHandle>>,
 ) -> Result<RunResult> {
+    let agent_impl = adapter(opts.agent);
+    execute_with(opts, id, tx, cancel, agent_impl.as_ref()).await
+}
+
+/// [`execute_cancellable`] with the agent adapter passed in (tests use fakes).
+async fn execute_with(
+    opts: RunOptions,
+    id: Option<RunId>,
+    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
+    cancel: Option<Arc<CancelHandle>>,
+    agent_impl: &dyn Agent,
+) -> Result<RunResult> {
     ensure_layout()?;
     let id = id.unwrap_or_default();
     let repo = resolve_repo(&opts.repo)?;
@@ -88,7 +100,7 @@ pub async fn execute_cancellable(
     // here, and nothing the agent does can change the gate it is held to.
     let config = load_kit_config(&repo)?;
     if opts.dry_run != Some(true) {
-        require_agent(adapter(opts.agent).probe().await)?;
+        require_agent(agent_impl.probe().await)?;
     }
     let started_at = SystemTime::now();
 
@@ -103,151 +115,40 @@ pub async fn execute_cancellable(
     let mut output = String::new();
     let mut truncated = false;
 
-    if cancelled(&cancel) {
-        return finalize_killed(
-            opts,
-            id,
-            repo,
-            branch,
-            wt_path,
-            started_at,
-            output,
-            truncated,
-            tx,
-            "kit: cancelled before agent start\n",
-        )
-        .await;
-    }
-
-    // --- agent phase ---
-    // Only an explicit --dry-run is offline; a missing agent was refused
-    // before the worktree was made (see `require_agent`).
-    let use_dry = opts.dry_run == Some(true);
-    let agent_impl = adapter(opts.agent);
-
-    let phase = if use_dry {
-        dry_run_agent(
-            &opts,
-            &id,
-            &wt_path,
-            &tx,
-            &mut output,
-            &mut truncated,
-            cancel.as_ref(),
-        )
-        .await?
-    } else {
-        live_agent(
-            agent_impl.as_ref(),
-            &opts,
-            &id,
-            &repo,
-            &wt_path,
-            &tx,
-            &mut output,
-            &mut truncated,
-            cancel.as_ref(),
-        )
-        .await?
+    // Once the worktree exists, every way out goes through one receipt write
+    // and one clean-worktree removal: an error here (e.g. the agent cannot
+    // spawn) ends as an `Error` receipt, never a leaked worktree.
+    let ending = agent_and_gate(
+        &opts,
+        &id,
+        &repo,
+        &wt_path,
+        config,
+        &tx,
+        cancel.as_ref(),
+        agent_impl,
+        &mut output,
+        &mut truncated,
+    )
+    .await;
+    let (state, gate, note) = match ending {
+        Ok(Ending::Killed(note)) => (RunState::Killed, None, Some(note)),
+        Ok(Ending::Gated { state, gate }) => (state, Some(gate), None),
+        Err(err) => (
+            RunState::Error,
+            None,
+            Some(format!("kit: run failed: {err:#}\n")),
+        ),
     };
-
-    match phase {
-        AgentPhase::Killed => {
-            return finalize_killed(
-                opts,
-                id,
-                repo,
-                branch,
-                wt_path,
-                started_at,
-                output,
-                truncated,
-                tx,
-                "kit: run killed by user\n",
-            )
-            .await;
-        }
-        AgentPhase::TimedOut => {
-            // CEO stamp: timeout maps to Killed + reason in output (RunState frozen).
-            let line = format!(
-                "kit: run killed — reason: timeout ({:?})\n",
-                opts.bounds.timeout
-            );
-            return finalize_killed(
-                opts, id, repo, branch, wt_path, started_at, output, truncated, tx, &line,
-            )
-            .await;
-        }
-        AgentPhase::Ok | AgentPhase::Failed => {}
-    }
-
-    if cancelled(&cancel) {
-        return finalize_killed(
-            opts,
-            id,
-            repo,
-            branch,
-            wt_path,
-            started_at,
-            output,
-            truncated,
-            tx,
-            "kit: run killed before gate\n",
-        )
-        .await;
-    }
-
-    // --- gate phase ---
-    send(&tx, &id, RunDelta::State(RunState::Gating)).await;
-    let mut config = config;
-    // CEO stamp P2: infer defaults on live runs only. Dry-run stays offline-fast
-    // and is exempt from vacuous non-zero exit.
-    if config.gate.is_empty() && !use_dry {
-        let inferred = super::infer::infer_gate(&repo);
-        if !inferred.is_empty() {
-            let line = format!(
-                "gate: inferred checks (no kit.toml gate) — {}\n",
-                inferred
-                    .checks()
-                    .iter()
-                    .map(|(l, c)| format!("{l}:{c}"))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            );
-            append_capped(
-                &mut output,
-                &mut truncated,
-                opts.bounds.output_cap_bytes,
-                &line,
-            );
-            send(&tx, &id, RunDelta::Output(line)).await;
-            config.gate = inferred;
-        }
-    }
-    let gate_engine = KitGate::new();
-    let gate = if config.gate.is_empty() {
-        // Still empty after inference → vacuous (TUI: UNCONFIGURED, never PASS).
-        let line = "gate: no checks configured and none inferred (vacuous — UNCONFIGURED)\n";
+    if let Some(note) = note {
         append_capped(
             &mut output,
             &mut truncated,
             opts.bounds.output_cap_bytes,
-            line,
+            &note,
         );
-        send(&tx, &id, RunDelta::Output(line.into())).await;
-        GateOutcome::vacuous()
-    } else {
-        gate_engine.evaluate(&wt_path, &config.gate).await
-    };
-    send(&tx, &id, RunDelta::Gate(gate.clone())).await;
-
-    let state = if phase == AgentPhase::Failed {
-        RunState::Error
-    } else if gate.passed {
-        RunState::Pass
-    } else {
-        RunState::Fail
-    };
+        send(&tx, &id, RunDelta::Output(note)).await;
+    }
     let result = write_terminal(
         opts,
         id.clone(),
@@ -258,7 +159,7 @@ pub async fn execute_cancellable(
         state,
         output,
         truncated,
-        Some(gate),
+        gate,
     )
     .await?;
     // Proof first: the terminal state goes out only once its receipt exists.
@@ -266,45 +167,106 @@ pub async fn execute_cancellable(
     Ok(result)
 }
 
-fn cancelled(cancel: &Option<Arc<CancelHandle>>) -> bool {
-    cancel.as_ref().is_some_and(|c| c.is_cancelled())
+/// How a run that got its worktree ended, before its receipt is written.
+enum Ending {
+    /// Killed by the user or the timeout; the note says which.
+    Killed(String),
+    /// The gate ran; `state` also records an agent that exited non-zero.
+    Gated { state: RunState, gate: GateOutcome },
 }
 
+fn cancelled(cancel: Option<&Arc<CancelHandle>>) -> bool {
+    cancel.is_some_and(|c| c.is_cancelled())
+}
+
+/// Agent phase, then gate phase, inside an existing worktree. Writes nothing
+/// to the receipt store: the caller owns the one terminal write.
 #[allow(clippy::too_many_arguments)]
-async fn finalize_killed(
-    opts: RunOptions,
-    id: RunId,
-    repo: PathBuf,
-    branch: String,
-    wt_path: PathBuf,
-    started_at: SystemTime,
-    mut output: String,
-    mut truncated: bool,
-    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
-    note: &str,
-) -> Result<RunResult> {
-    append_capped(
-        &mut output,
-        &mut truncated,
-        opts.bounds.output_cap_bytes,
-        note,
-    );
-    send(&tx, &id, RunDelta::Output(note.into())).await;
-    let result = write_terminal(
-        opts,
-        id.clone(),
-        repo,
-        Some(branch),
-        Some(wt_path),
-        Some(started_at),
-        RunState::Killed,
-        output,
-        truncated,
-        None,
-    )
-    .await?;
-    send(&tx, &id, RunDelta::State(RunState::Killed)).await;
-    Ok(result)
+async fn agent_and_gate(
+    opts: &RunOptions,
+    id: &RunId,
+    repo: &std::path::Path,
+    wt_path: &std::path::Path,
+    mut config: kit_core::KitConfig,
+    tx: &Option<mpsc::Sender<(RunId, RunDelta)>>,
+    cancel: Option<&Arc<CancelHandle>>,
+    agent_impl: &dyn Agent,
+    output: &mut String,
+    truncated: &mut bool,
+) -> Result<Ending> {
+    if cancelled(cancel) {
+        return Ok(Ending::Killed("kit: cancelled before agent start\n".into()));
+    }
+
+    // --- agent phase ---
+    // Only an explicit --dry-run is offline; a missing agent was refused
+    // before the worktree was made (see `require_agent`).
+    let use_dry = opts.dry_run == Some(true);
+    let phase = if use_dry {
+        dry_run_agent(opts, id, wt_path, tx, output, truncated, cancel).await?
+    } else {
+        live_agent(
+            agent_impl, opts, id, repo, wt_path, tx, output, truncated, cancel,
+        )
+        .await?
+    };
+
+    match phase {
+        AgentPhase::Killed => return Ok(Ending::Killed("kit: run killed by user\n".into())),
+        AgentPhase::TimedOut => {
+            // CEO stamp: timeout maps to Killed + reason in output (RunState frozen).
+            return Ok(Ending::Killed(format!(
+                "kit: run killed — reason: timeout ({:?})\n",
+                opts.bounds.timeout
+            )));
+        }
+        AgentPhase::Ok | AgentPhase::Failed => {}
+    }
+    if cancelled(cancel) {
+        return Ok(Ending::Killed("kit: run killed before gate\n".into()));
+    }
+
+    // --- gate phase ---
+    send(tx, id, RunDelta::State(RunState::Gating)).await;
+    let cap = opts.bounds.output_cap_bytes;
+    // CEO stamp P2: infer defaults on live runs only. Dry-run stays offline-fast
+    // and is exempt from vacuous non-zero exit.
+    if config.gate.is_empty() && !use_dry {
+        let inferred = super::infer::infer_gate(repo);
+        if !inferred.is_empty() {
+            let line = format!(
+                "gate: inferred checks (no kit.toml gate) — {}\n",
+                inferred
+                    .checks()
+                    .iter()
+                    .map(|(l, c)| format!("{l}:{c}"))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            );
+            append_capped(output, truncated, cap, &line);
+            send(tx, id, RunDelta::Output(line)).await;
+            config.gate = inferred;
+        }
+    }
+    let gate = if config.gate.is_empty() {
+        // Still empty after inference → vacuous (TUI: UNCONFIGURED, never PASS).
+        let line = "gate: no checks configured and none inferred (vacuous — UNCONFIGURED)\n";
+        append_capped(output, truncated, cap, line);
+        send(tx, id, RunDelta::Output(line.into())).await;
+        GateOutcome::vacuous()
+    } else {
+        KitGate::new().evaluate(wt_path, &config.gate).await
+    };
+    send(tx, id, RunDelta::Gate(gate.clone())).await;
+
+    let state = if phase == AgentPhase::Failed {
+        RunState::Error
+    } else if gate.passed {
+        RunState::Pass
+    } else {
+        RunState::Fail
+    };
+    Ok(Ending::Gated { state, gate })
 }
 
 /// Terminal path for a run killed before it started: still queued on the
@@ -409,10 +371,13 @@ async fn write_terminal(
         output_truncated: truncated,
     };
 
-    let receipt_dir = write_receipt(&receipt, &output)?;
+    let written = write_receipt(&receipt, &output);
+    // A clean worktree holds nothing the receipt lacks, so it goes even when
+    // the receipt write failed: an error never leaks a worktree.
     let removed = wt_path
         .as_deref()
         .is_some_and(|wt| remove_if_clean(&repo, wt).unwrap_or(false));
+    let receipt_dir = written?;
 
     Ok(RunResult {
         id,
@@ -953,6 +918,98 @@ mod tests {
             let child = self.0.get_mut().expect("child");
             Ok(child.try_wait()?.map(|status| status.code().unwrap_or(1)))
         }
+    }
+
+    /// Installed, but its program cannot start (`spawn grok: program not found`).
+    struct SpawnFails;
+
+    #[async_trait::async_trait]
+    impl Agent for SpawnFails {
+        fn kind(&self) -> AgentKind {
+            AgentKind::Grok
+        }
+
+        async fn probe(&self) -> kit_agents::AgentStatus {
+            let mut status = kit_agents::AgentStatus::missing(AgentKind::Grok);
+            status.installed = true;
+            status
+        }
+
+        async fn spawn(
+            &self,
+            _spec: &RunSpec,
+            _worktree: &std::path::Path,
+            _tx: mpsc::Sender<RunDelta>,
+        ) -> std::result::Result<Box<dyn kit_agents::AgentHandle>, kit_agents::SpawnError> {
+            Err(kit_agents::SpawnError::Io {
+                kind: AgentKind::Grok,
+                source: std::io::Error::new(std::io::ErrorKind::NotFound, "program not found"),
+            })
+        }
+    }
+
+    /// `git worktree list --porcelain` entries for `repo`.
+    fn git_worktrees(repo: &std::path::Path) -> Vec<String> {
+        let out = std::process::Command::new("git")
+            .args(["worktree", "list", "--porcelain"])
+            .current_dir(repo)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .output()
+            .expect("git worktree list");
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(|l| l.strip_prefix("worktree ").map(str::to_string))
+            .collect()
+    }
+
+    /// An agent that fails to spawn after the worktree exists must not leak
+    /// it: the dir and its `git worktree` registration go, and the run ends
+    /// with an `Error` receipt that names the cause, on the CLI path too.
+    #[tokio::test]
+    async fn spawn_failure_removes_worktree_and_writes_error_receipt() {
+        let root = crate::engine::paths::bare_git_fixture();
+        let home = std::env::temp_dir().join(format!(
+            "kit-test-spawnfail-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let id = RunId("01TESTSPAWNFAILS0000000001".into());
+
+        let (result, wt_dir, receipt, log) = with_kit_home(&home, || async {
+            let opts = RunOptions {
+                repo: root.to_string_lossy().into_owned(),
+                agent: AgentKind::Grok,
+                task: "spawn fails".into(),
+                dry_run: Some(false),
+                bounds: Bounds::default(),
+            };
+            let result = execute_with(opts, Some(id.clone()), None, None, &SpawnFails).await;
+            let wt_dir = worktrees_dir().join(&id.0);
+            let receipt = crate::engine::store::read_receipt(&id.0);
+            let log = crate::engine::store::read_output_tail(&id.0, 4096);
+            (result, wt_dir, receipt, log)
+        })
+        .await;
+
+        let result = result.expect("a spawn failure still ends the run");
+        assert_eq!(result.state, RunState::Error);
+        assert!(result.worktree_removed, "clean worktree must be removed");
+        assert!(!wt_dir.exists(), "leaked {}", wt_dir.display());
+        assert_eq!(git_worktrees(&root).len(), 1, "{:?}", git_worktrees(&root));
+        let receipt = receipt.expect("read").expect("an Error receipt");
+        assert_eq!(receipt.state, RunState::Error);
+        assert!(receipt.gate.is_none());
+        let log = log.expect("output.log");
+        assert!(log.contains("program not found"), "{log}");
+
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Session B: once the agent exits its pipes close and `recv()` yields
