@@ -42,6 +42,7 @@ Repo shims (`.\kit.cmd` / `.\kit.ps1`, or `. .\scripts\use-rust-kit.ps1`) launch
 | `cargo run -p kit-cli -- run --dry-run --json` | Offline path (worktree → stream → **this repo's gate** → receipt) |
 | `cargo run -p kit-cli -- receipt list` | Browse proof under `~/.kit/runs/` |
 | `cargo run -p kit-cli -- receipt show <id>` | One receipt (+ `--output` for log tail) |
+| `cargo run -p kit-cli -- land <id>` | Put a passed run's changes on a new branch `kit/<id>` (`--apply`, `--branch`, `--force`) |
 
 **Your repo:** `kit init` reads `Cargo.toml`, `go.mod`, `package.json` or `pyproject.toml`, prints the `kit.toml` gate it proposes and writes it. It uses only commands that check and do not change files. `kit init --print` shows the proposal only; `kit init --check` runs each command once and keeps the ones that pass; `--force` replaces an existing file.
 
@@ -49,9 +50,13 @@ Repo shims (`.\kit.cmd` / `.\kit.ps1`, or `. .\scripts\use-rust-kit.ps1`) launch
 cd your-repo
 kit init --check
 kit run --agent codex --task "fix the failing test"
+kit land <id>              # the id kit run printed
+git merge kit/<id>
 ```
 
-**Product loop:** dispatch → table of runs → FAIL wash + first error → `r` retry with gate context → receipt under `~/.kit/runs/<id>/`.
+**Land:** a run that passes its gate keeps its changes in `diff.patch`. `kit land <id>` commits them on a new branch `kit/<id>` at the commit the run started from. Your branch, HEAD and files do not change. `--apply` puts the changes in your working tree instead (clean tree only), with no commit. Kit refuses runs that failed, have no gate checks (UNCONFIGURED) or changed nothing; `--force` overrides the first two and says so in the commit. Landing twice says `already landed`.
+
+**Product loop:** dispatch → table of runs → FAIL wash + first error → `r` retry with gate context → receipt under `~/.kit/runs/<id>/` → `kit land <id>`.
 
 Keys: `↑↓` select · `f` filter · `Enter` open · `g` gate · `d` dispatch · `b` board · `k` kill · `r` retry · `?` help · `q` quit.
 
@@ -151,7 +156,7 @@ cargo run -p kit-cli -- --demo   # lands on a FAIL so the proof loop is obvious
 
 ## Receipts
 
-Every run writes `~/.kit/runs/<id>/` (`receipt.json`, `output.log`, optional `diff.patch` / `gate.json`).
+Every run writes `~/.kit/runs/<id>/` (`receipt.json`, `output.log`, optional `diff.patch` / `gate.json` / `base.txt`). `diff.patch` holds every change since the run's base commit (`base.txt`): edits, new files, binary files and commits the agent made. It applies with `git apply` to that commit.
 
 ```bash
 cargo run -p kit-cli -- receipt list

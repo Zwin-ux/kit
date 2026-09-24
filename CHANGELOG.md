@@ -3,6 +3,9 @@
 ## Unreleased — npm distribution
 
 ### Added
+- `kit land <id>` commits a passed run's changes on a new branch `kit/<id>` at the run's base commit. It does not switch your branch or change your files. `--apply` edits the working tree instead (clean tree only), `--branch` names the branch, `--json` returns the `land` envelope. It refuses fail/error/killed runs, UNCONFIGURED gates and empty diffs; `--force` overrides with a warning and a note in the commit. A second land says `already landed` (trailer `Kit-Receipt: <id>`). The kept run worktree goes once it is landed
+- `kit run` and `kit receipt show` print `Next: kit land <id>` after a proven PASS with changes
+- The run dir has `base.txt`: the commit the run started from
 - `kit init` proposes a gate and writes `kit.toml`. It detects Rust, Go, Node (package manager from `packageManager` or the lockfile) and Python (ruff, black, mypy, pytest only when configured). It uses only scripts that exist and do not write: a `format` script that runs `prettier --write` is not the format check. `--print` only prints, `--force` replaces, `--check` runs each command once and keeps the ones that pass, `--json` returns the `init` envelope. Mixed repos use the root toolchain and name the rest
 - `kit run` (on stderr) and `kit doctor` point to `kit init` when the repo has no `kit.toml`; `kit doctor --json` has `kitToml`
 - npm: `@mzwin/kit` 1.x is a launcher plus one binary package per platform (Windows x64, macOS arm64/x64, Linux x64/arm64 glibc 2.17+). Prereleases publish to `alpha`; `latest` stays 0.1 until 1.0.0
@@ -19,6 +22,7 @@
 - Live gate inference and `kit init` share one detector. Inference no longer uses a `format` script that writes files or runs `lint` as the typecheck; `lint` is an `extra` check. A pnpm, yarn or bun repo is no longer checked with npm when that tool is missing
 
 ### Fixed
+- The receipt diff now holds new files, binary files (`--binary`) and commits the agent made. It used to be `git diff HEAD`: a new file was missing, and an agent that committed its work left an empty diff and a worktree that Kit removed as clean, with the commit in it
 - A gate check whose program is not found (or cannot start) now FAILS the gate. It used to be "skipped", which counted as passed: a typo in kit.toml gave a PASS receipt with no check run
 - `kit run` from a subdirectory uses the repo root, so it reads the same `kit.toml` the gate runs against
 - `kit doctor` says `not ready` (not `missing`) for an installed agent that is logged out or has no model, and `--json` agents gain `installed`

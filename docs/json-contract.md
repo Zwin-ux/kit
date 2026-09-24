@@ -58,6 +58,29 @@ Exit code: `0` pass, `1` fail or vacuous (unless `--allow-vacuous` / `--dry-run`
 `warnings` names each program the gate needs that is not on PATH.  
 Exit code: `0` written or printed. `2` when no check is safe to propose, `kit.toml` exists without `--force`, or a check fails under `--check` without `--drop-failing` (stdout: one `ok: false` envelope; nothing is written).
 
+## `kit land <id> --json` → `data`
+
+| Field | Type |
+|-------|------|
+| `id` | string (ULID) |
+| `mode` | `branch` or `apply` |
+| `repo` | path |
+| `branch` | string \| null: the new branch (`kit/<first 12 chars of id>` or `--branch`); the branch that holds it when `alreadyLanded`; null in `apply` mode |
+| `commit` | sha \| null: the landed commit (null in `apply` mode) |
+| `base` | sha \| null: the parent of `commit` |
+| `baseSource` | `recorded` (`base.txt`), `worktree` (kept worktree HEAD), `head` (repo HEAD, 3-way apply) or `none` |
+| `threeWay` | bool |
+| `alreadyLanded` | bool: a branch already has a commit with trailer `Kit-Receipt: <id>` (or, with `--apply`, the tree already has the changes) |
+| `forced` | bool |
+| `files` | strings: paths the diff changes |
+| `worktreeRemoved` | bool: the kept run worktree held exactly this diff and was removed |
+| `next` | string: the command to run next (`git merge kit/<id>`) |
+
+`warnings` holds each `--force` override and each base fallback.  
+Exit code: `0` landed or already landed. `2` refused (run not `pass`, gate UNCONFIGURED, empty diff, dirty tree under `--apply`, branch exists without this run, diff does not apply): one `ok: false` envelope.
+
+The run dir also holds `base.txt`: the commit the run's worktree started at (one line). `diff.patch` is binary-safe (`git diff --binary`) and holds all changes since that commit, new files and agent commits included.
+
 ## Errors
 
 When any `--json` command fails before it has a result (not a git repo, agent not installed, invalid `kit.toml`, unknown command), stdout still holds exactly one envelope: `ok: false`, `data: null`, `error` set. Exit code `2`.
