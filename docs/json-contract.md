@@ -73,7 +73,7 @@ When any `--json` command fails before it has a result (not a git repo, agent no
 | `install` | `npm` (via the `@mzwin/kit` launcher) or `binary` |
 | `pathCollisions` | paths of other `kit` programs on PATH (the npm 1.x shim is not one) |
 | `skillsPack` | path \| null |
-| `agents` | array of `{ agent, ready, version, remedy }` |
+| `agents` | array of `{ agent, installed, ready, version, remedy }` |
 | `kitToml` | path to `./kit.toml` \| null |
 
 ## `kit receipt list --json` → `data`

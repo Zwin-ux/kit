@@ -13,6 +13,8 @@
 - Live gate inference and `kit init` share one detector. Inference no longer uses a `format` script that writes files or runs `lint` as the typecheck; `lint` is an `extra` check. A pnpm, yarn or bun repo is no longer checked with npm when that tool is missing
 
 ### Fixed
+- A gate check whose program is not found (or cannot start) now FAILS the gate. It used to be "skipped", which counted as passed: a typo in kit.toml gave a PASS receipt with no check run
+- `kit doctor` says `not ready` (not `missing`) for an installed agent that is logged out or has no model, and `--json` agents gain `installed`
 - A run whose agent is not installed stops before any worktree. It used to fall back to a dry run, which could PASS the gate on an unchanged tree
 - On Windows, a missing agent no longer shows as ready (`cmd /C` "is not recognized" output was read as a version)
 - A `kit.toml` that does not parse stops the run with the file path and the parse error. It used to switch the gate off without a message

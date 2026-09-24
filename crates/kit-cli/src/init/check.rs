@@ -68,8 +68,9 @@ pub async fn run_all(
                 Some(c) => (
                     match c.status {
                         CheckStatus::Pass => "pass",
+                        // kit-gate fails a command it cannot start, with no exit code.
+                        CheckStatus::Fail if c.exit_code.is_none() => "missing",
                         CheckStatus::Fail => "fail",
-                        // kit-gate skips a command it cannot start.
                         CheckStatus::Skipped => "missing",
                         CheckStatus::TimedOut => "timeout",
                     },

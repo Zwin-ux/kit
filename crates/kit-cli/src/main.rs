@@ -763,6 +763,7 @@ fn print_doctor(version: &str, json: bool) {
             .map(|st| {
                 serde_json::json!({
                     "agent": st.kind.label(),
+                    "installed": st.installed,
                     "ready": st.is_ready(),
                     "version": st.version,
                     "remedy": st.remedy,
@@ -829,9 +830,15 @@ fn print_doctor(version: &str, json: bool) {
     println!();
     println!("agents:");
     for st in statuses {
-        let flag = if st.is_ready() { "ready" } else { "missing" };
+        let flag = if st.is_ready() {
+            "ready"
+        } else if st.installed {
+            "not ready"
+        } else {
+            "missing"
+        };
         let ver = st.version.as_deref().unwrap_or("-");
-        println!("  {:8}  {flag:8}  {ver}", st.kind.label());
+        println!("  {:8}  {flag:9}  {ver}", st.kind.label());
         if let Some(r) = st.remedy {
             println!("            → {r}");
         }
