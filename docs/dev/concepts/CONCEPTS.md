@@ -1,6 +1,6 @@
 # Kit 1.0 concepts
 
-These are concepts for the `1.0.0-alpha.1` source tree on 2026-09-23. The SVGs show intended user moments. They do not prove that the npm alpha has been published or that a demo fixture wrote a receipt. See `docs/dev/CURRENT.md` and `docs/dev/RELEASE-npm.md` for the release state.
+These are concepts for the `1.0.0-alpha.1` source tree on 2026-09-23. The SVGs show intended user moments. They do not prove that the npm alpha has been published or that a demo fixture wrote a receipt. See `docs/dev/CURRENT.md` and `docs/dev/RELEASING.md` for the release state.
 
 ## Design concept: the first five minutes
 
@@ -49,11 +49,11 @@ The rank weights first-run trust, proof integrity, and user recovery. Each obser
 | 3 | `doctor` reports hosted agents ready after a binary probe: Codex, Claude, and Grok set `authenticated: true` when installed. This cannot prove login or a runnable session. Separate `installed` from verified readiness, or label auth as unchecked. | `crates/kit-agents/src/{codex,claude,grok}.rs`, `crates/kit-cli/src/main.rs` |
 | 4 | The release workflow tests built binaries with `--version` and publishes staged packages, but it does not run the packed-install smoke test on those **release artifacts** before publish. Add a release-artifact install gate across target families. | `.github/workflows/release-npm.yml`, `scripts/npm-smoke.mjs`, `scripts/npm-stage.mjs` |
 | 5 | The npm launcher covers five targets only. Unsupported hosts must build from source; Linux musl has no package. Add support only after build and installed-package tests, or make the support matrix more prominent. | `npm/platforms.json`, `npm/kit/bin/kit.js`, `npm/kit/README.md` |
-| 6 | The launcher's missing-optional-package remedy says `npm install -g @mzwin/kit` without `@alpha`. Before stable 1.0, that installs 0.1.x. Keep the installed channel in the fix. | `npm/kit/bin/kit.js`, `docs/dev/RELEASE-npm.md` |
+| 6 | The launcher's missing-optional-package remedy says `npm install -g @mzwin/kit` without `@alpha`. Before stable 1.0, that installs 0.1.x. Keep the installed channel in the fix. | `npm/kit/bin/kit.js`, `docs/dev/RELEASING.md` |
 | 7 | PTY attach is still an honest stub. A user can enter an Attached view, but cannot interact with the live agent there. Complete the PTY path and verify detach and kill on each host before presenting attach as live. | `crates/kit-tui/src/app.rs`, `crates/kit-tui/src/loop.rs`, `docs/dev/CURRENT.md` |
 | 8 | Gate inference checks Cargo and package scripts conservatively, but an npm `format` script can be a writer and a project without recognized scripts stays vacuous. Make the inferred command visible before live dispatch and offer a clear `kit.toml` path. | `crates/kit-cli/src/engine/infer.rs`, `crates/kit-cli/src/main.rs`, `crates/kit-tui/src/app.rs` |
 | 9 | The human `receipt show` output prints a gate's `PASS` when `g.passed` is true, even for a zero-check vacuous gate. The run command calls this `UNCONFIGURED`. Use one label in both views and the JSON browser. | `crates/kit-cli/src/main.rs`, `crates/kit-cli/src/engine/infer.rs` |
-| 10 | README and status still include repo-only run instructions and a dated install/PATH state; the staged npm README is short and has no full migration or troubleshooting route. Review package copy against the published artifact after the first alpha. | `README.md`, `npm/kit/README.md`, `docs/dev/CURRENT.md`, `docs/dev/RELEASE-npm.md` |
+| 10 | README and status still include repo-only run instructions and a dated install/PATH state; the staged npm README is short and has no full migration or troubleshooting route. Review package copy against the published artifact after the first alpha. | `README.md`, `npm/kit/README.md`, `docs/dev/CURRENT.md`, `docs/dev/RELEASING.md` |
 
 ## Art files
 
