@@ -561,13 +561,18 @@ async fn live_agent(
 
 fn append_capped(buf: &mut String, truncated: &mut bool, cap: u64, chunk: &str) {
     let cap = cap as usize;
-    if buf.len() >= cap {
+    if *truncated || buf.len() >= cap {
         *truncated = true;
         return;
     }
     let room = cap - buf.len();
     if chunk.len() > room {
-        buf.push_str(&chunk[..room]);
+        // Cut on a char boundary: slicing inside a multi-byte char panics.
+        let mut end = room;
+        while !chunk.is_char_boundary(end) {
+            end -= 1;
+        }
+        buf.push_str(&chunk[..end]);
         *truncated = true;
     } else {
         buf.push_str(chunk);
@@ -596,6 +601,18 @@ mod tests {
     use super::*;
     use crate::engine::paths::kit_home_test_lock;
     use kit_core::CheckStatus;
+
+    /// Agent output that hits the cap inside a multi-byte char used to panic.
+    #[test]
+    fn output_cap_cuts_on_a_char_boundary() {
+        let (mut buf, mut truncated) = (String::from("ab"), false);
+        // cap 4: room is 2 bytes, but "é" is 2 bytes starting at byte 1.
+        append_capped(&mut buf, &mut truncated, 4, "xé✓");
+        assert!(truncated);
+        assert_eq!(buf, "abx");
+        append_capped(&mut buf, &mut truncated, 4, "more");
+        assert_eq!(buf, "abx");
+    }
 
     /// A missing agent must stop the run, never fall back to a dry run that
     /// could PASS the gate on an unchanged tree.

@@ -160,7 +160,26 @@ fn check_comments_out_a_failing_command() {
             "#[test]\nfn red() {\n    panic!(\"red\");\n}\n",
         ),
     ]);
-    let out = kit(&dir, &["--check", "--json", "--timeout", "5m"]);
+    // A failing check must not be dropped in silence: a gate without `test`
+    // could later PASS on format alone.
+    let refused = kit(&dir, &["--check", "--json", "--timeout", "5m"]);
+    assert_eq!(refused.status.code(), Some(2), "{}", text(&refused.stderr));
+    let err = json(&refused);
+    assert_eq!(err["ok"], false);
+    let msg = err["error"].as_str().unwrap();
+    assert!(
+        msg.contains("test") && msg.contains("--drop-failing"),
+        "{msg}"
+    );
+    assert!(
+        !dir.join("kit.toml").exists(),
+        "refused init wrote kit.toml"
+    );
+
+    let out = kit(
+        &dir,
+        &["--check", "--drop-failing", "--json", "--timeout", "5m"],
+    );
     assert!(out.status.success(), "{}", text(&out.stderr));
     let v = json(&out);
     let checks = v["data"]["checks"].as_array().unwrap();

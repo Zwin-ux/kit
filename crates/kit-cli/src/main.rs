@@ -366,9 +366,8 @@ fn print_help(version: &str) {
     println!("Init flags:");
     println!("  --print / -p             Print the proposal only. Write nothing");
     println!("  --force / -f             Replace an existing kit.toml");
-    println!(
-        "  --check                  Run each command once first. Keep only the checks that pass"
-    );
+    println!("  --check                  Run each command once first. Stop if one fails");
+    println!("  --drop-failing           With --check: write the gate without the failing checks");
     println!("  --timeout <5m>           Limit for each command under --check");
     println!("  --repo / -C <path>       Target repo (default .)");
     println!("  --json                   One JSON result on stdout");

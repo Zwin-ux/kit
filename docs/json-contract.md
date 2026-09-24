@@ -56,7 +56,7 @@ Exit code: `0` pass, `1` fail or vacuous (unless `--allow-vacuous` / `--dry-run`
 | `notes` | strings: why a script or tool was used or left out |
 
 `warnings` names each program the gate needs that is not on PATH.  
-Exit code: `0` written or printed. `2` when no check is safe to propose, `kit.toml` exists without `--force`, or no check passed under `--check` (stdout: one `ok: false` envelope).
+Exit code: `0` written or printed. `2` when no check is safe to propose, `kit.toml` exists without `--force`, or a check fails under `--check` without `--drop-failing` (stdout: one `ok: false` envelope; nothing is written).
 
 ## Errors
 

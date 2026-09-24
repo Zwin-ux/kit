@@ -14,6 +14,8 @@
 - Release docs cover all channels: [`docs/dev/RELEASING.md`](docs/dev/RELEASING.md) (was `RELEASE-npm.md`)
 
 ### Changed
+- `kit init --check` no longer drops a failing check in silence (the gate could then PASS on lint alone). It stops and names the checks; `--drop-failing` makes that choice explicit
+- Agent output that reaches the 8 MiB cap inside a multi-byte character no longer crashes the run, and nothing is appended after the cut
 - Live gate inference and `kit init` share one detector. Inference no longer uses a `format` script that writes files or runs `lint` as the typecheck; `lint` is an `extra` check. A pnpm, yarn or bun repo is no longer checked with npm when that tool is missing
 
 ### Fixed

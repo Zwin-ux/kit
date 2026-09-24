@@ -21,6 +21,7 @@ struct Opts {
     force: bool,
     print: bool,
     check: bool,
+    drop_failing: bool,
     json: bool,
     timeout: Duration,
 }
@@ -31,6 +32,7 @@ fn parse(args: &[String]) -> Result<Opts> {
         force: false,
         print: false,
         check: false,
+        drop_failing: false,
         json: false,
         timeout: Duration::from_secs(300),
     };
@@ -44,6 +46,7 @@ fn parse(args: &[String]) -> Result<Opts> {
             "--force" | "-f" => o.force = true,
             "--print" | "-p" => o.print = true,
             "--check" => o.check = true,
+            "--drop-failing" => o.drop_failing = true,
             "--json" => o.json = true,
             "--timeout" => {
                 i += 1;
@@ -119,6 +122,15 @@ pub async fn cmd_init(args: &[String]) -> Result<()> {
         None
     };
     let (gate, left_out) = render::effective_gate(&det.gate, results.as_deref());
+    // A gate with a failing check dropped is weaker than it looks: a later
+    // run could PASS on lint alone. Dropping must be an explicit choice.
+    if !left_out.is_empty() && !o.drop_failing && !o.print {
+        let names: Vec<&str> = left_out.iter().map(|(label, _)| label.as_str()).collect();
+        bail!(
+            "these checks fail today: {}. kit.toml was not written. Fix them and run `kit init --check` again, or run `kit init --check --drop-failing` to write a gate without them",
+            names.join(", ")
+        );
+    }
     if gate.is_empty() {
         bail!(
             "no proposed check passed, so kit.toml was not written. Fix the failures above, or run `kit init` without --check to write the proposal as it is"
