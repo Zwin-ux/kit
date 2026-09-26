@@ -715,8 +715,29 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         }
     }
 
+    // A base another installed kit extends stays until that kit goes; it
+    // only stops being one the user asked for.
+    let mut still_needed = Vec::new();
+    for name in &args.kits {
+        let e = lock.get(name).expect("checked above");
+        let users: Vec<String> = e
+            .required_by
+            .iter()
+            .filter(|r| !args.kits.contains(r))
+            .cloned()
+            .collect();
+        if !users.is_empty() {
+            still_needed.push((name.clone(), users));
+        }
+    }
+
     // The kits named, plus bases nothing else needs any more.
-    let mut going: BTreeSet<String> = args.kits.iter().cloned().collect();
+    let mut going: BTreeSet<String> = args
+        .kits
+        .iter()
+        .filter(|n| !still_needed.iter().any(|(s, _)| s == *n))
+        .cloned()
+        .collect();
     loop {
         let more: Vec<String> = lock
             .kits
@@ -750,6 +771,38 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
     }
 
     let summary = removal_summary(&undo);
+    if !json {
+        for (name, users) in &still_needed {
+            println!(
+                "{name} stays: {} extends it. It goes when {} is removed.",
+                users.join(", "),
+                if users.len() == 1 {
+                    "that kit"
+                } else {
+                    "they are"
+                }
+            );
+        }
+    }
+    if going.is_empty() {
+        for (name, _) in &still_needed {
+            if let Some(e) = lock.get_mut(name) {
+                e.requested = false;
+            }
+        }
+        lock.save(&scope)?;
+        if json {
+            let data = serde_json::json!({
+                "removed": [], "scope": scope_json(&scope), "changes": 0,
+                "stays": still_needed.iter().map(|(n, u)| serde_json::json!({"kit": n, "extendedBy": u})).collect::<Vec<_>>(),
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&crate::envelope("remove", true, data, None, vec![]))?
+            );
+        }
+        return Ok(());
+    }
     if !json {
         let names: Vec<&str> = going.iter().map(String::as_str).collect();
         println!(
@@ -788,6 +841,11 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         }
     }
     lock.kits.retain(|e| !going.contains(&e.name));
+    for (name, _) in &still_needed {
+        if let Some(e) = lock.get_mut(name) {
+            e.requested = false;
+        }
+    }
     for e in &mut lock.kits {
         e.required_by.retain(|r| !going.contains(r));
     }

@@ -716,3 +716,119 @@ fn the_plan_shows_exactly_what_will_run() {
         "{v}"
     );
 }
+
+/// doctor fails (exit 1) when a check fails, and checks each MCP server is
+/// still in the agent's config rather than trusting the record.
+#[cfg(unix)]
+#[test]
+fn doctor_fails_when_a_check_fails_or_config_is_gone() {
+    let root = scratch("doctor-fails");
+    let kit = demo_kit(&root);
+    let toml = kit.join("KIT.toml");
+    write(
+        &toml,
+        &(read(&toml) + "[check]\ncommands = [\"test -f ok.txt\"]\n"),
+    );
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let out = env.kit(
+        &repo,
+        &["add", kit.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+
+    write(&repo.join("ok.txt"), "");
+    let out = env.kit(&repo, &["doctor"]);
+    assert!(out.status.success(), "{}", text(&out.stdout));
+
+    std::fs::remove_file(repo.join("ok.txt")).unwrap();
+    write(
+        &repo.join(".mcp.json"),
+        "{\"mcpServers\":{\"docs\":{\"type\":\"http\",\"url\":\"https://example.com/mcp\"}}}",
+    );
+    let out = env.kit(&repo, &["doctor", "--json"]);
+    assert!(!out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["ok"], false, "{v}");
+    let checks = v["data"]["kits"][0]["checks"].to_string();
+    assert!(checks.contains("local MCP configured"), "{checks}");
+    assert!(checks.contains("gone from"), "{checks}");
+    assert!(checks.contains("`test -f ok.txt` runs"), "{checks}");
+}
+
+/// A kit that extends `demo`, from a folder next to it.
+fn top_kit(root: &Path, base: &Path) -> PathBuf {
+    let kit = root.join("top-kit");
+    write(
+        &kit.join("skills/top/SKILL.md"),
+        "---\nname: top\n---\nTop.\n",
+    );
+    write(
+        &kit.join("KIT.toml"),
+        &format!(
+            "schema = 1\n[kit]\nname = \"top\"\ntitle = \"Top\"\nversion = \"0.1.0\"\ndescription = \"d\"\nextends = [{:?}]\n[[skill]]\nname = \"top\"\npath = \"skills/top\"\n",
+            base.display().to_string()
+        ),
+    );
+    kit
+}
+
+/// Removing a base that another kit extends keeps it until that kit goes.
+#[test]
+fn removing_a_base_keeps_it_while_another_kit_extends_it() {
+    let root = scratch("base");
+    let demo = demo_kit(&root);
+    let top = top_kit(&root, &demo);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    for kit in [&demo, &top] {
+        let out = env.kit(
+            &repo,
+            &["add", kit.to_str().unwrap(), "-a", "claude", "--yes"],
+        );
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stdout).contains("demo stays: top extends it"),
+        "{}",
+        text(&out.stdout)
+    );
+    assert!(repo.join(".claude/skills/hello/SKILL.md").is_file());
+
+    let out = env.kit(&repo, &["remove", "top", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join(".claude").exists(), "demo went with top");
+}
+
+/// A skill remove kept because it was edited is the user's from then on:
+/// adding the kit again refuses to overwrite it.
+#[test]
+fn a_kept_skill_is_never_overwritten_by_a_later_add() {
+    let root = scratch("kept");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let spec = kit.to_str().unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let skill = repo.join(".claude/skills/hello/SKILL.md");
+    std::fs::write(&skill, "my edit").unwrap();
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&skill), "my edit");
+
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+    assert!(!out.status.success());
+    assert!(
+        text(&out.stderr).contains("not written by Kit"),
+        "{}",
+        text(&out.stderr)
+    );
+    assert_eq!(read(&skill), "my edit");
+}

@@ -358,6 +358,9 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 return Ok(None);
             }
             if !force && disk_hash(dir)?.as_deref() != Some(hash.as_str()) {
+                // It is the user's now: a later `kit add` must not treat it
+                // as Kit's and overwrite it.
+                let _ = std::fs::remove_file(dir.join(OWNED));
                 return Ok(Some(format!(
                     "{} was changed after install; left in place (use --force to remove it)",
                     tilde(dir)
