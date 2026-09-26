@@ -51,7 +51,16 @@ In this order. Steps marked **owner** need Mazen; nothing is tagged, bumped or p
 1. **owner** Merge the release stack to `main` in order. `main` must be green on Linux, macOS and Windows.
 2. **owner** Repo secrets exist: `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (see [Requirements](#requirements-owner)).
 3. **owner** Create the empty public repo `Zwin-ux/kits` (no README, licence or .gitignore).
-4. Regenerate the kit index folder and git bundle from the release commit (`index.toml` pins every kit to the bundle's first commit), push the bundle's history to `Zwin-ux/kits`, then check that `kit search --refresh` no longer says "not published yet" and exits 0.
+4. Build the kit index from the merged `main` and push it to `Zwin-ux/kits`:
+
+   ```sh
+   git fetch origin main
+   python3 scripts/kits-index-generate.py . origin/main ../kits-out
+   git clone ../kits-out/kits-index.bundle ../kits && cd ../kits
+   git remote set-url origin https://github.com/Zwin-ux/kits.git && git push -u origin main
+   ```
+
+   The generator lists every kit in `crates/kit-cli/kits/` at that commit, with its search tags from `TAGS` in the script (a kit missing there is listed without tags and a warning). The same commit always gives the same bundle and pins. `index.toml` pins every kit to the bundle's first commit, so push the bundle's history, never the loose `kits-index/` folder. Then check that `kit search --refresh` no longer says "not published yet" and exits 0.
 5. On a branch from `main`: `node scripts/version.mjs --set 2.0.0`, `cargo update -w`, rename `## Unreleased` in `CHANGELOG.md` to `## 2.0.0 — Kits`, check `node scripts/release-notes.mjs 2.0.0`, merge.
 6. **owner** Push the tag `v2.0.0` on that `main` commit. `release-npm.yml` does the rest; watch it to green, including `install-check` and `npm-check`.
 7. Record the visuals from the released binary (`scripts/record-media.sh --kit <installed kit>`), attach the hero GIF to the GitHub Release, and run [`docs/SMOKE-TEST.md`](../SMOKE-TEST.md) on a clean machine.
