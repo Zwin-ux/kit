@@ -38,7 +38,7 @@ Repo shims (`.\kit.cmd` / `.\kit.ps1`, or `. .\scripts\use-rust-kit.ps1`) launch
 | `cargo run -p kit-cli -- --demo` / `.\kit.cmd --demo` | Control Room TUI |
 | `cargo run -p kit-cli -- init` | Write `kit.toml`: a gate for the repo (`--print`, `--check`, `--force`) |
 | `cargo run -p kit-cli -- run --task "…"` | One isolated run (live agent if on PATH) |
-| `cargo run -p kit-cli -- doctor` | Probe codex / claude / grok / ollama + skills pack |
+| `cargo run -p kit-cli -- doctor` | Probe codex / claude / grok / ollama |
 | `cargo run -p kit-cli -- run --dry-run --json` | Offline path (worktree → stream → **this repo's gate** → receipt) |
 | `cargo run -p kit-cli -- receipt list` | Browse proof under `~/.kit/runs/` |
 | `cargo run -p kit-cli -- receipt show <id>` | One receipt (+ `--output` for log tail) |
@@ -110,7 +110,6 @@ Env flags:
 |-----|--------|
 | `KIT_FULL_AUTO=1` | Bypass agent approval prompts (dangerous — sandboxes only) |
 | `KIT_AGENT_RUNS_CHECKS=1` | Let Claude Code run the gate's own commands during a run (they run code the agent wrote); edits to `kit.toml`, `.git` and `.claude` stay denied. Off by default: Kit runs the gate after the agent finishes |
-| `KIT_SKILLS_DIR=…` | Override skill pack root (see Skills) |
 | `KIT_OLLAMA_MODEL=…` | Model for Ollama adapter (default `llama3.2`) |
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion (RUNNING stays a still `RUN` label) |
 | `KIT_THEME=high` | High-contrast ANSI palette (`high-contrast` / `hc` also work) |
@@ -121,24 +120,10 @@ Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md) · honest state: [`do
 
 ## Skills
 
-Every live run copies a skill pack into the worktree and prepends routing to the prompt.
-
-**Default:** [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) at `.agents/skills` (coding lifecycle: spec → plan → build → verify → review).
-
-**Any `*/SKILL.md` pack works**, including [Harness skills](https://github.com/harness/harness-skills):
-
-```bash
-git clone https://github.com/harness/harness-skills.git
-# Point Kit at the skills tree (not the repo root)
-export KIT_SKILLS_DIR="$PWD/harness-skills/skills"
-cargo run -p kit-cli -- run --agent claude --task "debug my failed pipeline"
-```
-
-Or place a `skills/` directory (Harness layout) in the target repo — Kit discovers it after `.agents/skills`.
-
-**Harness note:** those skills expect the [Harness MCP v2 server](https://github.com/harness/mcp-server) and API credentials. They are a **domain pack**, not Kit's default. Without MCP, agents can still read the markdown but cannot call Harness tools.
-
-Resolution order: `KIT_SKILLS_DIR` → `<repo>/.agents/skills` → `<repo>/skills` → walk up from cwd.
+Runs get no injected skill pack. Kits install skills into each agent's own
+config, and skills committed in the repository arrive with the worktree.
+A run sees only committed files, so commit repo-scope kit files before
+`kit run` if the agent should use them. See [`docs/skills-packs.md`](docs/skills-packs.md).
 
 ---
 
