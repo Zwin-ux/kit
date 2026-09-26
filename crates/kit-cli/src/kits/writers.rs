@@ -396,8 +396,12 @@ run = "true"
         d
     }
 
+    /// Plan lines with `/` separators, so the expectations hold on Windows.
     fn lines(actions: &[Action]) -> Vec<String> {
-        actions.iter().map(Action::describe).collect()
+        actions
+            .iter()
+            .map(|a| a.describe().replace('\\', "/"))
+            .collect()
     }
 
     #[test]
