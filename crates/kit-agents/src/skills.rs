@@ -7,15 +7,16 @@
 
 /// The prompt for one run: the user's task, then how to deliver.
 ///
-/// The task comes first and is passed as written. Nothing here may be about
-/// Kit's own code or a particular skill pack.
+/// The task comes first and is passed as written, leading indentation kept;
+/// only trailing whitespace goes, so one blank line sits before Delivery.
+/// Nothing here may be about Kit's own code or a particular skill pack.
 pub fn build_prompt(user_task: &str) -> String {
     format!(
         "{}\n\n## Delivery\n\n\
          - Work only in this repository worktree.\n\
          - Make the smallest change that satisfies the task.\n\
          - Summarize what you did and how to verify it.\n",
-        user_task.trim()
+        user_task.trim_end()
     )
 }
 
@@ -25,8 +26,11 @@ mod tests {
 
     #[test]
     fn prompt_is_the_task_then_delivery_and_nothing_about_kit() {
-        let p = build_prompt("  fix the flaky test\n");
+        let p = build_prompt("fix the flaky test\n");
         assert!(p.starts_with("fix the flaky test\n\n## Delivery"), "{p}");
+        // A pasted code block keeps its indentation.
+        let code = build_prompt("    let x = 1;  \n\n");
+        assert!(code.starts_with("    let x = 1;\n\n## Delivery"), "{code}");
         for leftover in [
             "Kit",
             "completeness-qa",

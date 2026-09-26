@@ -7,7 +7,7 @@ at `HEAD`, and the agent sees what that checkout holds plus its own config.
 Skills reach an agent two ways:
 
 1. **Kits.** `kit add <kit>` installs a kit's skills, rules, MCP servers and
-   hooks into each agent's own config: your home directory for user scope,
+   hooks into each agent's own config: your home directory for user scope (`--global`),
    the repository for repo scope. The agent loads them the way it loads any
    skill.
 2. **Committed repo skills.** Skills committed in the repository (for example
