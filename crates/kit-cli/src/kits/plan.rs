@@ -122,14 +122,14 @@ impl Action {
     /// same thing share it; it is undone only when neither needs it.
     pub fn key(&self) -> String {
         match self {
-            Self::Skill { dir, .. } => format!("skill {}", dir.display()),
-            Self::Rules { file, kit, .. } => format!("rules {} {kit}", file.display()),
+            Self::Skill { dir, .. } => format!("skill {}", key_path(dir)),
+            Self::Rules { file, kit, .. } => format!("rules {} {kit}", key_path(file)),
             Self::McpJson { file, name, .. } | Self::McpToml { file, name, .. } => {
-                format!("mcp {} {name}", file.display())
+                format!("mcp {} {name}", key_path(file))
             }
             Self::ClaudeMcp { name, .. } => format!("claude-mcp user {name}"),
             Self::HookJson { file, event, entry } => {
-                format!("hook {} {event} {entry}", file.display())
+                format!("hook {} {event} {entry}", key_path(file))
             }
             Self::Skip { piece, .. } => format!("skip {piece}"),
         }
@@ -237,15 +237,15 @@ impl Applied {
     /// Same identity as [`Action::key`].
     pub fn key(&self) -> String {
         match self {
-            Self::Skill { dir, .. } => format!("skill {}", dir.display()),
-            Self::Rules { file, kit, .. } => format!("rules {} {kit}", file.display()),
+            Self::Skill { dir, .. } => format!("skill {}", key_path(dir)),
+            Self::Rules { file, kit, .. } => format!("rules {} {kit}", key_path(file)),
             Self::McpJson { file, name, .. } | Self::McpToml { file, name, .. } => {
-                format!("mcp {} {name}", file.display())
+                format!("mcp {} {name}", key_path(file))
             }
             Self::ClaudeMcp { name, .. } => format!("claude-mcp user {name}"),
             Self::HookJson {
                 file, event, entry, ..
-            } => format!("hook {} {event} {entry}", file.display()),
+            } => format!("hook {} {event} {entry}", key_path(file)),
         }
     }
 }
@@ -1064,6 +1064,16 @@ pub fn find_program(program: &str) -> Option<PathBuf> {
             .map(|ext| dir.join(format!("{program}{ext}")))
             .find(|p| p.is_file())
     })
+}
+
+/// A path as it appears in a key: one separator, so a path rebuilt from a
+/// record (`root` + `.claude/skills/x`) matches the one a writer made
+/// (`root/.claude/skills` + `x`) on Windows too.
+fn key_path(p: &Path) -> String {
+    p.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// One argument as it would be typed: quoted when it has spaces or quotes.
