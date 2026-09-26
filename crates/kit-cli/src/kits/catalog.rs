@@ -224,6 +224,7 @@ mod tests {
                 "essentials",
                 "frontend-design",
                 "fullstack-design",
+                "ios-apple-design",
                 "llm-engineer"
             ]
         );

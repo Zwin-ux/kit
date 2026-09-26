@@ -68,6 +68,7 @@ That is the first run. After it, bare `kit` opens the Control Room.
 | `fullstack-design` | Frontend Design plus APIs, data, security | 18 skills, Chrome DevTools MCP, format-on-edit hook |
 | `backend-engineer` | APIs, databases, security, performance | 17 skills, including Sentry's security review and bug finding |
 | `llm-engineer` | Prompts, evals, RAG, model APIs, cost | 16 skills, OpenAI docs MCP (remote, runs nothing locally) |
+| `ios-apple-design` | Native iOS: SwiftUI, Apple's design guidelines, Liquid Glass, accessibility | 16 skills including Kit's own `apple-design`, Apple docs MCP (remote), XcodeBuildMCP, SwiftFormat/SwiftLint on edit |
 | `essentials` | Any job: spec, plan, small steps, test, review | 8 skills; the base the others extend |
 
 Every skill is free and open source, fetched from its author's repo at a
@@ -75,7 +76,14 @@ pinned commit: [addyosmani/agent-skills](https://github.com/addyosmani/agent-ski
 [addyosmani/web-quality-skills](https://github.com/addyosmani/web-quality-skills),
 [anthropics/skills](https://github.com/anthropics/skills),
 [getsentry/skills](https://github.com/getsentry/skills),
-[supabase/agent-skills](https://github.com/supabase/agent-skills).
+[supabase/agent-skills](https://github.com/supabase/agent-skills),
+[AvdLee](https://github.com/AvdLee/SwiftUI-Agent-Skill),
+[twostraws](https://github.com/twostraws/SwiftUI-Agent-Skill),
+[Dimillian/Skills](https://github.com/Dimillian/Skills),
+[PasqualeVittoriosi/swift-accessibility-skill](https://github.com/PasqualeVittoriosi/swift-accessibility-skill).
+Kit's own `apple-design` skill summarises Apple's Human Interface Guidelines
+in its own words and links each page; the guidelines themselves are read at
+runtime through the [sosumi](https://github.com/NSHipster/sosumi.ai) MCP server, never copied.
 `kit show <kit>` lists each skill with its source, commit and licence.
 
 ```bash
@@ -154,10 +162,10 @@ path = "skills/house-style"
 command = "npx"
 args    = ["-y", "chrome-devtools-mcp@1.10.1"]
 
-[[hook]]
+[[hook]]                                # Kit's own: the project's formatter and linter
 on   = "after_edit"
 glob = "*.{ts,tsx,css}"
-run  = "npx --no-install prettier --write \"$FILE\""
+use  = "format-and-lint"                # or: run = "a command using $FILE"
 
 [check]                                 # what kit doctor proves
 mcp_starts = ["chrome-devtools"]
