@@ -100,6 +100,8 @@ fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
                 .style(base),
                 Cell::from(state).style(state_style),
             ])
+            // Row style fills the column gaps, so the selection is one bar.
+            .style(base)
         })
         .collect();
 

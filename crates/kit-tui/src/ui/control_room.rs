@@ -14,6 +14,8 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
+const TITLE: &str = "KIT / CONTROL ROOM";
+
 pub fn draw(frame: &mut Frame, app: &App) {
     let theme = Theme::resolve();
     let area = frame.area();
@@ -31,31 +33,12 @@ pub fn draw(frame: &mut Frame, app: &App) {
         ])
         .split(area);
 
-    let agents = app.agents_strip();
-    let filter = app.run_filter.label();
-    let stats = if agents.is_empty() {
-        format!(
-            "[{filter}]  {} RUNNING  {} GATING  {} FAIL",
-            app.running_count(),
-            app.gated_count(),
-            app.fail_count()
-        )
-    } else if app.runs.is_empty() {
-        agents
-    } else {
-        format!(
-            "[{filter}]  {}  ·  {}R {}G {}F",
-            agents,
-            app.running_count(),
-            app.gated_count(),
-            app.fail_count()
-        )
-    };
+    let stats = header_stats(app, area.width as usize);
     draw_header(
         frame,
         chunks[0],
         &theme,
-        "KIT / CONTROL ROOM",
+        TITLE,
         &stats,
         app.flash_message(),
         app.error.as_deref(),
@@ -75,6 +58,60 @@ pub fn draw(frame: &mut Frame, app: &App) {
         " [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate  [k]ill  [r]etry  [?]help",
         "",
     );
+}
+
+/// Header counts first, then the agent strip, longest form that fits.
+///
+/// `draw_header` drops the stats whole when title + stats overflow, so this
+/// picks a form that fits: queued runs are counted whenever there are any
+/// (16 dispatched never reads as 8), and the counts outlive the strip.
+fn header_stats(app: &App, width: usize) -> String {
+    let filter = app.run_filter.label();
+    let (r, q, g, f) = (
+        app.running_count(),
+        app.queued_count(),
+        app.gated_count(),
+        app.fail_count(),
+    );
+    // A live flash carries the next action, so it wins: room for all of it
+    // first, then the longest stats that still fit beside it (maybe none).
+    let flash = app
+        .flash_message()
+        .map_or(0, |f| format!("  · {f}").chars().count());
+    let fits =
+        |s: &str| s.is_empty() || TITLE.chars().count() + 2 + s.chars().count() + flash <= width;
+    let strips = [app.agents_strip(), app.agents_strip_short()];
+    if app.runs.is_empty()
+        && let Some(strip) = strips.iter().find(|s| !s.is_empty() && fits(s))
+    {
+        return strip.clone();
+    }
+    let queued_wide = if q > 0 {
+        format!("{q} QUEUED  ")
+    } else {
+        String::new()
+    };
+    let queued_short = if q > 0 {
+        format!("{q}Q ")
+    } else {
+        String::new()
+    };
+    let wide = format!("[{filter}]  {r} RUNNING  {queued_wide}{g} GATING  {f} FAIL");
+    let short = format!("[{filter}] {r}R {queued_short}{g}G {f}F");
+    let mut candidates = Vec::new();
+    for counts in [&wide, &short] {
+        for strip in &strips {
+            if !strip.is_empty() {
+                candidates.push(format!("{counts}  ·  {strip}"));
+            }
+        }
+        candidates.push(counts.clone());
+    }
+    if flash > 0 {
+        // The flash lives 2 s; the counts come back when it goes.
+        candidates.push(String::new());
+    }
+    candidates.into_iter().find(|s| fits(s)).unwrap_or(short)
 }
 
 /// Empty Control Room copy — cold-start cockpit, not a blank form.
@@ -108,34 +145,84 @@ fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     frame.render_widget(block, area);
 
     let widths = column_widths(inner.width);
-    let mut lines: Vec<Line> = vec![header_line(widths, theme)];
     let order = app.display_order();
     let selected_id = app.selected_id.as_ref();
+    // One group per run: its row, then its FAIL annotation if any.
+    let mut groups: Vec<Vec<Line>> = Vec::with_capacity(order.len());
+    let mut selected_group = 0;
     for &idx in &order {
         let run = &app.runs[idx];
         let selected = selected_id.is_some_and(|id| *id == run.id);
-        lines.push(data_line(run, selected, app, theme, widths));
-        if let Some(summary) = run.gate_summary() {
-            lines.push(annotation_line(
+        if selected {
+            selected_group = groups.len();
+        }
+        let mut group = vec![data_line(run, selected, app, theme, widths)];
+        if let Some(summary) = run.failure_summary() {
+            group.push(annotation_line(
                 &summary,
                 selected,
                 theme,
                 inner.width as usize,
             ));
         }
+        groups.push(group);
+    }
+
+    let budget = inner.height.saturating_sub(1) as usize; // column header
+    let (start, end) = visible_groups(&groups, selected_group, budget);
+    let mut lines: Vec<Line> = vec![header_line(widths, theme)];
+    lines.extend(groups[start..end].iter().flatten().cloned());
+    if start > 0 || end < groups.len() {
+        lines.push(overflow_line(start, groups.len() - end, theme));
     }
     frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The runs that fit in `budget` lines, as a range of `groups`. When they do
+/// not all fit, one line is kept for the overflow count and the range is the
+/// first page that holds the selected run.
+fn visible_groups(groups: &[Vec<Line>], selected: usize, budget: usize) -> (usize, usize) {
+    let total: usize = groups.iter().map(Vec::len).sum();
+    if total <= budget {
+        return (0, groups.len());
+    }
+    let budget = budget.saturating_sub(1); // overflow line
+    let fits =
+        |start: usize, end: usize| groups[start..end].iter().map(Vec::len).sum::<usize>() <= budget;
+    // Earliest start that still shows the selected run.
+    let mut start = 0;
+    while start < selected && !fits(start, selected + 1) {
+        start += 1;
+    }
+    let mut end = start;
+    while end < groups.len() && fits(start, end + 1) {
+        end += 1;
+    }
+    (start, end.max((start + 1).min(groups.len())))
+}
+
+fn overflow_line(above: usize, below: usize, theme: &Theme) -> Line<'static> {
+    let mut parts = Vec::with_capacity(2);
+    if above > 0 {
+        parts.push(format!("↑ {above} more above"));
+    }
+    if below > 0 {
+        parts.push(format!("↓ {below} more below"));
+    }
+    Line::from(Span::styled(
+        format!("  {}", parts.join("  ·  ")),
+        theme.dim(),
+    ))
 }
 
 /// Five Control Room columns. FAIL annotations are *not* a table cell —
 /// they paint full inner width so `^ tsc: 3 errors` survives 60 cols.
 fn column_widths(total: u16) -> [usize; 5] {
     let usable = total.saturating_sub(4) as usize; // 4 gaps between 5 cols
-    let pct = if total < 70 {
-        [18usize, 16, 30, 18, 18]
-    } else {
-        [20, 14, 36, 15, 15]
-    };
+    if total < 70 {
+        return narrow_widths(usable);
+    }
+    let pct = [20usize, 14, 36, 15, 15];
     let mut w = [0usize; 5];
     let mut used = 0;
     for i in 0..4 {
@@ -155,6 +242,19 @@ fn column_widths(total: u16) -> [usize; 5] {
         w[3] += need;
     }
     w
+}
+
+/// STATE (`⠋ GATING 12m`) and GATE (`UNCONFIGURED`) never clip: they take
+/// their full width first. REPO, AGENT and TASK share the rest, and AGENT
+/// (`codex·eng`) is the first to give way.
+fn narrow_widths(usable: usize) -> [usize; 5] {
+    const STATE: usize = 12;
+    const GATE: usize = 12;
+    let rest = usable.saturating_sub(STATE + GATE);
+    let repo = (rest / 4).max(1);
+    let agent = (rest * 3 / 10).max(1);
+    let task = rest.saturating_sub(repo + agent).max(1);
+    [repo, agent, task, STATE, GATE]
 }
 
 fn pad_cell(s: &str, width: usize) -> String {
@@ -187,7 +287,7 @@ fn data_line(
 ) -> Line<'static> {
     let fail = matches!(run.state, RunState::Fail | RunState::Error);
     let marker = if selected { "▶ " } else { "  " };
-    let repo = format!("{marker}{}", run.repo);
+    let repo = format!("{marker}{}", run.repo_name());
     let state_label = format_state_label(run, &app.clock, app.motion_enabled());
     let gate_label = format_gate_label(run);
     let base = if fail {
@@ -197,15 +297,16 @@ fn data_line(
     } else {
         theme.body()
     };
+    // FAIL rows are one solid wash: the state and gate colours sit on it.
     let state_style = if fail {
-        theme.state_style(run.state)
+        base.patch(theme.state_style(run.state))
     } else if selected {
         theme.selected_row()
     } else {
         theme.state_style(run.state)
     };
     let gate_style = if fail {
-        theme.gate_style(&gate_label)
+        base.patch(theme.gate_style(&gate_label))
     } else if selected {
         theme.selected_row()
     } else {
@@ -217,17 +318,20 @@ fn data_line(
         // Cyan focus rail: the caret, then the rest of the row.
         let rail: String = repo_cell.chars().take(2).collect();
         let rest: String = repo_cell.chars().skip(2).collect();
-        spans.push(Span::styled(
-            rail,
-            theme.accent().add_modifier(Modifier::BOLD),
-        ));
+        // On a FAIL row the caret sits on the wash; elsewhere it is the rail.
+        let rail_style = if fail {
+            base.patch(theme.accent())
+        } else {
+            theme.accent()
+        };
+        spans.push(Span::styled(rail, rail_style.add_modifier(Modifier::BOLD)));
         spans.push(Span::styled(rest, base));
     } else {
         spans.push(Span::styled(repo_cell, base));
     }
     let parts = [
         (pad_cell(&run.agent_cell(), widths[1]), base),
-        (pad_cell(&run.task, widths[2]), base),
+        (pad_cell(run.task_line(), widths[2]), base),
         (pad_cell(&state_label, widths[3]), state_style),
         (pad_cell(&gate_label, widths[4]), gate_style),
     ];
@@ -245,11 +349,23 @@ fn annotation_line(
     inner_width: usize,
 ) -> Line<'static> {
     let budget = inner_width.saturating_sub(2); // "^ "
-    let text = format!("^ {}", truncate(summary, budget.saturating_sub(2)));
+    let text = format!(
+        "^ {}",
+        truncate(
+            summary.lines().next().unwrap_or(""),
+            budget.saturating_sub(2)
+        )
+    );
+    // Pad to the border so the wash is a band, not a highlight on the text.
+    let text = format!("{text:<inner_width$}");
     let style = if selected {
         theme.fail_row(true).add_modifier(Modifier::DIM)
     } else {
-        theme.annotation()
+        // The wash's colour only: BOLD from the row plus DIM reads as neither.
+        match theme.fail_row(false).bg {
+            Some(bg) => theme.annotation().bg(bg),
+            None => theme.annotation(),
+        }
     };
     Line::from(Span::styled(text, style))
 }

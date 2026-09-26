@@ -228,6 +228,19 @@ pub fn draw_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme, lines: Ve
     frame.render_widget(Paragraph::new(lines).style(theme.body()), inner);
 }
 
+/// A path with the home folder written `~`, as the rest of Kit prints paths.
+pub fn tilde(path: &std::path::Path) -> String {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    match home.map(std::path::PathBuf::from) {
+        Some(home) if !home.as_os_str().is_empty() => match path.strip_prefix(&home) {
+            Ok(rest) if rest.as_os_str().is_empty() => "~".into(),
+            Ok(rest) => format!("~{}{}", std::path::MAIN_SEPARATOR, rest.display()),
+            Err(_) => path.display().to_string(),
+        },
+        _ => path.display().to_string(),
+    }
+}
+
 /// Style a single stream/log line with cheap severity heuristics.
 pub fn style_log_line(theme: &Theme, line: &str) -> Style {
     let lower = line.to_ascii_lowercase();
@@ -240,8 +253,9 @@ pub fn style_log_line(theme: &Theme, line: &str) -> Style {
         theme.danger()
     } else if lower.contains("warn") {
         theme.warn()
-    } else if lower.contains("pass")
-        || lower.contains("ok")
+    } else if lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|w| matches!(w, "ok" | "pass" | "passed" | "passing"))
         || (line.starts_with('+') && !line.starts_with("+++"))
     {
         theme.success()
@@ -253,6 +267,25 @@ pub fn style_log_line(theme: &Theme, line: &str) -> Style {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// "ok" and "pass" count only as whole words: grok, token and bypass
+    /// are not success.
+    #[test]
+    fn log_success_matches_whole_words() {
+        let theme = Theme::monochrome();
+        let body = theme.body();
+        for line in [
+            "grok: running kit.toml gate",
+            "refreshing token",
+            "reading the book",
+            "bypass the cache",
+        ] {
+            assert_eq!(style_log_line(&theme, line), body, "{line}");
+        }
+        for line in ["ok", "tests: ok (3)", "PASS  format", "check passed"] {
+            assert_ne!(style_log_line(&theme, line), body, "{line}");
+        }
+    }
 
     #[test]
     fn truncate_short_unchanged() {

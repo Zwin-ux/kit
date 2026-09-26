@@ -90,3 +90,47 @@ fn run_json_stdout_is_exactly_one_json_value() {
     let _ = std::fs::remove_dir_all(&home);
     let _ = std::fs::remove_dir_all(&repo);
 }
+
+/// A run with no gate checks proves nothing, so its receipt says so: state
+/// `unconfigured`, gate not passed, and `kit receipt show` / `list` agree.
+#[test]
+fn vacuous_run_receipt_is_unconfigured_not_pass() {
+    let home = scratch_dir("vac-home");
+    let repo = scratch_dir("vac-repo");
+    git_fixture(&repo);
+    let kit = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_kit"))
+            .args(args)
+            .current_dir(&repo)
+            .env("KIT_HOME", &home)
+            .output()
+            .expect("spawn kit")
+    };
+
+    let out = kit(&["run", "--dry-run", "--json", "--task", "vacuous"]);
+    let env: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    assert_eq!(env["data"]["state"], "unconfigured", "{env}");
+    assert_eq!(env["data"]["gatePassed"], false, "{env}");
+    assert_eq!(env["data"]["gateVacuous"], true, "{env}");
+    // A dry run makes no proof claim, so it still exits 0.
+    assert!(out.status.success(), "{env}");
+
+    let dir = Path::new(env["data"]["receiptDir"].as_str().unwrap()).to_path_buf();
+    let receipt: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["state"], "unconfigured", "{receipt}");
+    assert_eq!(receipt["gate"]["passed"], false, "{receipt}");
+
+    let id = env["data"]["id"].as_str().unwrap();
+    let show = String::from_utf8(kit(&["receipt", "show", id]).stdout).unwrap();
+    assert!(show.contains("state     unconfigured"), "{show}");
+    assert!(show.contains("gate      UNCONFIGURED"), "{show}");
+    assert!(show.contains("\n  took      "), "{show}");
+    assert!(!show.contains("pass"), "{show}");
+    let list = String::from_utf8(kit(&["receipt", "list"]).stdout).unwrap();
+    assert!(list.contains("unconfigured"), "{list}");
+    assert!(!list.contains(" pass "), "{list}");
+
+    let _ = std::fs::remove_dir_all(&home);
+    let _ = std::fs::remove_dir_all(&repo);
+}
