@@ -213,6 +213,36 @@ pub enum Applied {
 }
 
 impl Applied {
+    /// Kit created this record's file (a skill folder does not count).
+    fn created_file(&self) -> bool {
+        match self {
+            Self::Rules { created, .. }
+            | Self::McpJson { created, .. }
+            | Self::McpToml { created, .. }
+            | Self::HookJson { created, .. } => *created,
+            _ => false,
+        }
+    }
+
+    /// Whether Kit created the file, and its text before Kit, to hand over.
+    fn file_state(&mut self) -> Option<(&mut bool, &mut Option<String>)> {
+        match self {
+            Self::Rules {
+                created, original, ..
+            }
+            | Self::McpJson {
+                created, original, ..
+            }
+            | Self::McpToml {
+                created, original, ..
+            }
+            | Self::HookJson {
+                created, original, ..
+            } => Some((created, original)),
+            _ => None,
+        }
+    }
+
     /// Drop the copy of the user's file text (for the repo's shared kit.lock).
     pub fn forget_original(&mut self) {
         if let Self::McpJson { original, .. }
@@ -331,25 +361,36 @@ pub fn same_content(a: &Action, b: &Action) -> bool {
     }
 }
 
-/// After `gone` is undone, a kit stacked on the same rules file after it
-/// holds an `original` with `gone`'s block inside. When that is all that
-/// differs, it takes `gone`'s original, so removing the last kit still
-/// gives back the file as it was before Kit, final newline included.
-pub fn hand_over_original(gone: &Applied, kept: &mut Applied) {
+/// After `gone` is undone, a kit stacked on the same file after it takes
+/// over what only `gone` knew about that file, so removing kits in install
+/// order ends where removing them in reverse does:
+/// - `gone` created the file: the kit that stays now deletes it once empty.
+/// - `gone`'s rules block is all that differs between the two originals:
+///   the kit that stays takes `gone`'s, final newline included.
+pub fn hand_over(gone: &Applied, kept: &mut Applied) {
+    let (Some(gf), Some(kf)) = (gone.path(), kept.path()) else {
+        return;
+    };
+    if gf != kf {
+        return;
+    }
+    if gone.created_file() {
+        if let Some((created, original)) = kept.file_state() {
+            *created = true;
+            *original = None;
+        }
+        return;
+    }
     if let (
         Applied::Rules {
-            file: gf,
             kit: gk,
             original: Some(go),
             ..
         },
         Applied::Rules {
-            file: kf,
-            original: Some(ko),
-            ..
+            original: Some(ko), ..
         },
     ) = (gone, kept)
-        && gf == kf
         && ko.contains(&open_marker(gk))
         && remove_block(ko, gk) == remove_block(&set_block(go, gk, "", ""), gk)
     {

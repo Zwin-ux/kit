@@ -1042,6 +1042,88 @@ fn every_writer_gives_back_crlf_and_no_final_newline_files_exactly() {
     }
 }
 
+/// Every file under `dir`, `.git` aside, relative to it.
+fn files_under(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut todo = vec![dir.to_path_buf()];
+    while let Some(d) = todo.pop() {
+        for e in std::fs::read_dir(&d).unwrap() {
+            let path = e.unwrap().path();
+            if path.file_name().is_some_and(|n| n == ".git") {
+                continue;
+            }
+            out.push(path.strip_prefix(dir).unwrap().display().to_string());
+            if path.is_dir() {
+                todo.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Two kits added one after the other and removed in that same order leave
+/// nothing behind: the files the first kit created go with the second.
+#[test]
+fn stacked_kits_removed_in_install_order_leave_no_files_behind() {
+    let root = scratch("stacked-fifo");
+    let demo = demo_kit(&root);
+    let second = root.join("second-kit");
+    write(&second.join("RULES.md"), "Be exact.\n");
+    write(
+        &second.join("KIT.toml"),
+        r#"schema = 1
+[kit]
+name = "second"
+title = "Second"
+version = "0.1.0"
+description = "d"
+[rules]
+file = "RULES.md"
+[mcp.other]
+command = "npx"
+args = ["-y", "other@1.0.0"]
+[[hook]]
+on = "after_edit"
+glob = "*.rs"
+run = "echo checked"
+"#,
+    );
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let kits = [demo.to_str().unwrap(), second.to_str().unwrap()];
+
+    for k in kits {
+        let args = ["add", k, "-a", "claude", "-a", "codex", "--yes"];
+        let out = env.kit(&repo, &args);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    for rel in ["CLAUDE.md", "AGENTS.md", ".mcp.json", ".codex/config.toml"] {
+        assert!(repo.join(rel).is_file(), "{rel} was not written");
+    }
+    for name in ["demo", "second"] {
+        let out = env.kit(&repo, &["remove", name, "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    assert_eq!(files_under(&repo), Vec::<String>::new());
+
+    // The same in home, with Codex (Claude Code's user MCP goes through its
+    // own CLI instead of a file).
+    let before = files_under(&env.home);
+    for k in kits {
+        let args = ["add", k, "-a", "codex", "--global", "--yes"];
+        let out = env.kit(&root, &args);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    assert!(env.home.join(".codex/config.toml").is_file());
+    for name in ["demo", "second"] {
+        let out = env.kit(&root, &["remove", name, "--global", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    assert_eq!(files_under(&env.home), before);
+}
+
 /// A kit that extends `demo`, from a folder next to it.
 fn top_kit(root: &Path, base: &Path) -> PathBuf {
     let kit = root.join("top-kit");
