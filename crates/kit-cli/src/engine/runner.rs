@@ -92,7 +92,9 @@ pub async fn execute_cancellable(
 /// a missing agent) ends as an `Error` receipt and comes back as the second
 /// value instead of `Err`. The first Ctrl-C kills the run through the same
 /// path as Control Room `k`, so it ends `Killed` with its receipt written; a
-/// second Ctrl-C quits at once, without one.
+/// second Ctrl-C quits at once, without one. Only when the `Error` receipt
+/// itself cannot be written is the result `Err`: there is then no receipt
+/// to point at.
 pub async fn execute_headless(
     opts: RunOptions,
     tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
@@ -112,11 +114,18 @@ pub async fn execute_headless(
             }
         }
     });
-    let outcome =
-        execute_cancellable(opts.clone(), Some(id.clone()), tx.clone(), Some(cancel)).await;
+    let agent_impl = adapter(opts.agent);
+    let outcome = execute_reporting(
+        opts.clone(),
+        Some(id.clone()),
+        tx.clone(),
+        Some(cancel),
+        agent_impl.as_ref(),
+    )
+    .await;
     on_ctrl_c.abort();
     match outcome {
-        Ok(result) => Ok((result, None)),
+        Ok(reported) => Ok(reported),
         Err(err) => match finalize_failed(opts, id, &err, tx).await {
             Ok(result) => Ok((result, Some(format!("{err:#}")))),
             // Keep the run's own error first; the receipt failure is secondary.
@@ -135,6 +144,20 @@ async fn execute_with(
     cancel: Option<Arc<CancelHandle>>,
     agent_impl: &dyn Agent,
 ) -> Result<RunResult> {
+    let (result, _) = execute_reporting(opts, id, tx, cancel, agent_impl).await?;
+    Ok(result)
+}
+
+/// [`execute_with`], also returning the error that ended a run as `Error`
+/// after its worktree existed (the receipt holds it; this hands it to the
+/// caller so `kit run` can print it and put it in the `--json` envelope).
+async fn execute_reporting(
+    opts: RunOptions,
+    id: Option<RunId>,
+    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
+    cancel: Option<Arc<CancelHandle>>,
+    agent_impl: &dyn Agent,
+) -> Result<(RunResult, Option<String>)> {
     ensure_layout()?;
     let id = id.unwrap_or_default();
     let repo = resolve_repo(&opts.repo)?;
@@ -174,6 +197,7 @@ async fn execute_with(
         &mut truncated,
     )
     .await;
+    let mut run_error = None;
     let (state, gate, note, agent_diff) = match ending {
         Ok(Ending::Killed(note)) => (RunState::Killed, None, Some(note), None),
         Ok(Ending::Gated {
@@ -181,12 +205,15 @@ async fn execute_with(
             gate,
             agent_diff,
         }) => (state, Some(gate), None, agent_diff),
-        Err(err) => (
-            RunState::Error,
-            None,
-            Some(format!("kit: run failed: {err:#}\n")),
-            None,
-        ),
+        Err(err) => {
+            run_error = Some(format!("{err:#}"));
+            (
+                RunState::Error,
+                None,
+                Some(format!("kit: run failed: {err:#}\n")),
+                None,
+            )
+        }
     };
     if let Some(note) = note {
         append_capped(
@@ -213,7 +240,7 @@ async fn execute_with(
     .await?;
     // Proof first: the terminal state goes out only once its receipt exists.
     send(&tx, &id, RunDelta::State(state)).await;
-    Ok(result)
+    Ok((result, run_error))
 }
 
 /// How a run that got its worktree ended, before its receipt is written.
@@ -1093,7 +1120,7 @@ mod tests {
                 dry_run: Some(false),
                 bounds: Bounds::default(),
             };
-            let result = execute_with(opts, Some(id.clone()), None, None, &SpawnFails).await;
+            let result = execute_reporting(opts, Some(id.clone()), None, None, &SpawnFails).await;
             let wt_dir = worktrees_dir().join(&id.0);
             let receipt = crate::engine::store::read_receipt(&id.0);
             let log = crate::engine::store::read_output_tail(&id.0, 4096);
@@ -1101,8 +1128,11 @@ mod tests {
         })
         .await;
 
-        let result = result.expect("a spawn failure still ends the run");
+        let (result, run_error) = result.expect("a spawn failure still ends the run");
         assert_eq!(result.state, RunState::Error);
+        // `kit run` prints this and puts it in the `--json` envelope.
+        let run_error = run_error.expect("the cause comes back with the result");
+        assert!(run_error.contains("program not found"), "{run_error}");
         assert!(result.worktree_removed, "clean worktree must be removed");
         assert!(!wt_dir.exists(), "leaked {}", wt_dir.display());
         assert_eq!(git_worktrees(&root).len(), 1, "{:?}", git_worktrees(&root));
