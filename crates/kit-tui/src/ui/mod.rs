@@ -221,6 +221,75 @@ mod tests {
         insta::assert_snapshot!(frame);
     }
 
+    /// Sixteen runs against an eight-way limit: eight RUNNING, eight QUEUED.
+    fn sixteen_way_app() -> App {
+        use crate::app::RunRow;
+        use kit_core::{RunId, RunState};
+        let mut app = App::with_motion(false);
+        for i in 0..16u64 {
+            let mut row = RunRow::new(
+                RunId(format!("01SIXTEENWAY{i:014}")),
+                "kit",
+                "codex",
+                format!("task {i:02}"),
+            );
+            row.seq = i;
+            if i < 8 {
+                row.state = RunState::Running;
+                row.active_since_tick = Some(0);
+            }
+            app.runs.push(row);
+        }
+        app.selected_id = Some(app.runs[0].id.clone());
+        app
+    }
+
+    /// Rows that do not fit are counted, never silently dropped.
+    #[test]
+    fn control_room_counts_the_rows_it_cannot_show() {
+        let app = sixteen_way_app();
+        let frame = render_to_string(&app, 80, 14);
+        assert!(frame.contains("task 00"), "{frame}");
+        assert!(!frame.contains("task 15"), "{frame}");
+        let shown = (0..16)
+            .filter(|i| frame.contains(&format!("task {i:02}")))
+            .count();
+        assert!(
+            frame.contains(&format!("↓ {} more", 16 - shown)),
+            "hidden rows must be counted: {frame}"
+        );
+    }
+
+    /// The selection never walks off the bottom of the table.
+    #[test]
+    fn control_room_keeps_the_selected_row_in_view() {
+        let mut app = sixteen_way_app();
+        for _ in 0..15 {
+            app.update(code(KeyCode::Down));
+        }
+        let frame = render_to_string(&app, 80, 14);
+        let selected = frame
+            .lines()
+            .find(|l| l.contains('▶'))
+            .unwrap_or_else(|| panic!("selected row is off screen: {frame}"));
+        assert!(selected.contains("task 15"), "{frame}");
+        assert!(frame.contains("more above"), "{frame}");
+        assert!(!frame.contains("more below"), "{frame}");
+        insta::assert_snapshot!(frame);
+    }
+
+    /// Queued runs are work too: the header counts them.
+    #[test]
+    fn control_room_header_counts_queued_runs() {
+        let app = sixteen_way_app();
+        let frame = render_to_string(&app, 80, 14);
+        let header = frame.lines().next().unwrap_or("");
+        assert!(
+            header.contains("8 RUNNING") && header.contains("8 QUEUED"),
+            "{header}"
+        );
+    }
+
     #[test]
     fn populated_control_room_motion_on_snapshot() {
         let mut app = App::with_motion(true);

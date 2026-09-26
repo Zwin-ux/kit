@@ -1,0 +1,18 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / CONTROL ROOM                  [ALL]  8 RUNNING  8 QUEUED  0 GATING  0 FAIL"
+"┌ runs ────────────────────────────────────────────────────────────────────────┐"
+"│REPO           AGENT        TASK                    STATE        GATE         │"
+"│  kit          codex·eng    task 08                 QUEUED       --           │"
+"│  kit          codex·eng    task 09                 QUEUED       --           │"
+"│  kit          codex·eng    task 10                 QUEUED       --           │"
+"│  kit          codex·eng    task 11                 QUEUED       --           │"
+"│  kit          codex·eng    task 12                 QUEUED       --           │"
+"│  kit          codex·eng    task 13                 QUEUED       --           │"
+"│  kit          codex·eng    task 14                 QUEUED       --           │"
+"│▶ kit          codex·eng    task 15                 QUEUED       --           │"
+"│  ↑ 8 more above                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [↑↓] select  [d]ispatch  [b]oard  [g]ate  [k]ill  [r]etry  [?]help             "
