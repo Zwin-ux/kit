@@ -428,7 +428,9 @@ pub(crate) mod tests {
             crate::kits::catalog::find(&format!("github:owner/kits/kits/tipper@{sha}")).unwrap();
         assert_eq!(kit.manifest.skill[0].name, "tip");
         let err = crate::kits::catalog::find("github:owner/gone").unwrap_err();
-        assert!(format!("{err:#}").contains("git could not"), "{err:#}");
+        let err = format!("{err:#}");
+        assert!(err.contains("github:owner/gone was not found"), "{err}");
+        assert!(!err.contains("git could not"), "no raw git output: {err}");
         unsafe {
             std::env::remove_var("KIT_HOME");
             std::env::remove_var("KIT_GIT_BASE");
