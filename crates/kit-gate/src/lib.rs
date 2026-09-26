@@ -1107,7 +1107,8 @@ fn is_tap_todo(line: &str) -> bool {
 /// Drop a TAP `# TODO` / `# SKIP` failure and its YAML block (`---` … `...`),
 /// whose `error: …` line would otherwise read as the run's failure. Only a
 /// block that starts on the very next line is dropped: prove and bats may
-/// print none, and the line after is then real output.
+/// print none, and the line after is then real output. An unclosed block
+/// ends at the next test line.
 fn without_tap_todos(lines: Vec<&str>) -> Vec<&str> {
     let mut out = Vec::new();
     let mut lines = lines.into_iter().peekable();
@@ -1119,8 +1120,19 @@ fn without_tap_todos(lines: Vec<&str>) -> Vec<&str> {
         if lines.peek() != Some(&"---") {
             continue;
         }
-        for line in lines.by_ref() {
-            if line == "..." {
+        // Up to `...`, or the next test line when the block was cut off
+        // (Kit's output cap) or never closed.
+        while let Some(&next) = lines.peek() {
+            let lower = next.to_ascii_lowercase();
+            if lower == "ok"
+                || lower == "not ok"
+                || lower.starts_with("ok ")
+                || lower.starts_with("not ok ")
+            {
+                break;
+            }
+            lines.next();
+            if next == "..." {
                 break;
             }
         }
@@ -1464,6 +1476,12 @@ mod tests {
                 "prove t",
                 "not ok 1 - t # TODO later\nError: database unreachable\n",
                 "prove: Error: database unreachable",
+            ),
+            // A todo's YAML block cut off before `...` ends at the next test.
+            (
+                "node --test",
+                "not ok 1 - later # TODO\n---\nerror: 'not yet'\nnot ok 2 - real\n---\nerror: 'boom'\n",
+                "node: not ok 2 - real",
             ),
             // TAP allows a bare `not ok` with no number or description.
             ("prove t", "TAP version 13\nok\nnot ok\n", "prove: not ok"),
