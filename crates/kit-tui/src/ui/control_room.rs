@@ -33,58 +33,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         ])
         .split(area);
 
-    let agents = app.agents_strip();
-    let filter = app.run_filter.label();
-    // Queued runs are waiting on the concurrency limit: count them whenever
-    // there are any, so 16 dispatched never reads as 8.
-    let queued = app.queued_count();
-    let wide = if agents.is_empty() {
-        let queued = if queued > 0 {
-            format!("{queued} QUEUED  ")
-        } else {
-            String::new()
-        };
-        format!(
-            "[{filter}]  {} RUNNING  {queued}{} GATING  {} FAIL",
-            app.running_count(),
-            app.gated_count(),
-            app.fail_count()
-        )
-    } else if app.runs.is_empty() {
-        agents
-    } else {
-        let queued = if queued > 0 {
-            format!("{queued}Q ")
-        } else {
-            String::new()
-        };
-        format!(
-            "[{filter}]  {}  ·  {}R {queued}{}G {}F",
-            agents,
-            app.running_count(),
-            app.gated_count(),
-            app.fail_count()
-        )
-    };
-    // `draw_header` drops the stats whole when title + stats overflow; keep
-    // the counts at the 60-column floor by falling back to letters.
-    let stats = if TITLE.chars().count() + 2 + wide.chars().count() <= area.width as usize
-        || app.runs.is_empty()
-    {
-        wide
-    } else {
-        let queued = if queued > 0 {
-            format!("{queued}Q ")
-        } else {
-            String::new()
-        };
-        format!(
-            "[{filter}] {}R {queued}{}G {}F",
-            app.running_count(),
-            app.gated_count(),
-            app.fail_count()
-        )
-    };
+    let stats = header_stats(app, area.width as usize);
     draw_header(
         frame,
         chunks[0],
@@ -109,6 +58,50 @@ pub fn draw(frame: &mut Frame, app: &App) {
         " [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate  [k]ill  [r]etry  [?]help",
         "",
     );
+}
+
+/// Header counts first, then the agent strip, longest form that fits.
+///
+/// `draw_header` drops the stats whole when title + stats overflow, so this
+/// picks a form that fits: queued runs are counted whenever there are any
+/// (16 dispatched never reads as 8), and the counts outlive the strip.
+fn header_stats(app: &App, width: usize) -> String {
+    let filter = app.run_filter.label();
+    let (r, q, g, f) = (
+        app.running_count(),
+        app.queued_count(),
+        app.gated_count(),
+        app.fail_count(),
+    );
+    let fits = |s: &str| TITLE.chars().count() + 2 + s.chars().count() <= width;
+    let strips = [app.agents_strip(), app.agents_strip_short()];
+    if app.runs.is_empty()
+        && let Some(strip) = strips.iter().find(|s| !s.is_empty() && fits(s))
+    {
+        return strip.clone();
+    }
+    let queued_wide = if q > 0 {
+        format!("{q} QUEUED  ")
+    } else {
+        String::new()
+    };
+    let queued_short = if q > 0 {
+        format!("{q}Q ")
+    } else {
+        String::new()
+    };
+    let wide = format!("[{filter}]  {r} RUNNING  {queued_wide}{g} GATING  {f} FAIL");
+    let short = format!("[{filter}] {r}R {queued_short}{g}G {f}F");
+    let mut candidates = Vec::new();
+    for counts in [&wide, &short] {
+        for strip in &strips {
+            if !strip.is_empty() {
+                candidates.push(format!("{counts}  ·  {strip}"));
+            }
+        }
+        candidates.push(counts.clone());
+    }
+    candidates.into_iter().find(|s| fits(s)).unwrap_or(short)
 }
 
 /// Empty Control Room copy — cold-start cockpit, not a blank form.
@@ -242,6 +235,23 @@ fn column_widths(total: u16) -> [usize; 5] {
     w
 }
 
+/// The table's one line of a task. Retry tasks carry the gate failure on
+/// later lines; a newline inside a cell would shift every column after it.
+fn first_line(s: &str) -> &str {
+    s.lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim_end()
+}
+
+/// REPO shows the folder name, as Dispatch does; the engine keeps the path.
+fn repo_label(repo: &str) -> &str {
+    std::path::Path::new(repo)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(repo)
+}
+
 fn pad_cell(s: &str, width: usize) -> String {
     let n = s.chars().count();
     if n >= width {
@@ -272,7 +282,7 @@ fn data_line(
 ) -> Line<'static> {
     let fail = matches!(run.state, RunState::Fail | RunState::Error);
     let marker = if selected { "▶ " } else { "  " };
-    let repo = format!("{marker}{}", run.repo);
+    let repo = format!("{marker}{}", repo_label(&run.repo));
     let state_label = format_state_label(run, &app.clock, app.motion_enabled());
     let gate_label = format_gate_label(run);
     let base = if fail {
@@ -282,15 +292,16 @@ fn data_line(
     } else {
         theme.body()
     };
+    // FAIL rows are one solid wash: the state and gate colours sit on it.
     let state_style = if fail {
-        theme.state_style(run.state)
+        base.patch(theme.state_style(run.state))
     } else if selected {
         theme.selected_row()
     } else {
         theme.state_style(run.state)
     };
     let gate_style = if fail {
-        theme.gate_style(&gate_label)
+        base.patch(theme.gate_style(&gate_label))
     } else if selected {
         theme.selected_row()
     } else {
@@ -304,7 +315,7 @@ fn data_line(
         let rest: String = repo_cell.chars().skip(2).collect();
         spans.push(Span::styled(
             rail,
-            theme.accent().add_modifier(Modifier::BOLD),
+            base.patch(theme.accent()).add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled(rest, base));
     } else {
@@ -312,7 +323,7 @@ fn data_line(
     }
     let parts = [
         (pad_cell(&run.agent_cell(), widths[1]), base),
-        (pad_cell(&run.task, widths[2]), base),
+        (pad_cell(first_line(&run.task), widths[2]), base),
         (pad_cell(&state_label, widths[3]), state_style),
         (pad_cell(&gate_label, widths[4]), gate_style),
     ];
@@ -330,11 +341,16 @@ fn annotation_line(
     inner_width: usize,
 ) -> Line<'static> {
     let budget = inner_width.saturating_sub(2); // "^ "
-    let text = format!("^ {}", truncate(summary, budget.saturating_sub(2)));
+    let text = format!(
+        "^ {}",
+        truncate(first_line(summary), budget.saturating_sub(2))
+    );
+    // Pad to the border so the wash is a band, not a highlight on the text.
+    let text = format!("{text:<inner_width$}");
     let style = if selected {
         theme.fail_row(true).add_modifier(Modifier::DIM)
     } else {
-        theme.annotation()
+        theme.fail_row(false).patch(theme.annotation())
     };
     Line::from(Span::styled(text, style))
 }

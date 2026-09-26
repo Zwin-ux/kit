@@ -596,6 +596,25 @@ impl App {
         }
     }
 
+    /// The strip for narrow headers: `claude ✓  3 missing`.
+    pub fn agents_strip_short(&self) -> String {
+        if self.agents_probe.is_empty() {
+            return String::new();
+        }
+        let ready: Vec<&str> = self
+            .agents_probe
+            .iter()
+            .filter(|(_, ok)| *ok)
+            .map(|(n, _)| n.as_str())
+            .collect();
+        let missing = self.agents_probe.len() - ready.len();
+        match (ready.is_empty(), missing) {
+            (true, _) => "no agents — kit doctor".into(),
+            (false, 0) => format!("{} ✓", ready.join("·")),
+            (false, n) => format!("{} ✓  {n} missing", ready.join("·")),
+        }
+    }
+
     /// How many agents reported ready at launch.
     pub fn agents_ready_count(&self) -> usize {
         self.agents_probe.iter().filter(|(_, ok)| *ok).count()
@@ -1752,6 +1771,15 @@ pub fn is_vacuous_gate(g: &GateOutcome) -> bool {
     g.passed && g.checks.is_empty() && g.scope_violations.is_empty() && g.firewall_blocks.is_empty()
 }
 
+/// `850ms`, `12.0s`: the gate log reads in seconds once it takes one.
+fn format_gate_duration(d: std::time::Duration) -> String {
+    if d.as_millis() < 1000 {
+        format!("{}ms", d.as_millis())
+    } else {
+        format!("{:.1}s", d.as_secs_f64())
+    }
+}
+
 /// Build the gate log lines for the detail Gate pane.
 pub fn gate_log_lines(run: &RunRow) -> Vec<String> {
     use kit_core::CheckStatus;
@@ -1771,12 +1799,18 @@ pub fn gate_log_lines(run: &RunRow) -> Vec<String> {
         }
         Some(g) => {
             let mut lines = Vec::new();
-            lines.push(if g.passed {
-                format!("OVERALL  PASS  ({}ms)", g.duration.as_millis())
-            } else {
-                format!("OVERALL  FAIL  ({}ms)", g.duration.as_millis())
-            });
+            let verdict = if g.passed { "PASS" } else { "FAIL" };
+            lines.push(format!(
+                "OVERALL  {verdict}  ({})",
+                format_gate_duration(g.duration)
+            ));
             lines.push(String::new());
+            let label_width = g
+                .checks
+                .iter()
+                .map(|c| c.label.chars().count())
+                .max()
+                .unwrap_or(0);
             for c in &g.checks {
                 let status = match c.status {
                     CheckStatus::Pass => "PASS",
@@ -1784,7 +1818,7 @@ pub fn gate_log_lines(run: &RunRow) -> Vec<String> {
                     CheckStatus::Skipped => "SKIP",
                     CheckStatus::TimedOut => "TIME",
                 };
-                let mut line = format!("{status}  {}  {}", c.label, c.command);
+                let mut line = format!("{status}  {:<label_width$}  {}", c.label, c.command);
                 if let Some(s) = &c.summary {
                     line.push_str("  ·  ");
                     line.push_str(s);
@@ -2056,6 +2090,36 @@ mod tests {
         app.update(AppEvent::RunUpdate(id, RunDelta::Output(big)));
         assert!(app.runs[0].output.len() <= OUTPUT_DISPLAY_CAP_BYTES);
         assert!(app.runs[0].output_truncated);
+    }
+
+    /// Seconds, not raw milliseconds, and the check columns line up.
+    #[test]
+    fn gate_log_reads_as_a_table() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let row = app
+            .runs
+            .iter()
+            .find(|r| r.repo == "trenchwire")
+            .unwrap()
+            .clone();
+        let log = gate_log_lines(&row);
+        assert_eq!(log[0], "OVERALL  FAIL  (10.0s)", "{log:?}");
+        let checks: Vec<&String> = log
+            .iter()
+            .filter(|l| l.starts_with("PASS") || l.starts_with("FAIL"))
+            .collect();
+        assert!(checks.len() >= 2, "{log:?}");
+        let command_col = |l: &str| {
+            let rest = l[4..].trim_start();
+            let label_end = l.len() - rest.len() + rest.find(' ').unwrap();
+            label_end + l[label_end..].len() - l[label_end..].trim_start().len()
+        };
+        let first = command_col(checks[0]);
+        assert!(
+            checks.iter().all(|l| command_col(l) == first),
+            "commands not aligned: {checks:#?}"
+        );
     }
 
     #[test]
