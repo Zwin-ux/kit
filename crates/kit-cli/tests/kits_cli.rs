@@ -1142,6 +1142,9 @@ fn planted_links_never_redirect_a_write() {
                 .is_symlink(),
             "{planted} is left as it was"
         );
+        if planted == "kit.lock" {
+            assert!(!repo.join(".claude").exists(), "stopped before writing");
+        }
     }
 }
 

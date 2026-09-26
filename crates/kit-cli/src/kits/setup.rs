@@ -229,7 +229,7 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         no_code: args.no_code,
         yes: args.yes,
         print: false,
-        force: false,
+        force: args.force,
     };
     let outcome = install::add(&req, json)?;
     if matches!(outcome, Outcome::Cancelled | Outcome::Printed) {

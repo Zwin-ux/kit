@@ -288,6 +288,7 @@ pub fn cmd_add(args: AddArgs, json: bool) -> Result<()> {
 pub fn add(req: &Request, json: bool) -> Result<Outcome> {
     let (scope, agents) = (&req.scope, req.agents.as_slice());
     plan::follow_links_within(scope.root());
+    super::lock::check_not_linked(scope)?;
     let chosen = choose(&req.kits)?;
     let mut lock = Lock::load(scope)?;
 
@@ -389,7 +390,7 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
         .collect();
     let mut left = Vec::new();
     for (_, old) in prepared.stale.iter().rev() {
-        match plan::undo(old, false) {
+        match plan::undo(old, req.force) {
             Ok(Some(msg)) => left.push(msg),
             Ok(None) => {}
             Err(err) => left.push(format!("{err:#}")),
@@ -694,7 +695,17 @@ fn render_plan(
         }
     }
     for (kit, old) in &p.stale {
-        let _ = writeln!(s, "remove    {}   (no longer in {kit})", old.describe());
+        match plan::drifted(old).ok().flatten() {
+            Some(msg) if old.path().is_some_and(|p| p.exists()) => {
+                let _ = writeln!(
+                    s,
+                    "keep      {msg}; no longer in {kit}, left in place (--force removes it)"
+                );
+            }
+            _ => {
+                let _ = writeln!(s, "remove    {}   (no longer in {kit})", old.describe());
+            }
+        }
     }
     for msg in &p.edited {
         let _ = writeln!(
