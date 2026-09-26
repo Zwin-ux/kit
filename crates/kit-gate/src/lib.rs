@@ -1058,6 +1058,7 @@ fn looks_like_failure(line: &str) -> bool {
         || lower.starts_with("npm err!")
         || lower.starts_with("npm error")
         || lower.starts_with("e   ")
+        || lower == "not ok"
         || (lower.starts_with("not ok ") && !is_tap_todo(line))
         || ["✕", "✖", "✗", "●"]
             .iter()
@@ -1464,6 +1465,8 @@ mod tests {
                 "not ok 1 - t # TODO later\nError: database unreachable\n",
                 "prove: Error: database unreachable",
             ),
+            // TAP allows a bare `not ok` with no number or description.
+            ("prove t", "TAP version 13\nok\nnot ok\n", "prove: not ok"),
             (
                 "prove t",
                 "ok 1 - a\nnot ok 2 - b # SKIP no db\nnot ok 3 - c\n",
