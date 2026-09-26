@@ -218,7 +218,7 @@ fn index_and_github_kits_install_and_sync_restores_exactly_what_the_lock_pins() 
     let out = env.kit(&repo, &["sync", "--check"]);
     assert!(!out.status.success());
     assert_eq!(out.status.code(), Some(1), "out of sync is exit 1");
-    let err = text(&out.stdout);
+    let err = text(&out.stdout).replace('\\', "/");
     assert!(
         err.contains("Missing") || err.contains("3 missing"),
         "{err}"
