@@ -366,13 +366,16 @@ fn run_check(command: &str) -> std::result::Result<(), String> {
     // the end, so a check that goes on writing never hits a closed pipe;
     // the end can wait for a helper left running, until it is stopped.
     std::thread::spawn(move || {
+        // Bytes, not lines of text: a line that is not UTF-8 must not end
+        // the read either.
         let mut first = None;
         for line in BufReader::new(stderr)
-            .lines()
+            .split(b'\n')
             .map_while(std::result::Result::ok)
         {
+            let line = String::from_utf8_lossy(&line);
             if first.is_none() && !line.trim().is_empty() {
-                first = Some(line);
+                first = Some(line.trim_end().to_string());
             }
         }
         let _ = tx.send(first);
@@ -514,7 +517,14 @@ mod tests {
             assert!(!alive(&pid), "{pid} survived");
         }
         assert_eq!(run_check("echo nope >&2; exit 3"), Err("nope".to_string()));
-        // A check that goes on writing after its first line still passes.
+        // A check that goes on writing after its first line still passes,
+        // bytes that are not UTF-8 included.
+        assert_eq!(
+            run_check(
+                r"printf '\377\376 bad\n' >&2; for i in $(seq 2000); do echo more$i >&2; done; exit 0"
+            ),
+            Ok(())
+        );
         assert_eq!(
             run_check("echo warn >&2; for i in $(seq 2000); do echo more$i >&2; done; exit 0"),
             Ok(())
