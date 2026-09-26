@@ -452,6 +452,37 @@ impl RunRow {
         self.elapsed_frozen.clone()
     }
 
+    /// The task's first non-blank line. Retry tasks carry the gate failure on
+    /// later lines; a newline inside a one-line cell shifts what follows it.
+    pub fn task_line(&self) -> &str {
+        self.task
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("")
+            .trim_end()
+    }
+
+    /// The repo's folder name, as Dispatch shows it; the engine keeps the path.
+    pub fn repo_name(&self) -> &str {
+        repo_basename(&self.repo)
+    }
+
+    /// Why a FAIL or ERROR row failed, for its `^ …` line. An ERROR run's
+    /// reason is the engine's last `kit: …` line (`codex exited with code 1`),
+    /// even when a gate ran after the agent failed; the gate comes second.
+    pub fn failure_summary(&self) -> Option<String> {
+        if self.state == RunState::Error
+            && let Some(line) = self
+                .output
+                .lines()
+                .rev()
+                .find_map(|l| l.strip_prefix("kit: "))
+        {
+            return Some(line.strip_prefix("run failed: ").unwrap_or(line).to_owned());
+        }
+        self.gate_summary()
+    }
+
     /// First failure summary for the Control Room annotation line (`^ tsc: …`).
     pub fn gate_summary(&self) -> Option<String> {
         let gate = self.gate.as_ref()?;
@@ -1317,7 +1348,7 @@ impl App {
         }
     }
 
-    fn set_flash(&mut self, msg: impl Into<String>) {
+    pub(crate) fn set_flash(&mut self, msg: impl Into<String>) {
         self.flash = Some((msg.into(), self.clock.tick));
     }
 

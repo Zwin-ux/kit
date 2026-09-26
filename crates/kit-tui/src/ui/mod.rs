@@ -38,7 +38,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         let v_gutter = if tight {
             Constraint::Length(0)
         } else {
-            Constraint::Length((area.height.saturating_sub(need) / 2).min(area.height * 12 / 100))
+            Constraint::Length((area.height.saturating_sub(need) / 2).min(area.height / 8))
         };
         let h_gutter = if tight {
             Constraint::Length(0)
@@ -388,6 +388,11 @@ mod tests {
             ("grok".into(), false),
             ("ollama".into(), false),
         ]);
+        // Past the demo's opening flash, which takes the width while it lives.
+        for _ in 0..=crate::event::TICK_HZ * 2 {
+            app.update(crate::event::AppEvent::AnimationTick);
+        }
+        assert_eq!(app.flash_message(), None);
         for width in [60u16, 80, 120] {
             let frame = render_to_string(&app, width, 14);
             let header = frame.lines().next().unwrap_or("");
@@ -419,6 +424,125 @@ mod tests {
         assert!(frame.contains("shop"), "{frame}");
     }
 
+    /// Run detail's header shows the folder name and the task's first line.
+    #[test]
+    fn run_detail_header_uses_folder_and_first_line() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let id = app.selected_id.clone().unwrap();
+        let row = app.runs.iter_mut().find(|r| r.id == id).unwrap();
+        row.repo = "/home/you/code/shop".into();
+        row.task = "fix red CI\n\n## Previous gate failure\ntsc".into();
+        app.screen = crate::app::Screen::RunDetail {
+            pane: crate::app::DetailPane::default(),
+        };
+        let frame = render_to_string(&app, 100, 14);
+        let header = frame.lines().next().unwrap();
+        assert!(header.contains("KIT / RUN  shop"), "{header}");
+        assert!(header.contains("fix red CI"), "{header}");
+        assert!(!frame.contains("/home/you"), "{frame}");
+    }
+
+    /// An ERROR row has no gate; its `^` line carries the engine's reason.
+    #[test]
+    fn error_row_shows_its_reason() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let row = &mut app.runs[0];
+        row.state = kit_core::RunState::Error;
+        row.gate = None;
+        row.output = "kit: run failed: codex is not installed\n".into();
+        let frame = render_to_string(&app, 80, 14);
+        assert!(frame.contains("^ codex is not installed"), "{frame}");
+    }
+
+    /// An agent that exits non-zero ends ERROR with a gate outcome; the row
+    /// still says why the agent failed, not what the gate found.
+    #[test]
+    fn error_row_with_a_gate_shows_the_agent_failure() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let idx = app
+            .runs
+            .iter()
+            .position(|r| r.gate.as_ref().is_some_and(|g| !g.passed))
+            .expect("fixture has a gated FAIL run");
+        let row = &mut app.runs[idx];
+        row.state = kit_core::RunState::Error;
+        row.output = "kit: codex exited with code 1\ngate: running\n".into();
+        let frame = render_to_string(&app, 80, 14);
+        assert!(frame.contains("^ codex exited with code 1"), "{frame}");
+    }
+
+    /// A live flash carries the next action: it shows whole, and the counts
+    /// shrink or step aside for its 2 s.
+    #[test]
+    fn flash_shows_whole_beside_the_counts() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let flash = "demo row — press d to dispatch a real run";
+        app.set_flash(flash);
+        for w in [60u16, 80, 103, 120] {
+            let frame = render_to_string(&app, w, 14);
+            let header = frame.lines().next().unwrap();
+            if w >= 80 {
+                assert!(header.contains(flash), "{w}: {header}");
+            }
+            assert!(header.contains("· demo row"), "{w}: {header}");
+        }
+        // Without a flash the counts and the strip come back.
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let frame = render_to_string(&app, 120, 14);
+        assert!(frame.lines().next().unwrap().contains("1 FAIL"), "{frame}");
+    }
+
+    /// Run detail's worktree line writes the home folder as `~`.
+    #[test]
+    fn worktree_path_is_tilde_shortened() {
+        let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) else {
+            return;
+        };
+        let wt = std::path::Path::new(&home).join(".kit/worktrees/01ABC");
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            super::common::tilde(&wt),
+            format!(
+                "~{sep}{}",
+                std::path::Path::new(".kit/worktrees/01ABC").display()
+            )
+        );
+        assert_eq!(
+            super::common::tilde(std::path::Path::new("/elsewhere")),
+            "/elsewhere"
+        );
+    }
+
+    /// The selection rail on a non-FAIL row is a caret, not a reversed block.
+    #[test]
+    fn selection_rail_is_a_caret_off_fail_rows() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let idx = app
+            .runs
+            .iter()
+            .position(|r| r.state == kit_core::RunState::Pass)
+            .expect("fixture has a PASS run");
+        app.selected_id = Some(app.runs[idx].id.clone());
+        let (w, h) = (80, 14);
+        let buf = render_to_buffer(&app, w, h);
+        let (x, y) = (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .find(|&(x, y)| buf[(x, y)].symbol() == "▶")
+            .expect("a selected row");
+        assert!(
+            !buf[(x, y)]
+                .modifier
+                .contains(ratatui::style::Modifier::REVERSED),
+            "rail cell is reversed"
+        );
+    }
+
     /// The board's selection bar is one band, separators included.
     #[test]
     fn board_selection_bar_has_no_gaps() {
@@ -428,9 +552,9 @@ mod tests {
         let (w, h) = (80, 14);
         let buf = render_to_buffer(&app, w, h);
         let text = |y: u16| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>();
-        let Some(y) = (0..h).find(|&y| text(y).contains('▶')) else {
-            return; // empty board: nothing selected
-        };
+        let y = (0..h)
+            .find(|&y| text(y).contains('▶'))
+            .expect("the fixture board has a selected task");
         let start = (0..w).find(|&x| buf[(x, y)].symbol() == "▶").unwrap();
         let styled: Vec<_> = (start..w - 1).map(|x| buf[(x, y)].modifier).collect();
         assert!(

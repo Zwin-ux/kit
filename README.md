@@ -109,7 +109,7 @@ Env flags:
 | Env | Effect |
 |-----|--------|
 | `KIT_FULL_AUTO=1` | Bypass agent approval prompts (dangerous — sandboxes only) |
-| `KIT_AGENT_RUNS_CHECKS=1` | Let Claude Code run the gate's own commands during a run (they run code the agent wrote); edits to `kit.toml`, `.git` and `.claude` stay denied. Off by default: Kit runs the gate after the agent finishes |
+| `KIT_AGENT_RUNS_CHECKS=1` | Let Claude Code run the gate's own commands during a run (they run code the agent wrote, with your permissions). Claude's file tools may never edit `kit.toml`, `.git` or `.claude`, with or without this; the checks themselves are not bound by that. Off by default: Kit runs the gate after the agent finishes |
 | `KIT_OLLAMA_MODEL=…` | Model for Ollama adapter (default `llama3.2`) |
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion (RUNNING stays a still `RUN` label) |
 | `KIT_THEME=high` | High-contrast ANSI palette (`high-contrast` / `hc` also work) |
