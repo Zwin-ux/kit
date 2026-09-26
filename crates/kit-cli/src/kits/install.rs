@@ -207,7 +207,35 @@ fn prepare(
                     {
                         p.edited.push(msg);
                     }
-                    p.todo.push((name.clone(), action.clone()));
+                    let mut action = action.clone();
+                    // The older version's gate commands come out unless this
+                    // version or another installed kit still wants them.
+                    if let (
+                        Action::GateToml {
+                            file,
+                            previous,
+                            shared,
+                            ..
+                        },
+                        Applied::GateToml { added, .. },
+                    ) = (&mut action, done)
+                    {
+                        previous.clone_from(added);
+                        *shared = lock
+                            .kits
+                            .iter()
+                            .filter(|e| e.name != name)
+                            .flat_map(|e| &e.applied)
+                            .filter_map(|a| match a {
+                                Applied::GateToml {
+                                    file: f, wanted, ..
+                                } if f == file => Some(wanted.iter().cloned()),
+                                _ => None,
+                            })
+                            .flatten()
+                            .collect();
+                    }
+                    p.todo.push((name.clone(), action));
                 }
             }
         }
@@ -360,7 +388,7 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
                 return Ok(Outcome::Cancelled);
             }
             Answer::NoCode => {
-                println!("Leaving out MCP servers and hooks. Skills and rules only.");
+                println!("Leaving out MCP servers, hooks and gate checks. Skills and rules only.");
                 opts.no_code = true;
                 prepared = prepare(&resolved, agents, scope, opts, &lock)?;
                 confine(&prepared, scope)?;
@@ -559,9 +587,14 @@ fn ask(code: bool) -> Result<Answer> {
 /// for the gate each command every `kit run` in the repo will run.
 fn runs(chosen: &Chosen, kit: &str, a: &Action) -> Vec<String> {
     match a {
-        Action::GateToml { commands, .. } => commands
-            .iter()
-            .map(|c| format!("{c}   (in the gate of every kit run)"))
+        Action::GateToml { file, commands, .. } => inferred_checks(file)
+            .into_iter()
+            .map(|(label, c)| format!("{c}   (inferred {label} check, still runs)"))
+            .chain(
+                commands
+                    .iter()
+                    .map(|c| format!("{c}   (in the gate of every kit run)")),
+            )
             .collect(),
         Action::HookJson { .. } => chosen
             .kits
@@ -572,6 +605,60 @@ fn runs(chosen: &Chosen, kit: &str, a: &Action) -> Vec<String> {
             .collect(),
         _ => a.command().into_iter().collect(),
     }
+}
+
+/// The checks Kit infers for the repo that holds `kit_toml`, when that file
+/// names no format, typecheck or test check of its own. A kit's gate
+/// commands run after these; they never replace them.
+fn inferred_checks(kit_toml: &Path) -> Vec<(String, String)> {
+    let Some(root) = kit_toml.parent() else {
+        return Vec::new();
+    };
+    let gate = match std::fs::read_to_string(kit_toml) {
+        Ok(text) => match toml::from_str::<kit_core::KitConfig>(&text) {
+            Ok(cfg) => cfg.gate,
+            Err(_) => return Vec::new(),
+        },
+        Err(_) => kit_core::GateConfig::default(),
+    };
+    crate::engine::infer::with_inferred(&gate, root)
+        .map(|g| {
+            g.checks()
+                .into_iter()
+                .filter(|(label, _)| *label != "extra")
+                .map(|(l, c)| (l.to_string(), c.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Plan notes under a gate change: commands an upgrade takes out, and
+/// programs this machine does not have (every run would fail its gate).
+fn gate_notes(kit: &str, a: &Action) -> Vec<String> {
+    let Action::GateToml {
+        commands,
+        previous,
+        shared,
+        ..
+    } = a
+    else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = previous
+        .iter()
+        .filter(|c| !commands.contains(c) && !shared.contains(c))
+        .map(|c| format!("drop  {c}   (no longer in {kit})"))
+        .collect();
+    let gate = kit_core::GateConfig {
+        extra: commands.clone(),
+        ..kit_core::GateConfig::default()
+    };
+    for program in crate::engine::infer::missing_programs(&gate) {
+        out.push(format!(
+            "note  {program} is not installed here; until it is, every kit run in this repo fails its gate"
+        ));
+    }
+    out
 }
 
 /// `[check]` commands `kit doctor` will run later, per kit (none with no code).
@@ -697,6 +784,9 @@ fn render_plan(
                 let _ = writeln!(s, "{}   RUNS CODE", a.describe());
                 for cmd in runs(chosen, kit, a) {
                     let _ = writeln!(s, "            runs  {cmd}");
+                }
+                for note in gate_notes(kit, a) {
+                    let _ = writeln!(s, "            {note}");
                 }
                 // When a hook runs goes on its own line, so neither wraps.
                 if matches!(a, Action::HookJson { .. }) {

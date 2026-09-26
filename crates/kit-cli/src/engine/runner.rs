@@ -249,22 +249,20 @@ async fn agent_and_gate(
     let cap = opts.bounds.output_cap_bytes;
     // CEO stamp P2: infer defaults on live runs only. Dry-run stays offline-fast
     // and is exempt from vacuous non-zero exit.
-    if config.gate.is_empty() && !use_dry {
-        let inferred = super::infer::infer_gate(repo);
-        if !inferred.is_empty() {
-            let line = format!(
-                "gate: inferred checks (no kit.toml gate) — {}\n",
-                inferred
-                    .checks()
-                    .iter()
-                    .map(|(l, c)| format!("{l}:{c}"))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            );
-            append_capped(output, truncated, cap, &line);
-            send(tx, id, RunDelta::Output(line)).await;
-            config.gate = inferred;
-        }
+    // kit.toml without checks of its own (none, or only a kit's `extra`
+    // commands) runs the inferred ones too.
+    if !use_dry && let Some(gate) = super::infer::with_inferred(&config.gate, repo) {
+        let line = format!(
+            "gate: inferred checks (kit.toml names none of its own) — {}\n",
+            gate.checks()
+                .iter()
+                .map(|(l, c)| format!("{l}:{c}"))
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        append_capped(output, truncated, cap, &line);
+        send(tx, id, RunDelta::Output(line)).await;
+        config.gate = gate;
     }
     // The receipt records what the agent made. Files the gate writes
     // (coverage, reports, build output) are not the run's work.

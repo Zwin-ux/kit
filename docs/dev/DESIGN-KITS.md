@@ -518,7 +518,10 @@ index, `kit new`, the next kits, the server.
   `kit.lock` with exact undo, Claude Code and Codex writers (Codex MCP
   included), Grok through Claude Code's files, `[check]` in `kit doctor`,
   and a kit's `[gate]` written into the repo's `kit.toml` (`[gate] extra`,
-  repo installs only).
+  repo installs only). A kit's checks add to the ones Kit infers for the
+  repo and never replace them: while `kit.toml` names no format, typecheck
+  or test check of its own, `kit run` infers those and runs the kit's
+  after them.
 - In progress on other threads: `kit search` with the public index,
   `kit sync` and `kit new`.
 - Parked until those land: `kit update`; `kit export` and the Agent

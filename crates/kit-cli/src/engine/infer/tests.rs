@@ -250,3 +250,34 @@ fn live_inference_matches_init_on_this_workspace() {
     // what `kit init` proposes.
     assert_eq!(infer_gate(&root), detect(&root).gate);
 }
+
+#[test]
+fn a_kits_extra_checks_add_to_the_inferred_ones() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    if !on_path("cargo") {
+        return;
+    }
+    let kit_only = GateConfig {
+        extra: vec!["swiftlint lint --quiet".into()],
+        ..GateConfig::default()
+    };
+    let gate = with_inferred(&kit_only, &root).expect("inferred");
+    let inferred = infer_gate(&root);
+    assert_eq!(gate.test, inferred.test);
+    assert_eq!(gate.format, inferred.format);
+    assert_eq!(
+        gate.extra.last().map(String::as_str),
+        Some("swiftlint lint --quiet")
+    );
+    assert_eq!(gate.timeout, inferred.timeout);
+
+    // A gate with a named check of its own is left as it is.
+    let own = GateConfig {
+        test: Some("make test".into()),
+        ..kit_only
+    };
+    assert_eq!(with_inferred(&own, &root), None);
+}

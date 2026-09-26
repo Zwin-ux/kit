@@ -185,9 +185,12 @@ impl KitManifest {
         Ok(m)
     }
 
-    /// Anything that runs on the user's machine: hooks and MCP servers.
+    /// Anything that runs on the user's machine: MCP servers, hooks and
+    /// gate commands.
     pub fn runs_code(&self) -> usize {
-        self.mcp.values().filter(|m| m.runs_code()).count() + self.hook.len()
+        self.mcp.values().filter(|m| m.runs_code()).count()
+            + self.hook.len()
+            + self.gate.as_ref().map_or(0, |g| g.checks().len())
     }
 
     fn validate(&self, origin: &str) -> Result<()> {
@@ -645,6 +648,11 @@ mod tests {
         let m = parse(&format!("{hook}use = \"format-and-lint\"\n")).unwrap();
         assert_eq!(m.hook[0].builtin, Some(Builtin::FormatAndLint));
         assert_eq!(m.runs_code(), 1);
+        let gated = parse(&format!(
+            "{hook}use = \"format-and-lint\"\n[gate]\nextra = [\"a\", \"b\"]\n"
+        ))
+        .unwrap();
+        assert_eq!(gated.runs_code(), 3, "each gate command runs code");
         for bad in ["", "use = \"format-and-lint\"\nrun = \"x\"\n"] {
             let err = parse(&format!("{hook}{bad}")).unwrap_err().to_string();
             assert!(err.contains("exactly one of run or use"), "{err}");

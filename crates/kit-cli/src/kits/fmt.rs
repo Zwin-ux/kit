@@ -80,10 +80,16 @@ fn tools_for(file: &Path) -> (Option<Tool>, Option<Tool>) {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    let dir = file.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let parent = file.parent().unwrap_or(Path::new("."));
+    let dir = parent
+        .canonicalize()
+        .unwrap_or_else(|_| parent.to_path_buf());
     // Run from the project root, so a root .swiftlint.yml or ruff config
-    // applies, with the file's full path.
-    let root = super::install::repo_root(&dir).unwrap_or_else(|| dir.clone());
+    // applies, with the file's full path. Project tools are looked for up
+    // to that root and never above it; outside a repo, only beside the file.
+    let root = super::install::repo_root(&dir)
+        .map(|r| r.canonicalize().unwrap_or(r))
+        .unwrap_or_else(|| dir.clone());
     let f = file_arg(file);
     let tool = |exe: PathBuf, args: &[&str], cwd: &Path| Tool {
         exe,
@@ -114,17 +120,17 @@ fn tools_for(file: &Path) -> (Option<Tool>, Option<Tool>) {
             (format, lint)
         }
         "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" | "mts" | "cts" | "vue" | "svelte" => (
-            node_tool("prettier", &dir)
+            node_tool("prettier", &dir, &root)
                 .map(|(exe, root)| tool(exe, &["--write", "--log-level", "warn", &f], &root)),
-            node_tool("eslint", &dir).map(|(exe, root)| tool(exe, &[&f], &root)),
+            node_tool("eslint", &dir, &root).map(|(exe, root)| tool(exe, &[&f], &root)),
         ),
         "css" | "scss" | "less" | "html" | "json" | "md" | "mdx" | "yaml" | "yml" => (
-            node_tool("prettier", &dir)
+            node_tool("prettier", &dir, &root)
                 .map(|(exe, root)| tool(exe, &["--write", "--log-level", "warn", &f], &root)),
             None,
         ),
         "py" | "pyi" => {
-            let ruff = venv_tool("ruff", &dir).or_else(|| find_program("ruff"));
+            let ruff = venv_tool("ruff", &dir, &root).or_else(|| find_program("ruff"));
             (
                 ruff.clone()
                     .map(|exe| tool(exe, &["format", "--quiet", &f], &root)),
@@ -146,15 +152,15 @@ fn tools_for(file: &Path) -> (Option<Tool>, Option<Tool>) {
     }
 }
 
-/// `node_modules/.bin/<name>` in this folder or a parent, with that
-/// project root. Only the project's own install counts; never npx.
-fn node_tool(name: &str, from: &Path) -> Option<(PathBuf, PathBuf)> {
+/// `node_modules/.bin/<name>` in this folder or a parent up to `root`,
+/// with that project root. Only the project's own install counts; never npx.
+fn node_tool(name: &str, from: &Path, root: &Path) -> Option<(PathBuf, PathBuf)> {
     let names: Vec<String> = if cfg!(windows) {
         vec![format!("{name}.cmd"), format!("{name}.exe")]
     } else {
         vec![name.to_string()]
     };
-    from.ancestors().find_map(|dir| {
+    within(from, root).find_map(|dir| {
         let bin = dir.join("node_modules").join(".bin");
         names
             .iter()
@@ -164,8 +170,13 @@ fn node_tool(name: &str, from: &Path) -> Option<(PathBuf, PathBuf)> {
     })
 }
 
-/// A tool in the nearest `.venv`.
-fn venv_tool(name: &str, from: &Path) -> Option<PathBuf> {
+/// Folders from `from` up to and including `root`, never above it.
+fn within<'a>(from: &'a Path, root: &'a Path) -> impl Iterator<Item = &'a Path> {
+    from.ancestors().take_while(move |d| d.starts_with(root))
+}
+
+/// A tool in the nearest `.venv`, up to `root`.
+fn venv_tool(name: &str, from: &Path, root: &Path) -> Option<PathBuf> {
     let rel = if cfg!(windows) {
         PathBuf::from(".venv")
             .join("Scripts")
@@ -173,7 +184,9 @@ fn venv_tool(name: &str, from: &Path) -> Option<PathBuf> {
     } else {
         PathBuf::from(".venv").join("bin").join(name)
     };
-    from.ancestors().map(|d| d.join(&rel)).find(|p| p.is_file())
+    within(from, root)
+        .map(|d| d.join(&rel))
+        .find(|p| p.is_file())
 }
 
 /// The edition in the nearest Cargo.toml, so rustfmt parses the file the
@@ -221,9 +234,19 @@ mod tests {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
+    fn git_init(dir: &Path) {
+        let ok = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir)
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(ok, "git init");
+    }
+
     #[test]
     fn project_tools_format_then_lint_findings_exit_2() {
         let root = scratch("node");
+        git_init(&root);
         let bin = root.join("node_modules/.bin");
         script(&bin.join("prettier"), r#"echo formatted >> "$PWD/calls""#);
         script(
@@ -240,6 +263,25 @@ mod tests {
 
         script(&bin.join("eslint"), "exit 0");
         assert_eq!(format_and_lint(&file).unwrap(), 0);
+    }
+
+    #[test]
+    fn tools_above_the_repo_root_are_never_run() {
+        let outer = scratch("above");
+        script(
+            &outer.join("node_modules/.bin/prettier"),
+            r#"echo ran >> "$PWD/calls""#,
+        );
+        script(&outer.join(".venv/bin/ruff"), r#"echo ran >> "$PWD/calls""#);
+        let repo = outer.join("repo");
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        git_init(&repo);
+        let dir = repo.join("src").canonicalize().unwrap();
+        let root = repo.canonicalize().unwrap();
+        assert_eq!(node_tool("prettier", &dir, &root), None);
+        assert_eq!(venv_tool("ruff", &dir, &root), None);
+        // Inside the root they are found.
+        assert!(node_tool("prettier", &dir, &outer.canonicalize().unwrap()).is_some());
     }
 
     #[test]

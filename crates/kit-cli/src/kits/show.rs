@@ -143,8 +143,13 @@ pub fn render(chain: &[Kit]) -> Result<String> {
             writeln!(s, "            runs  {}", hook.describe())?;
         }
         if let Some(gate) = &kit.manifest.gate {
-            let names: Vec<&str> = gate.checks().iter().map(|(label, _)| *label).collect();
-            writeln!(s, "gate      {} (repo installs)", names.join(", "))?;
+            writeln!(
+                s,
+                "gate      every kit run in the repo (repo installs)   RUNS CODE"
+            )?;
+            for (_, cmd) in gate.checks() {
+                writeln!(s, "            runs  {cmd}")?;
+            }
         }
     }
     let checks: Vec<String> = chain

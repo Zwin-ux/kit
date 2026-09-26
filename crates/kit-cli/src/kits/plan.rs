@@ -52,6 +52,11 @@ pub enum Action {
         file: PathBuf,
         kit: String,
         commands: Vec<String>,
+        /// On an upgrade, the commands the older version added. Ones the
+        /// kit no longer asks for come out, unless `shared` has them.
+        previous: Vec<String>,
+        /// Commands another installed kit wants in the same file.
+        shared: Vec<String>,
     },
     /// A piece this agent cannot take, said out loud.
     Skip { piece: String, why: String },
@@ -425,6 +430,22 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
             created: created || *c,
             original: o.clone().or(original),
         },
+        (
+            Applied::GateToml { created: c, .. },
+            Applied::GateToml {
+                file,
+                kit,
+                added,
+                wanted,
+                created,
+            },
+        ) => Applied::GateToml {
+            file,
+            kit,
+            added,
+            wanted,
+            created: created || *c,
+        },
         (_, new) => new,
     }
 }
@@ -733,6 +754,8 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
             file,
             kit,
             commands,
+            previous,
+            shared,
         } => {
             let created = !file.exists();
             let raw = read_or_empty(file)?;
@@ -744,6 +767,22 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                 .or_insert(toml_edit::table())
                 .as_table_mut()
                 .with_context(|| format!("{}: gate is not a table", file.display()))?;
+            // An older version's commands: the ones still wanted stay this
+            // kit's; the rest come out, one line each, as `kit remove` would.
+            let (kept, dropped): (Vec<String>, Vec<String>) = previous
+                .iter()
+                .cloned()
+                .partition(|c| commands.contains(c) || shared.contains(c));
+            if !dropped.is_empty()
+                && let Some(extra) = gate.get_mut("extra").and_then(|e| e.as_array_mut())
+            {
+                for d in &dropped {
+                    let at = extra.iter().position(|v| v.as_str() == Some(d.as_str()));
+                    if let Some(i) = at {
+                        extra.remove(i);
+                    }
+                }
+            }
             let present: Vec<String> = ["format", "typecheck", "test"]
                 .iter()
                 .filter_map(|k| gate.get(k).and_then(|v| v.as_str()).map(str::to_string))
@@ -755,26 +794,41 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                         .filter_map(|v| v.as_str().map(str::to_string)),
                 )
                 .collect();
-            let added: Vec<String> = commands
+            let new: Vec<String> = commands
                 .iter()
                 .filter(|c| !present.contains(c))
                 .cloned()
                 .collect();
-            if !added.is_empty() {
+            if !new.is_empty() {
                 let extra = gate
                     .entry("extra")
                     .or_insert(toml_edit::value(toml_edit::Array::new()))
                     .as_array_mut()
                     .with_context(|| format!("{}: gate.extra is not a list", file.display()))?;
-                for c in &added {
+                for c in &new {
                     extra.push(c.as_str());
                 }
+            }
+            if gate
+                .get("extra")
+                .and_then(|e| e.as_array())
+                .is_some_and(|e| e.is_empty())
+            {
+                gate.remove("extra");
+            }
+            if !new.is_empty() || !dropped.is_empty() {
                 let header = if created {
-                    "# Written by kit add. `kit init` can add your repo's own checks.\n"
+                    "# Written by kit add. Kit also runs the checks it infers for this repo\n# until you name your own format, typecheck or test here.\n"
                 } else {
                     ""
                 };
                 write(file, &same_eol(&raw, format!("{header}{doc}")))?;
+            }
+            let mut added = kept;
+            for c in new {
+                if !added.contains(&c) {
+                    added.push(c);
+                }
             }
             Applied::GateToml {
                 file: file.clone(),

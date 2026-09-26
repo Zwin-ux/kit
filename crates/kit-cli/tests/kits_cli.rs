@@ -1293,6 +1293,80 @@ fn a_gate_command_two_kits_need_stays_until_both_are_gone() {
     assert_eq!(read(&repo.join("kit.toml")), ours);
 }
 
+/// Upgrading a kit whose gate changed takes out the commands the new
+/// version dropped, keeps ones another kit wants, and leaves nothing behind.
+#[test]
+fn a_kit_upgrade_replaces_its_gate_commands() {
+    let root = scratch("gate-upgrade");
+    let gate_kit = |name: &str, version: &str, extra: &str| {
+        let kit = root.join(format!("{name}-kit"));
+        write(
+            &kit.join("KIT.toml"),
+            &format!(
+                "schema = 1\n[kit]\nname = \"{name}\"\ntitle = \"{name}\"\nversion = \"{version}\"\ndescription = \"d\"\n[gate]\nextra = [{extra}]\n"
+            ),
+        );
+        kit.to_str().unwrap().to_string()
+    };
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let add = |spec: &str| {
+        let out = env.kit(&repo, &["add", spec, "-a", "codex", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        text(&out.stdout)
+    };
+    let extra = || {
+        let cfg: kit_core::KitConfig = toml::from_str(&read(&repo.join("kit.toml"))).unwrap();
+        cfg.gate.extra
+    };
+
+    // kit.toml names no checks of its own, so the ones Kit infers keep
+    // running, and the plan lists them with the kit's.
+    write(&repo.join("Cargo.toml"), "[package]\nname = \"r\"\n");
+    let plan = add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
+    assert!(
+        plan.contains("runs  cargo test --workspace   (inferred test check, still runs)"),
+        "{plan}"
+    );
+    assert!(
+        plan.contains("runs  lint-x   (in the gate of every kit run)"),
+        "{plan}"
+    );
+
+    // v1 [x] → v2 [x, y], then remove: nothing is left behind.
+    add(&gate_kit("ga", "0.2.0", "\"lint-x\", \"lint-y\""));
+    assert_eq!(extra(), ["lint-x", "lint-y"]);
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+
+    // v1 [x] → v2 [y]: x stops running, and the plan says so.
+    add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
+    let plan = add(&gate_kit("ga", "0.2.0", "\"lint-y\""));
+    assert!(plan.contains("drop  lint-x   (no longer in ga)"), "{plan}");
+    assert!(
+        plan.contains("note  lint-y is not installed here"),
+        "{plan}"
+    );
+    assert_eq!(extra(), ["lint-y"]);
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+
+    // A dropped command another kit wants stays until that kit goes.
+    add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
+    add(&gate_kit("gb", "0.1.0", "\"lint-x\""));
+    add(&gate_kit("ga", "0.2.0", "\"lint-y\""));
+    assert_eq!(extra(), ["lint-x", "lint-y"]);
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(extra(), ["lint-x"]);
+    let out = env.kit(&repo, &["remove", "gb", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+}
+
 /// A link to another file in the same repo (or, for --global, in home) is
 /// a normal setup: Kit writes the file it leads to and leaves the link.
 #[cfg(unix)]

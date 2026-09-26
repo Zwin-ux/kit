@@ -157,6 +157,8 @@ fn gate(kit: &Resolved<'_>, scope: &Scope, opts: Options) -> Option<Action> {
             file: root.join("kit.toml"),
             kit: m.kit.name.clone(),
             commands,
+            previous: Vec::new(),
+            shared: Vec::new(),
         },
     })
 }

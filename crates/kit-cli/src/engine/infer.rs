@@ -143,6 +143,34 @@ pub fn infer_gate(repo: &Path) -> GateConfig {
     gate
 }
 
+/// The gate a live run uses when kit.toml names no format, typecheck or
+/// test check of its own: the inferred ones first, then kit.toml's `extra`
+/// commands (a kit's checks add to the inferred ones, never replace them).
+/// `None` when kit.toml names its own checks or nothing can be inferred.
+pub fn with_inferred(gate: &GateConfig, repo: &Path) -> Option<GateConfig> {
+    if gate.format.is_some() || gate.typecheck.is_some() || gate.test.is_some() {
+        return None;
+    }
+    let inferred = infer_gate(repo);
+    if inferred.is_empty() {
+        return None;
+    }
+    let mut out = gate.clone();
+    out.format = inferred.format;
+    out.typecheck = inferred.typecheck;
+    out.test = inferred.test;
+    out.extra = inferred.extra;
+    for c in &gate.extra {
+        if !out.extra.contains(c) {
+            out.extra.push(c.clone());
+        }
+    }
+    if gate.timeout == GateConfig::default().timeout {
+        out.timeout = inferred.timeout;
+    }
+    Some(out)
+}
+
 /// Programs the gate needs that are not on PATH, in check order, no repeats.
 pub fn missing_programs(gate: &GateConfig) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
