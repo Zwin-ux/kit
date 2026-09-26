@@ -25,7 +25,8 @@ clap_complete.workspace = true
 include_dir = "0.7"
 sha2 = "0.10"
 serde.workspace = true
-serde_json.workspace = true
+# Keys stay in the order the user wrote them when Kit edits their JSON.
+serde_json = { workspace = true, features = ["preserve_order"] }
 tokio.workspace = true
 toml.workspace = true
 toml_edit.workspace = true

@@ -174,6 +174,10 @@ pub enum Applied {
         /// remove puts it back.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         previous: Option<serde_json::Value>,
+        /// The file's text before Kit changed it, so remove can put back
+        /// exactly those bytes. Never copied into the repo's kit.lock.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original: Option<String>,
     },
     McpToml {
         file: PathBuf,
@@ -194,10 +198,20 @@ pub enum Applied {
         event: String,
         entry: serde_json::Value,
         created: bool,
+        /// As for `McpJson`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original: Option<String>,
     },
 }
 
 impl Applied {
+    /// Drop the copy of the user's file text (for the repo's shared kit.lock).
+    pub fn forget_original(&mut self) {
+        if let Self::McpJson { original, .. } | Self::HookJson { original, .. } = self {
+            *original = None;
+        }
+    }
+
     /// One line for the plan screen.
     pub fn describe(&self) -> String {
         match self {
@@ -320,6 +334,7 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
             Applied::McpJson {
                 created: c,
                 previous: p,
+                original: o,
                 ..
             },
             Applied::McpJson {
@@ -327,12 +342,14 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
                 name,
                 created,
                 previous,
+                original,
             },
         ) => Applied::McpJson {
             file,
             name,
             created: created || *c,
             previous: previous.or_else(|| p.clone()),
+            original: o.clone().or(original),
         },
         (
             Applied::McpToml {
@@ -353,18 +370,24 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
             previous: previous.or_else(|| p.clone()),
         },
         (
-            Applied::HookJson { created: c, .. },
+            Applied::HookJson {
+                created: c,
+                original: o,
+                ..
+            },
             Applied::HookJson {
                 file,
                 event,
                 entry,
                 created,
+                original,
             },
         ) => Applied::HookJson {
             file,
             event,
             entry,
             created: created || *c,
+            original: o.clone().or(original),
         },
         (_, new) => new,
     }
@@ -533,6 +556,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
         }
         Action::McpJson { file, name, value } => {
             let created = !file.exists();
+            let original = (!created).then(|| read_or_empty(file)).transpose()?;
             let mut doc = read_json(file)?;
             let servers = object_at(&mut doc, "mcpServers", file)?;
             let existing = servers.get(name).cloned();
@@ -554,6 +578,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                 name: name.clone(),
                 created,
                 previous,
+                original,
             }
         }
         Action::McpToml { file, name, value } => {
@@ -604,6 +629,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
         }
         Action::HookJson { file, event, entry } => {
             let created = !file.exists();
+            let original = (!created).then(|| read_or_empty(file)).transpose()?;
             let mut doc = read_json(file)?;
             let hooks = object_at(&mut doc, "hooks", file)?;
             let list = hooks
@@ -624,6 +650,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                 event: event.clone(),
                 entry: entry.clone(),
                 created,
+                original,
             }
         }
         Action::Skip { .. } => return Ok(None),
@@ -667,16 +694,17 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             name,
             created,
             previous,
+            original,
         } => {
             if file.exists() {
                 let mut doc = read_json(file)?;
                 if let Some(servers) = doc.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
                     match previous {
                         Some(v) => servers.insert(name.clone(), v.clone()),
-                        None => servers.remove(name),
+                        None => servers.shift_remove(name),
                     };
                 }
-                finish_json(file, &doc, *created, "mcpServers")?;
+                finish_json(file, &doc, *created, "mcpServers", original.as_deref())?;
             }
         }
         Applied::McpToml {
@@ -724,6 +752,7 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             event,
             entry,
             created,
+            original,
         } => {
             if file.exists() {
                 let mut doc = read_json(file)?;
@@ -732,10 +761,10 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 {
                     list.retain(|e| e != entry);
                     if list.is_empty() {
-                        hooks.remove(event);
+                        hooks.shift_remove(event);
                     }
                 }
-                finish_json(file, &doc, *created, "hooks")?;
+                finish_json(file, &doc, *created, "hooks", original.as_deref())?;
             }
         }
     }
@@ -983,12 +1012,55 @@ fn read_json(file: &Path) -> Result<serde_json::Value> {
     })
 }
 
+/// Write `doc` laid out the way the file already is: compact stays
+/// compact, an indent of 4 or a tab is kept, and so are CRLF line ends
+/// and the final newline. Keys keep their order (`preserve_order`).
 fn write_json(file: &Path, doc: &serde_json::Value) -> Result<()> {
-    write(file, &format!("{}\n", serde_json::to_string_pretty(doc)?))
+    write(file, &render_json(doc, &read_or_empty(file)?)?)
 }
 
-/// Write `doc` back, deleting the file if Kit created it and nothing else is left.
-fn finish_json(file: &Path, doc: &serde_json::Value, created: bool, key: &str) -> Result<()> {
+fn render_json(doc: &serde_json::Value, like: &str) -> Result<String> {
+    use serde::Serialize;
+    let body = like.trim_end();
+    let mut text = if body.is_empty() || body.contains('\n') {
+        let indent = body
+            .lines()
+            .skip(1)
+            .map(|l| &l[..l.len() - l.trim_start_matches([' ', '\t']).len()])
+            .find(|w| !w.is_empty())
+            .unwrap_or("  ");
+        let mut out = Vec::new();
+        let fmt = serde_json::ser::PrettyFormatter::with_indent(indent.as_bytes());
+        doc.serialize(&mut serde_json::Serializer::with_formatter(&mut out, fmt))?;
+        String::from_utf8(out)?
+    } else {
+        serde_json::to_string(doc)?
+    };
+    if like.is_empty() || like.ends_with('\n') {
+        text.push('\n');
+    }
+    if like.contains("\r\n") {
+        text = text.replace('\n', "\r\n");
+    }
+    Ok(text)
+}
+
+/// Write `doc` back, deleting the file if Kit created it and nothing else is
+/// left. When what is left is what the file held before Kit, its original
+/// bytes go back exactly.
+fn finish_json(
+    file: &Path,
+    doc: &serde_json::Value,
+    created: bool,
+    key: &str,
+    original: Option<&str>,
+) -> Result<()> {
+    let before = original.and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok());
+    if let (Some(text), Some(v)) = (original, &before)
+        && v == doc
+    {
+        return write(file, text);
+    }
     let mut doc = doc.clone();
     if let Some(obj) = doc.as_object_mut()
         && obj
@@ -996,7 +1068,12 @@ fn finish_json(file: &Path, doc: &serde_json::Value, created: bool, key: &str) -
             .and_then(|v| v.as_object())
             .is_some_and(|o| o.is_empty())
     {
-        obj.remove(key);
+        obj.shift_remove(key);
+    }
+    if let (Some(text), Some(v)) = (original, &before)
+        && *v == doc
+    {
+        return write(file, text);
     }
     if created && doc.as_object().is_some_and(|o| o.is_empty()) {
         std::fs::remove_file(file)?;

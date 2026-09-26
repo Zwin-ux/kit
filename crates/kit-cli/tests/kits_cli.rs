@@ -307,7 +307,9 @@ fn global_install_uses_claudes_own_cli_for_mcp() {
     assert!(out.status.success(), "{}", text(&out.stderr));
     let log = read(&env.home.join("claude.log"));
     assert!(
-        log.contains("mcp add-json --scope user local {\"args\":[\"-y\",\"thing@1.0.0\"]"),
+        log.contains(
+            "mcp add-json --scope user local {\"type\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"thing@1.0.0\"]"
+        ),
         "{log}"
     );
     assert!(log.contains("mcp remove --scope user local"), "{log}");
@@ -1026,6 +1028,41 @@ fn an_upgrade_never_silently_replaces_a_hand_edited_skill() {
     );
     assert!(out.status.success(), "{}", text(&out.stderr));
     assert!(read(&skill).contains("Say hi."), "{}", read(&skill));
+}
+
+#[test]
+fn add_keeps_a_json_files_layout_and_remove_restores_its_bytes() {
+    let root = scratch("json-layout");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let settings = repo.join(".claude/settings.json");
+    let compact = "{\"permissions\":{\"allow\":[\"Bash(ls)\"]},\"env\":{\"A\":\"b\"}}\n";
+    write(&settings, compact);
+    let mcp = repo.join(".mcp.json");
+    let odd = "{\r\n    \"mcpServers\" : {\r\n        \"mine\": {\"url\": \"https://x\"}\r\n    }\r\n}\r\n";
+    write(&mcp, odd);
+
+    let spec = kit.to_str().unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let added = read(&settings);
+    assert_eq!(added.lines().count(), 1, "compact stays compact: {added}");
+    assert!(
+        added.starts_with("{\"permissions\""),
+        "key order kept: {added}"
+    );
+    let added = read(&mcp);
+    assert!(
+        added.contains("\r\n    \"mcpServers\""),
+        "indent and CRLF kept: {added:?}"
+    );
+
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&settings), compact);
+    assert_eq!(read(&mcp), odd);
 }
 
 /// Two kits that define an MCP server of the same name differently.

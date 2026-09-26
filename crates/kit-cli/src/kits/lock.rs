@@ -178,6 +178,10 @@ impl Lock {
             // A kit from a folder is named by where it sits in the repo, or
             // only by its folder name: never a path on this machine.
             for e in &mut stored.kits {
+                // What the user's files held before Kit stays on this machine.
+                for a in &mut e.applied {
+                    a.forget_original();
+                }
                 let src = Path::new(&e.source);
                 if src.is_absolute() {
                     e.source = match relative(src, scope) {
