@@ -668,3 +668,51 @@ fn kit_never_writes_or_removes_through_a_link_out_of_the_repo() {
     );
     assert!(outside.join("hello/SKILL.md").is_file());
 }
+
+/// The plan names every command that will run: each MCP server's command
+/// line, each hook, and each check `kit doctor` will run later.
+#[test]
+fn the_plan_shows_exactly_what_will_run() {
+    let root = scratch("plan-runs");
+    let kit = demo_kit(&root);
+    let toml = kit.join("KIT.toml");
+    let body = read(&toml) + "[check]\ncommands = [\"test -f README.md\"]\n";
+    write(&toml, &body);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+
+    let out = env.kit(
+        &repo,
+        &["add", kit.to_str().unwrap(), "-a", "claude", "--print"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let plan = text(&out.stdout);
+    for want in [
+        "runs  npx -y thing@1.0.0",
+        "runs  echo formatted   (after each edit of *.md)",
+        "check     kit doctor runs `test -f README.md`   RUNS CODE",
+        "Runs code on your machine: 3",
+    ] {
+        assert!(plan.contains(want), "missing {want:?} in\n{plan}");
+    }
+
+    let out = env.kit(
+        &repo,
+        &["add", kit.to_str().unwrap(), "-a", "claude", "--json"],
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let runs: Vec<String> = v["data"]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|a| a["runs"].as_array().unwrap().clone())
+        .map(|r| r.as_str().unwrap().to_string())
+        .collect();
+    assert!(runs.contains(&"npx -y thing@1.0.0".to_string()), "{v}");
+    assert!(runs.iter().any(|r| r.starts_with("echo formatted")), "{v}");
+    assert_eq!(
+        v["data"]["doctorChecks"][0]["runs"], "test -f README.md",
+        "{v}"
+    );
+}
