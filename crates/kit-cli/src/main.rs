@@ -138,6 +138,8 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
         );
     }
     let repo = ".".to_string();
+    // Not a git repo: nothing can run, so say it once and write no receipt.
+    let root = engine::worktree::resolve_repo(&repo)?;
     let allow_vacuous = args.allow_vacuous;
     // None = live with the chosen agent. --dry-run runs no agent.
     let dry_run = args.dry_run.then_some(true);
@@ -162,7 +164,7 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
         }
     };
     // Stderr only: under --json, stdout holds one envelope.
-    if let Some(hint) = init_hint(Path::new(&repo)) {
+    if let Some(hint) = init_hint(&root) {
         eprintln!("kit: {hint}");
     }
     let opts = RunOptions {
@@ -182,10 +184,8 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
     let outcome = execute_headless(opts, Some(delta_tx)).await;
     let _ = echo.await;
     // A run that failed still has its receipt; the error rides along.
+    // The error already went out in the stream as `kit: run failed: …`.
     let (result, run_error) = outcome?;
-    if let (Some(err), false) = (&run_error, json) {
-        eprintln!("kit: {err}");
-    }
 
     let gate_vacuous = result
         .gate
