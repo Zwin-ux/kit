@@ -98,8 +98,9 @@ pub fn base(scope: &Scope) -> &Path {
 /// Top-level folders a global record may touch under home.
 const GLOBAL_DIRS: [&str; 3] = [".claude", ".agents", ".codex"];
 
-/// `<folder>-<hash>` of the repo's git folder, so every clone has its own
-/// record and a repo's worktrees (`kit run`) share the main checkout's.
+/// `<folder>-<hash>` of the repo's own root and its git folder, so every
+/// clone and every worktree has its own record, and a folder whose `.git`
+/// file points at another repo's git folder cannot take over its record.
 fn repo_id(root: &Path) -> String {
     use sha2::{Digest, Sha256};
     let git = std::process::Command::new("git")
@@ -110,9 +111,13 @@ fn repo_id(root: &Path) -> String {
         .ok()
         .filter(|o| o.status.success())
         .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
-    let anchor = git.unwrap_or_else(|| root.to_path_buf());
-    let canon = std::fs::canonicalize(&anchor).unwrap_or(anchor);
-    let digest = Sha256::digest(canon.to_string_lossy().as_bytes());
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let key = format!(
+        "{}\n{}",
+        canon(root).display(),
+        git.as_deref().map(canon).unwrap_or_default().display()
+    );
+    let digest = Sha256::digest(key.as_bytes());
     let hex: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
     let name: String = root
         .file_name()
@@ -241,12 +246,7 @@ fn write_or_remove(file: &std::path::Path, body: Option<&String>) -> Result<()> 
         }
         return Ok(());
     };
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let tmp = file.with_extension("lock.tmp");
-    std::fs::write(&tmp, body)?;
-    std::fs::rename(&tmp, file).with_context(|| format!("cannot write {}", file.display()))
+    super::plan::write_file(file, body.as_bytes())
 }
 
 #[cfg(test)]

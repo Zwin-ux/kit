@@ -406,16 +406,30 @@ commands = ["touch {}"]
             marker("doctor-cmd")
         ),
     );
+    // A well-formed lock in the current schema: if Kit trusted it at all,
+    // each of these would run or delete something. A fake `claude` records
+    // any `claude mcp remove`.
+    write(&repo.join(".claude/skills/s/SKILL.md"), "mine");
+    let fake = root.join("bin/claude");
+    write(&fake, &format!("#!/bin/sh\ntouch {}\n", marker("claude")));
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let lock = serde_json::json!({
         "schema": 1,
         "kits": [{
-            "name": "evil", "version": "0.1.0", "source": repo.join("evil").display().to_string(),
+            "name": "evil", "version": "0.1.0", "source": "./evil",
             "requested": true, "required_by": [], "agents": ["claude"],
             "hooks": [{ "glob": null, "run": format!("touch {}", marker("hook")) }],
+            "checks": {
+                "mcp": { "srv": { "command": "sh", "args": ["-c", format!("touch {}", marker("doctor-mcp"))] } },
+                "commands": [format!("touch {}", marker("doctor-cmd"))],
+            },
             "applied": [
-                { "kind": "command", "undo": ["sh", "-c", format!("touch {}", marker("remove"))] },
-                { "kind": "skill", "dir": outside.display().to_string(), "hash": "sha256:x" },
-                { "kind": "rules", "file": outside.join("keep").display().to_string(), "kit": "evil", "created": true }
+                { "kind": "claude_mcp", "name": "srv" },
+                { "kind": "mcp_json", "file": ".mcp.json", "name": "srv", "created": true },
+                { "kind": "skill", "dir": ".claude/skills/s", "hash": "sha256:x" },
             ]
         }]
     });
@@ -454,26 +468,32 @@ fn the_after_edit_hook_never_runs_code_from_a_repos_kit_lock() {
     let env = Env::new(&root);
     let repo = hostile_repo(&root);
     write(&repo.join("a.md"), "x");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kit"))
-        .args(["hook", "after-edit", "evil"])
-        .current_dir(&repo)
-        .env("HOME", &env.home)
-        .env("KIT_HOME", env.home.join(".kit"))
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    let payload = format!(
-        r#"{{"tool_input":{{"file_path":"{}"}}}}"#,
-        repo.join("a.md").display()
-    );
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(payload.as_bytes())
-        .unwrap();
-    child.wait().unwrap();
-    assert_eq!(pwned(&root), Vec::<String>::new());
+    for scope in [None, Some("repo"), Some("global")] {
+        let mut args = vec!["hook", "after-edit", "evil"];
+        if let Some(s) = scope {
+            args.extend(["--scope", s]);
+        }
+        let mut child = Command::new(env!("CARGO_BIN_EXE_kit"))
+            .args(&args)
+            .current_dir(&repo)
+            .env("HOME", &env.home)
+            .env("KIT_HOME", env.home.join(".kit"))
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let payload = format!(
+            r#"{{"tool_input":{{"file_path":"{}"}}}}"#,
+            repo.join("a.md").display()
+        );
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.as_bytes())
+            .unwrap();
+        child.wait().unwrap();
+        assert_eq!(pwned(&root), Vec::<String>::new(), "{scope:?}");
+    }
 }
 
 #[cfg(unix)]
@@ -485,6 +505,7 @@ fn remove_never_follows_a_repos_kit_lock() {
     let out = env.kit(&repo, &["remove", "evil", "--yes", "--force"]);
     assert_eq!(pwned(&root), Vec::<String>::new(), "{}", text(&out.stderr));
     assert_eq!(read(&root.join("outside/keep")), "mine");
+    assert_eq!(read(&repo.join(".claude/skills/s/SKILL.md")), "mine");
     assert!(
         !out.status.success(),
         "evil was never installed on this machine"
@@ -1002,4 +1023,32 @@ fn two_kits_cannot_share_an_mcp_name_with_different_servers() {
         "{}",
         text(&out.stderr)
     );
+}
+
+/// Links planted at kit.lock, at the old temp name, or at a file Kit edits
+/// never redirect a write outside the repo.
+#[cfg(unix)]
+#[test]
+fn planted_links_never_redirect_a_write() {
+    let root = scratch("planted");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let victim = root.join("victim");
+    write(&victim, "precious");
+    let spec = kit.to_str().unwrap();
+
+    for planted in ["kit.lock.tmp", "kit.lock", "CLAUDE.md", ".mcp.json"] {
+        let repo = root.join(format!("repo-{}", planted.replace('.', "_")));
+        git_repo(&repo);
+        std::os::unix::fs::symlink(&victim, repo.join(planted)).unwrap();
+        let _ = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+        assert_eq!(read(&victim), "precious", "through {planted}");
+        assert!(
+            std::fs::symlink_metadata(repo.join(planted))
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "{planted} is left as it was"
+        );
+    }
 }

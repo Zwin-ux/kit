@@ -462,7 +462,7 @@ impl Saved {
         match self {
             Self::File { path, bytes } => match bytes {
                 Some(b) => {
-                    let _ = std::fs::write(path, b);
+                    let _ = write_file(path, b);
                 }
                 None => {
                     let _ = std::fs::remove_file(path);
@@ -803,15 +803,14 @@ fn write_skill(dir: &Path, payload: &SkillPayload, force: bool) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&path, &f.bytes)
-            .with_context(|| format!("cannot write {}", path.display()))?;
+        write_file(&path, &f.bytes)?;
         #[cfg(unix)]
         if f.executable {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
         }
     }
-    std::fs::write(dir.join(OWNED), format!("{}\n", payload.hash))?;
+    write_file(&dir.join(OWNED), format!("{}\n", payload.hash).as_bytes())?;
     Ok(())
 }
 
@@ -901,10 +900,62 @@ fn read_or_empty(file: &Path) -> Result<String> {
 }
 
 fn write(file: &Path, text: &str) -> Result<()> {
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)?;
+    write_file(file, text.as_bytes())
+}
+
+/// Write `bytes` to `file` without ever following a link: the file must not
+/// be a link, the data goes to a new temp file opened with `create_new`
+/// (O_EXCL) under a fresh name in the same folder, and it is renamed over
+/// the file only after checking again. A planted link, at the file or at a
+/// guessable temp name, cannot redirect the write elsewhere.
+pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    let is_link = |p: &Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
+    if is_link(file) {
+        bail!(
+            "{} is a link. Kit will not write through it",
+            file.display()
+        );
     }
-    std::fs::write(file, text).with_context(|| format!("cannot write {}", file.display()))
+    let parent = file
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    let tmp = parent.join(format!(
+        ".{}.kit-{}-{nanos:x}-{}.tmp",
+        file.file_name().unwrap_or_default().to_string_lossy(),
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ));
+    let written = (|| -> std::io::Result<()> {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()
+    })();
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e).with_context(|| format!("cannot write {}", file.display()));
+    }
+    if is_link(file) {
+        let _ = std::fs::remove_file(&tmp);
+        bail!(
+            "{} became a link. Kit will not write through it",
+            file.display()
+        );
+    }
+    std::fs::rename(&tmp, file).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        anyhow::Error::new(e).context(format!("cannot write {}", file.display()))
+    })
 }
 
 fn read_json(file: &Path) -> Result<serde_json::Value> {
