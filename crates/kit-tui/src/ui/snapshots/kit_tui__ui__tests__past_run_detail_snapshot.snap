@@ -1,0 +1,20 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / RUN  shop · claude·eng · make the parser strict  DONE  GATE FAIL          "
+"receipt   /home/you/.kit/runs/01PASTC0000000000000000000                        "
+" stream  │  gate  │  diff                                                       "
+"┌ stream ──────────────────────────────────────────────────────────────────────┐"
+"│claude: working on make the parser strict                                     │"
+"│kit: agent done. Running the gate                                             │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [esc] back  [1]stream  [2]gate  [3]diff  [r]etry                         follow"

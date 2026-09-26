@@ -14,6 +14,7 @@
 //! - [`event`] — frozen contract: `AppEvent`, `Clock`, tick cadence
 //! - [`app`] — pure reducer over `AppEvent` → `Action`, screen routing
 //! - [`event_loop`] — single `tokio::select!` merging terminal, tick, runs
+//! - [`fox`] — the mascot sprite and its tail wag
 //! - [`ui`] — Control Room, Run Detail, Dispatch, Board, Attached frames
 //!
 //! Agent skills: `.agents/skills` (addyosmani/agent-skills). See root `AGENTS.md`.
@@ -22,6 +23,8 @@ pub mod app;
 pub mod event;
 #[path = "loop.rs"]
 pub mod event_loop;
+pub mod fox;
+pub mod past;
 pub mod persona;
 pub mod theme;
 pub mod ui;

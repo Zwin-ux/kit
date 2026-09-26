@@ -1,5 +1,5 @@
 #!/bin/sh
-# A scripted stand-in for an agent CLI, for recordings only: the 16-way
+# A scripted stand-in for an agent CLI, for recordings only: the 12-way
 # fleet tape, and recordings made where a real agent cannot run (inside a
 # Claude Code session). Symlink it as claude, codex, grok and ollama in a
 # throwaway PATH. It answers the probes kit makes (version, login, mcp,

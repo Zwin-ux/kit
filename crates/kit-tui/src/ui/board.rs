@@ -1,4 +1,4 @@
-//! Board — curated Dispatch prefill list (1.0; no pull-queue).
+//! Board — a list of tasks to send to Dispatch (not a live pull-queue).
 
 use super::common::{
     draw_empty_state, draw_footer, draw_header, draw_too_small, too_small, truncate,
@@ -44,8 +44,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
             frame,
             chunks[1],
             &theme,
+            &[],
             "Nothing queued",
-            "press n to add  ·  Enter prefills Dispatch  ·  not a live pull-queue",
+            "press n to add a task  ·  Enter sends it to Dispatch",
         );
     } else {
         draw_table(frame, app, chunks[1], &theme);
@@ -56,7 +57,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         chunks[2],
         &theme,
         " [esc] back  [n]ew  [enter] dispatch  [space] done  [x] remove",
-        "prefill-only 1.0",
+        "",
     );
 }
 
