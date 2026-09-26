@@ -256,6 +256,10 @@ async fn agent_and_gate(
     } else {
         crate::kits::lock::kit_gate_commands(repo)
     };
+    if !use_dry && let Some(line) = super::infer::inference_note(&config.gate, repo, &kit_added) {
+        append_capped(output, truncated, cap, &line);
+        send(tx, id, RunDelta::Output(line)).await;
+    }
     if !use_dry && let Some(gate) = super::infer::with_inferred(&config.gate, repo, &kit_added) {
         let line = format!(
             "gate: inferred checks (kit.toml names none of its own) — {}\n",

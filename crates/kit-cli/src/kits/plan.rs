@@ -818,7 +818,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
             }
             if !new.is_empty() || !dropped.is_empty() {
                 let header = if created {
-                    "# Written by kit add. Kit also runs the checks it infers for this repo\n# until you name your own format, typecheck or test here.\n"
+                    "# Written by kit add. Name your own format, typecheck or test checks here.\n"
                 } else {
                     ""
                 };

@@ -520,8 +520,10 @@ index, `kit new`, the next kits, the server.
   and a kit's `[gate]` written into the repo's `kit.toml` (`[gate] extra`,
   repo installs only). A kit's checks add to the ones Kit infers for the
   repo and never replace them: while `kit.toml` names no format, typecheck
-  or test check of its own, `kit run` infers those and runs the kit's
-  after them.
+  or test check of its own and every `extra` line is one Kit's record on
+  this machine says a kit added, `kit run` infers those and runs the kit's
+  after them. On a clone or in CI (no record) the gate runs as written,
+  and `kit run` says so.
 - In progress on other threads: `kit search` with the public index,
   `kit sync` and `kit new`.
 - Parked until those land: `kit update`; `kit export` and the Agent

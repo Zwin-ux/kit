@@ -293,8 +293,31 @@ fn a_user_written_gate_with_only_extra_runs_exactly_that_gate() {
         extra: vec!["make lint".into()],
         ..GateConfig::default()
     };
-    // No kit added it, or a kit added something else: nothing is inferred.
+    // No kit added it, or a kit added something else: nothing is inferred,
+    // and a live run says why (a clone or CI has no record of kit lines).
     assert_eq!(with_inferred(&mine, &root, &[]), None);
+    if on_path("cargo") {
+        let note = inference_note(&mine, &root, &[]).expect("a note");
+        assert!(
+            note.contains("no Kit record") && note.contains("`kit add <kit>`"),
+            "{note}"
+        );
+    }
+    let kits = ["make lint".to_string()];
+    assert_eq!(
+        inference_note(&mine, &root, &kits),
+        None,
+        "recorded: inferred, no note"
+    );
+    let own = GateConfig {
+        test: Some("make test".into()),
+        ..mine.clone()
+    };
+    assert_eq!(
+        inference_note(&own, &root, &[]),
+        None,
+        "a named check: as written"
+    );
     assert_eq!(
         with_inferred(&mine, &root, &["swiftlint lint --quiet".to_string()]),
         None
