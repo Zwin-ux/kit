@@ -113,8 +113,10 @@ names any kit it lists that you have not installed.
   block, config key and command. `--print` stops there.
 - **Anything that runs code says so.** MCP servers and hooks are marked
   `RUNS CODE` and counted. `[s]` or `--no-code` installs skills and rules only.
-- **Everything is pinned.** Skills by commit and content hash, MCP packages by
-  exact version, never `@latest`.
+- **Everything is pinned.** Skills by commit and content hash. A local MCP
+  server starts through `npx`, `bunx`, `pnpm dlx` or `uvx` with one package
+  at an exact version (never `@latest`, a range, a URL or a tarball), or is a
+  program already on your PATH. Kits cannot start a shell.
 - **Your files stay yours.** Kit edits only between its own markers in
   `CLAUDE.md` and `AGENTS.md`, only its own keys in JSON and TOML (comments
   kept), and only skill folders it wrote. A folder you made is never overwritten.

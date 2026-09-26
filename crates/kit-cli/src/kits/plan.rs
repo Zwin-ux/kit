@@ -83,6 +83,41 @@ impl Action {
         }
     }
 
+    /// The program an MCP action makes the agent start, as a command line
+    /// (`npx -y pkg@1.2.3`). `None` for anything else, or a remote server.
+    pub fn command(&self) -> Option<String> {
+        let (cmd, args): (&str, Vec<String>) = match self {
+            Self::McpJson { value, .. } | Self::ClaudeMcp { value, .. } => (
+                value.get("command")?.as_str()?,
+                value
+                    .get("args")
+                    .and_then(|a| a.as_array())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|a| a.as_str().map(str::to_string))
+                    .collect(),
+            ),
+            Self::McpToml { value, .. } => (
+                value.get("command")?.as_str()?,
+                value
+                    .get("args")
+                    .and_then(|a| a.as_array())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|a| a.as_str().map(str::to_string))
+                    .collect(),
+            ),
+            _ => return None,
+        };
+        Some(
+            std::iter::once(cmd.to_string())
+                .chain(args)
+                .map(|a| shell_word(&a))
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
+    }
+
     /// Identity of the thing this action changes. Two kits that change the
     /// same thing share it; it is undone only when neither needs it.
     pub fn key(&self) -> String {
@@ -678,6 +713,18 @@ pub fn find_program(program: &str) -> Option<PathBuf> {
             .map(|ext| dir.join(format!("{program}{ext}")))
             .find(|p| p.is_file())
     })
+}
+
+/// One argument as it would be typed: quoted when it has spaces or quotes.
+pub fn shell_word(a: &str) -> String {
+    if !a.is_empty()
+        && a.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_./@=:,+%^~".contains(c))
+    {
+        a.to_string()
+    } else {
+        format!("'{}'", a.replace('\'', "'\\''"))
+    }
 }
 
 /// For display: relative inside the current folder, `~/…` under home.
