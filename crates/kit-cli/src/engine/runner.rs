@@ -167,6 +167,7 @@ async fn execute_with(
         truncated,
         gate,
         agent_diff,
+        &tx,
     )
     .await?;
     // Proof first: the terminal state goes out only once its receipt exists.
@@ -353,7 +354,7 @@ async fn finalize_outside_run(
     );
     send(tx, &id, RunDelta::Output(note.into())).await;
     write_terminal(
-        opts, id, repo, branch, wt_path, None, state, output, truncated, None, None,
+        opts, id, repo, branch, wt_path, None, state, output, truncated, None, None, tx,
     )
     .await
 }
@@ -371,9 +372,10 @@ async fn write_terminal(
     started_at: Option<SystemTime>,
     state: RunState,
     mut output: String,
-    mut truncated: bool,
+    truncated: bool,
     gate: Option<GateOutcome>,
     agent_diff: Option<String>,
+    tx: &Option<mpsc::Sender<(RunId, RunDelta)>>,
 ) -> Result<RunResult> {
     let ended_at = SystemTime::now();
     let (wt_path, base) = match worktree {
@@ -389,18 +391,18 @@ async fn write_terminal(
     });
     let diff = match (agent_diff, wt_path.as_deref(), diff_base.as_deref()) {
         (Some(d), _, _) => d,
-        (None, Some(wt), Some(b)) => worktree::worktree_diff(wt, b).unwrap_or_else(|err| {
-            // Loud: an empty diff here would under-report the run. Said in
-            // the receipt's log, not on stderr, which would paint over the TUI.
-            let note = format!("kit: cannot record the diff of {}: {err:#}\n", wt.display());
-            append_capped(
-                &mut output,
-                &mut truncated,
-                opts.bounds.output_cap_bytes,
-                &note,
-            );
-            String::new()
-        }),
+        (None, Some(wt), Some(b)) => match worktree::worktree_diff(wt, b) {
+            Ok(d) => d,
+            Err(err) => {
+                // Loud: an empty diff here would under-report the run. It
+                // goes in the stream (stderr headless, the pane in the TUI)
+                // and in the log even past the output cap: it is Kit's word.
+                let note = format!("kit: cannot record the diff of {}: {err:#}\n", wt.display());
+                output.push_str(&note);
+                send(tx, &id, RunDelta::Output(note)).await;
+                String::new()
+            }
+        },
         _ => String::new(),
     };
 

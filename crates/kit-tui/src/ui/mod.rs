@@ -38,7 +38,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         let v_gutter = if tight {
             Constraint::Length(0)
         } else {
-            Constraint::Length((area.height.saturating_sub(need) / 2).min(area.height * 12 / 100))
+            Constraint::Length((area.height.saturating_sub(need) / 2).min(area.height / 8))
         };
         let h_gutter = if tight {
             Constraint::Length(0)
@@ -419,6 +419,63 @@ mod tests {
         assert!(frame.contains("shop"), "{frame}");
     }
 
+    /// Run detail's header shows the folder name and the task's first line.
+    #[test]
+    fn run_detail_header_uses_folder_and_first_line() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let id = app.selected_id.clone().unwrap();
+        let row = app.runs.iter_mut().find(|r| r.id == id).unwrap();
+        row.repo = "/home/you/code/shop".into();
+        row.task = "fix red CI\n\n## Previous gate failure\ntsc".into();
+        app.screen = crate::app::Screen::RunDetail {
+            pane: crate::app::DetailPane::default(),
+        };
+        let frame = render_to_string(&app, 100, 14);
+        let header = frame.lines().next().unwrap();
+        assert!(header.contains("KIT / RUN  shop"), "{header}");
+        assert!(header.contains("fix red CI"), "{header}");
+        assert!(!frame.contains("/home/you"), "{frame}");
+    }
+
+    /// An ERROR row has no gate; its `^` line carries the engine's reason.
+    #[test]
+    fn error_row_shows_its_reason() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let row = &mut app.runs[0];
+        row.state = kit_core::RunState::Error;
+        row.gate = None;
+        row.output = "kit: run failed: codex is not installed\n".into();
+        let frame = render_to_string(&app, 80, 14);
+        assert!(frame.contains("^ codex is not installed"), "{frame}");
+    }
+
+    /// The selection rail on a non-FAIL row is a caret, not a reversed block.
+    #[test]
+    fn selection_rail_is_a_caret_off_fail_rows() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let idx = app
+            .runs
+            .iter()
+            .position(|r| r.state == kit_core::RunState::Pass)
+            .expect("fixture has a PASS run");
+        app.selected_id = Some(app.runs[idx].id.clone());
+        let (w, h) = (80, 14);
+        let buf = render_to_buffer(&app, w, h);
+        let (x, y) = (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .find(|&(x, y)| buf[(x, y)].symbol() == "▶")
+            .expect("a selected row");
+        assert!(
+            !buf[(x, y)]
+                .modifier
+                .contains(ratatui::style::Modifier::REVERSED),
+            "rail cell is reversed"
+        );
+    }
+
     /// The board's selection bar is one band, separators included.
     #[test]
     fn board_selection_bar_has_no_gaps() {
@@ -428,9 +485,9 @@ mod tests {
         let (w, h) = (80, 14);
         let buf = render_to_buffer(&app, w, h);
         let text = |y: u16| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>();
-        let Some(y) = (0..h).find(|&y| text(y).contains('▶')) else {
-            return; // empty board: nothing selected
-        };
+        let y = (0..h)
+            .find(|&y| text(y).contains('▶'))
+            .expect("the fixture board has a selected task");
         let start = (0..w).find(|&x| buf[(x, y)].symbol() == "▶").unwrap();
         let styled: Vec<_> = (start..w - 1).map(|x| buf[(x, y)].modifier).collect();
         assert!(

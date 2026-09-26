@@ -452,6 +452,38 @@ impl RunRow {
         self.elapsed_frozen.clone()
     }
 
+    /// The task's first non-blank line. Retry tasks carry the gate failure on
+    /// later lines; a newline inside a one-line cell shifts what follows it.
+    pub fn task_line(&self) -> &str {
+        self.task
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("")
+            .trim_end()
+    }
+
+    /// The repo's folder name, as Dispatch shows it; the engine keeps the path.
+    pub fn repo_name(&self) -> &str {
+        repo_basename(&self.repo)
+    }
+
+    /// Why a FAIL or ERROR row failed, for its `^ …` line. ERROR runs have no
+    /// gate; their reason is the engine's `kit: …` line in the stream.
+    pub fn failure_summary(&self) -> Option<String> {
+        if let Some(summary) = self.gate_summary() {
+            return Some(summary);
+        }
+        if self.state != RunState::Error {
+            return None;
+        }
+        let line = self
+            .output
+            .lines()
+            .rev()
+            .find_map(|l| l.strip_prefix("kit: "))?;
+        Some(line.strip_prefix("run failed: ").unwrap_or(line).to_owned())
+    }
+
     /// First failure summary for the Control Room annotation line (`^ tsc: …`).
     pub fn gate_summary(&self) -> Option<String> {
         let gate = self.gate.as_ref()?;

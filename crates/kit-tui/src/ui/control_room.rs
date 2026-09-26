@@ -147,7 +147,7 @@ fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
             selected_group = groups.len();
         }
         let mut group = vec![data_line(run, selected, app, theme, widths)];
-        if let Some(summary) = run.gate_summary() {
+        if let Some(summary) = run.failure_summary() {
             group.push(annotation_line(
                 &summary,
                 selected,
@@ -235,23 +235,6 @@ fn column_widths(total: u16) -> [usize; 5] {
     w
 }
 
-/// The table's one line of a task. Retry tasks carry the gate failure on
-/// later lines; a newline inside a cell would shift every column after it.
-fn first_line(s: &str) -> &str {
-    s.lines()
-        .find(|l| !l.trim().is_empty())
-        .unwrap_or("")
-        .trim_end()
-}
-
-/// REPO shows the folder name, as Dispatch does; the engine keeps the path.
-fn repo_label(repo: &str) -> &str {
-    std::path::Path::new(repo)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(repo)
-}
-
 fn pad_cell(s: &str, width: usize) -> String {
     let n = s.chars().count();
     if n >= width {
@@ -282,7 +265,7 @@ fn data_line(
 ) -> Line<'static> {
     let fail = matches!(run.state, RunState::Fail | RunState::Error);
     let marker = if selected { "▶ " } else { "  " };
-    let repo = format!("{marker}{}", repo_label(&run.repo));
+    let repo = format!("{marker}{}", run.repo_name());
     let state_label = format_state_label(run, &app.clock, app.motion_enabled());
     let gate_label = format_gate_label(run);
     let base = if fail {
@@ -313,17 +296,20 @@ fn data_line(
         // Cyan focus rail: the caret, then the rest of the row.
         let rail: String = repo_cell.chars().take(2).collect();
         let rest: String = repo_cell.chars().skip(2).collect();
-        spans.push(Span::styled(
-            rail,
-            base.patch(theme.accent()).add_modifier(Modifier::BOLD),
-        ));
+        // On a FAIL row the caret sits on the wash; elsewhere it is the rail.
+        let rail_style = if fail {
+            base.patch(theme.accent())
+        } else {
+            theme.accent()
+        };
+        spans.push(Span::styled(rail, rail_style.add_modifier(Modifier::BOLD)));
         spans.push(Span::styled(rest, base));
     } else {
         spans.push(Span::styled(repo_cell, base));
     }
     let parts = [
         (pad_cell(&run.agent_cell(), widths[1]), base),
-        (pad_cell(first_line(&run.task), widths[2]), base),
+        (pad_cell(run.task_line(), widths[2]), base),
         (pad_cell(&state_label, widths[3]), state_style),
         (pad_cell(&gate_label, widths[4]), gate_style),
     ];
@@ -343,14 +329,21 @@ fn annotation_line(
     let budget = inner_width.saturating_sub(2); // "^ "
     let text = format!(
         "^ {}",
-        truncate(first_line(summary), budget.saturating_sub(2))
+        truncate(
+            summary.lines().next().unwrap_or(""),
+            budget.saturating_sub(2)
+        )
     );
     // Pad to the border so the wash is a band, not a highlight on the text.
     let text = format!("{text:<inner_width$}");
     let style = if selected {
         theme.fail_row(true).add_modifier(Modifier::DIM)
     } else {
-        theme.fail_row(false).patch(theme.annotation())
+        // The wash's colour only: BOLD from the row plus DIM reads as neither.
+        match theme.fail_row(false).bg {
+            Some(bg) => theme.annotation().bg(bg),
+            None => theme.annotation(),
+        }
     };
     Line::from(Span::styled(text, style))
 }
