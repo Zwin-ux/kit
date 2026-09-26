@@ -79,6 +79,9 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Some(Command::Add(args)) => kits::install::cmd_add(args, json),
         Some(Command::Remove(args)) => kits::install::cmd_remove(args, json),
         Some(Command::List(args)) => kits::install::cmd_list(args, json),
+        Some(Command::Search(args)) => kits::search::cmd_search(&args, json),
+        Some(Command::Sync(args)) => kits::sync::cmd_sync(args, json),
+        Some(Command::New(args)) => kits::new::cmd_new(&args, json),
         Some(Command::Hook {
             event: cli::HookCommand::AfterEdit { kit, scope },
         }) => std::process::exit(kits::hook::after_edit(&kit, scope)?),

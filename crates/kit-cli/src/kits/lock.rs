@@ -38,6 +38,10 @@ pub struct Entry {
     pub version: String,
     /// What was typed: a bundled name or a folder.
     pub source: String,
+    /// What fetches exactly this kit again (`github:o/r/path@sha`, or a
+    /// folder); `kit sync` installs from it. Absent for bundled kits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pin: Option<String>,
     /// Asked for by name, not only pulled in as a base.
     pub requested: bool,
     /// Installed kits that extend this one.
@@ -179,20 +183,26 @@ impl Lock {
         if let Some(shared) = shared_path(scope) {
             // A kit from a folder is named by where it sits in the repo, or
             // only by its folder name: never a path on this machine.
+            let share = |s: &str| -> Option<String> {
+                let src = Path::new(s);
+                src.is_absolute().then(|| match relative(src, scope) {
+                    Ok(rel) => format!("./{}", rel.display()),
+                    Err(_) => format!(
+                        "folder {}",
+                        src.file_name().unwrap_or_default().to_string_lossy()
+                    ),
+                })
+            };
             for e in &mut stored.kits {
                 // What the user's files held before Kit stays on this machine.
                 for a in &mut e.applied {
                     a.forget_original();
                 }
-                let src = Path::new(&e.source);
-                if src.is_absolute() {
-                    e.source = match relative(src, scope) {
-                        Ok(rel) => format!("./{}", rel.display()),
-                        Err(_) => format!(
-                            "folder {}",
-                            src.file_name().unwrap_or_default().to_string_lossy()
-                        ),
-                    };
+                if let Some(shared) = share(&e.source) {
+                    e.source = shared;
+                }
+                if let Some(shared) = e.pin.as_deref().and_then(share) {
+                    e.pin = Some(shared);
                 }
             }
             let body = format!("{}\n", serde_json::to_string_pretty(&stored)?);

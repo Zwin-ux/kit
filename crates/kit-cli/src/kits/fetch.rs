@@ -76,12 +76,12 @@ pub fn content_hash(files: &[SkillFile]) -> String {
 }
 
 /// Where `github:owner/repo` is fetched from. Tests point this at a folder.
-fn remote_url(repo: &str) -> String {
+pub(crate) fn remote_url(repo: &str) -> String {
     let base = std::env::var("KIT_GIT_BASE").unwrap_or_else(|_| "https://github.com".into());
     format!("{}/{repo}", base.trim_end_matches('/'))
 }
 
-fn git(dir: &Path) -> Command {
+pub(crate) fn git(dir: &Path) -> Command {
     let mut c = Command::new("git");
     c.arg("-C").arg(dir);
     c.env("GIT_TERMINAL_PROMPT", "0");
@@ -96,7 +96,7 @@ fn git(dir: &Path) -> Command {
     c
 }
 
-fn run(cmd: &mut Command, what: &str) -> Result<Vec<u8>> {
+pub(crate) fn run(cmd: &mut Command, what: &str) -> Result<Vec<u8>> {
     let out = cmd
         .stdin(Stdio::null())
         .output()
@@ -111,7 +111,7 @@ fn run(cmd: &mut Command, what: &str) -> Result<Vec<u8>> {
 }
 
 /// The bare cache repo for `github:owner/repo`, with `rev` present.
-fn cached_repo(source: &str, rev: &str) -> Result<PathBuf> {
+pub(crate) fn cached_repo(source: &str, rev: &str) -> Result<PathBuf> {
     let repo = source
         .strip_prefix("github:")
         .context("only github: sources are supported")?;
@@ -144,7 +144,7 @@ fn cached_repo(source: &str, rev: &str) -> Result<PathBuf> {
 
 /// Files under `path` at `rev`, plus the repo's licence when the skill
 /// folder has none of its own (a vendored skill keeps its licence text).
-fn upstream_files(source: &str, rev: &str, path: &str) -> Result<Vec<SkillFile>> {
+pub(crate) fn upstream_files(source: &str, rev: &str, path: &str) -> Result<Vec<SkillFile>> {
     let dir = cached_repo(source, rev)?;
     let prefix = format!("{}/", path.trim_end_matches('/'));
     let mut entries = ls_tree(&dir, rev, &[path])?;
