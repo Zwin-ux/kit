@@ -190,12 +190,11 @@ impl Default for DispatchForm {
     fn default() -> Self {
         Self {
             repos: seed_dispatch_repos(),
-            agents: vec![
-                ("codex".into(), true),
-                ("claude".into(), false),
-                ("grok".into(), false),
-                ("ollama".into(), false),
-            ],
+            // Kit's preference order, as `kit run` picks its default agent.
+            agents: AGENT_ORDER
+                .iter()
+                .map(|a| ((*a).to_string(), *a == AGENT_ORDER[0]))
+                .collect(),
             personas: default_persona_toggles(),
             task: String::new(),
             focus: DispatchFocus::Repos,
@@ -203,6 +202,9 @@ impl Default for DispatchForm {
         }
     }
 }
+
+/// Agent preference order: Dispatch lists and the header strip follow it.
+pub const AGENT_ORDER: [&str; 4] = ["claude", "codex", "grok", "ollama"];
 
 /// Seed Dispatch repos: cwd first (selected), then parent git siblings.
 ///
@@ -382,6 +384,11 @@ pub struct App {
     pub agents_probe: Vec<(String, bool)>,
     /// Control Room table filter (`f`).
     pub run_filter: RunFilter,
+    /// Where receipts live. A run's diff is read from `<id>/diff.patch` here
+    /// once its terminal state is out: the engine writes the receipt first.
+    pub runs_dir: Option<PathBuf>,
+    /// `q` was pressed once with runs in flight; a second `q` stops them.
+    quit_armed: bool,
 }
 
 /// Shown when `k` / `r` land on a `--demo` fixture row.
@@ -510,6 +517,28 @@ impl RunRow {
     }
 
     /// Append an output chunk, keeping the tail within the display cap.
+    /// Read the receipt's `diff.patch` for the Diff pane, bounded like the
+    /// stream. A missing file (a run killed before it started) leaves it empty.
+    pub fn load_diff(&mut self, runs_dir: &Path) {
+        let Ok(bytes) = std::fs::read(runs_dir.join(&self.id.0).join("diff.patch")) else {
+            return;
+        };
+        let text = String::from_utf8_lossy(&bytes);
+        self.diff = if text.len() > OUTPUT_DISPLAY_CAP_BYTES {
+            let mut end = OUTPUT_DISPLAY_CAP_BYTES;
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!(
+                "{}\n… diff cut at {} KiB; the receipt has all of it\n",
+                &text[..end],
+                OUTPUT_DISPLAY_CAP_BYTES / 1024
+            )
+        } else {
+            text.into_owned()
+        };
+    }
+
     pub fn append_output(&mut self, chunk: &str) {
         self.output.push_str(chunk);
         if self.output.len() > OUTPUT_DISPLAY_CAP_BYTES {
@@ -572,18 +601,27 @@ impl App {
             help_open: false,
             agents_probe: Vec::new(),
             run_filter: RunFilter::All,
+            runs_dir: None,
+            quit_armed: false,
         }
     }
 
     /// Seed launch-time agent readiness (from `kit_agents::probe_all`).
-    pub fn set_agents_probe(&mut self, probe: Vec<(String, bool)>) {
+    pub fn set_agents_probe(&mut self, mut probe: Vec<(String, bool)>) {
+        let rank = |name: &str| {
+            AGENT_ORDER
+                .iter()
+                .position(|a| *a == name)
+                .unwrap_or(AGENT_ORDER.len())
+        };
+        probe.sort_by_key(|(name, _)| rank(name));
         self.agents_probe = probe;
         self.apply_dispatch_agent_defaults();
         self.dirty = true;
     }
 
     /// When a probe is present, select the first ready agent and deselect the rest.
-    /// Empty probe (tests / `--demo` without probe) keeps the form default (codex on).
+    /// Empty probe (tests / `--demo` without probe) keeps the form default (claude on).
     pub fn apply_dispatch_agent_defaults(&mut self) {
         if self.agents_probe.is_empty() {
             return;
@@ -782,9 +820,39 @@ impl App {
         }
     }
 
+    /// Real runs not yet ended. Quitting stops these, so it asks first.
+    pub fn active_run_ids(&self) -> Vec<RunId> {
+        self.runs
+            .iter()
+            .filter(|r| {
+                !r.demo
+                    && matches!(
+                        r.state,
+                        RunState::Queued | RunState::Running | RunState::Gating
+                    )
+            })
+            .map(|r| r.id.clone())
+            .collect()
+    }
+
     fn on_control_room_key(&mut self, key: KeyEvent) -> Action {
+        // The second `q` counts only while its warning is still showing.
+        let armed = std::mem::take(&mut self.quit_armed) && self.flash_message().is_some();
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') => {
+                let n = self.active_run_ids().len();
+                if n > 0 && !armed {
+                    self.quit_armed = true;
+                    let (runs, them) = if n == 1 {
+                        ("run", "it")
+                    } else {
+                        ("runs", "them")
+                    };
+                    self.set_flash(format!(
+                        "{n} {runs} still running · q again to stop {them} and quit"
+                    ));
+                    return Action::None;
+                }
                 self.should_quit = true;
                 Action::Quit
             }
@@ -956,12 +1024,23 @@ impl App {
             .map(str::to_string)
             .collect::<Vec<_>>();
         let personas = self.dispatch.selected_personas();
-        if repos.is_empty() || agents.is_empty() {
-            self.set_flash("select at least one repo and one agent");
-            return Action::None;
-        }
-        if personas.is_empty() {
-            self.set_flash("select at least one persona — eng / product / design / qa");
+        // Fan-out 0 says which list is empty and how to fill it.
+        let empty = if repos.is_empty() {
+            Some("no repo ticked — Tab to repos, Space to tick one")
+        } else if agents.is_empty()
+            && self.agents_ready_count() == 0
+            && !self.agents_probe.is_empty()
+        {
+            Some("no coding agent installed — run kit doctor")
+        } else if agents.is_empty() {
+            Some("no agent ticked — Tab to agents, Space to tick one")
+        } else if personas.is_empty() {
+            Some("no persona ticked — Tab to personas, Space to tick one")
+        } else {
+            None
+        };
+        if let Some(why) = empty {
+            self.set_flash(format!("fan-out 0: {why}"));
             return Action::None;
         }
         let n = repos.len() * agents.len() * personas.len();
@@ -998,6 +1077,8 @@ impl App {
             self.selected_id = Some(id);
         }
         self.screen = Screen::ControlRoom;
+        // The next dispatch starts from an empty prompt, never this one.
+        self.dispatch.task.clear();
         self.set_flash(format!("{n} run(s) queued — starting engine"));
         Action::DispatchSubmitted { jobs }
     }
@@ -1448,6 +1529,7 @@ impl App {
 
     fn apply_run_update(&mut self, id: RunId, delta: RunDelta) {
         let tick = self.clock.tick;
+        let runs_dir = self.runs_dir.clone();
         let row = if let Some(row) = self.runs.iter_mut().find(|r| r.id == id) {
             row
         } else {
@@ -1463,6 +1545,12 @@ impl App {
         match delta {
             RunDelta::State(state) => {
                 Self::transition_state(row, state, tick);
+                if state.is_terminal()
+                    && !row.demo
+                    && let Some(dir) = runs_dir
+                {
+                    row.load_diff(&dir);
+                }
             }
             RunDelta::Output(chunk) => {
                 row.append_output(&chunk);
@@ -1994,8 +2082,40 @@ mod tests {
         let id = RunId("01TESTRUN00000000000000000".into());
         app.update(AppEvent::RunUpdate(id, RunDelta::State(RunState::Running)));
         assert_eq!(app.running_count(), 1);
+        // A run is live: the first `q` asks, the second quits.
+        assert_eq!(app.update(key('q')), Action::None);
         assert_eq!(app.update(key('q')), Action::Quit);
         assert!(app.should_quit);
+    }
+
+    /// With runs in flight, the first `q` warns; only a second `q` quits.
+    /// Any other key in between disarms it.
+    #[test]
+    fn quit_with_runs_in_flight_asks_first() {
+        let mut app = App::with_motion(false);
+        let id = RunId("01LIVE00000000000000000000".into());
+        app.upsert_run(RunRow::new(id.clone(), "shop", "claude", "edit"));
+        app.update(AppEvent::RunUpdate(
+            id.clone(),
+            RunDelta::State(RunState::Running),
+        ));
+
+        assert_eq!(app.update(key('q')), Action::None);
+        assert!(!app.should_quit);
+        assert_eq!(
+            app.flash_message(),
+            Some("1 run still running · q again to stop it and quit")
+        );
+        app.update(code(KeyCode::Down));
+        assert_eq!(app.update(key('q')), Action::None, "Down disarmed it");
+        assert_eq!(app.update(key('q')), Action::Quit);
+        assert_eq!(app.active_run_ids(), vec![id.clone()]);
+
+        // Nothing in flight: one `q` quits.
+        let mut app = App::with_motion(false);
+        app.upsert_run(RunRow::new(id.clone(), "shop", "claude", "edit"));
+        app.update(AppEvent::RunUpdate(id, RunDelta::State(RunState::Pass)));
+        assert_eq!(app.update(key('q')), Action::Quit);
     }
 
     #[test]
@@ -2023,6 +2143,28 @@ mod tests {
         app.selected_id = Some(pass_id.clone());
         app.update(AppEvent::RunUpdate(run_id, RunDelta::State(RunState::Pass)));
         assert_eq!(app.selected_id.as_ref(), Some(&pass_id));
+    }
+
+    /// A real run's Diff pane shows the receipt's diff.patch once it ends.
+    #[test]
+    fn finished_run_loads_its_diff_from_the_receipt() {
+        let dir = std::env::temp_dir().join(format!("kit-tui-diff-{}", std::process::id()));
+        let id = RunId("01DIFF00000000000000000000".into());
+        std::fs::create_dir_all(dir.join(&id.0)).unwrap();
+        let patch = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n";
+        std::fs::write(dir.join(&id.0).join("diff.patch"), patch).unwrap();
+
+        let mut app = App::with_motion(false);
+        app.runs_dir = Some(dir.clone());
+        app.upsert_run(RunRow::new(id.clone(), "shop", "claude", "edit x"));
+        app.update(AppEvent::RunUpdate(
+            id.clone(),
+            RunDelta::State(RunState::Gating),
+        ));
+        assert_eq!(app.runs[0].diff, "", "not before the run ends");
+        app.update(AppEvent::RunUpdate(id, RunDelta::State(RunState::Pass)));
+        assert_eq!(app.runs[0].diff, patch);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -2351,7 +2493,7 @@ mod tests {
                 assert_eq!(source_id, fail_id);
                 assert!(job.task.contains("Previous gate failure"));
                 assert_eq!(
-                    job.task.matches("# Kit persona:").count(),
+                    job.task.matches("\n---\nRole (").count(),
                     1,
                     "retry must wrap the persona brief once: {}",
                     job.task
@@ -2470,6 +2612,73 @@ mod tests {
         assert_eq!(format_repo_label("/tmp/guardian", Some(&cwd)), "guardian");
     }
 
+    /// Agents read in Kit's preference order, whatever order the probe used.
+    #[test]
+    fn agents_follow_the_preference_order() {
+        let mut app = App::with_motion(false);
+        let names = |app: &App| {
+            app.dispatch
+                .agents
+                .iter()
+                .map(|(n, _)| n.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(&app), AGENT_ORDER);
+        app.set_agents_probe(vec![
+            ("codex".into(), true),
+            ("claude".into(), true),
+            ("grok".into(), false),
+            ("ollama".into(), false),
+        ]);
+        assert!(app.agents_strip().starts_with("claude·codex ready"));
+        assert!(
+            app.dispatch
+                .agents
+                .iter()
+                .any(|(n, on)| n == "claude" && *on)
+        );
+    }
+
+    /// After a dispatch the task field is empty: typing never appends to the
+    /// last prompt.
+    #[test]
+    fn dispatch_clears_the_task_after_submit() {
+        let mut app = App::with_motion(false);
+        app.update(key('d'));
+        app.dispatch.task = "add sub()".into();
+        assert!(matches!(
+            app.update(code(KeyCode::Enter)),
+            Action::DispatchSubmitted { .. }
+        ));
+        app.update(key('d'));
+        assert_eq!(app.dispatch.task, "");
+    }
+
+    /// Enter at fan-out 0 says which list is empty.
+    #[test]
+    fn fanout_zero_says_why() {
+        let mut app = App::with_motion(false);
+        app.update(key('d'));
+        for (_, on) in &mut app.dispatch.agents {
+            *on = false;
+        }
+        app.dispatch.task = "x".into();
+        assert_eq!(app.update(code(KeyCode::Enter)), Action::None);
+        assert_eq!(
+            app.flash_message(),
+            Some("fan-out 0: no agent ticked — Tab to agents, Space to tick one")
+        );
+        app.set_agents_probe(vec![("claude".into(), false)]);
+        for (_, on) in &mut app.dispatch.agents {
+            *on = false;
+        }
+        app.update(code(KeyCode::Enter));
+        assert_eq!(
+            app.flash_message(),
+            Some("fan-out 0: no coding agent installed — run kit doctor")
+        );
+    }
+
     #[test]
     fn dispatch_agent_defaults_select_first_ready() {
         let mut app = App::with_motion(false);
@@ -2477,8 +2686,8 @@ mod tests {
             app.dispatch
                 .agents
                 .iter()
-                .any(|(n, on)| n == "codex" && *on),
-            "empty probe keeps the codex default"
+                .any(|(n, on)| n == "claude" && *on),
+            "empty probe keeps the claude default"
         );
         app.set_agents_probe(vec![("codex".into(), false), ("claude".into(), true)]);
         app.apply_dispatch_agent_defaults();
@@ -2551,13 +2760,14 @@ mod tests {
             Action::DispatchSubmitted { jobs } => {
                 assert_eq!(jobs.len(), 3);
                 assert!(jobs.iter().all(|j| j.agent == "grok"));
-                assert!(jobs.iter().all(|j| j.task.contains("# Kit persona:")));
-                assert!(jobs.iter().any(|j| j.task.contains("persona: product")));
-                assert!(jobs.iter().any(|j| j.task.contains("persona: design")));
-                assert!(jobs.iter().any(|j| j.task.contains("persona: eng")));
+                assert!(jobs.iter().all(|j| j.task.contains("\n---\nRole (")));
+                assert!(jobs.iter().any(|j| j.task.contains("Role (product)")));
+                assert!(jobs.iter().any(|j| j.task.contains("Role (design)")));
+                assert!(jobs.iter().any(|j| j.task.contains("Role (eng)")));
+                // The user's task leads: it titles the receipt and the land commit.
                 assert!(
                     jobs.iter()
-                        .all(|j| j.task.contains("## Task\nempty room first paint"))
+                        .all(|j| j.task.lines().next() == Some("empty room first paint"))
                 );
             }
             other => panic!("expected DispatchSubmitted, got {other:?}"),

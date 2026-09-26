@@ -4,8 +4,8 @@ expression: frame
 ---
 "KIT / DISPATCH                                                         fan-out 3"
 "┌ repos (space) ───┐┌ agents (space) ────────────┐┌ personas (space) ──────────┐"
-"│  [x] kit         ││  [x] codex                 ││▶ [x] eng                   │"
-"│                  ││  [ ] claude                ││  [x] product               │"
+"│  [x] kit         ││  [x] claude                ││▶ [x] eng                   │"
+"│                  ││  [ ] codex                 ││  [x] product               │"
 "│                  ││  [ ] grok                  ││  [x] design                │"
 "│                  ││  [ ] ollama                ││  [ ] qa                    │"
 "│                  ││                            ││                            │"
