@@ -384,6 +384,9 @@ pub struct App {
     pub run_filter: RunFilter,
 }
 
+/// Shown when `k` / `r` land on a `--demo` fixture row.
+const DEMO_ROW_FLASH: &str = "demo row — press d to dispatch a real run";
+
 /// One run as the Control Room / detail view-model (TUI-local).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunRow {
@@ -409,6 +412,8 @@ pub struct RunRow {
     pub output_truncated: bool,
     /// Unified diff text. Empty until seeded / receipt / future contract delta.
     pub diff: String,
+    /// `--demo` fixture row. Never reaches the engine: `k` / `r` only flash.
+    pub demo: bool,
 }
 
 impl RunRow {
@@ -433,6 +438,7 @@ impl RunRow {
             output: String::new(),
             output_truncated: false,
             diff: String::new(),
+            demo: false,
         }
     }
 
@@ -1218,6 +1224,10 @@ impl App {
             self.set_flash("no run selected");
             return Action::None;
         };
+        if row.demo {
+            self.set_flash(DEMO_ROW_FLASH);
+            return Action::None;
+        }
         if !row.state.is_active() {
             self.set_flash("run already finished");
             return Action::None;
@@ -1234,6 +1244,10 @@ impl App {
             self.set_flash("no run selected");
             return Action::None;
         };
+        if row.demo {
+            self.set_flash(DEMO_ROW_FLASH);
+            return Action::None;
+        }
         if row.state != RunState::Fail {
             self.set_flash("retry only for failed (gate) runs");
             return Action::None;
@@ -1597,6 +1611,12 @@ impl App {
         r3.seq = 3;
         let fail_id = r3.id.clone();
         self.upsert_run(r3);
+
+        // Fixture rows are for looking at; a real `k` / `r` would start a billable
+        // run in the launch repo with the fixture brief.
+        for row in &mut self.runs {
+            row.demo = true;
+        }
 
         // Product moment: land on FAIL so gate wash + `r` retry are visible immediately.
         self.selected_id = Some(fail_id);
@@ -2158,10 +2178,45 @@ mod tests {
         );
     }
 
+    /// `--demo` fixture rows must never start, kill or retry a real run (G1).
+    #[test]
+    fn demo_rows_never_reach_the_engine() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let before = app.runs.len();
+        for state in [RunState::Running, RunState::Fail] {
+            let id = app
+                .runs
+                .iter()
+                .find(|r| r.state == state)
+                .map(|r| r.id.clone())
+                .expect("fixture has the state");
+            app.selected_id = Some(id);
+            for k in ['k', 'r'] {
+                assert_eq!(app.update(key(k)), Action::None, "{k} on {state:?}");
+                assert!(
+                    app.flash_message()
+                        .is_some_and(|m| m.contains("demo row") && m.contains("press d")),
+                    "{k} on a demo row must teach d: {:?}",
+                    app.flash_message()
+                );
+            }
+        }
+        assert_eq!(app.runs.len(), before, "no retry row was queued");
+    }
+
+    /// Engine rows (not fixtures) keep the real kill / retry path.
+    fn load_fixture_as_engine_rows(app: &mut App) {
+        app.load_prd_fixture();
+        for row in &mut app.runs {
+            row.demo = false;
+        }
+    }
+
     #[test]
     fn engine_keys_emit_actions_with_flash() {
         let mut app = App::with_motion(false);
-        app.load_prd_fixture();
+        load_fixture_as_engine_rows(&mut app);
         // Demo fixture selects FAIL first — pick a Running row for kill.
         let running_id = app
             .runs
@@ -2236,7 +2291,7 @@ mod tests {
     #[test]
     fn retry_rejects_non_fail() {
         let mut app = App::with_motion(false);
-        app.load_prd_fixture();
+        load_fixture_as_engine_rows(&mut app);
         // Demo selects FAIL — force a Running selection so retry is rejected.
         let running_id = app
             .runs
