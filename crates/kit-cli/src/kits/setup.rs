@@ -53,7 +53,7 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
 
     // Screen 1: welcome and detection.
     if !json {
-        println!("Kit sets your coding agents up for a job, and proves what they do.\n");
+        println!("Kit sets your coding agents up for one job, then proves what they do.\n");
         println!("Looking for agents on this machine…");
     }
     let mut found = Vec::new();
@@ -61,10 +61,15 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
     for agent in Agent::ALL {
         let st = kit_agents::adapter(kind(agent)).probe().await;
         let (version, login) = if st.installed {
-            let login = if st.authenticated {
-                "logged in"
-            } else {
-                "not logged in"
+            // The same three words as `kit doctor`.
+            let unchecked = st
+                .remedy
+                .as_deref()
+                .is_some_and(|r| r.starts_with("login not checked"));
+            let login = match (st.authenticated, unchecked) {
+                (true, false) => "logged in",
+                (true, true) => "login not checked",
+                (false, _) => "not logged in",
             };
             (short_version(st.version.as_deref()).to_string(), login)
         } else {
@@ -316,7 +321,13 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         if let Some(first) = agents.iter().find(|a| found.contains(a)) {
             println!("  {} \"{example}\"", first.id());
         }
-        println!("  kit run \"{example}\"   (in its own worktree, proven by your checks)");
+        match &scope {
+            Scope::Repo(root) if !root.join("kit.toml").exists() => {
+                println!("  kit init   (the checks that prove a run; kit run needs them)");
+                println!("  kit run \"{example}\"   (in its own worktree)");
+            }
+            _ => println!("  kit run \"{example}\"   (in its own worktree, proven by your checks)"),
+        }
     }
     if tty {
         // The fox, resting, signs off after the last step. Terminals only.
@@ -328,11 +339,22 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
     Ok(())
 }
 
-/// Bare `kit` with no saved setup, in a terminal: run setup first.
+/// Bare `kit` with no saved setup, in a terminal: run setup first. Someone
+/// who already added a kit or ran `kit run` is past that, so they get the
+/// Control Room.
 pub fn first_run() -> bool {
     std::io::stdin().is_terminal()
         && std::io::stdout().is_terminal()
         && !super::config::path().exists()
+        && !used_before()
+}
+
+fn used_before() -> bool {
+    let has_entries =
+        |dir: std::path::PathBuf| std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_some());
+    has_entries(crate::engine::paths::runs_dir())
+        || has_entries(crate::engine::paths::kit_home().join("repos"))
+        || crate::engine::paths::kit_home().join("kit.lock").exists()
 }
 
 /// `2.1.283 (Claude Code)` → `2.1.283`: the name is already on the line.

@@ -5,7 +5,7 @@
 use super::common::{
     draw_empty_state, draw_footer, draw_header, draw_too_small, too_small, truncate,
 };
-use crate::app::{App, RunRow, format_gate_label, format_state_label};
+use crate::app::{App, RunFilter, RunRow, format_gate_label, format_state_label};
 use crate::theme::Theme;
 use kit_core::RunState;
 use ratatui::Frame;
@@ -53,25 +53,80 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Vec::new()
         };
         draw_empty_state(frame, chunks[1], &theme, &fox, message, hint);
+    } else if app.display_order().is_empty() {
+        // A filter left on must say it is hiding runs.
+        draw_empty_state(
+            frame,
+            chunks[1],
+            &theme,
+            &[],
+            filtered_out_message(app.run_filter),
+            "press f to change the filter",
+        );
     } else {
         draw_table(frame, app, chunks[1], &theme);
     }
 
-    draw_footer(
-        frame,
-        chunks[2],
-        &theme,
-        " [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate  [k]ill  [r]etry  [?]help",
-        "",
-    );
+    draw_footer(frame, chunks[2], &theme, &footer_hints(app), "");
 }
 
-/// Header counts first, then the agent strip, longest form that fits.
+/// Footer keys for what is selected: no `[k]ill` on a past run, and
+/// `[l]and` on a proven run with changes.
+fn footer_hints(app: &App) -> String {
+    let selected = app.selected_run();
+    let mut hints =
+        String::from(" [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate");
+    if !selected.is_some_and(|r| r.past) {
+        hints.push_str("  [k]ill");
+    }
+    hints.push_str("  [r]etry");
+    if selected.is_some_and(RunRow::landable) {
+        hints.push_str("  [l]and");
+    }
+    hints.push_str("  [?]help");
+    hints
+}
+
+fn filtered_out_message(filter: RunFilter) -> &'static str {
+    match filter {
+        RunFilter::Fail => "No failed runs",
+        RunFilter::Running => "No runs in flight",
+        RunFilter::Done => "No finished runs",
+        RunFilter::All => "No runs",
+    }
+}
+
+/// Header stats: the agent strip (when it fits), then the counts. The
+/// counts are right-aligned and their form depends on the width alone, so a
+/// flash that fits beside them comes and goes without moving them; only the
+/// strip gives way to it.
 ///
 /// `draw_header` drops the stats whole when title + stats overflow, so this
-/// picks a form that fits: queued runs are counted whenever there are any
-/// (16 dispatched never reads as 8), and the counts outlive the strip.
+/// picks a form that fits. Queued runs are counted whenever there are any
+/// (16 dispatched never reads as 8); counts are this session's runs, with
+/// past runs from receipts as `· N past`. In `--demo` the strip is hidden:
+/// it describes this machine, not the fixture rows.
 fn header_stats(app: &App, width: usize) -> String {
+    let title = TITLE.chars().count() + 2;
+    // A live flash carries the next action.
+    let flash = app
+        .flash_message()
+        .map_or(0, |f| format!("  · {f}").chars().count());
+    let strips: Vec<String> = if app.demo {
+        Vec::new()
+    } else {
+        [app.agents_strip(), app.agents_strip_short()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
+    if app.runs.is_empty()
+        && let Some(strip) = strips
+            .iter()
+            .find(|s| title + s.chars().count() + flash <= width)
+    {
+        return strip.clone();
+    }
     let filter = app.run_filter.label();
     let (r, q, g, f) = (
         app.running_count(),
@@ -79,64 +134,52 @@ fn header_stats(app: &App, width: usize) -> String {
         app.gated_count(),
         app.fail_count(),
     );
-    // A live flash carries the next action, so it wins: room for all of it
-    // first, then the longest stats that still fit beside it (maybe none).
-    let flash = app
-        .flash_message()
-        .map_or(0, |f| format!("  · {f}").chars().count());
-    let fits =
-        |s: &str| s.is_empty() || TITLE.chars().count() + 2 + s.chars().count() + flash <= width;
-    let strips = [app.agents_strip(), app.agents_strip_short()];
-    if app.runs.is_empty()
-        && let Some(strip) = strips.iter().find(|s| !s.is_empty() && fits(s))
-    {
-        return strip.clone();
-    }
-    let queued_wide = if q > 0 {
-        format!("{q} QUEUED  ")
+    let (queued_wide, queued_short) = if q > 0 {
+        (format!("{q} QUEUED  "), format!("{q}Q "))
+    } else {
+        (String::new(), String::new())
+    };
+    let past = if app.past_total > 0 {
+        format!("  ·  {} past", app.past_total)
     } else {
         String::new()
     };
-    let queued_short = if q > 0 {
-        format!("{q}Q ")
+    let wide = format!("[{filter}]  {r} RUNNING  {queued_wide}{g} GATING  {f} FAIL{past}");
+    let short = format!("[{filter}] {r}R {queued_short}{g}G {f}F{past}");
+    let counts = if title + wide.chars().count() <= width {
+        wide
     } else {
-        String::new()
+        short
     };
-    let wide = format!("[{filter}]  {r} RUNNING  {queued_wide}{g} GATING  {f} FAIL");
-    let short = format!("[{filter}] {r}R {queued_short}{g}G {f}F");
-    let mut candidates = Vec::new();
-    for counts in [&wide, &short] {
-        for strip in &strips {
-            if !strip.is_empty() {
-                candidates.push(format!("{counts}  ·  {strip}"));
-            }
-        }
-        candidates.push(counts.clone());
-    }
+    let counts_n = counts.chars().count();
     if flash > 0 {
-        // The flash lives 2 s; the counts come back when it goes.
-        candidates.push(String::new());
+        // Narrow terminals: a flash that cannot show whole beside the counts
+        // takes the line for its 2 s.
+        return if title + counts_n + flash <= width {
+            counts
+        } else {
+            String::new()
+        };
     }
-    candidates.into_iter().find(|s| fits(s)).unwrap_or(short)
+    strips
+        .iter()
+        .map(|strip| format!("{strip}  ·  {counts}"))
+        .find(|s| title + s.chars().count() <= width)
+        .unwrap_or(counts)
 }
 
 /// Empty Control Room copy — cold-start cockpit, not a blank form.
 fn empty_room_copy(app: &App) -> (&'static str, &'static str) {
     let ready = app.agents_ready_count();
-    if app.agents_probe.is_empty() {
-        (
-            "No runs yet",
-            "press d to dispatch  ·  kit --demo for fixture data  ·  ? help",
-        )
-    } else if ready == 0 {
+    if ready == 0 && !app.agents_probe.is_empty() {
         (
             "No coding agents on PATH",
-            "install codex / claude / grok / ollama  ·  kit doctor  ·  kit --demo",
+            "install claude, codex or grok  ·  kit doctor  ·  or try kit --demo",
         )
     } else {
         (
-            "Ready to dispatch",
-            "press d to fan out agents  ·  kit --demo to see FAIL + retry  ·  ? help",
+            "No runs yet",
+            "press d to give your agents a task  ·  ? help  ·  or try kit --demo",
         )
     }
 }
@@ -154,10 +197,15 @@ fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let order = app.display_order();
     let selected_id = app.selected_id.as_ref();
     // One group per run: its row, then its FAIL annotation if any.
-    let mut groups: Vec<Vec<Line>> = Vec::with_capacity(order.len());
+    let mut groups: Vec<Vec<Line>> = Vec::with_capacity(order.len() + 2);
     let mut selected_group = 0;
+    let mut past_shown = false;
     for &idx in &order {
         let run = &app.runs[idx];
+        if run.past && !past_shown {
+            past_shown = true;
+            groups.push(vec![divider_line(app, theme, inner.width as usize)]);
+        }
         let selected = selected_id.is_some_and(|id| *id == run.id);
         if selected {
             selected_group = groups.len();
@@ -167,11 +215,19 @@ fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
             group.push(annotation_line(
                 &summary,
                 selected,
+                run.past,
                 theme,
                 inner.width as usize,
             ));
         }
         groups.push(group);
+    }
+    let hidden = app.past_hidden();
+    if past_shown && hidden > 0 {
+        groups.push(vec![Line::from(Span::styled(
+            format!("  ↓ {hidden} more · kit receipt"),
+            theme.dim(),
+        ))]);
     }
 
     let budget = inner.height.saturating_sub(1) as usize; // column header
@@ -205,6 +261,22 @@ fn visible_groups(groups: &[Vec<Line>], selected: usize, budget: usize) -> (usiz
         end += 1;
     }
     (start, end.max((start + 1).min(groups.len())))
+}
+
+/// The muted rule between this session's runs and past runs from receipts.
+/// With nothing live above it, it also says what to do next.
+fn divider_line(app: &App, theme: &Theme, width: usize) -> Line<'static> {
+    let next = if app.no_live_runs() {
+        "  ·  d  give your agents a task"
+    } else {
+        ""
+    };
+    let text = truncate(&format!("── earlier · from receipts{next} "), width);
+    let fill = width.saturating_sub(text.chars().count());
+    Line::from(Span::styled(
+        format!("{text}{}", "─".repeat(fill)),
+        theme.dim(),
+    ))
 }
 
 fn overflow_line(above: usize, below: usize, theme: &Theme) -> Line<'static> {
@@ -291,32 +363,62 @@ fn data_line(
     theme: &Theme,
     widths: [usize; 5],
 ) -> Line<'static> {
-    let fail = matches!(run.state, RunState::Fail | RunState::Error);
+    let failed = matches!(run.state, RunState::Fail | RunState::Error);
+    // The wash marks what needs attention now; a past failure keeps its red
+    // words but not the band.
+    let fail = failed && !run.past;
     let marker = if selected { "▶ " } else { "  " };
     let repo = format!("{marker}{}", run.repo_name());
-    let state_label = format_state_label(run, &app.clock, app.motion_enabled());
+    let mut state_label = format_state_label(run, &app.clock, app.motion_enabled());
+    if run.past
+        && let Some(ended) = run.ended_at
+    {
+        // A past run shows its age where a live one shows elapsed time.
+        let aged = format!(
+            "{state_label} {}",
+            crate::past::format_age(ended, std::time::SystemTime::now())
+        );
+        if aged.chars().count() <= widths[3] {
+            state_label = aged;
+        }
+    }
     let gate_label = format_gate_label(run);
     let base = if fail {
         theme.fail_row(selected)
     } else if selected {
         theme.selected_row()
+    } else if run.past {
+        theme.dim()
     } else {
         theme.body()
     };
-    // FAIL rows are one solid wash: the state and gate colours sit on it.
-    let state_style = if fail {
-        base.patch(theme.state_style(run.state))
-    } else if selected {
-        theme.selected_row()
+    // NO CHANGES is amber: the checks passed, but proved nothing was done.
+    let own_state = if run.no_changes() {
+        theme.warn().add_modifier(Modifier::BOLD)
+    } else if run.past && !failed {
+        theme.dim()
     } else {
         theme.state_style(run.state)
     };
-    let gate_style = if fail {
-        base.patch(theme.gate_style(&gate_label))
+    let own_gate = if run.past && gate_label != "FAIL" {
+        theme.dim()
+    } else {
+        theme.gate_style(&gate_label)
+    };
+    // FAIL rows are one solid wash: the state and gate colours sit on it.
+    let state_style = if fail {
+        base.patch(own_state)
     } else if selected {
         theme.selected_row()
     } else {
-        theme.gate_style(&gate_label)
+        own_state
+    };
+    let gate_style = if fail {
+        base.patch(own_gate)
+    } else if selected {
+        theme.selected_row()
+    } else {
+        own_gate
     };
     let repo_cell = pad_cell(&repo, widths[0]);
     let mut spans = Vec::with_capacity(11);
@@ -351,6 +453,7 @@ fn data_line(
 fn annotation_line(
     summary: &str,
     selected: bool,
+    past: bool,
     theme: &Theme,
     inner_width: usize,
 ) -> Line<'static> {
@@ -364,7 +467,10 @@ fn annotation_line(
     );
     // Pad to the border so the wash is a band, not a highlight on the text.
     let text = format!("{text:<inner_width$}");
-    let style = if selected {
+    let style = if past {
+        // No wash under a past failure: the red words are enough.
+        theme.annotation()
+    } else if selected {
         theme.fail_row(true).add_modifier(Modifier::DIM)
     } else {
         // The wash's colour only: BOLD from the row plus DIM reads as neither.

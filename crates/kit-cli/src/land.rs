@@ -78,18 +78,27 @@ fn is_proven(r: &Receipt) -> bool {
 fn check_proof(r: &Receipt, force: bool, warnings: &mut Vec<String>) -> Result<()> {
     let id = &r.id;
     let state = format!("{:?}", r.state).to_ascii_lowercase();
-    let problem =
+    let short = id.0.get(..12).unwrap_or(&id.0);
+    let (problem, fix) =
         if r.state == RunState::Unconfigured || (r.state == RunState::Pass && !is_proven(r)) {
-            format!("run {id} has no gate checks (UNCONFIGURED), so nothing proved it")
+            (
+                format!("run {id} has no gate checks (UNCONFIGURED), so nothing proved it"),
+                "run `kit init`, then `kit run` again".to_string(),
+            )
         } else if r.state != RunState::Pass {
-            format!("run {id} is {state}, not pass. Kit lands only runs that pass the gate")
+            let what = match r.state {
+                RunState::Fail => "failed the gate".to_string(),
+                _ => format!("ended {state}"),
+            };
+            (
+                format!("run {id} {what}. Kit lands only runs that pass the gate"),
+                format!("see why with `kit receipt show {short} --output`, then `kit run` again"),
+            )
         } else {
             return Ok(());
         };
     if !force {
-        bail!(
-            "{problem}. Fix: run `kit init`, then `kit run` again. Or use --force to land it anyway"
-        );
+        bail!("{problem}. Next: {fix}. Or use --force to land it anyway");
     }
     let note = format!("FORCED: {problem}. Landed with --force");
     eprintln!("kit: {note}");

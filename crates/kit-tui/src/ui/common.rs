@@ -185,11 +185,11 @@ fn drop_footer_index(tokens: &[String]) -> Option<usize> {
     const ORDER: &[&str] = &[
         "[f]ilter",
         "[enter]",
-        "[a]ttach",
         "[3]diff",
         "[2]gate",
         "[1]stream",
         "[b]oard",
+        "[g]ate",
     ];
     for prefix in ORDER {
         if let Some(i) = tokens.iter().position(|t| t.trim().starts_with(prefix)) {
@@ -216,8 +216,10 @@ pub fn draw_empty_state(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let hint_style = theme.dim().add_modifier(Modifier::BOLD);
+    let hint_lines = wrap_hint(hint, inner.width as usize);
     let art_width = art.first().map_or(0, |l| l.chars().count());
-    let text_rows = 3; // gap, message, hint
+    let text_rows = 2 + hint_lines.len(); // gap, message, hint
     let need = art.len() + text_rows;
     let fits = !art.is_empty()
         && usize::from(inner.height) >= need
@@ -232,12 +234,32 @@ pub fn draw_empty_state(
         );
     }
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(message, theme.body())));
-    lines.push(Line::from(Span::styled(
-        hint,
-        theme.dim().add_modifier(Modifier::BOLD),
-    )));
+    lines.push(Line::from(Span::styled(message.to_string(), theme.body())));
+    lines.extend(
+        hint_lines
+            .into_iter()
+            .map(|l| Line::from(Span::styled(l, hint_style))),
+    );
     frame.render_widget(Paragraph::new(lines).centered(), inner);
+}
+
+/// A `  ·  `-separated hint as centred lines no wider than `width`: parts
+/// move to the next line whole, so a centred hint never clips.
+pub fn wrap_hint(hint: &str, width: usize) -> Vec<String> {
+    const SEP: &str = "  ·  ";
+    let mut lines: Vec<String> = Vec::new();
+    for part in hint.split(SEP) {
+        match lines.last_mut() {
+            Some(line)
+                if line.chars().count() + SEP.chars().count() + part.chars().count() <= width =>
+            {
+                line.push_str(SEP);
+                line.push_str(part);
+            }
+            _ => lines.push(truncate(part, width)),
+        }
+    }
+    lines
 }
 
 /// Centered help overlay (clear + bordered panel).
@@ -310,6 +332,21 @@ mod tests {
         for line in ["ok", "tests: ok (3)", "PASS  format", "check passed"] {
             assert_ne!(style_log_line(&theme, line), body, "{line}");
         }
+    }
+
+    #[test]
+    fn wrap_hint_moves_whole_parts_to_the_next_line() {
+        let hint = "press d to give your agents a task  ·  ? help  ·  or try kit --demo";
+        assert_eq!(wrap_hint(hint, 200), vec![hint.to_string()]);
+        let narrow = wrap_hint(hint, 58);
+        assert_eq!(
+            narrow,
+            vec![
+                "press d to give your agents a task  ·  ? help".to_string(),
+                "or try kit --demo".to_string()
+            ]
+        );
+        assert!(narrow.iter().all(|l| l.chars().count() <= 58));
     }
 
     #[test]

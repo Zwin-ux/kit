@@ -24,6 +24,7 @@ pub mod event;
 #[path = "loop.rs"]
 pub mod event_loop;
 pub mod fox;
+pub mod past;
 pub mod persona;
 pub mod theme;
 pub mod ui;
