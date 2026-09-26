@@ -63,9 +63,9 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
             let state = match (st.installed, st.authenticated) {
                 (false, _) => "not found".to_string(),
                 (true, auth) => format!(
-                    "{}{}",
-                    st.version.as_deref().unwrap_or("installed"),
-                    if auth { "" } else { "   not logged in" }
+                    "{}   {}",
+                    short_version(st.version.as_deref()),
+                    if auth { "logged in" } else { "not logged in" }
                 ),
             };
             println!("  {:12}  {state}", agent.title());
@@ -111,9 +111,14 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
             .filter(|(_, a)| preselect.contains(a))
             .map(|(i, _)| i)
             .collect();
+        let names = |opts: &[inquire::list_option::ListOption<&String>]| {
+            let titles: Vec<&str> = opts.iter().map(|o| Agent::ALL[o.index].title()).collect();
+            and_list(&titles)
+        };
         let picked = answered(
             inquire::MultiSelect::new("Which agents should Kit set up?", labels.clone())
                 .with_default(&defaults)
+                .with_formatter(&names)
                 .with_help_message("↑↓ move · space toggle · enter confirm · esc cancel")
                 .with_validator(|l: &[inquire::list_option::ListOption<&String>]| {
                     Ok(if l.is_empty() {
@@ -136,10 +141,20 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
     // Screen 3: focus.
     let kits: Vec<String> = if args.kit.is_empty() {
         let all = catalog::bundled()?;
-        // Job kits first; Essentials (the base of the others) last.
-        let mut order: Vec<&catalog::Kit> =
-            all.iter().filter(|k| k.name() != "essentials").collect();
-        order.extend(all.iter().filter(|k| k.name() == "essentials"));
+        // Job kits first, in the order people most often start with;
+        // Essentials (the base of the others) last.
+        const FIRST: &[&str] = &[
+            "frontend-design",
+            "fullstack-design",
+            "backend-engineer",
+            "llm-engineer",
+        ];
+        let rank = |k: &&catalog::Kit| match k.name() {
+            "essentials" => FIRST.len() + 1,
+            name => FIRST.iter().position(|f| *f == name).unwrap_or(FIRST.len()),
+        };
+        let mut order: Vec<&catalog::Kit> = all.iter().collect();
+        order.sort_by_key(|k| (rank(k), k.name().to_string()));
         let width = order
             .iter()
             .map(|k| k.manifest.kit.title.len())
@@ -154,15 +169,28 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
                 )
             })
             .collect();
-        let defaults: Vec<usize> = order
+        // What was picked last time, or the first kit on a first run.
+        let mut defaults: Vec<usize> = order
             .iter()
             .enumerate()
             .filter(|(_, k)| saved.kits.iter().any(|s| s == k.name()))
             .map(|(i, _)| i)
             .collect();
+        if defaults.is_empty() {
+            defaults.push(0);
+        }
+        let titles: Vec<&str> = order
+            .iter()
+            .map(|k| k.manifest.kit.title.as_str())
+            .collect();
+        let names = |opts: &[inquire::list_option::ListOption<&String>]| {
+            let picked: Vec<&str> = opts.iter().map(|o| titles[o.index]).collect();
+            and_list(&picked)
+        };
         let picked = answered(
             inquire::MultiSelect::new("What should your agents focus on?", labels)
                 .with_default(&defaults)
+                .with_formatter(&names)
                 .with_page_size(8)
                 .with_help_message("space toggle · enter confirm · see one with kit show <kit>")
                 .with_validator(|l: &[inquire::list_option::ListOption<&String>]| {
@@ -207,6 +235,13 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         let picked = answered(
             inquire::Select::new("Install for", options)
                 .with_starting_cursor(start)
+                .with_formatter(&|o| {
+                    if o.index == 0 {
+                        "All my projects".into()
+                    } else {
+                        "This repo only".into()
+                    }
+                })
                 .raw_prompt(),
         )?;
         match picked {
@@ -275,4 +310,21 @@ pub fn first_run() -> bool {
     std::io::stdin().is_terminal()
         && std::io::stdout().is_terminal()
         && !super::config::path().exists()
+}
+
+/// `2.1.283 (Claude Code)` → `2.1.283`: the name is already on the line.
+fn short_version(v: Option<&str>) -> &str {
+    match v {
+        Some(v) => v.split(" (").next().unwrap_or(v).trim(),
+        None => "installed",
+    }
+}
+
+/// "A", "A and B", "A, B and C".
+pub fn and_list(items: &[&str]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => (*one).to_string(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
 }

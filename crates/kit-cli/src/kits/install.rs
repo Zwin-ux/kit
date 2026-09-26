@@ -421,9 +421,9 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
     let who: Vec<&str> = agents.iter().map(|a| a.title()).collect();
     println!(
         "Done. {} {} {} in {}.",
-        who.join(" and "),
+        super::setup::and_list(&who),
         if who.len() == 1 { "has" } else { "have" },
-        titles.join(" and "),
+        super::setup::and_list(&titles),
         scope.label()
     );
     match super::lock::shared_path(scope) {
@@ -616,7 +616,7 @@ fn render_plan(
             "{} {}{extends}  →  {}, {}",
             meta.title,
             meta.version,
-            who.join(" and "),
+            super::setup::and_list(&who),
             scope.label()
         );
         let _ = writeln!(s, "{}", kit.level.label());
@@ -677,9 +677,16 @@ fn render_plan(
             let _ = writeln!(s, "            {name:width$}  {origin:owidth$}  {licence}");
         }
     }
+    let mut said = Vec::new();
     for (kit, a) in &p.todo {
         match a {
             Action::Skill { .. } => {}
+            // One agent skipped for several kits is said once.
+            Action::Skip { .. } if said.contains(&a.describe()) => {}
+            Action::Skip { .. } => {
+                let _ = writeln!(s, "{}", a.describe());
+                said.push(a.describe());
+            }
             Action::Rules { text, .. } => {
                 let _ = writeln!(s, "{}  + {} lines", a.describe(), text.lines().count());
             }

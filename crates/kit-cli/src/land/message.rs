@@ -98,9 +98,9 @@ pub fn print_text(r: &Receipt, repo: &Path, l: &Landed, worktree_removed: bool, 
         println!("  worktree  removed");
     }
     println!();
-    println!("Next: {next}");
+    println!("next      {next}");
     if let (Some(b), false) = (&l.branch, l.already) {
-        println!("  or:  git switch {b}");
+        println!("  or      git switch {b}");
     }
 }
 
