@@ -176,17 +176,31 @@ pub fn with_inferred(gate: &GateConfig, repo: &Path, kit_added: &[String]) -> Op
     Some(out)
 }
 
-/// The line a live run prints when `extra` commands Kit has no record of
-/// adding on this machine stop inference: kit.toml is committed, but the
-/// record of which lines a kit wrote stays with the machine that ran
-/// `kit add`, so a teammate's clone or CI runs the gate as written.
-pub fn inference_note(gate: &GateConfig, repo: &Path, kit_added: &[String]) -> Option<String> {
+/// The line a live run prints when kit.toml's `extra` lines are ones the
+/// repo's committed kit.lock (`team_added`) says a kit added, but this
+/// machine's record (`kit_added`) does not have: a teammate's clone or CI.
+/// A gate the user wrote gets no line. The team copy only picks the hint.
+pub fn inference_note(
+    gate: &GateConfig,
+    repo: &Path,
+    kit_added: &[String],
+    team_added: &[String],
+) -> Option<String> {
     let named = gate.format.is_some() || gate.typecheck.is_some() || gate.test.is_some();
-    if named || gate.extra.iter().all(|c| kit_added.contains(c)) || infer_gate(repo).is_empty() {
+    let unrecorded: Vec<&String> = gate
+        .extra
+        .iter()
+        .filter(|c| !kit_added.contains(c))
+        .collect();
+    if named
+        || unrecorded.is_empty()
+        || !unrecorded.iter().all(|c| team_added.contains(c))
+        || infer_gate(repo).is_empty()
+    {
         return None;
     }
     Some(
-        "gate: kit.toml has only extra checks this machine has no Kit record of adding, so it runs them as written and infers no format, typecheck or test checks. If a kit added them, `kit add <kit>` here brings the inferred checks back\n"
+        "gate: runs kit.toml as written, with no inferred format/typecheck/test checks (no Kit record of these extras on this machine; `kit add <kit>` restores them)\n"
             .into(),
     )
 }

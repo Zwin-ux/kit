@@ -293,28 +293,28 @@ fn a_user_written_gate_with_only_extra_runs_exactly_that_gate() {
         extra: vec!["make lint".into()],
         ..GateConfig::default()
     };
-    // No kit added it, or a kit added something else: nothing is inferred,
-    // and a live run says why (a clone or CI has no record of kit lines).
+    // No kit added it, or a kit added something else: nothing is inferred.
     assert_eq!(with_inferred(&mine, &root, &[]), None);
+    let lint = ["make lint".to_string()];
+    // Written by the user: no note, ever.
+    assert_eq!(inference_note(&mine, &root, &[], &[]), None);
+    // The team's kit.lock says a kit added it, but this machine has no
+    // record (a clone, CI): the run says why nothing is inferred.
     if on_path("cargo") {
-        let note = inference_note(&mine, &root, &[]).expect("a note");
+        let note = inference_note(&mine, &root, &[], &lint).expect("a note");
         assert!(
-            note.contains("no Kit record") && note.contains("`kit add <kit>`"),
+            note.contains("runs kit.toml as written") && note.contains("`kit add <kit>`"),
             "{note}"
         );
     }
-    let kits = ["make lint".to_string()];
-    assert_eq!(
-        inference_note(&mine, &root, &kits),
-        None,
-        "recorded: inferred, no note"
-    );
+    // Recorded on this machine: inferred, so no note.
+    assert_eq!(inference_note(&mine, &root, &lint, &lint), None);
     let own = GateConfig {
         test: Some("make test".into()),
         ..mine.clone()
     };
     assert_eq!(
-        inference_note(&own, &root, &[]),
+        inference_note(&own, &root, &[], &lint),
         None,
         "a named check: as written"
     );

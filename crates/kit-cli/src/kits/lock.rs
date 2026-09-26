@@ -239,6 +239,34 @@ pub fn kit_gate_commands(repo: &Path) -> Vec<String> {
         .collect()
 }
 
+/// The gate commands the repo's committed kit.lock (the team copy) says
+/// kits added to kit.toml. Untrusted: only ever used to decide whether to
+/// show a hint, never to change what runs.
+pub fn team_gate_commands(repo: &Path) -> Vec<String> {
+    let Some(root) = super::install::repo_root(repo) else {
+        return Vec::new();
+    };
+    let file = root.join("kit.lock");
+    if std::fs::symlink_metadata(&file).is_ok_and(|m| !m.is_file()) {
+        return Vec::new();
+    }
+    let Some(doc) = std::fs::read_to_string(&file)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+    else {
+        return Vec::new();
+    };
+    doc["kits"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|k| k["applied"].as_array().into_iter().flatten())
+        .filter(|a| a["kind"] == "gate_toml" && a["file"] == "kit.toml")
+        .flat_map(|a| a["added"].as_array().into_iter().flatten())
+        .filter_map(|c| c.as_str().map(str::to_string))
+        .collect()
+}
+
 /// `path` relative to the scope's root, with `/` separators.
 fn relative(path: &Path, scope: &Scope) -> Result<PathBuf> {
     let rel = path.strip_prefix(base(scope)).with_context(|| {

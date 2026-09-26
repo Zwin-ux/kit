@@ -256,7 +256,15 @@ async fn agent_and_gate(
     } else {
         crate::kits::lock::kit_gate_commands(repo)
     };
-    if !use_dry && let Some(line) = super::infer::inference_note(&config.gate, repo, &kit_added) {
+    let team_added = if use_dry {
+        Vec::new()
+    } else {
+        crate::kits::lock::team_gate_commands(repo)
+    };
+    if !use_dry
+        && let Some(line) =
+            super::infer::inference_note(&config.gate, repo, &kit_added, &team_added)
+    {
         append_capped(output, truncated, cap, &line);
         send(tx, id, RunDelta::Output(line)).await;
     }
