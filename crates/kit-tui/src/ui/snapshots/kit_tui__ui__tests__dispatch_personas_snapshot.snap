@@ -6,7 +6,7 @@ expression: frame
 "┌ repos (space) ───┐┌ agents (space) ────────────┐┌ personas (space) ──────────┐"
 "│  [x] kit         ││  [x] claude                ││▶ [x] eng                   │"
 "│                  ││  [ ] codex                 ││  [x] product               │"
-"│                  ││  [ ] grok                  ││  [x] design                │"
+"│                  ││  [ ] grok  needs KIT_FULL_…││  [x] design                │"
 "│                  ││  [ ] ollama                ││  [ ] qa                    │"
 "│                  ││                            ││                            │"
 "│                  ││                            ││                            │"

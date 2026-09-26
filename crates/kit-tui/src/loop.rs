@@ -37,7 +37,8 @@ pub struct LaunchConfig {
     pub engine_tx: Option<mpsc::Sender<crate::app::EngineCommand>>,
     /// When true (default for interactive launch), probe coding agents for the header strip.
     pub probe_agents: bool,
-    /// Where the engine writes receipts; the Diff pane reads finished runs from it.
+    /// Where the engine writes receipts. The Diff pane reads finished runs
+    /// from it, and past runs are listed from it at launch (not in `demo`).
     pub runs_dir: Option<std::path::PathBuf>,
 }
 
@@ -65,6 +66,9 @@ pub async fn run_configured(
     app.runs_dir = config.runs_dir;
     if config.demo {
         app.load_prd_fixture();
+    } else if let Some(dir) = app.runs_dir.clone() {
+        // Every run, not only this session's: finished runs from receipts.
+        app.load_past_runs(&dir);
     }
     let result = run_with_terminal(&mut terminal, app, run_rx, config.engine_tx).await;
     restore_terminal(&mut terminal)?;

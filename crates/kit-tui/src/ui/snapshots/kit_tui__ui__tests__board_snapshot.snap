@@ -2,7 +2,7 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / BOARD  · FAIL · enter open · r retry                       2 open  3 total"
+"KIT / BOARD  · enter open · r retry                              2 open  3 total"
 "┌ queue ───────────────────────────────────────────────────────────────────────┐"
 "│#        TASK                          REPO           ROLE         STATE      │"
 "│▶ 1      port guard.js                 kit            codex·eng    OPEN       │"
@@ -15,4 +15,4 @@ expression: frame
 "│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" [esc] back  [n]ew  [enter] dispatch  [space] done  [x] remove  prefill-only 1.0"
+" [esc] back  [n]ew  [enter] dispatch  [space] done  [x] remove                  "

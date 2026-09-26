@@ -392,6 +392,13 @@ pub struct App {
     pub runs_dir: Option<PathBuf>,
     /// `q` was pressed once with runs in flight; a second `q` stops them.
     quit_armed: bool,
+    /// Showing the `--demo` fixture: the header's agent strip describes this
+    /// machine, not the fixture rows, so it is hidden.
+    pub demo: bool,
+    /// `KIT_FULL_AUTO` is set, so agents that always approve may run.
+    pub full_auto: bool,
+    /// Receipts on disk at launch (the table lists the newest few).
+    pub past_total: usize,
 }
 
 /// Shown when `k` / `r` land on a `--demo` fixture row.
@@ -424,6 +431,14 @@ pub struct RunRow {
     pub diff: String,
     /// `--demo` fixture row. Never reaches the engine: `k` / `r` only flash.
     pub demo: bool,
+    /// Read from a receipt at launch: finished before this session, read-only
+    /// (Enter opens it, `r` runs it again, `k` has nothing to stop).
+    pub past: bool,
+    /// When a past run ended; the STATE column shows its age.
+    pub ended_at: Option<std::time::SystemTime>,
+    /// The receipt's diff has been read, so an empty `diff` means the agent
+    /// changed nothing (not that the receipt is still being written).
+    pub diff_checked: bool,
 }
 
 impl RunRow {
@@ -449,7 +464,26 @@ impl RunRow {
             output_truncated: false,
             diff: String::new(),
             demo: false,
+            past: false,
+            ended_at: None,
+            diff_checked: false,
         }
+    }
+
+    /// The gate passed, but the agent changed no files: nothing to land.
+    pub fn no_changes(&self) -> bool {
+        self.state == RunState::Pass && self.diff_checked && self.diff.trim().is_empty()
+    }
+
+    /// A proven run with changes: `kit land` can take it.
+    pub fn landable(&self) -> bool {
+        self.state == RunState::Pass
+            && !self.demo
+            && !self.diff.trim().is_empty()
+            && self
+                .gate
+                .as_ref()
+                .is_none_or(|g| g.passed && !g.is_vacuous())
     }
 
     /// Live or frozen elapsed label for the STATE column.
@@ -523,10 +557,19 @@ impl RunRow {
     /// Read the receipt's `diff.patch` for the Diff pane, bounded like the
     /// stream. A missing file (a run killed before it started) leaves it empty.
     pub fn load_diff(&mut self, runs_dir: &Path) {
-        let Ok(bytes) = std::fs::read(runs_dir.join(&self.id.0).join("diff.patch")) else {
+        let dir = runs_dir.join(&self.id.0);
+        let Ok(bytes) = std::fs::read(dir.join("diff.patch")) else {
+            // The engine writes no diff.patch for an empty diff; once the
+            // receipt is there, a missing patch means no changes.
+            self.diff_checked = dir.join("receipt.json").is_file();
             return;
         };
-        let text = String::from_utf8_lossy(&bytes);
+        self.set_diff(&String::from_utf8_lossy(&bytes));
+    }
+
+    /// Set the Diff pane text, bounded like the stream.
+    pub fn set_diff(&mut self, text: &str) {
+        self.diff_checked = true;
         self.diff = if text.len() > OUTPUT_DISPLAY_CAP_BYTES {
             let mut end = OUTPUT_DISPLAY_CAP_BYTES;
             while !text.is_char_boundary(end) {
@@ -538,7 +581,7 @@ impl RunRow {
                 OUTPUT_DISPLAY_CAP_BYTES / 1024
             )
         } else {
-            text.into_owned()
+            text.to_string()
         };
     }
 
@@ -606,7 +649,42 @@ impl App {
             run_filter: RunFilter::All,
             runs_dir: None,
             quit_armed: false,
+            demo: false,
+            full_auto: kit_agents::full_auto(),
+            past_total: 0,
         }
+    }
+
+    /// Seed the table with finished runs from receipts (not in `--demo`).
+    /// They sit under the live rows, newest first; the selection starts on
+    /// the newest one when nothing live is selected.
+    pub fn load_past_runs(&mut self, runs_dir: &Path) {
+        let past = crate::past::load(runs_dir, crate::past::PAST_CAP);
+        self.past_total = past.total;
+        for mut row in past.rows {
+            row.seq = self.runs.len() as u64;
+            if self.selected_id.is_none() {
+                self.selected_id = Some(row.id.clone());
+            }
+            self.runs.push(row);
+        }
+        self.dirty = true;
+    }
+
+    /// Past runs on disk that the table does not list.
+    pub fn past_hidden(&self) -> usize {
+        let shown = self.runs.iter().filter(|r| r.past).count();
+        self.past_total.saturating_sub(shown)
+    }
+
+    /// No run dispatched or watched in this session (past rows aside).
+    pub fn no_live_runs(&self) -> bool {
+        self.runs.iter().all(|r| r.past)
+    }
+
+    /// Why an agent cannot be ticked in Dispatch, if it cannot.
+    pub fn agent_blocked(&self, agent: &str) -> Option<&'static str> {
+        (agent == "grok" && !self.full_auto).then_some("needs KIT_FULL_AUTO")
     }
 
     /// Seed launch-time agent readiness (from `kit_agents::probe_all`).
@@ -632,7 +710,7 @@ impl App {
         let first_ready = self
             .agents_probe
             .iter()
-            .find(|(_, ok)| *ok)
+            .find(|(n, ok)| *ok && self.agent_blocked(n).is_none())
             .map(|(n, _)| n.clone());
         for (name, on) in &mut self.dispatch.agents {
             *on = first_ready.as_ref() == Some(name);
@@ -887,6 +965,14 @@ impl App {
             }
             KeyCode::Char('k') | KeyCode::Char('K') => self.request_kill(),
             KeyCode::Char('r') | KeyCode::Char('R') => self.request_retry(),
+            KeyCode::Char('l') | KeyCode::Char('L') => {
+                self.show_land_command();
+                Action::None
+            }
+            KeyCode::Char('f') | KeyCode::Char('F') if self.runs.is_empty() => {
+                self.set_flash("no runs to filter yet");
+                Action::None
+            }
             KeyCode::Char('f') | KeyCode::Char('F') => {
                 self.run_filter = self.run_filter.next();
                 self.set_flash(format!("filter {}", self.run_filter.label()));
@@ -994,7 +1080,18 @@ impl App {
                 }
             }
             DispatchFocus::Agents => {
-                if let Some((_, on)) = self.dispatch.agents.get_mut(self.dispatch.list_cursor) {
+                let cursor = self.dispatch.list_cursor;
+                let blocked = self
+                    .dispatch
+                    .agents
+                    .get(cursor)
+                    .filter(|(_, on)| !*on)
+                    .and_then(|(name, _)| self.agent_blocked(name).map(|_| name.clone()));
+                if let Some(name) = blocked {
+                    self.set_flash(full_auto_refusal(&name));
+                    return;
+                }
+                if let Some((_, on)) = self.dispatch.agents.get_mut(cursor) {
                     *on = !*on;
                 }
             }
@@ -1027,6 +1124,10 @@ impl App {
             .map(str::to_string)
             .collect::<Vec<_>>();
         let personas = self.dispatch.selected_personas();
+        if let Some(name) = agents.iter().find(|a| self.agent_blocked(a).is_some()) {
+            self.set_flash(full_auto_refusal(name));
+            return Action::None;
+        }
         // Fan-out 0 says which list is empty and how to fill it.
         let empty = if repos.is_empty() {
             Some("no repo ticked — Tab to repos, Space to tick one")
@@ -1080,6 +1181,8 @@ impl App {
             self.selected_id = Some(id);
         }
         self.screen = Screen::ControlRoom;
+        // A filter left on would hide the runs just dispatched.
+        self.run_filter = RunFilter::All;
         // The next dispatch starts from an empty prompt, never this one.
         self.dispatch.task.clear();
         self.set_flash(format!("{n} run(s) queued — starting engine"));
@@ -1177,14 +1280,18 @@ impl App {
                         *on = true;
                     }
                 }
+                let blocked = self.agent_blocked(&item.agent_hint).is_some();
                 for (name, on) in &mut self.dispatch.agents {
-                    *on = *name == item.agent_hint;
+                    *on = *name == item.agent_hint && !blocked;
                 }
                 for (persona, on) in &mut self.dispatch.personas {
                     *on = *persona == item.persona;
                 }
                 self.dispatch.focus = DispatchFocus::Task;
                 self.screen = Screen::Dispatch;
+                if blocked {
+                    self.set_flash(full_auto_refusal(&item.agent_hint));
+                }
                 Action::None
             }
             KeyCode::Char('d') | KeyCode::Char('D') => {
@@ -1268,15 +1375,14 @@ impl App {
                 self.detail_scroll = 0;
                 Action::None
             }
-            KeyCode::Char('a') | KeyCode::Char('A') => {
-                // Enter attach mode immediately as an honest stub; Action
-                // signals the loop to wire PTY when B2-pty exists.
-                self.screen = Screen::Attached;
-                self.set_flash("PTY not connected yet — Esc detaches");
-                Action::AttachSelected
-            }
+            // `a` (attach) stays unbound until the agent's terminal can be
+            // attached; `Screen::Attached` is unreachable from keys.
             KeyCode::Char('k') | KeyCode::Char('K') => self.request_kill(),
             KeyCode::Char('r') | KeyCode::Char('R') => self.request_retry(),
+            KeyCode::Char('l') | KeyCode::Char('L') => {
+                self.show_land_command();
+                Action::None
+            }
             KeyCode::Char('d') | KeyCode::Char('D') => {
                 self.prepare_dispatch_repos();
                 self.screen = Screen::Dispatch;
@@ -1315,7 +1421,7 @@ impl App {
                 .map(|&i| self.runs[i].id.clone());
         }
         if self.selected_id.is_none() {
-            self.set_flash("no runs — press d to dispatch  ·  kit --demo");
+            self.set_flash("no runs yet — press d to give your agents a task");
             return;
         }
         self.screen = Screen::RunDetail { pane };
@@ -1382,9 +1488,18 @@ impl App {
             self.set_flash(DEMO_ROW_FLASH);
             return Action::None;
         }
-        if row.state != RunState::Fail {
+        // A past run of any outcome can be run again; a live one only after
+        // its gate failed.
+        if !(row.state == RunState::Fail || row.past && row.state.is_terminal()) {
             self.set_flash("retry only for failed (gate) runs");
             return Action::None;
+        }
+        if self.agent_blocked(&row.agent).is_some() {
+            self.set_flash(full_auto_refusal(&row.agent));
+            return Action::None;
+        }
+        if row.state != RunState::Fail {
+            return self.queue_retry(&row, row.task.trim_end().to_string());
         }
 
         let gate_ctx = row
@@ -1408,6 +1523,12 @@ impl App {
             row.task.trim_end(),
             gate_ctx
         );
+        self.queue_retry(&row, task)
+    }
+
+    /// Queue a new run of `row`'s repo, agent and role with `task`.
+    fn queue_retry(&mut self, row: &RunRow, task: String) -> Action {
+        let row = row.clone();
         let new_id = RunId::default();
         let job = DispatchJob {
             id: new_id.clone(),
@@ -1422,6 +1543,7 @@ impl App {
         self.runs.push(queued);
         self.selected_id = Some(new_id);
         self.screen = Screen::ControlRoom;
+        self.run_filter = RunFilter::All;
         self.set_flash(format!(
             "retry queued from {} — starting engine",
             short_run_id(&row.id)
@@ -1430,6 +1552,29 @@ impl App {
             source_id: row.id,
             job,
         }
+    }
+
+    /// A proven run with changes: say the command that lands it. The TUI
+    /// never runs git itself.
+    fn show_land_command(&mut self) {
+        let Some(row) = self.selected_run() else {
+            self.set_flash("no run selected");
+            return;
+        };
+        if row.demo {
+            self.set_flash(DEMO_ROW_FLASH);
+            return;
+        }
+        let msg = if row.landable() {
+            format!("land it: kit land {}", land_id(&row.id))
+        } else if row.no_changes() {
+            "nothing to land: the agent changed no files".into()
+        } else if row.state == RunState::Pass || row.state.is_active() {
+            "land needs a finished PASS run with changes".into()
+        } else {
+            "only a PASS run can land".into()
+        };
+        self.set_flash(msg);
     }
 
     pub(crate) fn set_flash(&mut self, msg: impl Into<String>) {
@@ -1461,12 +1606,20 @@ impl App {
         let mut idxs: Vec<usize> = (0..self.runs.len())
             .filter(|&i| self.run_filter.matches(self.runs[i].state))
             .collect();
+        // Live rows by state, then age; past rows under them, newest first
+        // (their load order).
         idxs.sort_by(|&a, &b| {
             let ra = &self.runs[a];
             let rb = &self.runs[b];
-            state_rank(ra.state)
-                .cmp(&state_rank(rb.state))
-                .then_with(|| ra.seq.cmp(&rb.seq))
+            ra.past.cmp(&rb.past).then_with(|| {
+                if ra.past {
+                    ra.seq.cmp(&rb.seq)
+                } else {
+                    state_rank(ra.state)
+                        .cmp(&state_rank(rb.state))
+                        .then_with(|| ra.seq.cmp(&rb.seq))
+                }
+            })
         });
         idxs
     }
@@ -1615,10 +1768,11 @@ impl App {
             .count()
     }
 
+    /// Failed runs of this session; past failures are not counted here.
     pub fn fail_count(&self) -> usize {
         self.runs
             .iter()
-            .filter(|r| matches!(r.state, RunState::Fail | RunState::Error))
+            .filter(|r| !r.past && matches!(r.state, RunState::Fail | RunState::Error))
             .count()
     }
 
@@ -1628,6 +1782,8 @@ impl App {
         use std::time::Duration;
 
         self.runs.clear();
+        self.past_total = 0;
+        self.demo = true;
         self.selected_id = None;
         self.screen = Screen::ControlRoom;
         self.clock = Clock {
@@ -1768,7 +1924,8 @@ impl App {
 
         // Product moment: land on FAIL so gate wash + `r` retry are visible immediately.
         self.selected_id = Some(fail_id);
-        self.set_flash("FAIL · enter open · r retry");
+        // Short enough to sit beside the full counts at 80 columns.
+        self.set_flash("enter open · r retry");
 
         // Board fixture items for F4 snapshots / QA.
         self.board = vec![
@@ -1831,6 +1988,17 @@ fn format_elapsed_ticks(ticks: u64) -> String {
     }
 }
 
+/// Why an agent that always approves did not start, with the way out.
+fn full_auto_refusal(agent: &str) -> String {
+    format!("{agent} runs without approval prompts — set KIT_FULL_AUTO=1 (sandboxes only)")
+}
+
+/// The id `kit land` takes: 12 characters, as `kit run` prints it. The first
+/// 10 of a ULID are its timestamp, so fewer collide within one fan-out.
+pub fn land_id(id: &RunId) -> &str {
+    id.0.get(..12).unwrap_or(&id.0)
+}
+
 /// Short id for flash banners (first 8 chars of RunId).
 fn short_run_id(id: &RunId) -> String {
     let s = id.0.as_str();
@@ -1857,6 +2025,8 @@ pub fn format_state_label(run: &RunRow, clock: &Clock, motion: bool) -> String {
         RunState::Queued => "QUEUED",
         RunState::Running => "RUN",
         RunState::Gating => "GATING",
+        // The checks passed but there was nothing for them to prove.
+        RunState::Pass if run.no_changes() => "NO CHANGES",
         RunState::Pass => "DONE",
         RunState::Fail => "DONE",
         RunState::Unconfigured => "DONE",
@@ -1917,9 +2087,8 @@ pub fn gate_log_lines(run: &RunRow) -> Vec<String> {
             vec![
                 "OVERALL  UNCONFIGURED".into(),
                 String::new(),
-                "No gate checks configured and none inferred.".into(),
-                "Add a [gate] section to kit.toml, or install cargo/npm tooling.".into(),
-                "Live runs exit non-zero on vacuous unless --allow-vacuous.".into(),
+                "No checks, so nothing was proven.".into(),
+                "Run kit init in this repo to write them.".into(),
             ]
         }
         Some(g) => {
@@ -1963,6 +2132,13 @@ pub fn gate_log_lines(run: &RunRow) -> Vec<String> {
                 for s in &g.scope_violations {
                     lines.push(format!("  violate  {s}"));
                 }
+            }
+            if run.landable() {
+                lines.push(String::new());
+                lines.push(format!("next  kit land {}", land_id(&run.id)));
+            } else if run.no_changes() {
+                lines.push(String::new());
+                lines.push("NO CHANGES  the agent changed no files; nothing to land".into());
             }
             lines
         }
@@ -2410,13 +2586,14 @@ mod tests {
     }
 
     #[test]
-    fn attach_and_detach_without_quit() {
+    fn attach_is_not_offered_until_it_exists() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
         app.update(code(KeyCode::Enter));
-        assert_eq!(app.update(key('a')), Action::AttachSelected);
-        assert_eq!(app.screen, Screen::Attached);
-        // q does not quit while attached.
+        assert_eq!(app.update(key('a')), Action::None);
+        assert!(matches!(app.screen, Screen::RunDetail { .. }));
+        // The screen itself still detaches without quitting.
+        app.screen = Screen::Attached;
         assert_eq!(app.update(key('q')), Action::None);
         assert!(!app.should_quit);
         app.update(code(KeyCode::Esc));
@@ -2426,6 +2603,254 @@ mod tests {
                 pane: DetailPane::Stream
             }
         );
+    }
+
+    fn past_app(tmp: &crate::past::tests::TempRuns) -> App {
+        use crate::past::tests::{DIFF, gate, write_receipt};
+        use kit_core::AgentKind;
+        use std::time::Duration;
+        write_receipt(
+            &tmp.0,
+            "01PASTA0000000000000000000",
+            AgentKind::Claude,
+            &Persona::Design.wrap_task("add a greeting file"),
+            RunState::Pass,
+            Some(gate(true)),
+            DIFF,
+            Duration::from_secs(3 * 86_400),
+        );
+        write_receipt(
+            &tmp.0,
+            "01PASTB0000000000000000000",
+            AgentKind::Codex,
+            "fix the failing test",
+            RunState::Pass,
+            Some(gate(true)),
+            "",
+            Duration::from_secs(2 * 3600 + 30),
+        );
+        write_receipt(
+            &tmp.0,
+            "01PASTC0000000000000000000",
+            AgentKind::Claude,
+            "make the parser strict",
+            RunState::Fail,
+            Some(gate(false)),
+            DIFF,
+            Duration::from_secs(5 * 60 + 30),
+        );
+        let mut app = App::with_motion(false);
+        app.full_auto = false;
+        app.runs_dir = Some(tmp.0.clone());
+        app.load_past_runs(&tmp.0);
+        app
+    }
+
+    /// P1: runs from `kit run` and earlier sessions are listed from their
+    /// receipts, newest first, under whatever this session dispatches.
+    #[test]
+    fn past_runs_list_under_live_ones_newest_first() {
+        let tmp = crate::past::tests::TempRuns::new("app-order");
+        let mut app = past_app(&tmp);
+        assert_eq!(app.past_total, 3);
+        assert!(app.no_live_runs());
+        let tasks: Vec<&str> = app
+            .display_order()
+            .iter()
+            .map(|&i| app.runs[i].task.as_str())
+            .collect();
+        assert_eq!(
+            tasks,
+            [
+                "make the parser strict",
+                "fix the failing test",
+                "add a greeting file"
+            ]
+        );
+        assert_eq!(
+            app.selected_run().map(|r| r.task.as_str()),
+            Some("make the parser strict"),
+            "selection starts on the newest past run"
+        );
+        // Counts are this session's: a past FAIL is not `1 FAIL`.
+        assert_eq!(app.fail_count(), 0);
+
+        app.dispatch.repos = vec![("/repos/kit".into(), true)];
+        app.dispatch.task = "live one".into();
+        app.screen = Screen::Dispatch;
+        app.update(code(KeyCode::Enter));
+        let first = app.display_order()[0];
+        assert_eq!(app.runs[first].task, "live one");
+        assert!(!app.runs[first].past);
+        assert!(!app.no_live_runs());
+    }
+
+    /// Enter opens a past run's receipt: its log, gate and diff.
+    #[test]
+    fn past_run_opens_its_receipt() {
+        let tmp = crate::past::tests::TempRuns::new("app-open");
+        let mut app = past_app(&tmp);
+        app.update(code(KeyCode::Enter));
+        assert!(matches!(app.screen, Screen::RunDetail { .. }));
+        let run = app.selected_run().unwrap();
+        assert!(run.output.contains("working on make the parser strict"));
+        assert!(run.diff.contains("+hello"));
+        assert_eq!(format_gate_label(run), "FAIL");
+    }
+
+    /// `k` has nothing to stop on a past run; `r` runs it again with the same
+    /// repo, agent and role.
+    #[test]
+    fn past_run_retries_but_never_kills() {
+        let tmp = crate::past::tests::TempRuns::new("app-retry");
+        let mut app = past_app(&tmp);
+        let oldest = app
+            .runs
+            .iter()
+            .position(|r| r.task == "add a greeting file");
+        app.selected_id = Some(app.runs[oldest.unwrap()].id.clone());
+        assert_eq!(app.update(key('k')), Action::None);
+        let Action::RetrySelected { source_id, job } = app.update(key('r')) else {
+            panic!("r on a past run queues it again");
+        };
+        assert_eq!(source_id.0, "01PASTA0000000000000000000");
+        assert_eq!(job.agent, "claude");
+        assert_eq!(job.repo, "/home/you/code/shop");
+        assert_eq!(job.task, Persona::Design.wrap_task("add a greeting file"));
+        let queued = app.selected_run().unwrap();
+        assert!(!queued.past && queued.state == RunState::Queued);
+    }
+
+    /// P2: the checks passed but the agent changed nothing. STATE says so;
+    /// GATE still reports the checks.
+    #[test]
+    fn a_pass_with_no_diff_reads_no_changes() {
+        let tmp = crate::past::tests::TempRuns::new("app-nochange");
+        let app = past_app(&tmp);
+        let run = app
+            .runs
+            .iter()
+            .find(|r| r.task == "fix the failing test")
+            .unwrap();
+        assert!(run.no_changes());
+        assert_eq!(format_state_label(run, &app.clock, false), "NO CHANGES");
+        assert_eq!(format_gate_label(run), "PASS");
+        assert!(!run.landable());
+
+        // A live run: only once its receipt is written, never between the
+        // gate result and the terminal state.
+        let dir = crate::past::tests::TempRuns::new("app-nochange-live");
+        let id = RunId("01LIVENOCHANGE000000000000".into());
+        let mut app = App::with_motion(false);
+        app.runs_dir = Some(dir.0.clone());
+        app.upsert_run(RunRow::new(id.clone(), "shop", "claude", "noop"));
+        app.update(AppEvent::RunUpdate(
+            id.clone(),
+            RunDelta::Gate(crate::past::tests::gate(true)),
+        ));
+        assert!(!app.runs[0].no_changes(), "receipt not written yet");
+        std::fs::create_dir_all(dir.0.join(&id.0)).unwrap();
+        std::fs::write(dir.0.join(&id.0).join("receipt.json"), "{}").unwrap();
+        app.update(AppEvent::RunUpdate(id, RunDelta::State(RunState::Pass)));
+        assert!(app.runs[0].no_changes());
+    }
+
+    /// D12: a proven run with changes points at `kit land`; the TUI runs no git.
+    #[test]
+    fn l_shows_the_land_command() {
+        let tmp = crate::past::tests::TempRuns::new("app-land");
+        let mut app = past_app(&tmp);
+        let pass = app
+            .runs
+            .iter()
+            .position(|r| r.task == "add a greeting file")
+            .unwrap();
+        app.selected_id = Some(app.runs[pass].id.clone());
+        assert_eq!(app.update(key('l')), Action::None);
+        assert_eq!(app.flash_message(), Some("land it: kit land 01PASTA00000"));
+        assert!(
+            gate_log_lines(&app.runs[pass])
+                .last()
+                .is_some_and(|l| l == "next  kit land 01PASTA00000")
+        );
+
+        let nochange = app
+            .runs
+            .iter()
+            .position(|r| r.task == "fix the failing test")
+            .unwrap();
+        app.selected_id = Some(app.runs[nochange].id.clone());
+        app.update(key('l'));
+        assert_eq!(
+            app.flash_message(),
+            Some("nothing to land: the agent changed no files")
+        );
+
+        let mut demo = App::with_motion(false);
+        demo.load_prd_fixture();
+        demo.update(key('l'));
+        assert_eq!(demo.flash_message(), Some(DEMO_ROW_FLASH));
+    }
+
+    /// P3: Grok always approves, so it cannot be ticked without KIT_FULL_AUTO.
+    #[test]
+    fn grok_needs_full_auto_to_be_ticked() {
+        let mut app = App::with_motion(false);
+        app.full_auto = false;
+        app.set_agents_probe(vec![("grok".into(), true), ("codex".into(), true)]);
+        assert_eq!(
+            app.dispatch.selected_agents(),
+            ["codex"],
+            "never the default"
+        );
+        app.screen = Screen::Dispatch;
+        app.dispatch.focus = DispatchFocus::Agents;
+        app.dispatch.list_cursor = app
+            .dispatch
+            .agents
+            .iter()
+            .position(|(n, _)| n == "grok")
+            .unwrap();
+        app.update(key(' '));
+        assert_eq!(app.dispatch.selected_agents(), ["codex"]);
+        assert!(
+            app.flash_message()
+                .is_some_and(|f| f.contains("KIT_FULL_AUTO=1")),
+            "{:?}",
+            app.flash_message()
+        );
+        // A prefilled grok is refused at submit, never sent.
+        app.dispatch
+            .agents
+            .iter_mut()
+            .for_each(|(n, on)| *on = n == "grok");
+        app.dispatch.task = "x".into();
+        assert_eq!(app.update(code(KeyCode::Enter)), Action::None);
+
+        app.full_auto = true;
+        app.dispatch
+            .agents
+            .iter_mut()
+            .for_each(|(_, on)| *on = false);
+        app.update(key(' '));
+        assert_eq!(app.dispatch.selected_agents(), ["grok"]);
+    }
+
+    #[test]
+    fn filter_on_an_empty_room_says_why_and_dispatch_resets_it() {
+        let mut app = App::with_motion(false);
+        app.update(key('f'));
+        assert_eq!(app.run_filter, RunFilter::All);
+        assert_eq!(app.flash_message(), Some("no runs to filter yet"));
+
+        app.load_prd_fixture();
+        app.update(key('f'));
+        assert_eq!(app.run_filter, RunFilter::Fail);
+        app.dispatch.repos = vec![("/repos/kit".into(), true)];
+        app.dispatch.task = "new work".into();
+        app.screen = Screen::Dispatch;
+        app.update(code(KeyCode::Enter));
+        assert_eq!(app.run_filter, RunFilter::All);
     }
 
     /// `--demo` fixture rows must never start, kill or retry a real run (G1).
@@ -2564,8 +2989,7 @@ mod tests {
         app.update(code(KeyCode::Enter));
         assert_eq!(app.screen, Screen::ControlRoom);
         assert!(
-            app.flash_message()
-                .is_some_and(|m| m.contains("press d") && m.contains("demo")),
+            app.flash_message().is_some_and(|m| m.contains("press d")),
             "enter on empty room must teach the next key: {:?}",
             app.flash_message()
         );
@@ -2755,6 +3179,7 @@ mod tests {
     #[test]
     fn dispatch_fans_out_personas_and_keeps_row_task_clean() {
         let mut app = App::with_motion(false);
+        app.full_auto = true;
         app.dispatch.repos = vec![("kit".into(), true)];
         app.dispatch.agents = vec![("grok".into(), true)];
         for (p, on) in &mut app.dispatch.personas {
