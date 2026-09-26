@@ -481,8 +481,24 @@ for skills and rules, the five starter kits, `kit.lock`, `[check]` in
 `kit doctor`, trust rules 1–6.
 
 **After v0.1:** `kit update`, `kit sync`, `kit search` and the public
-index, Codex MCP, hooks beyond Claude Code, `kit new`, the next kits,
-the server.
+index, `kit new`, the next kits, the server.
+
+**Where the code stands (2026-09-26, PR #18 plus `claude/kit-ios-apple-design`):**
+
+- Built: `kit setup | add | remove | list | show`, `~/.kit/config.toml`,
+  `kit.lock` with exact undo, Claude Code and Codex writers (Codex MCP
+  included), Grok through Claude Code's files, `[check]` in `kit doctor`,
+  and a kit's `[gate]` written into the repo's `kit.toml` (`[gate] extra`,
+  repo installs only).
+- In progress on other threads: `kit search` with the public index,
+  `kit sync` and `kit new`.
+- Parked until those land: `kit update`; `kit export` and the Agent
+  Plugins emitter (the spec still has to be checked, and agent-plugins.org
+  could not be reached from the build environment); Codex hooks
+  (`hooks.json`; the plan says they are skipped); subagents (Claude `.md`
+  to Codex `.codex/agents/*.toml`); a Grok-native writer and a doctor
+  check that Grok's Claude compatibility loaded; the licence gate and a
+  NOTICE file for vendored content in index kits.
 
 Build order (each a tested commit on `claude/kit-product-design-uz9njt`):
 

@@ -368,3 +368,71 @@ fn setup_with_flags_needs_no_terminal_and_later_adds_use_its_agents() {
         "{v}"
     );
 }
+
+/// A kit's [gate] reaches the repo's kit.toml, so `kit run` holds agents to it.
+#[test]
+fn a_kits_gate_is_added_to_kit_toml_and_removed_exactly() {
+    let root = scratch("gate");
+    let kit = root.join("gate-kit");
+    write(
+        &kit.join("skills/hello/SKILL.md"),
+        "---\nname: hello\n---\nHi\n",
+    );
+    write(
+        &kit.join("KIT.toml"),
+        r#"schema = 1
+[kit]
+name = "gated"
+title = "Gated"
+version = "0.1.0"
+description = "d"
+[[skill]]
+name = "hello"
+path = "skills/hello"
+[gate]
+test = "cargo test"
+extra = ["swiftlint lint --strict"]
+"#,
+    );
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let ours = "[gate]\ntest = \"cargo test\" # ours\n";
+    write(&repo.join("kit.toml"), ours);
+    let spec = kit.to_str().unwrap();
+
+    let out = env.kit(&repo, &["add", spec, "-a", "codex", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stdout).contains("`swiftlint lint --strict`"),
+        "{}",
+        text(&out.stdout)
+    );
+    let raw = read(&repo.join("kit.toml"));
+    assert!(raw.starts_with(ours), "{raw}");
+    let cfg: kit_core::KitConfig = toml::from_str(&raw).unwrap();
+    assert_eq!(cfg.gate.test.as_deref(), Some("cargo test"));
+    assert_eq!(cfg.gate.extra, vec!["swiftlint lint --strict".to_string()]);
+
+    let out = env.kit(&repo, &["remove", "gated", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&repo.join("kit.toml")), ours);
+
+    // With no kit.toml, Kit creates one and removes it again.
+    std::fs::remove_file(repo.join("kit.toml")).unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "codex", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let cfg: kit_core::KitConfig = toml::from_str(&read(&repo.join("kit.toml"))).unwrap();
+    assert_eq!(cfg.gate.checks().len(), 2);
+    let out = env.kit(&repo, &["remove", "gated", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+
+    // Global installs cannot carry a gate, and say why.
+    let out = env.kit(&repo, &["add", spec, "-a", "codex", "--global", "--print"]);
+    assert!(
+        text(&out.stdout).contains("skipped   gate"),
+        "{}",
+        text(&out.stdout)
+    );
+}

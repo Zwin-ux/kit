@@ -732,6 +732,11 @@ fn removal_summary(undo: &[Applied]) -> String {
             "hook",
             "hooks",
         ),
+        (
+            count(|a| matches!(a, Applied::GateToml { added, .. } if !added.is_empty())),
+            "gate entry",
+            "gate entries",
+        ),
     ];
     let words: Vec<String> = parts
         .iter()
