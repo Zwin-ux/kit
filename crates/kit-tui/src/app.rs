@@ -1460,6 +1460,13 @@ impl App {
             .count()
     }
 
+    pub fn queued_count(&self) -> usize {
+        self.runs
+            .iter()
+            .filter(|r| matches!(r.state, RunState::Queued))
+            .count()
+    }
+
     pub fn gated_count(&self) -> usize {
         self.runs
             .iter()
