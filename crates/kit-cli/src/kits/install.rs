@@ -383,13 +383,7 @@ fn record(
         entry.version.clone_from(&kit.manifest.kit.version);
         if let Some((_, spec)) = chosen.requested.iter().find(|(n, _)| *n == name) {
             entry.requested = true;
-            entry.source = if catalog::find(spec).is_ok_and(|k| k.level == catalog::Level::Direct) {
-                std::fs::canonicalize(spec)
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|_| spec.clone())
-            } else {
-                spec.clone()
-            };
+            entry.source.clone_from(spec);
         }
         for (base, top) in &chosen.edges {
             if *base == name && !entry.required_by.contains(top) {
