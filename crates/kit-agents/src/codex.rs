@@ -128,6 +128,7 @@ mod tests {
     use std::ffi::OsStr;
 
     /// A prompt that closes cmd.exe's quoting and chains a host command.
+    #[cfg(unix)]
     const HOSTILE: &str = "# Kit\n\nfix \"a\" & echo KIT_INJECTED & \"b\"\n";
 
     #[test]
