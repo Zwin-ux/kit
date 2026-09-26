@@ -1201,6 +1201,13 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
             kept.push(msg);
         }
     }
+    for e in lock.kits.iter_mut().filter(|e| !going.contains(&e.name)) {
+        for kept in &mut e.applied {
+            for gone in &undo {
+                plan::hand_over_original(gone, kept);
+            }
+        }
+    }
     lock.kits.retain(|e| !going.contains(&e.name));
     take_handed(&mut lock, &handed);
     for (name, _) in &still_needed {
