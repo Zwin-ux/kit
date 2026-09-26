@@ -38,10 +38,9 @@ pub async fn run_supervisor(
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             EngineCommand::Kill { id } => {
-                let found = registry.kill(&id).await;
-                if !found {
-                    eprintln!("kit engine: kill {id:?} — no active handle");
-                }
+                // No handle means the run already ended: nothing to stop.
+                // Never write to stderr here; the TUI owns the screen.
+                let _ = registry.kill(&id).await;
             }
             EngineCommand::Start(job) | EngineCommand::Retry { job, .. } => {
                 // Register before the task exists: a Kill queued right behind
@@ -109,6 +108,7 @@ pub async fn run_supervisor(
 /// Runner paths send their terminal state only after their receipt is
 /// written, so an `Err` means the run has not ended yet. End it here as
 /// `Error`, with a receipt when the disk allows, rather than strand its row.
+/// Both errors go to the run's own stream: stderr would paint over the TUI.
 async fn end_if_failed(
     result: anyhow::Result<RunResult>,
     opts: RunOptions,
@@ -118,9 +118,9 @@ async fn end_if_failed(
     let Err(err) = result else {
         return;
     };
-    eprintln!("kit engine: {err:#}");
-    if let Err(receipt_err) = finalize_failed(opts, id.clone(), &err, Some(tx)).await {
-        eprintln!("kit engine: {receipt_err:#}");
+    if let Err(receipt_err) = finalize_failed(opts, id.clone(), &err, Some(tx.clone())).await {
+        let note = format!("kit: cannot write the receipt: {receipt_err:#}\n");
+        let _ = tx.send((id.clone(), RunDelta::Output(note))).await;
     }
 }
 

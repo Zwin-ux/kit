@@ -2,7 +2,7 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / CONTROL ROOM  · F…  [ALL]  1 RUNNING  1 GATING  1 FAIL"
+"KIT / CONTROL ROOM  · FAIL · enter open · r retry           "
 "┌ runs ────────────────────────────────────────────────────┐"
 "│REPO      AGENT    TASK             STATE     GATE        │"
 "│  kit     codex·e… port guard.js    RUN 2m    --          │"
