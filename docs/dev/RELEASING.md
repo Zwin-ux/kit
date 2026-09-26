@@ -30,7 +30,7 @@ npm package versions are generated from the Cargo version at publish time; nothi
 
 1. Set the version as above.
 2. Rename `## Unreleased` in `CHANGELOG.md` to `## <version> — <title>`. The GitHub Release notes are that section plus install and verify instructions (`node scripts/release-notes.mjs <version>` prints them). The release fails if the section is missing.
-3. Merge, then push the tag `v<version>` on that commit.
+3. Merge to `main`, then push the tag `v<version>` on that `main` commit. The one-line installer commands fetch `scripts/install.sh` / `install.ps1` from `main`, so they must be there before the release is announced.
 
 `release-npm.yml` then runs, each step only after the one before it passed:
 
@@ -138,14 +138,14 @@ CI: `installers.yml` runs shellcheck, then both installers against a fake releas
 
 `kit-cli` and `kit` are taken on crates.io by other projects (`kit-cli` also installs a binary called `kit`), so the packages use the `kitctl` prefix: the binary crate `kitctl` and the libraries `kitctl-core`, `kitctl-agents`, `kitctl-gate`, `kitctl-tui`. Each library keeps its Rust crate name (`kit_core`, …) through `[lib] name`. The binary is still `kit`. Never tell users to `cargo install kit-cli`.
 
-`cargo install kitctl` needs every library on crates.io too, so job `crates-io` publishes all five in dependency order. The libraries are implementation detail with no semver promise of their own; the exact pins mean each `kitctl` version installs the libraries it was released with. CI checks the packages on every pull request (`rust.yml`, job `crates.io package`: `cargo publish --workspace --dry-run`).
+`cargo install kitctl` needs every library on crates.io too, so job `crates-io` publishes all five in dependency order. The libraries are implementation detail with no semver promise of their own; the exact pins mean each `kitctl` version installs the libraries it was released with. CI checks the packages on every pull request (`rust.yml`, job `crates.io package`: `cargo package --workspace --locked`).
 
 ## Signing
 
 The binaries are not code-signed (Windows Authenticode) or notarized (macOS). That needs paid certificates and is not set up. What users can check instead:
 
 - `SHA256SUMS`: the installers compare every archive against it and refuse a mismatch.
-- Build attestations: `gh attestation verify <archive> --repo Zwin-ux/kit` proves the archive was built by `release-npm.yml` in this repo from the tagged commit.
+- Build attestations: `gh attestation verify <archive> --repo Zwin-ux/kit --signer-workflow Zwin-ux/kit/.github/workflows/release-npm.yml --source-ref refs/tags/v<version>` proves the archive was built by `release-npm.yml` from that tag. Without the last two flags it only proves some workflow in this repo built it (a manual run from any branch would pass).
 - npm packages carry npm provenance.
 
 Effect on users: `curl`, PowerShell's `irm`, npm and Cargo do not mark downloads as quarantined, so those installs run without a prompt. An archive downloaded with a browser does get marked: macOS refuses to run it until `xattr -d com.apple.quarantine ./kit`, and Windows SmartScreen may warn. The release notes say so.

@@ -11,6 +11,7 @@
 > - The non-goal "a skill marketplace or registry service" is withdrawn. Kits and a kit index are the product's front door. A hosted server comes later; the first index is a public GitHub repo.
 > - Pillars M1–M4 (drivers and `kit verify`, policy engine and sandbox, merge queue and best-of-N, `kitd` and `kit mcp`) are **not** in 2.0.0. They are the roadmap for 2.x and later, each shipped behind its own minor version when ready.
 > - §11's tooling choices (`dist`, `release-plz`) are not adopted for 2.0.0; the existing `release-npm.yml` pipeline covers the same channels. Homebrew and `cargo binstall` follow after 2.0.0.
+> - D11/D12 as shipped: the crates are `kitctl` (binary `kit`) and `kitctl-core`, `kitctl-agents`, `kitctl-gate`, `kitctl-tui`, all versioned with the product and pinned exactly (`=2.0.0`); the libraries carry no semver promise of their own.
 > - The rest (architecture, contracts, quality bar) stands as the direction for that roadmap.
 
 This is the umbrella design for Kit 2.0. It is split into six sub-projects (M0–M5). Each sub-project gets its own implementation plan; this document fixes the architecture, contracts, and decisions they share.

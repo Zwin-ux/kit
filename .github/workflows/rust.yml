@@ -57,8 +57,11 @@ jobs:
       - name: Version copies agree
         run: node scripts/version.mjs --check
 
-      - name: cargo publish --dry-run
-        run: cargo publish --workspace --dry-run --locked
+      # `cargo package` builds each crate from its packaged sources with
+      # the workspace crates served from a local registry. Unlike
+      # `publish --dry-run` it does not fail once a version is on crates.io.
+      - name: cargo package
+        run: cargo package --workspace --locked
 
   # M0 kill criterion: cold start under budget. If this fails, the stack choice
   # is wrong and we stop rather than push through. See docs/dev/PRD-1.0.md §8.

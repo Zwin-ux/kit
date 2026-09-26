@@ -9,7 +9,7 @@ name: Release npm
 # create no release, unless `publish` is checked.
 #
 # Prerelease versions publish under their prerelease word (alpha, beta, rc),
-# never `latest`, so `npm i -g @mzwin/kit` keeps serving 0.1.x until 1.0.0.
+# never `latest`; a plain version (2.0.0) moves `latest`.
 
 on:
   push:
@@ -58,7 +58,7 @@ jobs:
             bin: kit
             zig: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -113,7 +113,7 @@ jobs:
           - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, bin: kit }
           - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm, bin: kit }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -143,7 +143,7 @@ jobs:
       id-token: write # sign the build attestations
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -221,8 +221,11 @@ jobs:
           set -euo pipefail
           tag="v$VERSION"
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "release $tag exists: replacing assets"
+            # A rerun after a partial create: replace the assets and make
+            # sure the release is published with the current notes.
+            echo "release $tag exists: replacing assets and notes"
             gh release upload "$tag" dist/release/* --clobber
+            gh release edit "$tag" --draft=false --notes-file dist/notes.md
             exit 0
           fi
           flags=(--verify-tag --title "Kit $VERSION")
@@ -239,7 +242,7 @@ jobs:
       contents: read
       id-token: write # npm provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -406,7 +409,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:
@@ -452,7 +455,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, ubuntu-22.04-arm, macos-14, macos-15-intel, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: 22

@@ -58,10 +58,11 @@ Then run \`kit setup\`.
 
 ## Verify
 
-The installers check each archive against \`SHA256SUMS\` and refuse a mismatch. Every archive also has a GitHub build attestation, so you can check it was built by this repository's release workflow from tag \`${tag}\`:
+The installers check each archive against \`SHA256SUMS\` and refuse a mismatch. Every archive also has a GitHub build attestation. To check an archive was built by this repository's release workflow from tag \`${tag}\` (use the \`.zip\` name on Windows):
 
 \`\`\`sh
-gh attestation verify kit-${version}-<target>.tar.gz --repo ${repo}
+gh attestation verify kit-${version}-<target>.tar.gz --repo ${repo} \\
+  --signer-workflow ${repo}/.github/workflows/release-npm.yml --source-ref refs/tags/${tag}
 \`\`\`
 
 The binaries are not code-signed or notarized. The curl, PowerShell, npm and Cargo installs are not affected. If you download an archive with a browser, macOS may refuse to run \`kit\` until you clear the quarantine flag (\`xattr -d com.apple.quarantine ./kit\`), and Windows SmartScreen may warn. See [docs/dev/RELEASING.md](https://github.com/${repo}/blob/${tag}/docs/dev/RELEASING.md#signing).`);

@@ -8,7 +8,7 @@ Kit 2.0.0 is the first release of the Rust `kit` as the default install everywhe
 
 ### Highlights
 
-- **Kits.** A kit is a bundle for one job: skills, rules, MCP servers and hooks, pinned to exact versions. `kit setup` asks which agents (Claude Code, Codex, Grok) and which focus, shows everything it will install, and installs only after you say yes. Starter kits: Essentials, Frontend Design, Full-stack Design, Backend Engineer, LLM Engineer, and iOS / Apple Design.
+- **Kits.** A kit is a bundle for one job: skills, rules, MCP servers and hooks, pinned to exact versions. `kit setup` asks which agents (Claude Code, Codex, Grok) and which focus, shows everything it will install, and installs only after you say yes. Starter kits: Essentials, Frontend Design, Full-stack Design, Backend Engineer and LLM Engineer.
 - **Install, change your mind, undo.** `kit add`, `kit remove` and `kit list` install and remove kits exactly as added; hand edits are kept and reported. A failed install rolls back. Kit refuses to overwrite files it did not write.
 - **Share a setup.** `kit.lock` records what a repo uses; `kit sync` installs it for a teammate, a new machine or CI through the same plan and yes, and `kit sync --check` fails CI when a machine drifts. `kit search` finds kits, `kit add github:owner/repo` installs a kit from GitHub at a pinned commit, and `kit new` starts your own.
 - **Proof.** `kit run` runs one agent in its own git worktree, then your repo's checks from `kit.toml`, and writes a receipt for every ending, Ctrl-C included. `kit land` puts a proven run on a new branch. `kit init` writes the checks for Rust, Go, Node and Python repos.
@@ -18,7 +18,7 @@ Kit 2.0.0 is the first release of the Rust `kit` as the default install everywhe
 ### Upgrading
 
 - From 0.1.x (npm `@mzwin/kit`, the Node workbench): `npm install -g @mzwin/kit` now installs the Rust binary. Your 0.1 skills stay where they are; `kit doctor` points out the old app if it is still on `PATH`.
-- From 1.0.0-alpha.1: install 2.0.0 the same way you installed alpha.1. Receipts under `~/.kit/runs/` are kept.
+- From 1.0.0-alpha.1: run `npm install -g @mzwin/kit@latest` (the `alpha` tag stays on alpha.1), or rerun the installer. Receipts under `~/.kit/runs/` are kept.
 - `cargo install kit-cli` installs someone else's project. The crate is `kitctl`; the command is still `kit`.
 
 ### Details
@@ -29,14 +29,13 @@ Kit 2.0.0 is the first release of the Rust `kit` as the default install everywhe
 - The run dir has `base.txt`: the commit the run started from
 - `kit init` proposes a gate and writes `kit.toml`. It detects Rust, Go, Node (package manager from `packageManager` or the lockfile) and Python (ruff, black, mypy, pytest only when configured). It uses only scripts that exist and do not write: a `format` script that runs `prettier --write` is not the format check. `--print` only prints, `--force` replaces, `--check` runs each command once and keeps the ones that pass, `--json` returns the `init` envelope. Mixed repos use the root toolchain and name the rest
 - `kit run` (on stderr) and `kit doctor` point to `kit init` when the repo has no `kit.toml`; `kit doctor --json` has `kitToml`
-- npm: `@mzwin/kit` 1.x is a launcher plus one binary package per platform (Windows x64, macOS arm64/x64, Linux x64/arm64 glibc 2.17+). Prereleases publish to `alpha`; `latest` stays 0.1 until 1.0.0
+- npm: `@mzwin/kit` is a launcher plus one binary package per platform (Windows x64, macOS arm64/x64, Linux x64/arm64 glibc 2.17+). Prereleases publish to their own tag (`alpha`, `beta`, `rc`); releases move `latest`
 - `scripts/npm-smoke.mjs` installs the packed tarballs and runs `kit` through the npm shim; CI runs it on Linux, macOS and Windows
 - `kit doctor` shows how kit was installed and warns only about the old 0.1 Node app, not its own npm shim
 - GitHub Release per tag: `kit-<version>-<target>.tar.gz` / `.zip` and `SHA256SUMS`
 - `scripts/install.sh` (Linux glibc, macOS) and `scripts/install.ps1` (Windows x64): download from the GitHub Release, stop on a SHA-256 mismatch, install without sudo and without changing `PATH`. CI tests both against a local release (`installers.yml`)
 - Release: the launcher is published only after every platform package is visible on the registry; a new job installs the published version on Linux, macOS and Windows and runs it
 - The receipt (and so `kit land`) holds only what the agent changed. Files the gate writes, such as coverage or reports, stay out, and the run log says when the gate changed files
-- Release docs cover all channels: [`docs/dev/RELEASING.md`](docs/dev/RELEASING.md) (was `RELEASE-npm.md`)
 
 #### Changed
 - `kit init --check` no longer drops a failing check in silence (the gate could then PASS on lint alone). It stops and names the checks; `--drop-failing` makes that choice explicit
