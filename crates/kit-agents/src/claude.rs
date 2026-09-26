@@ -46,6 +46,9 @@ impl Agent for ClaudeAgent {
 
         let mut cmd = command_for("claude");
         cmd.arg("-p").arg(&prompt);
+        // The worktree is Kit's isolation, so edits inside it need no prompt.
+        // Same bar as codex's `-s workspace-write`; shell commands still ask
+        // unless KIT_FULL_AUTO=1. Without this, `-p` can read but not write.
         if full_auto() {
             cmd.arg("--dangerously-skip-permissions");
             let _ = tx
@@ -53,6 +56,8 @@ impl Agent for ClaudeAgent {
                     "kit: KIT_FULL_AUTO=1 — claude permission checks skipped\n".into(),
                 ))
                 .await;
+        } else {
+            cmd.arg("--permission-mode").arg("acceptEdits");
         }
         cmd.current_dir(worktree);
 

@@ -127,7 +127,25 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
     // None = live with the chosen agent. --dry-run runs no agent.
     let dry_run = args.dry_run.then_some(true);
     let agent = args.agent.map(AgentKind::from);
-    let kind = agent.unwrap_or(AgentKind::Codex);
+    let kind = match agent {
+        Some(kind) => kind,
+        // A dry run starts no agent, so there is nothing to probe.
+        None if args.dry_run => cli::AgentArg::PREFERENCE[0],
+        None => {
+            let mut statuses = Vec::new();
+            for kind in cli::AgentArg::PREFERENCE {
+                let status = kit_agents::adapter(kind).probe().await;
+                let ready = status.is_ready();
+                statuses.push(status);
+                if ready {
+                    break;
+                }
+            }
+            let kind = pick_agent(&statuses)?;
+            eprintln!("kit: using {kind}, the first ready agent. Choose with --agent");
+            kind
+        }
+    };
     // Stderr only: under --json, stdout holds one envelope.
     if let Some(hint) = init_hint(Path::new(&repo)) {
         eprintln!("kit: {hint}");
@@ -219,6 +237,26 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
         std::process::exit(code);
     }
     Ok(())
+}
+
+/// The first ready agent in preference order, or an error naming the fix.
+fn pick_agent(statuses: &[kit_agents::AgentStatus]) -> Result<AgentKind> {
+    if let Some(ready) = statuses.iter().find(|s| s.is_ready()) {
+        return Ok(ready.kind);
+    }
+    if let Some(unready) = statuses.iter().find(|s| s.installed) {
+        let fix = unready
+            .remedy
+            .as_deref()
+            .unwrap_or("run it once by hand to finish its setup");
+        anyhow::bail!(
+            "{} is installed but not ready ({fix}). Fix that and run again, or see `kit doctor`",
+            unready.kind
+        );
+    }
+    anyhow::bail!(
+        "no coding agent found (looked for claude, codex, grok, ollama). Install Claude Code or Codex, then check with `kit doctor`. To try the pipeline without one: kit run --dry-run \"…\""
+    )
 }
 
 /// Silence longer than this gets a stderr notice, so a stalled agent is visible.
@@ -796,6 +834,40 @@ mod tests {
         let path = dir.join(name);
         fs::write(&path, b"kit-test-stub\n").expect("stub kit");
         path
+    }
+
+    #[test]
+    fn default_agent_is_the_first_ready_one() {
+        use kit_agents::AgentStatus;
+        let ready = |kind| AgentStatus {
+            installed: true,
+            authenticated: true,
+            ..AgentStatus::missing(kind)
+        };
+        let statuses = [
+            AgentStatus::missing(AgentKind::Claude),
+            ready(AgentKind::Codex),
+        ];
+        assert_eq!(pick_agent(&statuses).unwrap(), AgentKind::Codex);
+
+        let unready = AgentStatus {
+            installed: true,
+            remedy: Some("run `claude` once to log in".into()),
+            ..AgentStatus::missing(AgentKind::Claude)
+        };
+        let err = pick_agent(&[unready]).unwrap_err().to_string();
+        assert!(
+            err.starts_with("claude is installed but not ready (run `claude`"),
+            "{err}"
+        );
+
+        let err = pick_agent(&[AgentStatus::missing(AgentKind::Ollama)])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("no coding agent found") && err.contains("--dry-run"),
+            "{err}"
+        );
     }
 
     #[test]
