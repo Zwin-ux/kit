@@ -930,6 +930,72 @@ fn rules_blocks_round_trip_crlf_and_no_final_newline_exactly() {
     assert_eq!(read(&repo.join("CLAUDE.md")), mine);
 }
 
+/// Every file Kit edits comes back byte for byte after remove, whether it
+/// uses CRLF or ends without a newline: rules files, .mcp.json, Claude
+/// Code's settings.json and Codex's config.toml.
+#[test]
+fn every_writer_gives_back_crlf_and_no_final_newline_files_exactly() {
+    let root = scratch("every-writer-bytes");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let spec = kit.to_str().unwrap();
+    let files: [(&str, &str); 5] = [
+        ("CLAUDE.md", "# Mine\nline two\n"),
+        ("AGENTS.md", "# Ours\nline two\n"),
+        (
+            ".mcp.json",
+            "{\n  \"mcpServers\": {\n    \"mine\": {\n      \"command\": \"x\"\n    }\n  }\n}\n",
+        ),
+        (".claude/settings.json", "{\n  \"theme\": \"dark\"\n}\n"),
+        (
+            ".codex/config.toml",
+            "model = \"o3\" # keep me\n\n[mcp_servers.mine]\ncommand = \"x\"\n",
+        ),
+    ];
+    fn crlf(t: &str) -> String {
+        t.replace('\n', "\r\n")
+    }
+    fn no_final(t: &str) -> String {
+        t.trim_end_matches('\n').to_string()
+    }
+    fn crlf_no_final(t: &str) -> String {
+        crlf(&no_final(t))
+    }
+    let variants: [fn(&str) -> String; 3] = [crlf, no_final, crlf_no_final];
+    for variant in variants {
+        let seeded: Vec<(PathBuf, String)> = files
+            .iter()
+            .map(|(rel, body)| (repo.join(rel), variant(body)))
+            .collect();
+        for (path, body) in &seeded {
+            write(path, body);
+        }
+        let out = env.kit(
+            &repo,
+            &["add", spec, "-a", "claude", "-a", "codex", "--yes"],
+        );
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        for (path, body) in &seeded {
+            let now = read(path);
+            assert_ne!(&now, body, "{} was not changed by add", path.display());
+            if body.contains("\r\n") {
+                assert!(
+                    !now.replace("\r\n", "").contains('\n'),
+                    "{} has mixed line endings while installed: {now:?}",
+                    path.display()
+                );
+            }
+        }
+        let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        for (path, body) in &seeded {
+            assert_eq!(&read(path), body, "{} is not byte-exact", path.display());
+        }
+    }
+}
+
 /// A kit that extends `demo`, from a folder next to it.
 fn top_kit(root: &Path, base: &Path) -> PathBuf {
     let kit = root.join("top-kit");

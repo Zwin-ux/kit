@@ -191,6 +191,9 @@ pub enum Applied {
         /// As for `McpJson`, the table's TOML text.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         previous: Option<String>,
+        /// As for `McpJson`: the file's text before Kit touched it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original: Option<String>,
     },
     ClaudeMcp {
         name: String,
@@ -213,6 +216,7 @@ impl Applied {
     /// Drop the copy of the user's file text (for the repo's shared kit.lock).
     pub fn forget_original(&mut self) {
         if let Self::McpJson { original, .. }
+        | Self::McpToml { original, .. }
         | Self::HookJson { original, .. }
         | Self::Rules { original, .. } = self
         {
@@ -374,6 +378,7 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
             Applied::McpToml {
                 created: c,
                 previous: p,
+                original: o,
                 ..
             },
             Applied::McpToml {
@@ -381,12 +386,14 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
                 name,
                 created,
                 previous,
+                original,
             },
         ) => Applied::McpToml {
             file,
             name,
             created: created || *c,
             previous: previous.or_else(|| p.clone()),
+            original: o.clone().or(original),
         },
         (
             Applied::HookJson {
@@ -671,12 +678,13 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                 None => None,
             };
             servers.insert(name, toml_edit::Item::Table(value.clone()));
-            write(file, &doc.to_string())?;
+            write(file, &same_eol(&raw, doc.to_string()))?;
             Applied::McpToml {
                 file: file.clone(),
                 name: name.clone(),
                 created,
                 previous,
+                original: (!created).then_some(raw),
             }
         }
         Action::ClaudeMcp { name, value } => {
@@ -787,9 +795,11 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             name,
             created,
             previous,
+            original,
         } => {
             if file.exists() {
-                let mut doc: toml_edit::DocumentMut = read_or_empty(file)?.parse()?;
+                let raw = read_or_empty(file)?;
+                let mut doc: toml_edit::DocumentMut = raw.parse()?;
                 let empty = match doc.get_mut("mcp_servers").and_then(|t| t.as_table_mut()) {
                     Some(servers) => {
                         match previous
@@ -811,11 +821,19 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 if empty {
                     doc.remove("mcp_servers");
                 }
+                let lf = |t: &str| t.replace("\r\n", "\n");
+                // Back to what the user had: their exact bytes.
+                let unchanged = original.as_deref().is_some_and(|o| {
+                    o.parse::<toml_edit::DocumentMut>()
+                        .is_ok_and(|before| lf(&before.to_string()) == lf(&doc.to_string()))
+                });
                 if *created && doc.to_string().trim().is_empty() {
                     std::fs::remove_file(file)?;
                     prune(file, 1);
+                } else if let (true, Some(o)) = (unchanged, original) {
+                    write(file, o)?;
                 } else {
-                    write(file, &doc.to_string())?;
+                    write(file, &same_eol(&raw, doc.to_string()))?;
                 }
             }
         }
@@ -1216,6 +1234,16 @@ fn read_or_empty(file: &Path) -> Result<String> {
         Ok(s) => Ok(s),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
         Err(e) => Err(e).with_context(|| format!("cannot read {}", file.display())),
+    }
+}
+
+/// `text` with the line endings `original` used: toml_edit writes `\n`, and
+/// a Windows kit.toml must stay CRLF so remove gives back its exact bytes.
+fn same_eol(original: &str, text: String) -> String {
+    if original.contains("\r\n") {
+        text.replace("\r\n", "\n").replace('\n', "\r\n")
+    } else {
+        text
     }
 }
 
