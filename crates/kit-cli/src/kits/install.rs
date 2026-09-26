@@ -974,7 +974,7 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
     }
     for e in lock.kits.iter_mut().filter(|e| !going.contains(&e.name)) {
         for kept in &mut e.applied {
-            for gone in &undo {
+            for gone in undo.iter().rev() {
                 plan::hand_over(gone, kept);
             }
         }
