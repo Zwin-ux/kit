@@ -15,8 +15,8 @@ Type "kit" Sleep 400ms Enter
 Sleep 2.5s
 # Agents: every agent found is ticked.
 Enter Sleep 1.2s
-# Focus: move to Frontend Design and tick it.
-Down Sleep 400ms Space Sleep 700ms Enter Sleep 1.2s
+# Focus: Frontend Design is ticked on a first run.
+Sleep 1.2s Enter Sleep 1.2s
 # Scope: this repo.
 Down Sleep 400ms Enter
 Wait+Screen@120s /Continue/
