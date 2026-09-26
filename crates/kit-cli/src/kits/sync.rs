@@ -37,6 +37,18 @@ pub fn present(a: &Applied) -> bool {
         }),
         // An agent's own CLI owns this (`claude mcp add`); `kit doctor` checks it.
         Applied::ClaudeMcp { .. } => true,
+        Applied::GateToml { file, added, .. } => std::fs::read_to_string(file)
+            .ok()
+            .and_then(|t| t.parse::<toml_edit::DocumentMut>().ok())
+            .is_some_and(|d| {
+                let extra = d
+                    .get("gate")
+                    .and_then(|g| g.get("extra"))
+                    .and_then(|e| e.as_array());
+                added.iter().all(|c| {
+                    extra.is_some_and(|e| e.iter().any(|v| v.as_str() == Some(c.as_str())))
+                })
+            }),
     }
 }
 
@@ -50,6 +62,7 @@ fn describe(a: &Applied) -> String {
         }
         Applied::HookJson { file, .. } => format!("hook in {}", tilde(file)),
         Applied::ClaudeMcp { name, .. } => format!("Claude Code MCP server {name}"),
+        Applied::GateToml { file, kit, .. } => format!("{kit} gate checks in {}", tilde(file)),
     }
 }
 
@@ -61,6 +74,7 @@ fn runs_code(a: &Applied) -> bool {
             | Applied::McpToml { .. }
             | Applied::ClaudeMcp { .. }
             | Applied::HookJson { .. }
+            | Applied::GateToml { .. }
     )
 }
 
@@ -515,6 +529,21 @@ mod tests {
         )
         .unwrap();
         assert!(present(&a));
+
+        let gate = dir.join("kit.toml");
+        let a = Applied::GateToml {
+            file: gate.clone(),
+            kit: "ios-apple-design".into(),
+            added: vec!["swift build".into(), "swift test".into()],
+            wanted: vec!["swift build".into(), "swift test".into()],
+            created: true,
+        };
+        assert!(!present(&a), "no kit.toml");
+        std::fs::write(&gate, "[gate]\nextra = [\"swift build\"]\n").unwrap();
+        assert!(!present(&a), "one command missing");
+        std::fs::write(&gate, "[gate]\nextra = [\"swift build\", \"swift test\"]\n").unwrap();
+        assert!(present(&a));
+        assert!(runs_code(&a), "gate commands run on every kit run");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

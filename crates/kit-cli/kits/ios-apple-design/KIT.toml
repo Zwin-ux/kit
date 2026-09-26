@@ -1,0 +1,88 @@
+schema = 1
+
+[kit]
+name        = "ios-apple-design"
+title       = "iOS / Apple Design"
+version     = "0.1.0"
+description = "Native iOS apps that look and feel like Apple's: SwiftUI, HIG, Liquid Glass, accessibility"
+extends     = ["essentials"]
+agents      = ["claude", "codex", "grok"]
+licence     = "MIT"
+example     = "build a settings screen that looks native in light, dark and the largest text size"
+
+[rules]
+file = "RULES.md"
+
+# Kit-authored: Apple's design principles in Kit's words, citing HIG pages.
+[[skill]]
+name    = "apple-design"
+path    = "skills/apple-design"
+licence = "MIT"
+
+[[skill]]
+name    = "swiftui-expert-skill"
+source  = "github:AvdLee/SwiftUI-Agent-Skill"
+path    = "skills/swiftui-expert-skill"
+rev     = "b24e68a965dc4b5bd2cc41dc60c094a26a9379ce"
+licence = "MIT"
+
+[[skill]]
+name    = "swiftui-pro"
+source  = "github:twostraws/SwiftUI-Agent-Skill"
+path    = "swiftui-pro"
+rev     = "be297ff80dddec529af1f9b1f1f114aab6c9d11c"
+licence = "MIT"
+
+[[skill]]
+name    = "swiftui-liquid-glass"
+source  = "github:Dimillian/Skills"
+path    = "swiftui-liquid-glass"
+rev     = "05ba982bfeb0d77d3c97d4542b0ee15034d05f84"
+licence = "MIT"
+
+[[skill]]
+name    = "swift-concurrency"
+source  = "github:AvdLee/Swift-Concurrency-Agent-Skill"
+path    = "skills/swift-concurrency"
+rev     = "d5770817d2622e1585b1f7eaebc791a9cb0959c8"
+licence = "MIT"
+
+[[skill]]
+name    = "swift-testing-expert"
+source  = "github:AvdLee/Swift-Testing-Agent-Skill"
+path    = "swift-testing-expert"
+rev     = "798e9b1a2bcac164d4f0c781908199e754f0bab6"
+licence = "MIT"
+
+[[skill]]
+name    = "swiftdata-pro"
+source  = "github:twostraws/SwiftData-Agent-Skill"
+path    = "swiftdata-pro"
+rev     = "922d989473a9914210b41529a1ac5636aff4b8c1"
+licence = "MIT"
+
+[[skill]]
+name    = "swift-accessibility-skill"
+source  = "github:PasqualeVittoriosi/swift-accessibility-skill"
+path    = "swift-accessibility-skill"
+rev     = "3791850af76f11cffa552b3394f2b8732d7ce3c7"
+licence = "MIT"
+
+# Apple's docs, HIG and WWDC transcripts at runtime, so Kit never copies them.
+[mcp.sosumi]
+url = "https://sosumi.ai/mcp"
+
+# Build, test and run on the simulator without the Xcode window. macOS only.
+[mcp.xcodebuildmcp]
+command = "npx"
+args    = ["-y", "xcodebuildmcp@2.7.0", "mcp"]
+
+[[hook]]
+on   = "after_edit"
+glob = "*.swift"
+use  = "format-and-lint"
+
+# Every `kit run` in the repo must pass SwiftLint with the project's own
+# .swiftlint.yml. Read-only: it changes no files.
+[gate]
+extra = ["swiftlint lint --quiet"]

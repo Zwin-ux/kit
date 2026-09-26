@@ -128,7 +128,33 @@ pub struct Hook {
     /// Only files matching this glob trigger the hook.
     pub glob: Option<String>,
     /// Command to run; `$FILE` is the edited file.
-    pub run: String,
+    pub run: Option<String>,
+    /// A hook Kit provides instead of a command: `use = "format-and-lint"`.
+    #[serde(rename = "use")]
+    pub builtin: Option<Builtin>,
+}
+
+/// Hooks that ship inside Kit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Builtin {
+    /// Format the edited file, then lint it, with the tools the project
+    /// already has (Prettier, ESLint, Ruff, rustfmt, gofmt, SwiftFormat,
+    /// SwiftLint). Installs nothing.
+    FormatAndLint,
+}
+
+impl Hook {
+    /// What the plan and `kit show` print for this hook.
+    pub fn describe(&self) -> String {
+        match (&self.run, self.builtin) {
+            (Some(run), _) => run.clone(),
+            (None, Some(Builtin::FormatAndLint)) => {
+                "format and lint with the project's own tools (kit:format-and-lint)".into()
+            }
+            (None, None) => String::new(),
+        }
+    }
 }
 
 /// How `kit doctor` proves the kit is live.
@@ -159,9 +185,12 @@ impl KitManifest {
         Ok(m)
     }
 
-    /// Anything that runs on the user's machine: hooks and MCP servers.
+    /// Anything that runs on the user's machine: MCP servers, hooks and
+    /// gate commands.
     pub fn runs_code(&self) -> usize {
-        self.mcp.values().filter(|m| m.runs_code()).count() + self.hook.len()
+        self.mcp.values().filter(|m| m.runs_code()).count()
+            + self.hook.len()
+            + self.gate.as_ref().map_or(0, |g| g.checks().len())
     }
 
     fn validate(&self, origin: &str) -> Result<()> {
@@ -254,6 +283,11 @@ impl KitManifest {
                 && let Err(why) = check_launch(cmd, &mcp.args)
             {
                 bail!("kit {name}: mcp {server}: {why}");
+            }
+        }
+        for h in &self.hook {
+            if h.run.is_some() == h.builtin.is_some() {
+                bail!("kit {name}: each [[hook]] needs exactly one of run or use");
             }
         }
         for c in &self.check.mcp_starts {
@@ -612,6 +646,24 @@ mod tests {
         let m = parse("").unwrap();
         assert_eq!(m.kit.name, "x");
         assert_eq!(m.runs_code(), 0);
+    }
+
+    #[test]
+    fn a_hook_is_a_command_or_a_builtin_never_both() {
+        let hook = "[[hook]]\non = \"after_edit\"\n";
+        let m = parse(&format!("{hook}use = \"format-and-lint\"\n")).unwrap();
+        assert_eq!(m.hook[0].builtin, Some(Builtin::FormatAndLint));
+        assert_eq!(m.runs_code(), 1);
+        let gated = parse(&format!(
+            "{hook}use = \"format-and-lint\"\n[gate]\nextra = [\"a\", \"b\"]\n"
+        ))
+        .unwrap();
+        assert_eq!(gated.runs_code(), 3, "each gate command runs code");
+        for bad in ["", "use = \"format-and-lint\"\nrun = \"x\"\n"] {
+            let err = parse(&format!("{hook}{bad}")).unwrap_err().to_string();
+            assert!(err.contains("exactly one of run or use"), "{err}");
+        }
+        assert!(parse(&format!("{hook}use = \"reformat-everything\"\n")).is_err());
     }
 
     #[test]

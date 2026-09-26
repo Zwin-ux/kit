@@ -126,7 +126,41 @@ pub fn plan(
             }
         }
     }
+    out.extend(gate(kit, scope, opts));
     out
+}
+
+/// The kit's `[gate]`: the checks every `kit run` in the repo must pass.
+/// Agent-independent, so it is planned once.
+fn gate(kit: &Resolved<'_>, scope: &Scope, opts: Options) -> Option<Action> {
+    let m = &kit.kit.manifest;
+    let commands: Vec<String> = m
+        .gate
+        .as_ref()?
+        .checks()
+        .iter()
+        .map(|(_, cmd)| (*cmd).to_string())
+        .collect();
+    if commands.is_empty() {
+        return None;
+    }
+    Some(match scope {
+        Scope::Global { .. } => Action::Skip {
+            piece: "gate".into(),
+            why: "checks go into a repo's kit.toml; install into a repo to add them".into(),
+        },
+        Scope::Repo(_) if opts.no_code => Action::Skip {
+            piece: "gate".into(),
+            why: "left out (no code)".into(),
+        },
+        Scope::Repo(root) => Action::GateToml {
+            file: root.join("kit.toml"),
+            kit: m.kit.name.clone(),
+            commands,
+            previous: Vec::new(),
+            shared: Vec::new(),
+        },
+    })
 }
 
 fn base(scope: &Scope, global: &str, repo: &str) -> PathBuf {

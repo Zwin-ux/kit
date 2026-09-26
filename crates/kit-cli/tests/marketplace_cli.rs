@@ -150,10 +150,14 @@ fn text(bytes: &[u8]) -> String {
 fn search_finds_starter_and_index_kits_best_first() {
     let env = Env::new("search");
     let dir = env.root.clone();
-    let out = env.ok(&dir, &["search", "ios"]);
+    let out = env.ok(&dir, &["search", "tips"]);
     assert!(out.starts_with("tipper"), "{out}");
     // Only Kit's own index can call a kit Official.
-    assert!(out.contains("tipper   Index"), "{out}");
+    assert!(
+        out.lines()
+            .any(|l| l.starts_with("tipper") && l.split_whitespace().nth(1) == Some("Index")),
+        "{out}"
+    );
 
     let out = env.ok(&dir, &["search"]);
     for name in ["essentials", "frontend-design", "llm-engineer", "tipper"] {
@@ -166,7 +170,7 @@ fn search_finds_starter_and_index_kits_best_first() {
     assert!(out.contains("No kits match \"quantum widgets\""), "{out}");
     assert!(out.contains("kit new quantum"), "{out}");
 
-    let out = env.ok(&dir, &["search", "ios", "--json"]);
+    let out = env.ok(&dir, &["search", "tips", "--json"]);
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["command"], "search");
     assert_eq!(v["data"]["kits"][0]["name"], "tipper");

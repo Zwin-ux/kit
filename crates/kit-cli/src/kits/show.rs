@@ -140,11 +140,16 @@ pub fn render(chain: &[Kit]) -> Result<String> {
                 .map(|g| format!(" ({g})"))
                 .unwrap_or_default();
             writeln!(s, "hook      {}{only}   RUNS CODE", hook.on.label())?;
-            writeln!(s, "            runs  {}", hook.run)?;
+            writeln!(s, "            runs  {}", hook.describe())?;
         }
         if let Some(gate) = &kit.manifest.gate {
-            let names: Vec<&str> = gate.checks().iter().map(|(label, _)| *label).collect();
-            writeln!(s, "gate      {} (repo installs)", names.join(", "))?;
+            writeln!(
+                s,
+                "gate      every kit run in the repo (repo installs)   RUNS CODE"
+            )?;
+            for (_, cmd) in gate.checks() {
+                writeln!(s, "            runs  {cmd}")?;
+            }
         }
     }
     let checks: Vec<String> = chain
@@ -165,7 +170,7 @@ pub fn render(chain: &[Kit]) -> Result<String> {
     if code > 0 {
         writeln!(
             s,
-            "Runs code on your machine: {code} (hooks and MCP servers). Kit asks before installing them."
+            "Runs code on your machine: {code} (MCP servers, hooks and gate checks). Kit asks before installing them."
         )?;
     }
     writeln!(s, "next      kit add {} --global", top.name())?;

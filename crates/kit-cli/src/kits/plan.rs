@@ -47,6 +47,17 @@ pub enum Action {
         event: String,
         entry: serde_json::Value,
     },
+    /// Add the kit's gate commands to `[gate] extra` in the repo's kit.toml.
+    GateToml {
+        file: PathBuf,
+        kit: String,
+        commands: Vec<String>,
+        /// On an upgrade, the commands the older version added. Ones the
+        /// kit no longer asks for come out, unless `shared` has them.
+        previous: Vec<String>,
+        /// Commands another installed kit wants in the same file.
+        shared: Vec<String>,
+    },
     /// A piece this agent cannot take, said out loud.
     Skip { piece: String, why: String },
 }
@@ -65,6 +76,15 @@ impl Action {
                 format!("mcp       {name} → claude mcp add-json --scope user")
             }
             Self::HookJson { file, event, .. } => format!("hook      {event} → {}", tilde(file)),
+            Self::GateToml { file, commands, .. } => format!(
+                "gate      {}  + {}",
+                tilde(file),
+                commands
+                    .iter()
+                    .map(|c| format!("`{c}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             Self::Skip { piece, why } => format!("skipped   {piece}: {why}"),
         }
     }
@@ -78,7 +98,8 @@ impl Action {
             Self::Rules { file, .. }
             | Self::McpJson { file, .. }
             | Self::McpToml { file, .. }
-            | Self::HookJson { file, .. } => Some(file),
+            | Self::HookJson { file, .. }
+            | Self::GateToml { file, .. } => Some(file),
             Self::ClaudeMcp { .. } | Self::Skip { .. } => None,
         }
     }
@@ -131,6 +152,7 @@ impl Action {
             Self::HookJson { file, event, entry } => {
                 format!("hook {} {event} {entry}", key_path(file))
             }
+            Self::GateToml { file, kit, .. } => format!("gate {} {kit}", key_path(file)),
             Self::Skip { piece, .. } => format!("skip {piece}"),
         }
     }
@@ -141,7 +163,8 @@ impl Action {
             Self::McpJson { value, .. } => value.get("command").is_some(),
             Self::McpToml { value, .. } => value.contains_key("command"),
             Self::ClaudeMcp { value, .. } => value.get("command").is_some(),
-            Self::HookJson { .. } => true,
+            // Gate commands run on every `kit run` in the repo.
+            Self::HookJson { .. } | Self::GateToml { .. } => true,
             _ => false,
         }
     }
@@ -210,6 +233,17 @@ pub enum Applied {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         original: Option<String>,
     },
+    GateToml {
+        file: PathBuf,
+        kit: String,
+        /// Commands this kit added; ones already in the gate are not listed.
+        added: Vec<String>,
+        /// Every command the kit asked for, so removing another kit never
+        /// takes out a line this one still needs.
+        #[serde(default)]
+        wanted: Vec<String>,
+        created: bool,
+    },
 }
 
 impl Applied {
@@ -230,13 +264,15 @@ impl Applied {
             Self::Rules { created, .. }
             | Self::McpJson { created, .. }
             | Self::McpToml { created, .. }
-            | Self::HookJson { created, .. } => *created,
+            | Self::HookJson { created, .. }
+            | Self::GateToml { created, .. } => *created,
             _ => false,
         }
     }
 
     /// Whether Kit created the file, and its text before Kit, to hand over.
-    fn file_state(&mut self) -> Option<(&mut bool, &mut Option<String>)> {
+    /// A gate record keeps no text: its undo takes out lines, not bytes.
+    fn file_state(&mut self) -> Option<(&mut bool, Option<&mut Option<String>>)> {
         match self {
             Self::Rules {
                 created, original, ..
@@ -249,7 +285,8 @@ impl Applied {
             }
             | Self::HookJson {
                 created, original, ..
-            } => Some((created, original)),
+            } => Some((created, Some(original))),
+            Self::GateToml { created, .. } => Some((created, None)),
             _ => None,
         }
     }
@@ -275,6 +312,9 @@ impl Applied {
             }
             Self::ClaudeMcp { name, .. } => format!("mcp {name} from Claude Code (user)"),
             Self::HookJson { file, event, .. } => format!("hook {event} from {}", tilde(file)),
+            Self::GateToml { file, kit, .. } => {
+                format!("gate checks of {kit} from {}", tilde(file))
+            }
         }
     }
 
@@ -285,7 +325,8 @@ impl Applied {
             Self::Rules { file, .. }
             | Self::McpJson { file, .. }
             | Self::McpToml { file, .. }
-            | Self::HookJson { file, .. } => Some(file),
+            | Self::HookJson { file, .. }
+            | Self::GateToml { file, .. } => Some(file),
             Self::ClaudeMcp { .. } => None,
         }
     }
@@ -296,7 +337,8 @@ impl Applied {
             Self::Rules { file, .. }
             | Self::McpJson { file, .. }
             | Self::McpToml { file, .. }
-            | Self::HookJson { file, .. } => Some(file),
+            | Self::HookJson { file, .. }
+            | Self::GateToml { file, .. } => Some(file),
             Self::ClaudeMcp { .. } => None,
         }
     }
@@ -313,6 +355,7 @@ impl Applied {
             Self::HookJson {
                 file, event, entry, ..
             } => format!("hook {} {event} {entry}", key_path(file)),
+            Self::GateToml { file, kit, .. } => format!("gate {} {kit}", key_path(file)),
         }
     }
 }
@@ -354,6 +397,7 @@ pub fn in_place(action: &Action, record: &Applied) -> bool {
                     .as_array()
                     .is_some_and(|l| l.contains(entry))
             }),
+        (Action::GateToml { commands, .. }, Applied::GateToml { wanted, .. }) => commands == wanted,
         (Action::Skip { .. }, _) => true,
         _ => false,
     }
@@ -392,8 +436,10 @@ pub fn hand_over(gone: &Applied, kept: &mut Applied) {
     };
     if gone.created_file() {
         *created = true;
-        *original = None;
-    } else if let (Some(go), Some(ko)) = (gone.original(), original.as_mut())
+        if let Some(original) = original {
+            *original = None;
+        }
+    } else if let (Some(go), Some(Some(ko))) = (gone.original(), original)
         && only_difference(gone, ko, go)
     {
         *ko = go.to_string();
@@ -519,6 +565,22 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
             entry,
             created: created || *c,
             original: o.clone().or(original),
+        },
+        (
+            Applied::GateToml { created: c, .. },
+            Applied::GateToml {
+                file,
+                kit,
+                added,
+                wanted,
+                created,
+            },
+        ) => Applied::GateToml {
+            file,
+            kit,
+            added,
+            wanted,
+            created: created || *c,
         },
         (_, new) => new,
     }
@@ -829,6 +891,94 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                 original,
             }
         }
+        Action::GateToml {
+            file,
+            kit,
+            commands,
+            previous,
+            shared,
+        } => {
+            let created = !file.exists();
+            let raw = read_or_empty(file)?;
+            let mut doc: toml_edit::DocumentMut = raw
+                .parse()
+                .with_context(|| format!("{} is not valid TOML", file.display()))?;
+            let gate = doc
+                .entry("gate")
+                .or_insert(toml_edit::table())
+                .as_table_mut()
+                .with_context(|| format!("{}: gate is not a table", file.display()))?;
+            // An older version's commands: the ones still wanted stay this
+            // kit's; the rest come out, one line each, as `kit remove` would.
+            let (kept, dropped): (Vec<String>, Vec<String>) = previous
+                .iter()
+                .cloned()
+                .partition(|c| commands.contains(c) || shared.contains(c));
+            if !dropped.is_empty()
+                && let Some(extra) = gate.get_mut("extra").and_then(|e| e.as_array_mut())
+            {
+                for d in &dropped {
+                    let at = extra.iter().position(|v| v.as_str() == Some(d.as_str()));
+                    if let Some(i) = at {
+                        extra.remove(i);
+                    }
+                }
+            }
+            let present: Vec<String> = ["format", "typecheck", "test"]
+                .iter()
+                .filter_map(|k| gate.get(k).and_then(|v| v.as_str()).map(str::to_string))
+                .chain(
+                    gate.get("extra")
+                        .and_then(|v| v.as_array())
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|v| v.as_str().map(str::to_string)),
+                )
+                .collect();
+            let new: Vec<String> = commands
+                .iter()
+                .filter(|c| !present.contains(c))
+                .cloned()
+                .collect();
+            if !new.is_empty() {
+                let extra = gate
+                    .entry("extra")
+                    .or_insert(toml_edit::value(toml_edit::Array::new()))
+                    .as_array_mut()
+                    .with_context(|| format!("{}: gate.extra is not a list", file.display()))?;
+                for c in &new {
+                    extra.push(c.as_str());
+                }
+            }
+            if gate
+                .get("extra")
+                .and_then(|e| e.as_array())
+                .is_some_and(|e| e.is_empty())
+            {
+                gate.remove("extra");
+            }
+            if !new.is_empty() || !dropped.is_empty() {
+                let header = if created {
+                    "# Written by kit add. Name your own format, typecheck or test checks here.\n"
+                } else {
+                    ""
+                };
+                write(file, &same_eol(&raw, format!("{header}{doc}")))?;
+            }
+            let mut added = kept;
+            for c in new {
+                if !added.contains(&c) {
+                    added.push(c);
+                }
+            }
+            Applied::GateToml {
+                file: file.clone(),
+                kit: kit.clone(),
+                added,
+                wanted: commands.clone(),
+                created,
+            }
+        }
         Action::Skip { .. } => return Ok(None),
     }))
 }
@@ -929,6 +1079,48 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 let mut doc = read_json(file)?;
                 let key = drop_json(applied, &mut doc);
                 finish_json(file, &doc, *created, key, original.as_deref())?;
+            }
+        }
+        Applied::GateToml {
+            file,
+            added,
+            created,
+            ..
+        } => {
+            if file.exists() && !added.is_empty() {
+                let raw = read_or_empty(file)?;
+                let mut doc: toml_edit::DocumentMut = raw.parse()?;
+                if let Some(gate) = doc.get_mut("gate").and_then(|g| g.as_table_mut()) {
+                    let empty = match gate.get_mut("extra").and_then(|e| e.as_array_mut()) {
+                        Some(extra) => {
+                            // One line per command Kit added: a copy the
+                            // user wrote by hand stays.
+                            for a in added {
+                                let at = extra.iter().position(|v| v.as_str() == Some(a));
+                                if let Some(i) = at {
+                                    extra.remove(i);
+                                }
+                            }
+                            extra.is_empty()
+                        }
+                        None => false,
+                    };
+                    if empty {
+                        gate.remove("extra");
+                    }
+                    if gate.is_empty() {
+                        doc.remove("gate");
+                    }
+                }
+                let left = doc.to_string();
+                let only_comments = left
+                    .lines()
+                    .all(|l| l.trim().is_empty() || l.trim_start().starts_with('#'));
+                if *created && only_comments {
+                    std::fs::remove_file(file)?;
+                } else {
+                    write(file, &same_eol(&raw, left))?;
+                }
             }
         }
     }

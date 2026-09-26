@@ -1570,6 +1570,277 @@ fn planted_links_never_redirect_a_write() {
     }
 }
 
+/// A kit's [gate] reaches the repo's kit.toml, so `kit run` holds agents to it.
+#[test]
+fn a_kits_gate_is_added_to_kit_toml_and_removed_exactly() {
+    let root = scratch("gate");
+    let kit = root.join("gate-kit");
+    write(
+        &kit.join("skills/hello/SKILL.md"),
+        "---\nname: hello\n---\nHi\n",
+    );
+    write(
+        &kit.join("KIT.toml"),
+        r#"schema = 1
+[kit]
+name = "gated"
+title = "Gated"
+version = "0.1.0"
+description = "d"
+[[skill]]
+name = "hello"
+path = "skills/hello"
+[gate]
+test = "cargo test"
+extra = ["swiftlint lint --strict"]
+"#,
+    );
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let ours = "[gate]\ntest = \"cargo test\" # ours\n";
+    write(&repo.join("kit.toml"), ours);
+    let spec = kit.to_str().unwrap();
+
+    let out = env.kit(&repo, &["add", spec, "-a", "codex", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stdout).contains("`swiftlint lint --strict`"),
+        "{}",
+        text(&out.stdout)
+    );
+    // The plan's "what runs" lists the gate command too.
+    assert!(
+        text(&out.stdout)
+            .contains("runs  swiftlint lint --strict   (in the gate of every kit run)"),
+        "{}",
+        text(&out.stdout)
+    );
+    let raw = read(&repo.join("kit.toml"));
+    assert!(raw.starts_with(ours), "{raw}");
+    let cfg: kit_core::KitConfig = toml::from_str(&raw).unwrap();
+    assert_eq!(cfg.gate.test.as_deref(), Some("cargo test"));
+    assert_eq!(cfg.gate.extra, vec!["swiftlint lint --strict".to_string()]);
+
+    let out = env.kit(&repo, &["remove", "gated", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&repo.join("kit.toml")), ours);
+
+    // A Windows (CRLF) kit.toml keeps its line endings, and remove gives
+    // back the exact bytes.
+    let crlf = "[gate]\r\ntest = \"cargo test\" # ours\r\n";
+    write(&repo.join("kit.toml"), crlf);
+    let out = env.kit(&repo, &["add", spec, "-a", "codex", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let raw = read(&repo.join("kit.toml"));
+    assert!(
+        !raw.replace("\r\n", "").contains('\n'),
+        "mixed line endings: {raw:?}"
+    );
+    let out = env.kit(&repo, &["remove", "gated", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&repo.join("kit.toml")), crlf);
+
+    // With no kit.toml, Kit creates one and removes it again.
+    std::fs::remove_file(repo.join("kit.toml")).unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "codex", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let cfg: kit_core::KitConfig = toml::from_str(&read(&repo.join("kit.toml"))).unwrap();
+    assert_eq!(cfg.gate.checks().len(), 2);
+    let out = env.kit(&repo, &["remove", "gated", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+
+    // Global installs cannot carry a gate, and say why.
+    let out = env.kit(&repo, &["add", spec, "-a", "codex", "--global", "--print"]);
+    assert!(
+        text(&out.stdout).contains("skipped   gate"),
+        "{}",
+        text(&out.stdout)
+    );
+}
+
+/// Two kits that want the same gate command: removing one keeps it for the
+/// other, and a copy the user wrote by hand is never Kit's to remove.
+#[test]
+fn a_gate_command_two_kits_need_stays_until_both_are_gone() {
+    let root = scratch("gate-shared");
+    let gate_kit = |name: &str| {
+        let kit = root.join(format!("{name}-kit"));
+        write(
+            &kit.join("KIT.toml"),
+            &format!(
+                "schema = 1\n[kit]\nname = \"{name}\"\ntitle = \"{name}\"\nversion = \"0.1.0\"\ndescription = \"d\"\n[gate]\nextra = [\"swiftlint lint --strict\"]\n"
+            ),
+        );
+        kit
+    };
+    let (ga, gb) = (gate_kit("ga"), gate_kit("gb"));
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    for kit in [&ga, &gb] {
+        let out = env.kit(
+            &repo,
+            &["add", kit.to_str().unwrap(), "-a", "codex", "--yes"],
+        );
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    let raw = read(&repo.join("kit.toml"));
+    assert!(raw.starts_with("# Written by kit add."), "{raw}");
+    assert_eq!(raw.matches("swiftlint lint --strict").count(), 1, "{raw}");
+
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(
+        read(&repo.join("kit.toml")).contains("swiftlint lint --strict"),
+        "gb still needs it"
+    );
+
+    let out = env.kit(&repo, &["remove", "gb", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+
+    // A line the user already had stays after remove.
+    let ours = "[gate]\nextra = [\"swiftlint lint --strict\"]\n";
+    write(&repo.join("kit.toml"), ours);
+    let out = env.kit(
+        &repo,
+        &["add", ga.to_str().unwrap(), "-a", "codex", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&repo.join("kit.toml")), ours);
+
+    // Two kits with nothing in common, removed in install order: the one
+    // that stays deletes the kit.toml the first one created.
+    std::fs::remove_file(repo.join("kit.toml")).unwrap();
+    let gc = root.join("gc-kit");
+    write(
+        &gc.join("KIT.toml"),
+        "schema = 1\n[kit]\nname = \"gc\"\ntitle = \"gc\"\nversion = \"0.1.0\"\ndescription = \"d\"\n[gate]\nextra = [\"make lint\"]\n",
+    );
+    for kit in [&ga, &gc] {
+        let out = env.kit(
+            &repo,
+            &["add", kit.to_str().unwrap(), "-a", "codex", "--yes"],
+        );
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    for name in ["ga", "gc"] {
+        let out = env.kit(&repo, &["remove", name, "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    assert!(!repo.join("kit.toml").exists());
+}
+
+/// Upgrading a kit whose gate changed takes out the commands the new
+/// version dropped, keeps ones another kit wants, and leaves nothing behind.
+#[test]
+fn a_kit_upgrade_replaces_its_gate_commands() {
+    let root = scratch("gate-upgrade");
+    let gate_kit = |name: &str, version: &str, extra: &str| {
+        let kit = root.join(format!("{name}-kit"));
+        write(
+            &kit.join("KIT.toml"),
+            &format!(
+                "schema = 1\n[kit]\nname = \"{name}\"\ntitle = \"{name}\"\nversion = \"{version}\"\ndescription = \"d\"\n[gate]\nextra = [{extra}]\n"
+            ),
+        );
+        kit.to_str().unwrap().to_string()
+    };
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let add = |spec: &str| {
+        let out = env.kit(&repo, &["add", spec, "-a", "codex", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        text(&out.stdout)
+    };
+    let extra = || {
+        let cfg: kit_core::KitConfig = toml::from_str(&read(&repo.join("kit.toml"))).unwrap();
+        cfg.gate.extra
+    };
+
+    // kit.toml names no checks of its own, so the ones Kit infers keep
+    // running, and the plan lists them with the kit's.
+    write(&repo.join("Cargo.toml"), "[package]\nname = \"r\"\n");
+    let plan = add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
+    assert!(
+        plan.contains("runs  cargo test --workspace   (inferred test check, still runs)"),
+        "{plan}"
+    );
+    assert!(
+        plan.contains("runs  lint-x   (in the gate of every kit run)"),
+        "{plan}"
+    );
+
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+
+    // A gate the user wrote with only extra runs exactly as written: the
+    // plan infers nothing next to it.
+    write(&repo.join("kit.toml"), "[gate]\nextra = [\"make lint\"]\n");
+    let plan = add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
+    assert!(!plan.contains("inferred"), "{plan}");
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(
+        read(&repo.join("kit.toml")),
+        "[gate]\nextra = [\"make lint\"]\n"
+    );
+    std::fs::remove_file(repo.join("kit.toml")).unwrap();
+
+    // v1 [x] → v2 [x, y], then remove: nothing is left behind.
+    add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
+    add(&gate_kit("ga", "0.2.0", "\"lint-x\", \"lint-y\""));
+    assert_eq!(extra(), ["lint-x", "lint-y"]);
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+
+    // v1 [x] → v2 [y]: x stops running, and the plan says so.
+    add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
+    let plan = add(&gate_kit("ga", "0.2.0", "\"lint-y\""));
+    assert!(plan.contains("drop  lint-x   (no longer in ga)"), "{plan}");
+    assert!(
+        plan.contains("note  lint-y is not installed here"),
+        "{plan}"
+    );
+    assert_eq!(extra(), ["lint-y"]);
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+
+    // A dropped command another kit wants stays until that kit goes.
+    add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
+    add(&gate_kit("gb", "0.1.0", "\"lint-x\""));
+    add(&gate_kit("ga", "0.2.0", "\"lint-y\""));
+    assert_eq!(extra(), ["lint-x", "lint-y"]);
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(extra(), ["lint-x"]);
+    let out = env.kit(&repo, &["remove", "gb", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+
+    // An upgrade that drops the gate entirely keeps a command another kit
+    // wants, and that kit removes it later.
+    add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
+    add(&gate_kit("gb", "0.1.0", "\"lint-x\""));
+    let kit = root.join("ga-kit");
+    write(
+        &kit.join("KIT.toml"),
+        "schema = 1\n[kit]\nname = \"ga\"\ntitle = \"ga\"\nversion = \"0.3.0\"\ndescription = \"d\"\n",
+    );
+    add(kit.to_str().unwrap());
+    assert_eq!(extra(), ["lint-x"]);
+    let out = env.kit(&repo, &["remove", "gb", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+}
+
 /// A link to another file in the same repo (or, for --global, in home) is
 /// a normal setup: Kit writes the file it leads to and leaves the link.
 #[cfg(unix)]
