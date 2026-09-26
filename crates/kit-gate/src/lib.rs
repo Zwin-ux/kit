@@ -1027,7 +1027,7 @@ fn summarize_failure(command: &str, output: &str) -> String {
         clean
             .lines()
             .map(str::trim)
-            .filter(|line| !line.is_empty() && !is_npm_notice(line)),
+            .filter(|line| !is_npm_notice(line)),
     ));
     let first = lines
         .iter()
@@ -1104,43 +1104,49 @@ fn is_tap_todo(line: &str) -> bool {
 }
 
 /// Drop a TAP `# TODO` / `# SKIP` failure and its YAML block (`---` … `...`),
-/// whose `error: …` line would otherwise read as the run's failure.
+/// whose `error: …` line would otherwise read as the run's failure. Only a
+/// block that starts on the very next line is dropped: prove and bats may
+/// print none, and the line after is then real output.
 fn without_tap_todos(lines: Vec<&str>) -> Vec<&str> {
     let mut out = Vec::new();
-    let mut skipping = false;
-    for line in lines {
-        if is_tap_todo(line) {
-            skipping = true;
+    let mut lines = lines.into_iter().peekable();
+    while let Some(line) = lines.next() {
+        if !is_tap_todo(line) {
+            out.push(line);
             continue;
         }
-        if skipping {
-            if line == "..." {
-                skipping = false;
-                continue;
-            }
-            let lower = line.to_ascii_lowercase();
-            if !(lower.starts_with("ok ") || lower.starts_with("not ok ") || lower.starts_with('#'))
-            {
-                continue;
-            }
-            skipping = false;
+        if lines.peek() != Some(&"---") {
+            continue;
         }
-        out.push(line);
+        for line in lines.by_ref() {
+            if line == "..." {
+                break;
+            }
+        }
     }
     out
 }
 
 /// Drop the banner npm and pnpm print before a script (`> app@1.0.0 test`,
-/// then `> node test.js`, the command). Any other `> ` line is output and
-/// stays: a script may print `> expected 3, got 2` as its only line.
+/// then `> node test.js`, the command), and blank lines. The banner opens
+/// the output or follows a blank line; any other `> ` line is output and
+/// stays: a script may print `> expected 3, got 2` as its only line, or
+/// `> alice@example.com notified`.
 fn without_script_banners<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
     let mut out = Vec::new();
+    let mut block_start = true;
     let mut after_banner = false;
     for line in lines {
+        if line.is_empty() {
+            block_start = true;
+            after_banner = false;
+            continue;
+        }
+        let at_start = std::mem::take(&mut block_start);
         if std::mem::take(&mut after_banner) && line.starts_with("> ") {
             continue;
         }
-        if is_script_banner(line) {
+        if at_start && is_script_banner(line) {
             after_banner = true;
             continue;
         }
@@ -1149,14 +1155,18 @@ fn without_script_banners<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<&'a s
     out
 }
 
-/// `> app@1.0.0 test` or `> @scope/app@1.0.0 test /path` (pnpm).
+/// `> app@1.0.0 test` or `> @scope/app@1.0.0 test /path` (pnpm): a package,
+/// `@`, a version that starts with a digit, then the script name.
 fn is_script_banner(line: &str) -> bool {
     let Some(rest) = line.strip_prefix("> ") else {
         return false;
     };
     let mut words = rest.split_whitespace();
     match (words.next(), words.next()) {
-        (Some(package), Some(_script)) => package.get(1..).is_some_and(|p| p.contains('@')),
+        (Some(package), Some(_script)) => package
+            .get(1..)
+            .and_then(|p| p.rsplit_once('@'))
+            .is_some_and(|(_, version)| version.starts_with(|c: char| c.is_ascii_digit())),
         _ => false,
     }
 }
@@ -1419,6 +1429,15 @@ mod tests {
                 include_str!("fixtures/npm-missing-color.txt"),
                 "npm: npm error Missing script: \"missing-xyz\"",
             ),
+            // Mid-output `> x@y z` lines are the script's own, not a banner.
+            (
+                "\n> app@1.0.0 test\n> node notify.js\n\n> alice@example.com notified\n> build failed: missing env\n",
+                "npm: > alice@example.com notified",
+            ),
+            (
+                "> alice@example.com notified\n> build failed: missing env\n",
+                "npm: > alice@example.com notified",
+            ),
         ];
         for (output, want) in cases {
             assert_eq!(summarize_failure("npm run test", output), want);
@@ -1438,6 +1457,17 @@ mod tests {
                 "sh quote.sh",
                 include_str!("fixtures/quote-only.txt"),
                 "sh: > expected 3, got 2",
+            ),
+            // prove and bats may print a TODO with no YAML block after it.
+            (
+                "prove t",
+                "not ok 1 - t # TODO later\nError: database unreachable\n",
+                "prove: Error: database unreachable",
+            ),
+            (
+                "prove t",
+                "ok 1 - a\nnot ok 2 - b # SKIP no db\nnot ok 3 - c\n",
+                "prove: not ok 3 - c",
             ),
             (
                 "npx jest",
@@ -1608,6 +1638,22 @@ mod tests {
                 .checks
                 .iter()
                 .all(|check| check.status == CheckStatus::TimedOut)
+        );
+    }
+
+    #[test]
+    fn build_command_asks_for_plain_output() {
+        let cmd = build_command("npm run test", Path::new("wt")).expect("command");
+        let env = |name: &str| {
+            cmd.as_std()
+                .get_envs()
+                .find(|(key, _)| *key == name)
+                .and_then(|(_, value)| value.map(ToOwned::to_owned))
+        };
+        assert_eq!(env("NO_COLOR").as_deref(), Some(std::ffi::OsStr::new("1")));
+        assert_eq!(
+            env("CARGO_TERM_COLOR").as_deref(),
+            Some(std::ffi::OsStr::new("never"))
         );
     }
 
