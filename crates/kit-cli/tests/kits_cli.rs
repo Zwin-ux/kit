@@ -832,3 +832,174 @@ fn a_kept_skill_is_never_overwritten_by_a_later_add() {
     );
     assert_eq!(read(&skill), "my edit");
 }
+
+/// A failed install puts every file back byte for byte, including the
+/// user's own skill folder it had replaced with --force.
+#[test]
+fn a_failed_install_restores_everything_it_touched() {
+    let root = scratch("rollback");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let claude_md = "# Mine\r\nkeep crlf\r\n";
+    write(&repo.join("CLAUDE.md"), claude_md);
+    let mcp = "{\"mcpServers\":{\"docs\":{\"type\":\"http\",\"url\":\"https://example.com/mcp\"}}}";
+    write(&repo.join(".mcp.json"), mcp);
+    write(&repo.join(".claude/skills/hello/SKILL.md"), "my own skill");
+    write(&repo.join(".codex/config.toml"), "not = [valid toml");
+
+    let out = env.kit(
+        &repo,
+        &[
+            "add",
+            kit.to_str().unwrap(),
+            "-a",
+            "claude",
+            "-a",
+            "codex",
+            "--yes",
+            "--force",
+        ],
+    );
+    assert!(!out.status.success(), "{}", text(&out.stdout));
+    assert!(
+        text(&out.stderr).contains("nothing was changed"),
+        "{}",
+        text(&out.stderr)
+    );
+    assert_eq!(read(&repo.join("CLAUDE.md")), claude_md);
+    assert_eq!(read(&repo.join(".mcp.json")), mcp);
+    assert_eq!(
+        read(&repo.join(".claude/skills/hello/SKILL.md")),
+        "my own skill"
+    );
+    assert!(!repo.join(".claude/skills/hello/.kit-owned").exists());
+    assert!(!repo.join(".claude/settings.json").exists());
+    assert!(!repo.join(".agents").exists());
+}
+
+/// An MCP server the user already had is theirs: remove keeps it, and one
+/// replaced with --force comes back.
+#[test]
+fn remove_keeps_mcp_servers_the_user_had_before() {
+    let root = scratch("user-mcp");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let mine = serde_json::json!({"mcpServers": {
+        "docs": {"type": "http", "url": "https://example.com/mcp"},
+        "local": {"command": "my-local-server"},
+    }});
+    write(&repo.join(".mcp.json"), &mine.to_string());
+    let spec = kit.to_str().unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+    assert!(!out.status.success(), "a different 'local' needs --force");
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes", "--force"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let now: serde_json::Value = serde_json::from_str(&read(&repo.join(".mcp.json"))).unwrap();
+    assert_eq!(now["mcpServers"]["local"]["command"], "npx");
+
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let back: serde_json::Value = serde_json::from_str(&read(&repo.join(".mcp.json"))).unwrap();
+    assert_eq!(back, mine);
+}
+
+/// A new version of a kit replaces its rules and MCP config, and takes out
+/// what it no longer has.
+#[test]
+fn an_upgrade_replaces_old_config_and_removes_dropped_pieces() {
+    let root = scratch("upgrade");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let spec = kit.to_str().unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+
+    let toml = read(&kit.join("KIT.toml"))
+        .replace("version = \"0.1.0\"", "version = \"0.2.0\"")
+        .replace("https://example.com/mcp", "https://example.com/v2")
+        .replace(
+            "[mcp.local]\ncommand = \"npx\"\nargs = [\"-y\", \"thing@1.0.0\"]\n",
+            "",
+        );
+    write(&kit.join("KIT.toml"), &toml);
+    write(&kit.join("RULES.md"), "Be kinder.\n");
+
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let plan = text(&out.stdout);
+    assert!(plan.contains("remove    mcp local"), "{plan}");
+    let claude_md = read(&repo.join("CLAUDE.md"));
+    assert!(
+        claude_md.contains("Be kinder.") && !claude_md.contains("Be kind.\n"),
+        "{claude_md}"
+    );
+    assert!(claude_md.contains("kit:demo 0.2.0"), "{claude_md}");
+    let mcp: serde_json::Value = serde_json::from_str(&read(&repo.join(".mcp.json"))).unwrap();
+    assert_eq!(mcp["mcpServers"]["docs"]["url"], "https://example.com/v2");
+    assert!(mcp["mcpServers"].get("local").is_none(), "{mcp}");
+
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    for gone in [".claude", "CLAUDE.md", ".mcp.json", "kit.lock"] {
+        assert!(!repo.join(gone).exists(), "{gone} should be gone");
+    }
+}
+
+/// Two kits that define an MCP server of the same name differently.
+#[test]
+fn two_kits_cannot_share_an_mcp_name_with_different_servers() {
+    let root = scratch("clash");
+    let demo = demo_kit(&root);
+    let other = root.join("other-kit");
+    write(
+        &other.join("KIT.toml"),
+        "schema = 1\n[kit]\nname = \"other\"\ntitle = \"Other\"\nversion = \"0.1.0\"\ndescription = \"d\"\n[mcp.docs]\nurl = \"https://other.example/mcp\"\n",
+    );
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let out = env.kit(
+        &repo,
+        &["add", demo.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let out = env.kit(
+        &repo,
+        &["add", other.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(!out.status.success());
+    assert!(
+        text(&out.stderr).contains("installed by demo"),
+        "{}",
+        text(&out.stderr)
+    );
+    let mcp: serde_json::Value = serde_json::from_str(&read(&repo.join(".mcp.json"))).unwrap();
+    assert_eq!(mcp["mcpServers"]["docs"]["url"], "https://example.com/mcp");
+
+    // Both in one install.
+    let repo2 = root.join("repo2");
+    git_repo(&repo2);
+    let out = env.kit(
+        &repo2,
+        &[
+            "add",
+            demo.to_str().unwrap(),
+            other.to_str().unwrap(),
+            "-a",
+            "claude",
+            "--yes",
+        ],
+    );
+    assert!(!out.status.success());
+    assert!(
+        text(&out.stderr).contains("differently"),
+        "{}",
+        text(&out.stderr)
+    );
+}

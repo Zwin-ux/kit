@@ -170,14 +170,24 @@ pub enum Applied {
         file: PathBuf,
         name: String,
         created: bool,
+        /// The user's own server of that name, replaced with `--force`;
+        /// remove puts it back.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous: Option<serde_json::Value>,
     },
     McpToml {
         file: PathBuf,
         name: String,
         created: bool,
+        /// As for `McpJson`, the table's TOML text.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous: Option<String>,
     },
     ClaudeMcp {
         name: String,
+        /// The server as added, so an upgrade can tell it changed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<serde_json::Value>,
     },
     HookJson {
         file: PathBuf,
@@ -188,6 +198,19 @@ pub enum Applied {
 }
 
 impl Applied {
+    /// One line for the plan screen.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Skill { dir, .. } => format!("skill {}", tilde(dir)),
+            Self::Rules { file, kit, .. } => format!("rules {} (block kit:{kit})", tilde(file)),
+            Self::McpJson { file, name, .. } | Self::McpToml { file, name, .. } => {
+                format!("mcp {name} from {}", tilde(file))
+            }
+            Self::ClaudeMcp { name, .. } => format!("mcp {name} from Claude Code (user)"),
+            Self::HookJson { file, event, .. } => format!("hook {event} from {}", tilde(file)),
+        }
+    }
+
     /// The file or folder this record changed, if any.
     pub fn path(&self) -> Option<&Path> {
         match self {
@@ -219,7 +242,7 @@ impl Applied {
             Self::McpJson { file, name, .. } | Self::McpToml { file, name, .. } => {
                 format!("mcp {} {name}", file.display())
             }
-            Self::ClaudeMcp { name } => format!("claude-mcp user {name}"),
+            Self::ClaudeMcp { name, .. } => format!("claude-mcp user {name}"),
             Self::HookJson {
                 file, event, entry, ..
             } => format!("hook {} {event} {entry}", file.display()),
@@ -227,26 +250,264 @@ impl Applied {
     }
 }
 
-/// Apply every action in order. On a failure, undo what was applied and
-/// return the error, so a failed `kit add` changes nothing.
-pub fn apply_all(actions: &[Action], force: bool) -> Result<Vec<Applied>> {
+/// Is what `action` wants already exactly what `record` installed, and
+/// still on disk? An upgrade or a changed server is not.
+pub fn in_place(action: &Action, record: &Applied) -> bool {
+    match (action, record) {
+        (Action::Skill { payload, .. }, Applied::Skill { hash, .. }) => *hash == payload.hash,
+        (
+            Action::Rules {
+                file,
+                kit,
+                version,
+                text,
+            },
+            Applied::Rules { .. },
+        ) => {
+            let block = set_block("", kit, version, text);
+            read_or_empty(file).is_ok_and(|t| t.contains(block.trim_end()))
+        }
+        (Action::McpJson { file, name, value }, Applied::McpJson { .. }) => read_json(file)
+            .is_ok_and(|d| d.get("mcpServers").and_then(|s| s.get(name)) == Some(value)),
+        (Action::McpToml { file, name, value }, Applied::McpToml { .. }) => read_or_empty(file)
+            .ok()
+            .and_then(|t| t.parse::<toml_edit::DocumentMut>().ok())
+            .and_then(|d| {
+                d.get("mcp_servers")
+                    .and_then(|s| s.get(name))
+                    .and_then(|i| i.as_table().map(ToString::to_string))
+            })
+            .is_some_and(|t| t == value.to_string()),
+        (Action::ClaudeMcp { value, .. }, Applied::ClaudeMcp { value: had, .. }) => {
+            had.as_ref().is_none_or(|h| h == value)
+        }
+        (Action::HookJson { file, event, entry }, Applied::HookJson { .. }) => read_json(file)
+            .is_ok_and(|d| {
+                d["hooks"][event]
+                    .as_array()
+                    .is_some_and(|l| l.contains(entry))
+            }),
+        (Action::Skip { .. }, _) => true,
+        _ => false,
+    }
+}
+
+/// Two kits asking for the same key want the same thing.
+pub fn same_content(a: &Action, b: &Action) -> bool {
+    match (a, b) {
+        (Action::Skill { payload: x, .. }, Action::Skill { payload: y, .. }) => x.hash == y.hash,
+        (Action::McpJson { value: x, .. }, Action::McpJson { value: y, .. })
+        | (Action::ClaudeMcp { value: x, .. }, Action::ClaudeMcp { value: y, .. }) => x == y,
+        (Action::McpToml { value: x, .. }, Action::McpToml { value: y, .. }) => {
+            x.to_string() == y.to_string()
+        }
+        _ => true,
+    }
+}
+
+/// A record replaced by a newer apply keeps what only the first knew:
+/// that Kit created the file, and the user's server it replaced.
+pub fn merge(old: &Applied, new: Applied) -> Applied {
+    match (old, new) {
+        (Applied::Rules { created: c, .. }, Applied::Rules { file, kit, created }) => {
+            Applied::Rules {
+                file,
+                kit,
+                created: created || *c,
+            }
+        }
+        (
+            Applied::McpJson {
+                created: c,
+                previous: p,
+                ..
+            },
+            Applied::McpJson {
+                file,
+                name,
+                created,
+                previous,
+            },
+        ) => Applied::McpJson {
+            file,
+            name,
+            created: created || *c,
+            previous: previous.or_else(|| p.clone()),
+        },
+        (
+            Applied::McpToml {
+                created: c,
+                previous: p,
+                ..
+            },
+            Applied::McpToml {
+                file,
+                name,
+                created,
+                previous,
+            },
+        ) => Applied::McpToml {
+            file,
+            name,
+            created: created || *c,
+            previous: previous.or_else(|| p.clone()),
+        },
+        (
+            Applied::HookJson { created: c, .. },
+            Applied::HookJson {
+                file,
+                event,
+                entry,
+                created,
+            },
+        ) => Applied::HookJson {
+            file,
+            event,
+            entry,
+            created: created || *c,
+        },
+        (_, new) => new,
+    }
+}
+
+/// Apply every action in order. The result lines up with `actions`:
+/// `None` where nothing needed doing (the user already had exactly that).
+/// `ours` holds the keys of changes Kit already made (an upgrade may
+/// replace those). On a failure every file and folder touched is put back
+/// byte for byte, so a failed `kit add` really changes nothing.
+pub fn apply_all(
+    actions: &[Action],
+    force: bool,
+    ours: &std::collections::HashSet<String>,
+) -> Result<Vec<Option<Applied>>> {
+    let mut saved: Vec<Saved> = Vec::new();
     let mut done = Vec::new();
+    let mut ours = ours.clone();
     for action in actions {
-        match apply(action, force) {
-            Ok(Some(a)) => done.push(a),
-            Ok(None) => {}
+        let key = action.key();
+        let result = save(action).and_then(|s| {
+            saved.push(s);
+            apply(action, force, ours.contains(&key))
+        });
+        ours.insert(key);
+        match result {
+            Ok(a) => done.push(a),
             Err(err) => {
-                for a in done.iter().rev() {
-                    let _ = undo(a, true);
+                for (i, s) in saved.iter().enumerate().rev() {
+                    s.restore(done.get(i).and_then(Option::as_ref));
                 }
                 return Err(err.context("nothing was changed"));
             }
         }
     }
+    for s in saved {
+        s.discard();
+    }
     Ok(done)
 }
 
-fn apply(action: &Action, force: bool) -> Result<Option<Applied>> {
+/// What a path held before an action touched it.
+enum Saved {
+    File {
+        path: PathBuf,
+        bytes: Option<Vec<u8>>,
+    },
+    Dir {
+        path: PathBuf,
+        copy: Option<PathBuf>,
+    },
+    Nothing,
+}
+
+fn save(action: &Action) -> Result<Saved> {
+    Ok(match action {
+        Action::Skill { dir, .. } => {
+            let copy = if dir.exists() {
+                let copy = dir.with_file_name(format!(
+                    ".{}.kit-rollback-{}",
+                    dir.file_name().unwrap_or_default().to_string_lossy(),
+                    std::process::id()
+                ));
+                let _ = std::fs::remove_dir_all(&copy);
+                copy_dir(dir, &copy)?;
+                Some(copy)
+            } else {
+                None
+            };
+            Saved::Dir {
+                path: dir.clone(),
+                copy,
+            }
+        }
+        Action::ClaudeMcp { .. } | Action::Skip { .. } => Saved::Nothing,
+        other => {
+            let path = other
+                .path()
+                .expect("file actions have a path")
+                .to_path_buf();
+            let bytes = match std::fs::read(&path) {
+                Ok(b) => Some(b),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(e) => return Err(e).with_context(|| format!("cannot read {}", path.display())),
+            };
+            Saved::File { path, bytes }
+        }
+    })
+}
+
+impl Saved {
+    /// Put the path back as it was. `applied` undoes what cannot be saved
+    /// as bytes (a server added through `claude mcp`).
+    fn restore(&self, applied: Option<&Applied>) {
+        match self {
+            Self::File { path, bytes } => match bytes {
+                Some(b) => {
+                    let _ = std::fs::write(path, b);
+                }
+                None => {
+                    let _ = std::fs::remove_file(path);
+                    prune(path, 2);
+                }
+            },
+            Self::Dir { path, copy } => {
+                let _ = std::fs::remove_dir_all(path);
+                match copy {
+                    Some(c) => {
+                        let _ = std::fs::rename(c, path);
+                    }
+                    None => prune(path, 2),
+                }
+            }
+            Self::Nothing => {
+                if let Some(a @ Applied::ClaudeMcp { .. }) = applied {
+                    let _ = undo(a, true);
+                }
+            }
+        }
+    }
+
+    fn discard(self) {
+        if let Self::Dir { copy: Some(c), .. } = self {
+            let _ = std::fs::remove_dir_all(c);
+        }
+    }
+}
+
+fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let (src, dst) = (entry.path(), to.join(entry.file_name()));
+        if entry.file_type()?.is_dir() {
+            copy_dir(&src, &dst)?;
+        } else {
+            std::fs::copy(&src, &dst)?;
+        }
+    }
+    Ok(())
+}
+
+fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
     Ok(Some(match action {
         Action::Skill { dir, payload } => {
             write_skill(dir, payload, force)?;
@@ -274,21 +535,25 @@ fn apply(action: &Action, force: bool) -> Result<Option<Applied>> {
             let created = !file.exists();
             let mut doc = read_json(file)?;
             let servers = object_at(&mut doc, "mcpServers", file)?;
-            if let Some(existing) = servers.get(name)
-                && existing != value
-                && !force
-            {
-                bail!(
+            let existing = servers.get(name).cloned();
+            let previous = match existing {
+                // The user already has exactly this: it stays theirs.
+                Some(v) if v == *value && !ours => return Ok(None),
+                Some(_) if ours => None,
+                Some(v) if force => Some(v),
+                Some(_) => bail!(
                     "{} already has an MCP server '{name}' that Kit did not write. Rename or remove it, or use --force",
                     file.display()
-                );
-            }
+                ),
+                None => None,
+            };
             servers.insert(name.clone(), value.clone());
             write_json(file, &doc)?;
             Applied::McpJson {
                 file: file.clone(),
                 name: name.clone(),
                 created,
+                previous,
             }
         }
         Action::McpToml { file, name, value } => {
@@ -303,27 +568,39 @@ fn apply(action: &Action, force: bool) -> Result<Option<Applied>> {
                 .as_table_mut()
                 .with_context(|| format!("{}: mcp_servers is not a table", file.display()))?;
             servers.set_implicit(true);
-            let same = servers
-                .get(name)
-                .and_then(|i| i.as_table())
-                .is_some_and(|t| t.to_string() == value.to_string());
-            if servers.contains_key(name) && !same && !force {
-                bail!(
+            let existing = servers.get(name).map(|i| {
+                i.as_table()
+                    .map_or_else(|| i.to_string(), ToString::to_string)
+            });
+            let previous = match existing {
+                Some(t) if t == value.to_string() && !ours => return Ok(None),
+                Some(_) if ours => None,
+                Some(t) if force => Some(t),
+                Some(_) => bail!(
                     "{} already has [mcp_servers.{name}] that Kit did not write. Rename or remove it, or use --force",
                     file.display()
-                );
-            }
+                ),
+                None => None,
+            };
             servers.insert(name, toml_edit::Item::Table(value.clone()));
             write(file, &doc.to_string())?;
             Applied::McpToml {
                 file: file.clone(),
                 name: name.clone(),
                 created,
+                previous,
             }
         }
         Action::ClaudeMcp { name, value } => {
+            if ours {
+                // An upgrade: Claude Code will not add over its own entry.
+                run_argv(&claude_mcp_argv("remove", name, None)?)?;
+            }
             run_argv(&claude_mcp_argv("add-json", name, Some(value))?)?;
-            Applied::ClaudeMcp { name: name.clone() }
+            Applied::ClaudeMcp {
+                name: name.clone(),
+                value: Some(value.clone()),
+            }
         }
         Action::HookJson { file, event, entry } => {
             let created = !file.exists();
@@ -334,7 +611,11 @@ fn apply(action: &Action, force: bool) -> Result<Option<Applied>> {
                 .or_insert_with(|| serde_json::Value::Array(Vec::new()))
                 .as_array_mut()
                 .with_context(|| format!("{}: hooks.{event} is not a list", file.display()))?;
-            if !list.contains(entry) {
+            if list.contains(entry) {
+                if !ours {
+                    return Ok(None); // already there, and not Kit's to take out
+                }
+            } else {
                 list.push(entry.clone());
             }
             write_json(file, &doc)?;
@@ -385,11 +666,15 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             file,
             name,
             created,
+            previous,
         } => {
             if file.exists() {
                 let mut doc = read_json(file)?;
                 if let Some(servers) = doc.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-                    servers.remove(name);
+                    match previous {
+                        Some(v) => servers.insert(name.clone(), v.clone()),
+                        None => servers.remove(name),
+                    };
                 }
                 finish_json(file, &doc, *created, "mcpServers")?;
             }
@@ -398,12 +683,24 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             file,
             name,
             created,
+            previous,
         } => {
             if file.exists() {
                 let mut doc: toml_edit::DocumentMut = read_or_empty(file)?.parse()?;
                 let empty = match doc.get_mut("mcp_servers").and_then(|t| t.as_table_mut()) {
                     Some(servers) => {
-                        servers.remove(name);
+                        match previous
+                            .as_deref()
+                            .map(str::parse::<toml_edit::DocumentMut>)
+                        {
+                            Some(Ok(prev)) => {
+                                servers
+                                    .insert(name, toml_edit::Item::Table(prev.as_table().clone()));
+                            }
+                            _ => {
+                                servers.remove(name);
+                            }
+                        }
                         servers.is_empty()
                     }
                     None => true,
@@ -419,7 +716,7 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 }
             }
         }
-        Applied::ClaudeMcp { name } => {
+        Applied::ClaudeMcp { name, .. } => {
             run_argv(&claude_mcp_argv("remove", name, None)?)?;
         }
         Applied::HookJson {
@@ -800,8 +1097,12 @@ mod tests {
                 payload: payload("v1"),
             }],
             false,
+            &Default::default(),
         )
-        .unwrap();
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
         assert!(dir.join(OWNED).is_file());
         assert_eq!(drifted(&applied[0]).unwrap(), None);
         std::fs::write(dir.join("SKILL.md"), "edited").unwrap();
@@ -824,6 +1125,7 @@ mod tests {
                 payload: payload("v1"),
             }],
             false,
+            &Default::default(),
         )
         .unwrap_err();
         assert!(
@@ -862,8 +1164,12 @@ mod tests {
                 },
             ],
             false,
+            &Default::default(),
         )
-        .unwrap();
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
         assert!(
             std::fs::read_to_string(&toml)
                 .unwrap()
@@ -906,6 +1212,7 @@ mod tests {
                 },
             ],
             false,
+            &Default::default(),
         )
         .unwrap_err();
         assert!(
