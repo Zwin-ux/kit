@@ -828,6 +828,9 @@ fn scope_json(scope: &Scope) -> serde_json::Value {
 pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
     let scope = scope(args.global)?;
     plan::follow_links_within(scope.root());
+    // Before undoing anything: a linked lock would refuse the save after
+    // the files were already changed, leaving a stale record.
+    super::lock::check_not_linked(&scope)?;
     let mut lock = Lock::load(&scope)?;
     let flag = if args.global { " --global" } else { "" };
     for name in &args.kits {

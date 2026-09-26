@@ -253,7 +253,6 @@ cargo run -p kitctl -- --demo
 |-----|--------|
 | `KIT_HOME` | Where Kit keeps its records, config, cache and receipts (default `~/.kit`) |
 | `KIT_FULL_AUTO=1` | Skip agent approval prompts in `kit run` (sandboxes only) |
-| `KIT_SKILLS_DIR` | Skill pack copied into `kit run` worktrees |
 | `KIT_OLLAMA_MODEL` | Model for the Ollama adapter (default `llama3.2`) |
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
 | `KIT_THEME=high` | High-contrast palette |
