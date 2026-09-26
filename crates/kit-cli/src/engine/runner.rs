@@ -370,8 +370,8 @@ async fn write_terminal(
     worktree: Option<(PathBuf, Option<String>)>,
     started_at: Option<SystemTime>,
     state: RunState,
-    output: String,
-    truncated: bool,
+    mut output: String,
+    mut truncated: bool,
     gate: Option<GateOutcome>,
     agent_diff: Option<String>,
 ) -> Result<RunResult> {
@@ -390,8 +390,15 @@ async fn write_terminal(
     let diff = match (agent_diff, wt_path.as_deref(), diff_base.as_deref()) {
         (Some(d), _, _) => d,
         (None, Some(wt), Some(b)) => worktree::worktree_diff(wt, b).unwrap_or_else(|err| {
-            // Loud: an empty diff here would under-report the run.
-            eprintln!("kit: cannot record the diff of {}: {err:#}", wt.display());
+            // Loud: an empty diff here would under-report the run. Said in
+            // the receipt's log, not on stderr, which would paint over the TUI.
+            let note = format!("kit: cannot record the diff of {}: {err:#}\n", wt.display());
+            append_capped(
+                &mut output,
+                &mut truncated,
+                opts.bounds.output_cap_bytes,
+                &note,
+            );
             String::new()
         }),
         _ => String::new(),
