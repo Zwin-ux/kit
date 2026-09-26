@@ -228,6 +228,19 @@ mod tests {
     }
 
     #[test]
+    fn fox_stays_off_the_missing_agents_error() {
+        let mut app = App::with_motion(false);
+        app.set_agents_probe(vec![("codex".into(), false), ("claude".into(), false)]);
+        let frame = render_to_string(&app, 100, 30);
+        assert!(frame.contains("No coding agents on PATH"));
+        assert!(!frame.contains('▀'), "no fox over an error: {frame}");
+
+        app.set_agents_probe(vec![("codex".into(), true)]);
+        let frame = render_to_string(&app, 100, 30);
+        assert!(frame.contains("Ready to dispatch") && frame.contains('▀'));
+    }
+
+    #[test]
     fn fox_hides_when_the_room_is_short() {
         let app = App::with_motion(false);
         let frame = render_to_string(&app, 100, 18);

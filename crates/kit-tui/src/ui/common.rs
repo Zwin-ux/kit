@@ -201,6 +201,7 @@ fn drop_footer_index(tokens: &[String]) -> Option<usize> {
 
 /// Empty-state body: one primary message + one action hint, under `art`
 /// (every line the same width) when the panel has room for all of it.
+/// The art is muted so the message stays the first thing read.
 pub fn draw_empty_state(
     frame: &mut Frame,
     area: Rect,
@@ -227,7 +228,7 @@ pub fn draw_empty_state(
         lines.extend(std::iter::repeat_n(Line::from(""), pad));
         lines.extend(
             art.iter()
-                .map(|l| Line::from(Span::styled(l.clone(), theme.body()))),
+                .map(|l| Line::from(Span::styled(l.clone(), theme.dim()))),
         );
     }
     lines.push(Line::from(""));

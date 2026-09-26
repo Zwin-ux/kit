@@ -719,9 +719,12 @@ impl App {
         })
     }
 
-    /// Whether the fox is on screen: the empty Control Room, no overlay.
-    fn fox_on_screen(&self) -> bool {
-        self.runs.is_empty() && self.screen == Screen::ControlRoom && !self.help_open
+    /// Whether the fox is on screen: the empty, ready Control Room, no overlay.
+    pub fn fox_on_screen(&self) -> bool {
+        self.runs.is_empty()
+            && self.screen == Screen::ControlRoom
+            && !self.help_open
+            && (self.agents_probe.is_empty() || self.agents_ready_count() > 0)
     }
 
     /// Whether anything on the current frame would change with the clock.
