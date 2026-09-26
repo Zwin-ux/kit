@@ -1421,7 +1421,24 @@ fn a_kit_upgrade_replaces_its_gate_commands() {
         "{plan}"
     );
 
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+
+    // A gate the user wrote with only extra runs exactly as written: the
+    // plan infers nothing next to it.
+    write(&repo.join("kit.toml"), "[gate]\nextra = [\"make lint\"]\n");
+    let plan = add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
+    assert!(!plan.contains("inferred"), "{plan}");
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(
+        read(&repo.join("kit.toml")),
+        "[gate]\nextra = [\"make lint\"]\n"
+    );
+    std::fs::remove_file(repo.join("kit.toml")).unwrap();
+
     // v1 [x] → v2 [x, y], then remove: nothing is left behind.
+    add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
     add(&gate_kit("ga", "0.2.0", "\"lint-x\", \"lint-y\""));
     assert_eq!(extra(), ["lint-x", "lint-y"]);
     let out = env.kit(&repo, &["remove", "ga", "--yes"]);
@@ -1448,6 +1465,21 @@ fn a_kit_upgrade_replaces_its_gate_commands() {
     assert_eq!(extra(), ["lint-x", "lint-y"]);
     let out = env.kit(&repo, &["remove", "ga", "--yes"]);
     assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(extra(), ["lint-x"]);
+    let out = env.kit(&repo, &["remove", "gb", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+
+    // An upgrade that drops the gate entirely keeps a command another kit
+    // wants, and that kit removes it later.
+    add(&gate_kit("ga", "0.1.0", "\"lint-x\""));
+    add(&gate_kit("gb", "0.1.0", "\"lint-x\""));
+    let kit = root.join("ga-kit");
+    write(
+        &kit.join("KIT.toml"),
+        "schema = 1\n[kit]\nname = \"ga\"\ntitle = \"ga\"\nversion = \"0.3.0\"\ndescription = \"d\"\n",
+    );
+    add(kit.to_str().unwrap());
     assert_eq!(extra(), ["lint-x"]);
     let out = env.kit(&repo, &["remove", "gb", "--yes"]);
     assert!(out.status.success(), "{}", text(&out.stderr));

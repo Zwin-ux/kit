@@ -170,7 +170,7 @@ pub fn render(chain: &[Kit]) -> Result<String> {
     if code > 0 {
         writeln!(
             s,
-            "Runs code on your machine: {code} (hooks and MCP servers). Kit asks before installing them."
+            "Runs code on your machine: {code} (MCP servers, hooks and gate checks). Kit asks before installing them."
         )?;
     }
     writeln!(s, "next      kit add {} --global", top.name())?;

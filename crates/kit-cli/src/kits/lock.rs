@@ -218,6 +218,27 @@ impl Lock {
     }
 }
 
+/// The gate commands Kit's own record says kits added to `repo`'s
+/// kit.toml. Only these count as a kit's; anything else in `[gate] extra`
+/// the user wrote. Empty outside a repo or without a record.
+pub fn kit_gate_commands(repo: &Path) -> Vec<String> {
+    let Some(root) = super::install::repo_root(repo) else {
+        return Vec::new();
+    };
+    let file = root.join("kit.toml");
+    let Ok(lock) = Lock::load(&Scope::Repo(root)) else {
+        return Vec::new();
+    };
+    lock.applied()
+        .filter_map(|a| match a {
+            Applied::GateToml { file: f, added, .. } if *f == file => Some(added.iter()),
+            _ => None,
+        })
+        .flatten()
+        .cloned()
+        .collect()
+}
+
 /// `path` relative to the scope's root, with `/` separators.
 fn relative(path: &Path, scope: &Scope) -> Result<PathBuf> {
     let rel = path.strip_prefix(base(scope)).with_context(|| {

@@ -416,8 +416,15 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
         .zip(applied)
         .filter_map(|(k, a)| Some((k, a?)))
         .collect();
+    // A dropped gate command another installed kit wants stays for it.
+    let mut stale = prepared.stale.clone();
+    let mut handed = Vec::new();
+    for (kit, old) in &mut stale {
+        let others: Vec<&Entry> = lock.kits.iter().filter(|e| &e.name != kit).collect();
+        handed.extend(hand_over_gate(std::slice::from_mut(old), &others));
+    }
     let mut left = Vec::new();
-    for (_, old) in prepared.stale.iter().rev() {
+    for (_, old) in stale.iter().rev() {
         match plan::undo(old, req.force) {
             Ok(Some(msg)) => left.push(msg),
             Ok(None) => {}
@@ -430,6 +437,7 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
         }
     }
     record(&mut lock, &chosen, agents, opts, pairs, &prepared.shared);
+    take_handed(&mut lock, &handed);
     lock.save(scope)?;
     for msg in &left {
         eprintln!("kept      {msg}");
@@ -607,6 +615,63 @@ fn runs(chosen: &Chosen, kit: &str, a: &Action) -> Vec<String> {
     }
 }
 
+/// A gate command a staying kit also wants is taken out of the undo: it
+/// stays in the file and becomes that kit's to remove.
+/// Returns (kit, command, whether Kit created the file).
+fn hand_over_gate(undo: &mut [Applied], staying: &[&Entry]) -> Vec<(String, String, bool)> {
+    let mut handed = Vec::new();
+    for a in undo {
+        if let Applied::GateToml {
+            file,
+            added,
+            created,
+            ..
+        } = a
+        {
+            let created = *created;
+            added.retain(|cmd| {
+                let heir = staying.iter().find(|s| {
+                    s.applied.iter().any(|x| {
+                        matches!(x, Applied::GateToml { file: f, wanted, .. }
+                            if f == file && wanted.contains(cmd))
+                    })
+                });
+                match heir {
+                    Some(h) => {
+                        handed.push((h.name.clone(), cmd.clone(), created));
+                        false
+                    }
+                    None => true,
+                }
+            });
+        }
+    }
+    handed
+}
+
+/// Record each handed-over gate command as its heir's.
+fn take_handed(lock: &mut Lock, handed: &[(String, String, bool)]) {
+    for (kit, cmd, was_created) in handed {
+        if let Some(e) = lock.get_mut(kit) {
+            for a in &mut e.applied {
+                if let Applied::GateToml {
+                    added,
+                    wanted,
+                    created,
+                    ..
+                } = a
+                    && wanted.contains(cmd)
+                {
+                    if !added.contains(cmd) {
+                        added.push(cmd.clone());
+                    }
+                    *created |= *was_created;
+                }
+            }
+        }
+    }
+}
+
 /// The checks Kit infers for the repo that holds `kit_toml`, when that file
 /// names no format, typecheck or test check of its own. A kit's gate
 /// commands run after these; they never replace them.
@@ -621,7 +686,8 @@ fn inferred_checks(kit_toml: &Path) -> Vec<(String, String)> {
         },
         Err(_) => kit_core::GateConfig::default(),
     };
-    crate::engine::infer::with_inferred(&gate, root)
+    let kit_added = super::lock::kit_gate_commands(root);
+    crate::engine::infer::with_inferred(&gate, root, &kit_added)
         .map(|g| {
             g.checks()
                 .into_iter()
@@ -884,6 +950,7 @@ fn print_json(
             serde_json::json!({
                 "kit": kit, "change": a.describe(), "key": a.key(),
                 "runsCode": a.runs_code(), "runs": runs(chosen, kit, a),
+                "notes": gate_notes(kit, a),
                 "skipped": matches!(a, Action::Skip { .. }),
             })
         })
@@ -998,36 +1065,7 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         }
     }
 
-    // A gate command another installed kit also wants stays, and becomes
-    // that kit's to remove.
-    // (kit, command, whether Kit created the file)
-    let mut handed: Vec<(String, String, bool)> = Vec::new();
-    for a in &mut undo {
-        if let Applied::GateToml {
-            file,
-            added,
-            created,
-            ..
-        } = a
-        {
-            let created = *created;
-            added.retain(|cmd| {
-                let heir = staying.iter().find(|s| {
-                    s.applied.iter().any(|x| {
-                        matches!(x, Applied::GateToml { file: f, wanted, .. }
-                            if f == file && wanted.contains(cmd))
-                    })
-                });
-                match heir {
-                    Some(h) => {
-                        handed.push((h.name.clone(), cmd.clone(), created));
-                        false
-                    }
-                    None => true,
-                }
-            });
-        }
-    }
+    let handed = hand_over_gate(&mut undo, &staying);
 
     let summary = removal_summary(&undo);
     if !json {
@@ -1100,25 +1138,7 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         }
     }
     lock.kits.retain(|e| !going.contains(&e.name));
-    for (kit, cmd, was_created) in &handed {
-        if let Some(e) = lock.get_mut(kit) {
-            for a in &mut e.applied {
-                if let Applied::GateToml {
-                    added,
-                    wanted,
-                    created,
-                    ..
-                } = a
-                    && wanted.contains(cmd)
-                {
-                    if !added.contains(cmd) {
-                        added.push(cmd.clone());
-                    }
-                    *created |= *was_created;
-                }
-            }
-        }
-    }
+    take_handed(&mut lock, &handed);
     for (name, _) in &still_needed {
         if let Some(e) = lock.get_mut(name) {
             e.requested = false;

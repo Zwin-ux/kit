@@ -264,7 +264,8 @@ fn a_kits_extra_checks_add_to_the_inferred_ones() {
         extra: vec!["swiftlint lint --quiet".into()],
         ..GateConfig::default()
     };
-    let gate = with_inferred(&kit_only, &root).expect("inferred");
+    let kits = ["swiftlint lint --quiet".to_string()];
+    let gate = with_inferred(&kit_only, &root, &kits).expect("inferred");
     let inferred = infer_gate(&root);
     assert_eq!(gate.test, inferred.test);
     assert_eq!(gate.format, inferred.format);
@@ -279,5 +280,23 @@ fn a_kits_extra_checks_add_to_the_inferred_ones() {
         test: Some("make test".into()),
         ..kit_only
     };
-    assert_eq!(with_inferred(&own, &root), None);
+    assert_eq!(with_inferred(&own, &root, &kits), None);
+}
+
+#[test]
+fn a_user_written_gate_with_only_extra_runs_exactly_that_gate() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let mine = GateConfig {
+        extra: vec!["make lint".into()],
+        ..GateConfig::default()
+    };
+    // No kit added it, or a kit added something else: nothing is inferred.
+    assert_eq!(with_inferred(&mine, &root, &[]), None);
+    assert_eq!(
+        with_inferred(&mine, &root, &["swiftlint lint --quiet".to_string()]),
+        None
+    );
 }

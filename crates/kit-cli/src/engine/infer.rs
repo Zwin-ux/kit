@@ -144,11 +144,16 @@ pub fn infer_gate(repo: &Path) -> GateConfig {
 }
 
 /// The gate a live run uses when kit.toml names no format, typecheck or
-/// test check of its own: the inferred ones first, then kit.toml's `extra`
-/// commands (a kit's checks add to the inferred ones, never replace them).
-/// `None` when kit.toml names its own checks or nothing can be inferred.
-pub fn with_inferred(gate: &GateConfig, repo: &Path) -> Option<GateConfig> {
+/// test check of its own and every `extra` command is one a kit added
+/// (`kit_added`, from Kit's own record): the inferred checks first, then
+/// the kits' commands. A kit's checks add to the inferred ones, never
+/// replace them; a gate the user wrote runs exactly as written. `None`
+/// when that gate stands as it is or nothing can be inferred.
+pub fn with_inferred(gate: &GateConfig, repo: &Path, kit_added: &[String]) -> Option<GateConfig> {
     if gate.format.is_some() || gate.typecheck.is_some() || gate.test.is_some() {
+        return None;
+    }
+    if !gate.extra.iter().all(|c| kit_added.contains(c)) {
         return None;
     }
     let inferred = infer_gate(repo);

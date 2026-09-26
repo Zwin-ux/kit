@@ -249,9 +249,14 @@ async fn agent_and_gate(
     let cap = opts.bounds.output_cap_bytes;
     // CEO stamp P2: infer defaults on live runs only. Dry-run stays offline-fast
     // and is exempt from vacuous non-zero exit.
-    // kit.toml without checks of its own (none, or only a kit's `extra`
-    // commands) runs the inferred ones too.
-    if !use_dry && let Some(gate) = super::infer::with_inferred(&config.gate, repo) {
+    // kit.toml without checks of its own (none, or only commands kits
+    // added, per Kit's own record) runs the inferred ones too.
+    let kit_added = if use_dry {
+        Vec::new()
+    } else {
+        crate::kits::lock::kit_gate_commands(repo)
+    };
+    if !use_dry && let Some(gate) = super::infer::with_inferred(&config.gate, repo, &kit_added) {
         let line = format!(
             "gate: inferred checks (kit.toml names none of its own) — {}\n",
             gate.checks()
