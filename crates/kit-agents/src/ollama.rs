@@ -25,12 +25,15 @@ impl Agent for OllamaAgent {
         if !installed {
             return AgentStatus::missing(AgentKind::Ollama);
         }
+        // An installed CLI is not enough: runs need the server and the model.
+        let model = model_name();
+        let remedy = readiness_remedy(installed_models().await.as_deref(), &model);
         AgentStatus {
             kind: AgentKind::Ollama,
             installed: true,
-            authenticated: true, // local; no cloud auth
-            version,
-            remedy: None,
+            authenticated: remedy.is_none(), // local: "ready" means runnable
+            version: version.filter(|v| !v.contains("could not connect")),
+            remedy,
         }
     }
 
@@ -102,6 +105,18 @@ fn parse_model_names(list: &str) -> Vec<String> {
 }
 
 /// `ollama run llama3.1` resolves to `llama3.1:latest`; tagged names match exactly.
+/// What stops a run right now, or `None` when `ollama run <model>` would work.
+/// `models` is `None` when `ollama list` failed: the server is not running.
+fn readiness_remedy(models: Option<&[String]>, model: &str) -> Option<String> {
+    match models {
+        None => Some("start the Ollama server: ollama serve".into()),
+        Some(models) if !has_model(models, model) => Some(format!(
+            "pull the model: ollama pull {model} (or set KIT_OLLAMA_MODEL)"
+        )),
+        Some(_) => None,
+    }
+}
+
 fn has_model(installed: &[String], model: &str) -> bool {
     installed.iter().any(|name| {
         name == model || (!model.contains(':') && name.strip_suffix(":latest") == Some(model))
@@ -152,5 +167,15 @@ llama3.1:latest    46e0c10c039e    4.9 GB    5 months ago\n";
         assert!(!has_model(&installed, "gemma4"));
         // Default model: `ollama run llama3.2` here would start a silent pull.
         assert!(!has_model(&installed, "llama3.2"));
+    }
+
+    #[test]
+    fn ready_only_when_server_answers_and_model_is_pulled() {
+        let installed = parse_model_names(LIST);
+        assert_eq!(readiness_remedy(Some(&installed), "llama3.1"), None);
+        let pull = readiness_remedy(Some(&installed), "llama3.2").unwrap();
+        assert!(pull.contains("ollama pull llama3.2"), "{pull}");
+        let serve = readiness_remedy(None, "llama3.1").unwrap();
+        assert!(serve.contains("ollama serve"), "{serve}");
     }
 }

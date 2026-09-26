@@ -1,0 +1,2 @@
+WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir "C:\\Users\\user\\AppData\\Local\\Temp\\" (codex_home: AbsolutePathBuf("C:\\Users\\user\\AppData\\Local\\Temp\\claude\\C--Users-user\\xxxx-0000-000000000000\\scratchpad\\emptycfg\\c2"))
+Not logged in

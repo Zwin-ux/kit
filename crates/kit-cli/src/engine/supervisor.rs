@@ -132,7 +132,7 @@ mod tests {
     };
     use crate::engine::registry::MAX_CONCURRENT_RUNS;
     use crate::engine::store::load_kit_config;
-    use crate::engine::worktree::resolve_repo;
+    use crate::engine::worktree::{resolve_repo, strip_verbatim};
     use kit_core::Receipt;
     use kit_tui::DispatchJob;
     use std::collections::{HashMap, HashSet};
@@ -206,11 +206,11 @@ mod tests {
             // The latch is the entire gate (never this workspace's product
             // gate), and runs resolve to the fixture (never to cwd).
             assert_eq!(
-                load_kit_config(&repo).gate.checks(),
+                load_kit_config(&repo).expect("kit.toml").gate.checks(),
                 [("test", check.as_str())]
             );
             let resolved = resolve_repo(&repo.to_string_lossy()).expect("resolve fixture");
-            assert_eq!(resolved, repo.canonicalize().unwrap());
+            assert_eq!(resolved, strip_verbatim(repo.canonicalize().unwrap()));
 
             // SAFETY: callers hold kit_home_test_lock.
             unsafe {

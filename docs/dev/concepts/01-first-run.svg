@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 790" role="img" aria-labelledby="title desc">
+  <title id="title">Kit first five minutes</title>
+  <desc id="desc">Three terminal frames show npm installation, doctor, and the demo Control Room.</desc>
+  <rect width="1280" height="790" fill="#0B0E12"/>
+  <style>text{font-family:Consolas,'SFMono-Regular',monospace;fill:#F0F1E3} .muted{fill:#8D969A}.accent{fill:#00E6CC}.fail{fill:#FF3B4E}.small{font-size:15px}.body{font-size:19px}.label{font-size:13px;letter-spacing:3px}.head{font-size:28px;font-weight:700}</style>
+  <text x="46" y="57" class="label accent">KIT / FIRST RUN</text>
+  <text x="46" y="101" class="head">Install. Inspect. See the gate fail.</text>
+  <text x="46" y="127" class="small muted">Concept sequence / sample output depends on the local machine</text>
+  <rect x="46" y="166" width="380" height="545" rx="8" fill="#12171C" stroke="#344047"/>
+  <rect x="450" y="166" width="380" height="545" rx="8" fill="#12171C" stroke="#344047"/>
+  <rect x="854" y="166" width="380" height="545" rx="8" fill="#12171C" stroke="#344047"/>
+  <text x="68" y="199" class="label accent">01 / INSTALL</text>
+  <text x="472" y="199" class="label accent">02 / DOCTOR</text>
+  <text x="876" y="199" class="label accent">03 / DEMO</text>
+  <path d="M46 217h380 M450 217h380 M854 217h380" stroke="#344047"/>
+  <text x="68" y="258" class="body">$ npm i -g</text>
+  <text x="68" y="287" class="body accent">  @mzwin/kit@alpha</text>
+  <text x="68" y="337" class="small muted">npm installs the launcher and</text>
+  <text x="68" y="361" class="small muted">one matching binary package.</text>
+  <text x="68" y="453" class="label">MUST PROVE</text>
+  <text x="68" y="487" class="small">The kit command resolves.</text>
+  <text x="68" y="511" class="small">No account is needed for demo.</text>
+  <text x="472" y="258" class="body">$ kit doctor</text>
+  <text x="472" y="303" class="small">kit doctor 1.0.0-alpha.1</text>
+  <text x="472" y="350" class="small muted">status:</text>
+  <text x="472" y="376" class="small">  binary          ok (rust)</text>
+  <text x="472" y="402" class="small">  installed via   npm</text>
+  <text x="472" y="428" class="small">  control room    ok (kit-tui)</text>
+  <text x="472" y="454" class="small">  gate engine     ok (kit-gate)</text>
+  <text x="472" y="504" class="small muted">agents:</text>
+  <text x="472" y="530" class="small">  codex     ready     -</text>
+  <text x="472" y="555" class="small">  claude    missing   -</text>
+  <text x="472" y="594" class="small muted">try:</text>
+  <text x="472" y="619" class="small accent">  kit --demo</text>
+  <text x="876" y="258" class="body">$ kit --demo</text>
+  <text x="876" y="305" class="small accent">KIT / CONTROL ROOM</text>
+  <text x="876" y="333" class="small muted">[ALL]  1 RUNNING  1 GATING  1 FAIL</text>
+  <path d="M876 352h336" stroke="#344047"/>
+  <text x="876" y="385" class="small">kit         codex   RUN</text>
+  <text x="876" y="411" class="small">kit         grok    GATING</text>
+  <rect x="869" y="429" width="349" height="66" rx="3" fill="#2A1216"/>
+  <rect x="869" y="429" width="4" height="66" fill="#00E6CC"/>
+  <text x="881" y="455" class="small fail">trenchwire  codex   FAIL</text>
+  <text x="881" y="481" class="small fail">^ tsc: 3 errors</text>
+  <text x="876" y="543" class="small muted">Enter opens the gate log.</text>
+  <text x="876" y="568" class="small accent">r retries with gate context.</text>
+  <text x="46" y="757" class="small muted">Demo rows are fixtures. A live receipt requires a real run and gate.</text>
+</svg>

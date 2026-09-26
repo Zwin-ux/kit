@@ -10,6 +10,7 @@
 //! worktree and prepends a routing preamble — Codex-style headless workflow
 //! with engineering discipline.
 
+mod auth;
 mod claude;
 mod codex;
 mod grok;

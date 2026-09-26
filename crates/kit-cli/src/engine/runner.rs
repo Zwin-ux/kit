@@ -81,165 +81,171 @@ pub async fn execute_cancellable(
     tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
     cancel: Option<Arc<CancelHandle>>,
 ) -> Result<RunResult> {
+    let agent_impl = adapter(opts.agent);
+    execute_with(opts, id, tx, cancel, agent_impl.as_ref()).await
+}
+
+/// [`execute_cancellable`] with the agent adapter passed in (tests use fakes).
+async fn execute_with(
+    opts: RunOptions,
+    id: Option<RunId>,
+    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
+    cancel: Option<Arc<CancelHandle>>,
+    agent_impl: &dyn Agent,
+) -> Result<RunResult> {
     ensure_layout()?;
     let id = id.unwrap_or_default();
     let repo = resolve_repo(&opts.repo)?;
+    // Read the gate before any agent runs: a broken kit.toml stops the run
+    // here, and nothing the agent does can change the gate it is held to.
+    let config = load_kit_config(&repo)?;
+    if opts.dry_run != Some(true) {
+        require_agent(agent_impl.probe().await)?;
+    }
     let started_at = SystemTime::now();
 
     send(&tx, &id, RunDelta::State(RunState::Running)).await;
 
     let wt_path = worktrees_dir().join(&id.0);
     let branch = branch_name(&id.0);
-    create_worktree(&repo, &wt_path, &branch)
+    let base = create_worktree(&repo, &wt_path, &branch)
         .with_context(|| format!("create worktree at {}", wt_path.display()))?;
     send(&tx, &id, RunDelta::Worktree(wt_path.clone())).await;
 
     let mut output = String::new();
     let mut truncated = false;
 
-    if cancelled(&cancel) {
-        return finalize_killed(
-            opts,
-            id,
-            repo,
-            branch,
-            wt_path,
-            started_at,
-            output,
-            truncated,
-            tx,
-            "kit: cancelled before agent start\n",
-        )
-        .await;
+    // Once the worktree exists, every way out goes through one receipt write
+    // and one clean-worktree removal: an error here (e.g. the agent cannot
+    // spawn) ends as an `Error` receipt, never a leaked worktree.
+    let ending = agent_and_gate(
+        &opts,
+        &id,
+        &repo,
+        &wt_path,
+        &base,
+        config,
+        &tx,
+        cancel.as_ref(),
+        agent_impl,
+        &mut output,
+        &mut truncated,
+    )
+    .await;
+    let (state, gate, note, agent_diff) = match ending {
+        Ok(Ending::Killed(note)) => (RunState::Killed, None, Some(note), None),
+        Ok(Ending::Gated {
+            state,
+            gate,
+            agent_diff,
+        }) => (state, Some(gate), None, agent_diff),
+        Err(err) => (
+            RunState::Error,
+            None,
+            Some(format!("kit: run failed: {err:#}\n")),
+            None,
+        ),
+    };
+    if let Some(note) = note {
+        append_capped(
+            &mut output,
+            &mut truncated,
+            opts.bounds.output_cap_bytes,
+            &note,
+        );
+        send(&tx, &id, RunDelta::Output(note)).await;
+    }
+    let result = write_terminal(
+        opts,
+        id.clone(),
+        repo,
+        Some(branch),
+        Some((wt_path, Some(base))),
+        Some(started_at),
+        state,
+        output,
+        truncated,
+        gate,
+        agent_diff,
+    )
+    .await?;
+    // Proof first: the terminal state goes out only once its receipt exists.
+    send(&tx, &id, RunDelta::State(state)).await;
+    Ok(result)
+}
+
+/// How a run that got its worktree ended, before its receipt is written.
+enum Ending {
+    /// Killed by the user or the timeout; the note says which.
+    Killed(String),
+    /// The gate ran; `state` also records an agent that exited non-zero.
+    /// `agent_diff` is the tree as the agent left it, taken before the gate.
+    Gated {
+        state: RunState,
+        gate: GateOutcome,
+        agent_diff: Option<String>,
+    },
+}
+
+fn cancelled(cancel: Option<&Arc<CancelHandle>>) -> bool {
+    cancel.is_some_and(|c| c.is_cancelled())
+}
+
+/// Agent phase, then gate phase, inside an existing worktree. Writes nothing
+/// to the receipt store: the caller owns the one terminal write.
+#[allow(clippy::too_many_arguments)]
+async fn agent_and_gate(
+    opts: &RunOptions,
+    id: &RunId,
+    repo: &std::path::Path,
+    wt_path: &std::path::Path,
+    base: &str,
+    mut config: kit_core::KitConfig,
+    tx: &Option<mpsc::Sender<(RunId, RunDelta)>>,
+    cancel: Option<&Arc<CancelHandle>>,
+    agent_impl: &dyn Agent,
+    output: &mut String,
+    truncated: &mut bool,
+) -> Result<Ending> {
+    if cancelled(cancel) {
+        return Ok(Ending::Killed("kit: cancelled before agent start\n".into()));
     }
 
     // --- agent phase ---
-    let force_dry = opts.dry_run == Some(true);
-    let force_live = opts.dry_run == Some(false);
-    let agent_impl = adapter(opts.agent);
-    let status = agent_impl.probe().await;
-    let use_dry = if force_dry {
-        true
-    } else if force_live {
-        if !status.installed {
-            append_capped(
-                &mut output,
-                &mut truncated,
-                opts.bounds.output_cap_bytes,
-                &format!(
-                    "kit: {} not on PATH — cannot force live; install {}\n",
-                    opts.agent,
-                    opts.agent.binary()
-                ),
-            );
-            send(
-                &tx,
-                &id,
-                RunDelta::Output(format!(
-                    "kit: {} missing; falling back to dry-run\n",
-                    opts.agent.binary()
-                )),
-            )
-            .await;
-            true
-        } else {
-            false
-        }
-    } else {
-        // Auto: live when installed.
-        !status.installed
-    };
-
+    // Only an explicit --dry-run is offline; a missing agent was refused
+    // before the worktree was made (see `require_agent`).
+    let use_dry = opts.dry_run == Some(true);
     let phase = if use_dry {
-        if !force_dry && !status.installed {
-            send(
-                &tx,
-                &id,
-                RunDelta::Output(format!(
-                    "kit: {} not installed — dry-run (install CLI for live agents)\n",
-                    opts.agent.binary()
-                )),
-            )
-            .await;
-        }
-        dry_run_agent(
-            &opts,
-            &id,
-            &wt_path,
-            &tx,
-            &mut output,
-            &mut truncated,
-            cancel.as_ref(),
-        )
-        .await?
+        dry_run_agent(opts, id, wt_path, tx, output, truncated, cancel).await?
     } else {
         live_agent(
-            agent_impl.as_ref(),
-            &opts,
-            &id,
-            &repo,
-            &wt_path,
-            &tx,
-            &mut output,
-            &mut truncated,
-            cancel.as_ref(),
+            agent_impl, opts, id, repo, wt_path, tx, output, truncated, cancel,
         )
         .await?
     };
 
     match phase {
-        AgentPhase::Killed => {
-            return finalize_killed(
-                opts,
-                id,
-                repo,
-                branch,
-                wt_path,
-                started_at,
-                output,
-                truncated,
-                tx,
-                "kit: run killed by user\n",
-            )
-            .await;
-        }
+        AgentPhase::Killed => return Ok(Ending::Killed("kit: run killed by user\n".into())),
         AgentPhase::TimedOut => {
             // CEO stamp: timeout maps to Killed + reason in output (RunState frozen).
-            let line = format!(
+            return Ok(Ending::Killed(format!(
                 "kit: run killed — reason: timeout ({:?})\n",
                 opts.bounds.timeout
-            );
-            return finalize_killed(
-                opts, id, repo, branch, wt_path, started_at, output, truncated, tx, &line,
-            )
-            .await;
+            )));
         }
         AgentPhase::Ok | AgentPhase::Failed => {}
     }
-
-    if cancelled(&cancel) {
-        return finalize_killed(
-            opts,
-            id,
-            repo,
-            branch,
-            wt_path,
-            started_at,
-            output,
-            truncated,
-            tx,
-            "kit: run killed before gate\n",
-        )
-        .await;
+    if cancelled(cancel) {
+        return Ok(Ending::Killed("kit: run killed before gate\n".into()));
     }
 
     // --- gate phase ---
-    send(&tx, &id, RunDelta::State(RunState::Gating)).await;
-    let mut config = load_kit_config(&repo);
+    send(tx, id, RunDelta::State(RunState::Gating)).await;
+    let cap = opts.bounds.output_cap_bytes;
     // CEO stamp P2: infer defaults on live runs only. Dry-run stays offline-fast
     // and is exempt from vacuous non-zero exit.
     if config.gate.is_empty() && !use_dry {
-        let inferred = super::infer::infer_gate(&repo);
+        let inferred = super::infer::infer_gate(repo);
         if !inferred.is_empty() {
             let line = format!(
                 "gate: inferred checks (no kit.toml gate) — {}\n",
@@ -250,32 +256,29 @@ pub async fn execute_cancellable(
                     .collect::<Vec<_>>()
                     .join("; ")
             );
-            append_capped(
-                &mut output,
-                &mut truncated,
-                opts.bounds.output_cap_bytes,
-                &line,
-            );
-            send(&tx, &id, RunDelta::Output(line)).await;
+            append_capped(output, truncated, cap, &line);
+            send(tx, id, RunDelta::Output(line)).await;
             config.gate = inferred;
         }
     }
-    let gate_engine = KitGate::new();
+    // The receipt records what the agent made. Files the gate writes
+    // (coverage, reports, build output) are not the run's work.
+    let agent_diff = worktree::worktree_diff(wt_path, base).ok();
     let gate = if config.gate.is_empty() {
         // Still empty after inference → vacuous (TUI: UNCONFIGURED, never PASS).
         let line = "gate: no checks configured and none inferred (vacuous — UNCONFIGURED)\n";
-        append_capped(
-            &mut output,
-            &mut truncated,
-            opts.bounds.output_cap_bytes,
-            line,
-        );
-        send(&tx, &id, RunDelta::Output(line.into())).await;
+        append_capped(output, truncated, cap, line);
+        send(tx, id, RunDelta::Output(line.into())).await;
         GateOutcome::vacuous()
     } else {
-        gate_engine.evaluate(&wt_path, &config.gate).await
+        KitGate::new().evaluate(wt_path, &config.gate).await
     };
-    send(&tx, &id, RunDelta::Gate(gate.clone())).await;
+    send(tx, id, RunDelta::Gate(gate.clone())).await;
+    if agent_diff.is_some() && worktree::worktree_diff(wt_path, base).ok() != agent_diff {
+        let line = "gate: the gate changed files in the worktree; the receipt keeps only the agent's changes\n";
+        append_capped(output, truncated, cap, line);
+        send(tx, id, RunDelta::Output(line.into())).await;
+    }
 
     let state = if phase == AgentPhase::Failed {
         RunState::Error
@@ -284,63 +287,11 @@ pub async fn execute_cancellable(
     } else {
         RunState::Fail
     };
-    let result = write_terminal(
-        opts,
-        id.clone(),
-        repo,
-        Some(branch),
-        Some(wt_path),
-        Some(started_at),
+    Ok(Ending::Gated {
         state,
-        output,
-        truncated,
-        Some(gate),
-    )
-    .await?;
-    // Proof first: the terminal state goes out only once its receipt exists.
-    send(&tx, &id, RunDelta::State(state)).await;
-    Ok(result)
-}
-
-fn cancelled(cancel: &Option<Arc<CancelHandle>>) -> bool {
-    cancel.as_ref().is_some_and(|c| c.is_cancelled())
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn finalize_killed(
-    opts: RunOptions,
-    id: RunId,
-    repo: PathBuf,
-    branch: String,
-    wt_path: PathBuf,
-    started_at: SystemTime,
-    mut output: String,
-    mut truncated: bool,
-    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
-    note: &str,
-) -> Result<RunResult> {
-    append_capped(
-        &mut output,
-        &mut truncated,
-        opts.bounds.output_cap_bytes,
-        note,
-    );
-    send(&tx, &id, RunDelta::Output(note.into())).await;
-    let result = write_terminal(
-        opts,
-        id.clone(),
-        repo,
-        Some(branch),
-        Some(wt_path),
-        Some(started_at),
-        RunState::Killed,
-        output,
-        truncated,
-        None,
-    )
-    .await?;
-    send(&tx, &id, RunDelta::State(RunState::Killed)).await;
-    Ok(result)
+        gate,
+        agent_diff,
+    })
 }
 
 /// Terminal path for a run killed before it started: still queued on the
@@ -376,8 +327,9 @@ pub(crate) async fn finalize_failed(
 }
 
 /// Receipt for a run that ends outside its own run path, with `note` in the
-/// stream and the log. A worktree the run got before failing is diffed and
-/// removed if clean; the start time is not known here, so none is recorded.
+/// stream and the log. A worktree the run got before failing is diffed against
+/// its HEAD and kept: its base commit is not known here, so Kit cannot prove
+/// the agent left no commit in it. The start time is not known either.
 async fn finalize_outside_run(
     opts: RunOptions,
     id: RunId,
@@ -389,7 +341,7 @@ async fn finalize_outside_run(
     // does not resolve (the run is over either way).
     let repo = resolve_repo(&opts.repo).unwrap_or_else(|_| PathBuf::from(&opts.repo));
     let wt = worktrees_dir().join(&id.0);
-    let wt_path = wt.is_dir().then_some(wt);
+    let wt_path = wt.is_dir().then_some((wt, None));
     let branch = wt_path.as_ref().map(|_| branch_name(&id.0));
     let mut output = String::new();
     let mut truncated = false;
@@ -401,31 +353,49 @@ async fn finalize_outside_run(
     );
     send(tx, &id, RunDelta::Output(note.into())).await;
     write_terminal(
-        opts, id, repo, branch, wt_path, None, state, output, truncated, None,
+        opts, id, repo, branch, wt_path, None, state, output, truncated, None, None,
     )
     .await
 }
 
 /// Persist the receipt, then remove the worktree if the run left it clean.
-/// `wt_path` is `None` when the run never got a worktree.
+/// `worktree` is `None` when the run never got one; else its path and base
+/// commit (`None` when not known, and then the worktree is always kept).
 #[allow(clippy::too_many_arguments)]
 async fn write_terminal(
     opts: RunOptions,
     id: RunId,
     repo: PathBuf,
     branch: Option<String>,
-    wt_path: Option<PathBuf>,
+    worktree: Option<(PathBuf, Option<String>)>,
     started_at: Option<SystemTime>,
     state: RunState,
     output: String,
     truncated: bool,
     gate: Option<GateOutcome>,
+    agent_diff: Option<String>,
 ) -> Result<RunResult> {
     let ended_at = SystemTime::now();
-    let diff = wt_path
-        .as_deref()
-        .map(|wt| worktree::worktree_diff(wt).unwrap_or_default())
-        .unwrap_or_default();
+    let (wt_path, base) = match worktree {
+        Some((wt, base)) => (Some(wt), base),
+        None => (None, None),
+    };
+    // Diff against the pinned base, so commits the agent made are in it.
+    // Without a base, the worktree HEAD is the best Kit knows.
+    let diff_base = base.clone().or_else(|| {
+        wt_path
+            .as_deref()
+            .and_then(|wt| worktree::head_commit(wt).ok())
+    });
+    let diff = match (agent_diff, wt_path.as_deref(), diff_base.as_deref()) {
+        (Some(d), _, _) => d,
+        (None, Some(wt), Some(b)) => worktree::worktree_diff(wt, b).unwrap_or_else(|err| {
+            // Loud: an empty diff here would under-report the run.
+            eprintln!("kit: cannot record the diff of {}: {err:#}", wt.display());
+            String::new()
+        }),
+        _ => String::new(),
+    };
 
     let receipt = Receipt {
         version: Receipt::VERSION,
@@ -445,10 +415,14 @@ async fn write_terminal(
         output_truncated: truncated,
     };
 
-    let receipt_dir = write_receipt(&receipt, &output)?;
-    let removed = wt_path
-        .as_deref()
-        .is_some_and(|wt| remove_if_clean(&repo, wt).unwrap_or(false));
+    let written = write_receipt(&receipt, &output, base.as_deref());
+    // A clean worktree holds nothing the receipt lacks, so it goes even when
+    // the receipt write failed: an error never leaks a worktree.
+    let removed = match (wt_path.as_deref(), base.as_deref()) {
+        (Some(wt), Some(b)) => remove_if_clean(&repo, wt, b).unwrap_or(false),
+        _ => false,
+    };
+    let receipt_dir = written?;
 
     Ok(RunResult {
         id,
@@ -458,6 +432,22 @@ async fn write_terminal(
         worktree_removed: removed,
         gate,
     })
+}
+
+/// Refuse a live run whose agent is not installed.
+///
+/// A silent dry-run fallback runs no agent, so the gate checks an unchanged
+/// tree and can PASS: a receipt that proves nothing. Stop before any worktree.
+fn require_agent(status: kit_agents::AgentStatus) -> Result<()> {
+    if status.installed {
+        return Ok(());
+    }
+    let agent = status.kind;
+    anyhow::bail!(
+        "{agent} is not installed. Install the {} CLI, choose another agent (--agent \
+         codex|claude|grok|ollama), or use --dry-run to test without an agent",
+        agent.binary()
+    )
 }
 
 async fn dry_run_agent(
@@ -474,7 +464,6 @@ async fn dry_run_agent(
         format!("task: {}", opts.task),
         format!("worktree: {}", worktree.display()),
         "status: streaming (no external CLI invoked)".into(),
-        "hint: install codex/claude/grok/ollama for live TUI dispatch".into(),
     ];
     let deadline = tokio::time::Instant::now() + opts.bounds.timeout;
     for line in lines {
@@ -617,13 +606,18 @@ async fn live_agent(
 
 fn append_capped(buf: &mut String, truncated: &mut bool, cap: u64, chunk: &str) {
     let cap = cap as usize;
-    if buf.len() >= cap {
+    if *truncated || buf.len() >= cap {
         *truncated = true;
         return;
     }
     let room = cap - buf.len();
     if chunk.len() > room {
-        buf.push_str(&chunk[..room]);
+        // Cut on a char boundary: slicing inside a multi-byte char panics.
+        let mut end = room;
+        while !chunk.is_char_boundary(end) {
+            end -= 1;
+        }
+        buf.push_str(&chunk[..end]);
         *truncated = true;
     } else {
         buf.push_str(chunk);
@@ -652,6 +646,32 @@ mod tests {
     use super::*;
     use crate::engine::paths::kit_home_test_lock;
     use kit_core::CheckStatus;
+
+    /// Agent output that hits the cap inside a multi-byte char used to panic.
+    #[test]
+    fn output_cap_cuts_on_a_char_boundary() {
+        let (mut buf, mut truncated) = (String::from("ab"), false);
+        // cap 4: room is 2 bytes, but "é" is 2 bytes starting at byte 1.
+        append_capped(&mut buf, &mut truncated, 4, "xé✓");
+        assert!(truncated);
+        assert_eq!(buf, "abx");
+        append_capped(&mut buf, &mut truncated, 4, "more");
+        assert_eq!(buf, "abx");
+    }
+
+    /// A missing agent must stop the run, never fall back to a dry run that
+    /// could PASS the gate on an unchanged tree.
+    #[test]
+    fn missing_agent_is_refused_with_the_fix() {
+        let err = require_agent(kit_agents::AgentStatus::missing(AgentKind::Grok))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("grok is not installed"), "{err}");
+        assert!(err.contains("--dry-run"), "{err}");
+        let mut ready = kit_agents::AgentStatus::missing(AgentKind::Codex);
+        ready.installed = true;
+        assert!(require_agent(ready).is_ok());
+    }
 
     /// Holding a std Mutex across await is intentional here: tests must not
     /// interleave KIT_HOME mutation. Clippy would prefer tokio::Mutex; that
@@ -766,7 +786,7 @@ mod tests {
         let test_cmd = format!("sh \"{}\"", script.display());
         let kit_toml = format!("[gate]\ntest = '{test_cmd}'\ntimeout = \"30s\"\n");
         std::fs::write(root.join("kit.toml"), kit_toml).unwrap();
-        let loaded = crate::engine::store::load_kit_config(&root);
+        let loaded = crate::engine::store::load_kit_config(&root).expect("kit.toml");
         assert!(
             !loaded.gate.is_empty(),
             "fixture kit.toml must parse so the probe actually runs"
@@ -960,6 +980,297 @@ mod tests {
             let child = self.0.get_mut().expect("child");
             Ok(child.try_wait()?.map(|status| status.code().unwrap_or(1)))
         }
+    }
+
+    /// Installed, but its program cannot start (`spawn grok: program not found`).
+    struct SpawnFails;
+
+    #[async_trait::async_trait]
+    impl Agent for SpawnFails {
+        fn kind(&self) -> AgentKind {
+            AgentKind::Grok
+        }
+
+        async fn probe(&self) -> kit_agents::AgentStatus {
+            let mut status = kit_agents::AgentStatus::missing(AgentKind::Grok);
+            status.installed = true;
+            status
+        }
+
+        async fn spawn(
+            &self,
+            _spec: &RunSpec,
+            _worktree: &std::path::Path,
+            _tx: mpsc::Sender<RunDelta>,
+        ) -> std::result::Result<Box<dyn kit_agents::AgentHandle>, kit_agents::SpawnError> {
+            Err(kit_agents::SpawnError::Io {
+                kind: AgentKind::Grok,
+                source: std::io::Error::new(std::io::ErrorKind::NotFound, "program not found"),
+            })
+        }
+    }
+
+    /// `git worktree list --porcelain` entries for `repo`.
+    fn git_worktrees(repo: &std::path::Path) -> Vec<String> {
+        let out = std::process::Command::new("git")
+            .args(["worktree", "list", "--porcelain"])
+            .current_dir(repo)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .output()
+            .expect("git worktree list");
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(|l| l.strip_prefix("worktree ").map(str::to_string))
+            .collect()
+    }
+
+    /// An agent that fails to spawn after the worktree exists must not leak
+    /// it: the dir and its `git worktree` registration go, and the run ends
+    /// with an `Error` receipt that names the cause, on the CLI path too.
+    #[tokio::test]
+    async fn spawn_failure_removes_worktree_and_writes_error_receipt() {
+        let root = crate::engine::paths::bare_git_fixture();
+        let home = std::env::temp_dir().join(format!(
+            "kit-test-spawnfail-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let id = RunId("01TESTSPAWNFAILS0000000001".into());
+
+        let (result, wt_dir, receipt, log) = with_kit_home(&home, || async {
+            let opts = RunOptions {
+                repo: root.to_string_lossy().into_owned(),
+                agent: AgentKind::Grok,
+                task: "spawn fails".into(),
+                dry_run: Some(false),
+                bounds: Bounds::default(),
+            };
+            let result = execute_with(opts, Some(id.clone()), None, None, &SpawnFails).await;
+            let wt_dir = worktrees_dir().join(&id.0);
+            let receipt = crate::engine::store::read_receipt(&id.0);
+            let log = crate::engine::store::read_output_tail(&id.0, 4096);
+            (result, wt_dir, receipt, log)
+        })
+        .await;
+
+        let result = result.expect("a spawn failure still ends the run");
+        assert_eq!(result.state, RunState::Error);
+        assert!(result.worktree_removed, "clean worktree must be removed");
+        assert!(!wt_dir.exists(), "leaked {}", wt_dir.display());
+        assert_eq!(git_worktrees(&root).len(), 1, "{:?}", git_worktrees(&root));
+        let receipt = receipt.expect("read").expect("an Error receipt");
+        assert_eq!(receipt.state, RunState::Error);
+        assert!(receipt.gate.is_none());
+        let log = log.expect("output.log");
+        assert!(log.contains("program not found"), "{log}");
+
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Changes files in the worktree like a real agent, then exits 0:
+    /// edits a tracked file, creates a text file and a binary file, and
+    /// (when `commit` is set) commits the edit, as some agents do.
+    struct WritesFiles {
+        commit: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl Agent for WritesFiles {
+        fn kind(&self) -> AgentKind {
+            AgentKind::Codex
+        }
+
+        async fn probe(&self) -> kit_agents::AgentStatus {
+            let mut status = kit_agents::AgentStatus::missing(AgentKind::Codex);
+            status.installed = true;
+            status
+        }
+
+        async fn spawn(
+            &self,
+            spec: &RunSpec,
+            worktree: &std::path::Path,
+            tx: mpsc::Sender<RunDelta>,
+        ) -> std::result::Result<Box<dyn kit_agents::AgentHandle>, kit_agents::SpawnError> {
+            std::fs::write(worktree.join("README.md"), "kit test fixture\nedited\n").unwrap();
+            if self.commit {
+                let git = |args: &[&str]| {
+                    std::process::Command::new("git")
+                        .args(["-c", "user.name=kit", "-c", "user.email=kit@test"])
+                        .args(args)
+                        .current_dir(worktree)
+                        .env_remove("GIT_DIR")
+                        .env_remove("GIT_INDEX_FILE")
+                        .output()
+                        .unwrap()
+                };
+                git(&["commit", "-q", "-am", "agent commit"]);
+            }
+            std::fs::create_dir_all(worktree.join("src")).unwrap();
+            std::fs::write(worktree.join("src").join("created.txt"), "new file\n").unwrap();
+            std::fs::write(worktree.join("blob.bin"), [0u8, 159, 146, 150, 0, 255, 1]).unwrap();
+            ExitAtOnce.spawn(spec, worktree, tx).await
+        }
+    }
+
+    /// Run `agent` live against a fresh fixture; returns (result, receipt, repo, home).
+    async fn run_with_agent(
+        tag: &str,
+        agent: &dyn Agent,
+    ) -> (RunResult, Receipt, std::path::PathBuf, std::path::PathBuf) {
+        let root = crate::engine::paths::bare_git_fixture();
+        let home = std::env::temp_dir().join(format!(
+            "kit-test-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        let (result, receipt) = with_kit_home(&home, || async {
+            let opts = RunOptions {
+                repo: root.to_string_lossy().into_owned(),
+                agent: AgentKind::Codex,
+                task: "write files".into(),
+                dry_run: Some(false),
+                bounds: Bounds::default(),
+            };
+            let result = execute_with(opts, None, None, None, agent)
+                .await
+                .expect("run");
+            let receipt = crate::engine::store::read_receipt(&result.id.0)
+                .unwrap()
+                .unwrap();
+            (result, receipt)
+        })
+        .await;
+        (result, receipt, root, home)
+    }
+
+    /// `git apply --check` of `patch` against `repo`'s (clean) working tree.
+    fn applies_cleanly(repo: &std::path::Path, patch: &std::path::Path) -> (bool, String) {
+        let out = std::process::Command::new("git")
+            .args(["apply", "--check", "--binary"])
+            .arg(patch)
+            .current_dir(repo)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_INDEX_FILE")
+            .output()
+            .unwrap();
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    }
+
+    /// Proof gap: a file the agent CREATES must be in the receipt diff, binary
+    /// files too, and diff.patch must apply to the base commit. The worktree
+    /// is kept exactly when the diff is not empty.
+    #[tokio::test]
+    async fn receipt_diff_includes_new_and_binary_files() {
+        let (result, receipt, root, home) =
+            run_with_agent("newfiles", &WritesFiles { commit: false }).await;
+        assert!(receipt.diff.contains("src/created.txt"), "{}", receipt.diff);
+        assert!(receipt.diff.contains("blob.bin"), "{}", receipt.diff);
+        assert!(
+            receipt.diff.contains("GIT binary patch"),
+            "{}",
+            receipt.diff
+        );
+        assert!(receipt.diff.contains("+edited"), "{}", receipt.diff);
+        let patch = result.receipt_dir.join("diff.patch");
+        let (ok, err) = applies_cleanly(&root, &patch);
+        assert!(ok, "diff.patch does not apply to the base: {err}");
+        assert!(!result.worktree_removed, "a changed worktree is kept");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Files the gate writes (coverage, reports) are not the agent's work:
+    /// the receipt, and so `kit land`, must hold only what the agent made.
+    #[tokio::test]
+    async fn gate_output_files_stay_out_of_the_receipt() {
+        if std::process::Command::new("node")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let root = crate::engine::paths::bare_git_fixture();
+        std::fs::write(
+            root.join("kit.toml"),
+            "[gate]\ntest = \"node -e \\\"require('fs').writeFileSync('gate-artifact.txt','x')\\\"\"\n",
+        )
+        .unwrap();
+        let home = std::env::temp_dir().join(format!(
+            "kit-test-gatefiles-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        let (result, receipt, log) = with_kit_home(&home, || async {
+            let opts = RunOptions {
+                repo: root.to_string_lossy().into_owned(),
+                agent: AgentKind::Codex,
+                task: "write files".into(),
+                dry_run: Some(false),
+                bounds: Bounds::default(),
+            };
+            let agent = WritesFiles { commit: false };
+            let result = execute_with(opts, None, None, None, &agent)
+                .await
+                .expect("run");
+            let receipt = crate::engine::store::read_receipt(&result.id.0)
+                .unwrap()
+                .unwrap();
+            let log = std::fs::read_to_string(result.receipt_dir.join("output.log")).unwrap();
+            (result, receipt, log)
+        })
+        .await;
+        assert_eq!(result.state, RunState::Pass, "{log}");
+        assert!(receipt.diff.contains("src/created.txt"), "{}", receipt.diff);
+        assert!(
+            !receipt.diff.contains("gate-artifact.txt"),
+            "gate output leaked into the receipt: {}",
+            receipt.diff
+        );
+        assert!(log.contains("the gate changed files"), "{log}");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An agent that commits in the worktree moves its HEAD. The receipt diff
+    /// is taken against the base commit, so the committed edit is not lost.
+    #[tokio::test]
+    async fn receipt_diff_includes_agent_commits() {
+        let (result, receipt, root, home) =
+            run_with_agent("commits", &WritesFiles { commit: true }).await;
+        assert!(receipt.diff.contains("+edited"), "{}", receipt.diff);
+        assert!(receipt.diff.contains("src/created.txt"), "{}", receipt.diff);
+        let (ok, err) = applies_cleanly(&root, &result.receipt_dir.join("diff.patch"));
+        assert!(ok, "diff.patch does not apply to the base: {err}");
+        // The agent's commit is only reachable from the worktree: keep it.
+        assert!(
+            !result.worktree_removed,
+            "worktree with a commit was removed"
+        );
+        assert!(result.worktree.as_ref().is_some_and(|w| w.is_dir()));
+        let base = crate::engine::store::read_base(&result.receipt_dir).expect("base.txt");
+        assert_eq!(base, worktree::head_commit(&root).unwrap());
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Session B: once the agent exits its pipes close and `recv()` yields

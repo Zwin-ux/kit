@@ -4,6 +4,8 @@
 //! headless path: worktree → dry-run stream → gate → receipt.
 
 mod engine;
+mod init;
+mod land;
 
 use anyhow::{Context, Result};
 use engine::{RunOptions, execute, parse_agent, spawn_production};
@@ -16,9 +18,45 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let version = env!("CARGO_PKG_VERSION");
+async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Err(err) = dispatch(&args).await {
+        // Under --json, stdout carries exactly one envelope, failures included.
+        if args.iter().any(|a| a == "--json") {
+            let envelope = json_envelope(
+                &command_name(&args),
+                false,
+                serde_json::Value::Null,
+                Some(format!("{err:#}")),
+            );
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&envelope).unwrap_or_default()
+            );
+        } else {
+            eprintln!("kit: {err:#}");
+        }
+        std::process::exit(2);
+    }
+}
+
+/// The `command` field of a JSON envelope for this argv.
+fn command_name(args: &[String]) -> String {
+    match args.first().map(String::as_str) {
+        Some("receipt") | Some("receipts") => {
+            let sub = match args.get(1).map(String::as_str) {
+                Some("show") | Some("get") => "show",
+                _ => "list",
+            };
+            format!("receipt.{sub}")
+        }
+        Some(first) if !first.starts_with('-') => first.to_string(),
+        _ => "kit".to_string(),
+    }
+}
+
+async fn dispatch(args: &[String]) -> Result<()> {
+    let version = env!("CARGO_PKG_VERSION");
 
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("kit {version}");
@@ -36,12 +74,14 @@ async fn main() -> Result<()> {
     let first = args.first().map(String::as_str);
     if is_tui_invocation(first) {
         let demo =
-            wants_demo(&args) || first == Some("demo") || std::env::var_os("KIT_DEMO").is_some();
+            wants_demo(args) || first == Some("demo") || std::env::var_os("KIT_DEMO").is_some();
         return launch_tui(demo).await;
     }
 
     match first {
         Some("run") => cmd_run(&args[1..]).await,
+        Some("init") => init::cmd_init(&args[1..]).await,
+        Some("land") => land::cmd_land(&args[1..]),
         Some("doctor") => {
             let json = args.iter().any(|a| a == "--json");
             print_doctor(version, json);
@@ -52,12 +92,7 @@ async fn main() -> Result<()> {
             println!("kit {version}");
             Ok(())
         }
-        Some(other) => {
-            eprintln!("unknown command: {other}");
-            eprintln!();
-            print_help(version);
-            std::process::exit(2);
-        }
+        Some(other) => anyhow::bail!("unknown command: {other}. Run `kit --help`"),
         None => unreachable!("empty argv is a TUI launch"),
     }
 }
@@ -80,6 +115,14 @@ fn is_tui_invocation(first: Option<&str>) -> bool {
 }
 
 async fn launch_tui(demo: bool) -> Result<()> {
+    use std::io::IsTerminal;
+    // Without a terminal the TUI would draw into a pipe and wait for keys
+    // that never come.
+    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+        anyhow::bail!(
+            "the Control Room needs an interactive terminal. In scripts, use `kit run --task \"…\" --json`"
+        );
+    }
     let (delta_tx, delta_rx) = mpsc::channel::<(RunId, RunDelta)>(256);
     let (cmd_tx, cmd_rx) = mpsc::channel::<EngineCommand>(64);
 
@@ -139,6 +182,10 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     }
 
     let kind = parse_agent(&agent)?;
+    // Stderr only: under --json, stdout holds one envelope.
+    if let Some(hint) = init_hint(Path::new(&repo)) {
+        eprintln!("kit: {hint}");
+    }
     let opts = RunOptions {
         repo,
         agent: kind,
@@ -185,10 +232,13 @@ async fn cmd_run(args: &[String]) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&envelope)?);
     } else {
         println!("run {}", result.id);
-        println!("  state     {:?}", result.state);
+        println!("  state     {}", state_label(result.state));
         println!("  receipt   {}", result.receipt_dir.display());
         if let Some(wt) = &result.worktree {
-            println!("  worktree  {} (kept — dirty)", wt.display());
+            println!(
+                "  worktree  {} (kept: it has the run's changes)",
+                wt.display()
+            );
         } else if result.worktree_removed {
             println!("  worktree  removed (clean)");
         }
@@ -201,6 +251,15 @@ async fn cmd_run(args: &[String]) -> Result<()> {
                 "FAIL"
             };
             println!("  gate      {label}");
+        }
+        if let Some(step) = land_hint(
+            result.state,
+            gate_vacuous,
+            &result.receipt_dir,
+            &result.id.0,
+        ) {
+            println!();
+            println!("{step}");
         }
     }
 
@@ -266,6 +325,18 @@ fn delta_line(delta: &RunDelta) -> Option<String> {
     }
 }
 
+/// The next step after a proven run with changes: `Next: kit land <id>`.
+fn land_hint(state: RunState, vacuous: bool, receipt_dir: &Path, id: &str) -> Option<String> {
+    (state == RunState::Pass && !vacuous && receipt_dir.join("diff.patch").is_file())
+        .then(|| format!("Next: kit land {id}"))
+}
+
+/// One line that points to `kit init` when `repo` is a folder with no kit.toml.
+fn init_hint(repo: &Path) -> Option<String> {
+    (repo.is_dir() && !repo.join("kit.toml").exists())
+        .then(|| "no kit.toml in this repo. Run `kit init` to write a gate.".to_string())
+}
+
 fn state_label(state: RunState) -> String {
     format!("{state:?}").to_ascii_lowercase()
 }
@@ -277,13 +348,24 @@ fn json_envelope(
     data: serde_json::Value,
     error: Option<String>,
 ) -> serde_json::Value {
+    envelope(command, ok, data, error, Vec::new())
+}
+
+/// [`json_envelope`] with warnings.
+pub(crate) fn envelope(
+    command: &str,
+    ok: bool,
+    data: serde_json::Value,
+    error: Option<String>,
+    warnings: Vec<String>,
+) -> serde_json::Value {
     serde_json::json!({
         "schemaVersion": 1,
         "command": command,
         "ok": ok,
         "data": data,
         "error": error,
-        "warnings": [],
+        "warnings": warnings,
     })
 }
 
@@ -292,31 +374,56 @@ fn print_help(version: &str) {
     println!();
     println!("Usage:");
     println!("  kit                      Open the Control Room");
-    println!("  kit --demo               Control Room with PRD fixture data");
-    println!("  kit run --task \"…\"       One isolated run (live agent if installed)");
+    println!("  kit init                 Write kit.toml: a gate for this repo");
+    println!("  kit --demo               Control Room with sample runs");
+    println!("  kit run --task \"…\"       One isolated run: agent, then gate, then receipt");
     println!("  kit run --agent codex --task \"…\" [--dry-run] [--json]");
+    println!("  kit land <id>            Put a passed run's changes on a new branch kit/<id>");
     println!("  kit doctor [--json]      Environment / readiness");
     println!("  kit receipt list [--limit N] [--json]");
     println!("  kit receipt show <id> [--json] [--output]");
     println!("  kit --version            Print version");
     println!();
+    println!("Init flags:");
+    println!("  --print / -p             Print the proposal only. Write nothing");
+    println!("  --force / -f             Replace an existing kit.toml");
+    println!("  --check                  Run each command once first. Stop if one fails");
+    println!("  --drop-failing           With --check: write the gate without the failing checks");
+    println!("  --timeout <5m>           Limit for each command under --check");
+    println!("  --repo / -C <path>       Target repo (default .)");
+    println!("  --json                   One JSON result on stdout");
+    println!();
     println!("Run flags:");
     println!("  --repo / -C <path>       Target git repo (default .)");
     println!("  --agent / -a <name>      codex|claude|grok|ollama");
     println!("  --task / -t <text>       Prompt / task");
-    println!("  --dry-run                Offline stream (no external CLI)");
-    println!("  --allow-vacuous          Exit 0 even when gate is UNCONFIGURED");
-    println!("  --live                   Force live agent (error → dry-run if missing)");
-    println!("  --json                   Machine-readable result");
+    println!("  --dry-run                Test the pipeline without an agent (proves nothing)");
+    println!("  --allow-vacuous          Exit 0 when kit.toml has no gate checks");
+    println!("  --json                   One JSON result on stdout (errors too)");
     println!("  KIT_HOME=…               Data root (default ~/.kit)");
     println!("  KIT_FULL_AUTO=1          Bypass agent approval prompts (dangerous)");
     println!("  KIT_SKILLS_DIR=…         Override skills pack path");
+    println!();
+    println!("Land flags:");
+    println!(
+        "  (default)                Commit the diff on a new branch. Your branch and files do not change"
+    );
+    println!(
+        "  --branch / -b <name>     Name of the new branch (default kit/<first 12 chars of id>)"
+    );
+    println!("  --apply                  Apply the diff to your working tree. No commit");
+    println!(
+        "  --force / -f             Land a run the gate did not prove, or apply to a dirty tree"
+    );
+    println!("  --json                   One JSON result on stdout (errors too)");
     println!();
     println!("Keys (Control Room):");
     println!("  ↑↓ select   f filter   Enter open   g gate   d dispatch   b board");
     println!("  k kill      r retry (fail only)   ? help   q quit");
     println!();
-    println!("Docs: docs/dev/PRD-1.0.md  ·  docs/dev/CURRENT.md  ·  docs/json-contract.md");
+    println!(
+        "Gate: run `kit init` in your repo to write kit.toml. Docs: https://github.com/Zwin-ux/kit#readme"
+    );
 }
 
 /// `kit receipt list|show …` — proof browser for `~/.kit/runs/<id>/`.
@@ -436,7 +543,7 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
             } else {
                 println!("receipt {}", receipt.id);
                 println!("  dir       {}", dir.display());
-                println!("  state     {:?}", receipt.state);
+                println!("  state     {}", state_label(receipt.state));
                 println!("  agent     {}", receipt.spec.agent.label());
                 println!("  repo      {}", receipt.spec.repo.display());
                 println!(
@@ -444,7 +551,14 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
                     receipt.spec.task.lines().next().unwrap_or("")
                 );
                 if let Some(g) = &receipt.gate {
-                    let label = if g.passed { "PASS" } else { "FAIL" };
+                    // Same labels as `kit run`: zero checks proves nothing.
+                    let label = if engine::infer::is_vacuous(g) {
+                        "UNCONFIGURED"
+                    } else if g.passed {
+                        "PASS"
+                    } else {
+                        "FAIL"
+                    };
                     println!("  gate      {label}  ({} checks)", g.checks.len());
                     for c in &g.checks {
                         println!(
@@ -475,6 +589,10 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
                 } else {
                     println!();
                     println!("  tip  kit receipt show {} --output", receipt.id);
+                }
+                let vacuous = receipt.gate.as_ref().is_none_or(engine::infer::is_vacuous);
+                if let Some(step) = land_hint(receipt.state, vacuous, &dir, &receipt.id.0) {
+                    println!("{step}");
                 }
             }
             Ok(())
@@ -604,6 +722,41 @@ fn other_kits_on_path(current: &Path, path_env: &OsStr) -> Vec<PathBuf> {
     out
 }
 
+/// What a `kit` found on PATH runs, read from its npm shim or symlink target.
+#[derive(Debug, PartialEq, Eq)]
+enum PathKit {
+    /// npm `@mzwin/kit` 1.x: the launcher for this same binary.
+    Launcher,
+    /// npm `@mzwin/kit` 0.1.x: the old Node app.
+    Node01,
+    Other,
+}
+
+fn classify_path_kit(path: &Path) -> PathKit {
+    let mut text = std::fs::canonicalize(path)
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    // npm shims are a few hundred bytes; never read a binary.
+    if std::fs::metadata(path).is_ok_and(|m| m.len() <= 64 * 1024)
+        && let Ok(bytes) = std::fs::read(path)
+    {
+        text.push('\n');
+        text.push_str(&String::from_utf8_lossy(&bytes));
+    }
+    classify_shim_text(&text)
+}
+
+fn classify_shim_text(text: &str) -> PathKit {
+    let text = text.replace('\\', "/");
+    if text.contains("@mzwin/kit/bin/kit.js") {
+        PathKit::Launcher
+    } else if text.contains("@mzwin/kit/dist/bin.js") {
+        PathKit::Node01
+    } else {
+        PathKit::Other
+    }
+}
+
 fn print_doctor(version: &str, json: bool) {
     let kit_home = engine::paths::kit_home();
     let skills = kit_agents::skills::resolve_skills_dir(std::path::Path::new("."));
@@ -617,11 +770,29 @@ fn print_doctor(version: &str, json: bool) {
         (None, Some(path_env)) => other_kits_on_path(Path::new(""), &path_env),
         _ => Vec::new(),
     };
+    // The npm 1.x launcher runs this same binary: not a collision.
+    let collisions: Vec<(PathBuf, PathKit)> = collisions
+        .into_iter()
+        .map(|p| {
+            let kind = classify_path_kit(&p);
+            (p, kind)
+        })
+        .filter(|(_, kind)| *kind != PathKit::Launcher)
+        .collect();
+    let install = match std::env::var("KIT_LAUNCHER").as_deref() {
+        Ok("npm") => "npm",
+        _ => "binary",
+    };
     let binary_display = binary_path
         .as_ref()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "(unknown)".into());
-    let path_collisions: Vec<String> = collisions.iter().map(|p| p.display().to_string()).collect();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let kit_toml = Some(cwd.join("kit.toml")).filter(|p| p.is_file());
+    let path_collisions: Vec<String> = collisions
+        .iter()
+        .map(|(p, _)| p.display().to_string())
+        .collect();
 
     if json {
         let agents: Vec<serde_json::Value> = statuses
@@ -629,6 +800,7 @@ fn print_doctor(version: &str, json: bool) {
             .map(|st| {
                 serde_json::json!({
                     "agent": st.kind.label(),
+                    "installed": st.installed,
                     "ready": st.is_ready(),
                     "version": st.version,
                     "remedy": st.remedy,
@@ -639,6 +811,7 @@ fn print_doctor(version: &str, json: bool) {
             "version": version,
             "binary": "ok",
             "binaryPath": binary_display,
+            "install": install,
             "pathCollisions": path_collisions,
             "controlRoom": "ok",
             "gateEngine": "ok",
@@ -646,6 +819,7 @@ fn print_doctor(version: &str, json: bool) {
             "kitHome": kit_home,
             "skillsPack": skills.as_ref().map(|p| p.display().to_string()),
             "agents": agents,
+            "kitToml": kit_toml.as_ref().map(|p| p.display().to_string()),
         });
         let envelope = json_envelope("doctor", true, data, None);
         println!(
@@ -660,6 +834,7 @@ fn print_doctor(version: &str, json: bool) {
     println!("status:");
     println!("  binary          ok (rust)");
     println!("  binary path     {binary_display}");
+    println!("  installed via   {install}");
     println!("  control room    ok (kit-tui)");
     println!("  gate engine     ok (kit-gate)");
     println!("  run engine      ok (worktree + adapters + receipt)");
@@ -669,26 +844,47 @@ fn print_doctor(version: &str, json: bool) {
     } else {
         println!("  skills pack     missing (.agents/skills)");
     }
+    match &kit_toml {
+        Some(p) => println!("  kit.toml        {}", p.display()),
+        None if cwd.join(".git").exists() => {
+            println!("  kit.toml        missing. Run `kit init` to write a gate")
+        }
+        None => {}
+    }
     if !collisions.is_empty() {
         println!();
         println!("warning:");
-        println!("  another kit on PATH (likely npm 0.1) — this binary is the Rust control room");
-        for p in &collisions {
-            println!("    {}", p.display());
+        for (p, kind) in &collisions {
+            match kind {
+                PathKit::Node01 => {
+                    println!("  kit 0.1 (Node) is on PATH: {}", p.display());
+                    println!("    → npm install -g @mzwin/kit@alpha");
+                }
+                _ => println!("  another kit is on PATH: {}", p.display()),
+            }
         }
     }
     println!();
     println!("agents:");
     for st in statuses {
-        let flag = if st.is_ready() { "ready" } else { "missing" };
+        let flag = if st.is_ready() {
+            "ready"
+        } else if st.installed {
+            "not ready"
+        } else {
+            "missing"
+        };
         let ver = st.version.as_deref().unwrap_or("-");
-        println!("  {:8}  {flag:8}  {ver}", st.kind.label());
+        println!("  {:8}  {flag:9}  {ver}", st.kind.label());
         if let Some(r) = st.remedy {
             println!("            → {r}");
         }
     }
     println!();
     println!("try:");
+    if kit_toml.is_none() {
+        println!("  kit init");
+    }
     println!("  kit --demo");
     println!("  kit run --dry-run --task \"smoke\" --json");
     println!("  kit run --agent codex --task \"…\"");
@@ -700,6 +896,35 @@ mod tests {
     use std::ffi::OsString;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// Last line of the real npm 0.1.3 `kit.cmd` shim (Windows, 2026-09-23).
+    const NODE01_CMD: &str = r#"endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & "%_prog%"  "%dp0%\node_modules\@mzwin\kit\dist\bin.js" %*"#;
+
+    #[test]
+    fn npm_shims_are_told_apart() {
+        assert_eq!(classify_shim_text(NODE01_CMD), PathKit::Node01);
+        let launcher_cmd = NODE01_CMD.replace(r"dist\bin.js", r"bin\kit.js");
+        assert_eq!(classify_shim_text(&launcher_cmd), PathKit::Launcher);
+        // Unix: the global bin is a symlink; canonicalize names the target.
+        assert_eq!(
+            classify_shim_text("/usr/lib/node_modules/@mzwin/kit/bin/kit.js"),
+            PathKit::Launcher
+        );
+        assert_eq!(classify_shim_text("/usr/local/bin/kit"), PathKit::Other);
+    }
+
+    #[test]
+    fn json_error_envelopes_name_the_command() {
+        let argv = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
+        assert_eq!(command_name(&argv("run --task x --json")), "run");
+        assert_eq!(command_name(&argv("doctor --json")), "doctor");
+        assert_eq!(
+            command_name(&argv("receipt show 01M --json")),
+            "receipt.show"
+        );
+        assert_eq!(command_name(&argv("receipt --json")), "receipt.list");
+        assert_eq!(command_name(&argv("--json")), "kit");
+    }
 
     fn scratch(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -718,6 +943,20 @@ mod tests {
 
     fn join_path(dirs: &[PathBuf]) -> OsString {
         std::env::join_paths(dirs).expect("join PATH")
+    }
+
+    /// Only a proven PASS with a diff points to `kit land`.
+    #[test]
+    fn land_hint_only_for_proven_runs_with_a_diff() {
+        let dir = scratch("landhint");
+        assert_eq!(land_hint(RunState::Pass, false, &dir, "01X"), None);
+        fs::write(dir.join("diff.patch"), "+x\n").unwrap();
+        assert_eq!(
+            land_hint(RunState::Pass, false, &dir, "01X").as_deref(),
+            Some("Next: kit land 01X")
+        );
+        assert_eq!(land_hint(RunState::Pass, true, &dir, "01X"), None);
+        assert_eq!(land_hint(RunState::Fail, false, &dir, "01X"), None);
     }
 
     #[test]

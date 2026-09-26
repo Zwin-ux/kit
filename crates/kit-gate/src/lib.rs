@@ -849,16 +849,27 @@ fn raw_disk_redirection(segment: &str) -> bool {
 async fn run_check(label: &str, command: &str, worktree: &Path, remaining: Duration) -> GateCheck {
     let started = Instant::now();
     let Some(mut child) = build_command(command, worktree) else {
-        return unrunnable_check(label, command, started.elapsed(), "could not parse command");
+        return unrunnable_check(
+            label,
+            command,
+            started.elapsed(),
+            "could not parse the command",
+        );
     };
     match tokio::time::timeout(remaining, child.output()).await {
         Err(_) => timed_out_check(label, command, started.elapsed()),
-        Ok(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => {
-            unrunnable_check(label, command, started.elapsed(), "command was not found")
-        }
-        Ok(Err(_)) => {
-            unrunnable_check(label, command, started.elapsed(), "could not start command")
-        }
+        Ok(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => unrunnable_check(
+            label,
+            command,
+            started.elapsed(),
+            "program not found; install it or fix kit.toml",
+        ),
+        Ok(Err(error)) => unrunnable_check(
+            label,
+            command,
+            started.elapsed(),
+            &format!("could not start: {error}"),
+        ),
         Ok(Ok(output)) if output.status.success() => GateCheck {
             label: label.to_owned(),
             command: command.to_owned(),
@@ -923,19 +934,18 @@ fn isolate_cargo_target_dir(process: &mut Command, worktree: &Path) {
     process.env("CARGO_TARGET_DIR", worktree.join("target"));
 }
 
-/// A declared check that could not run is a failure, never a skip.
+/// A configured check that could not run is a FAIL, never a skip.
 ///
-/// `Skipped` means "not configured" and counts as passed; a check the user
-/// declared but Kit could not start proved nothing, so it must fail the gate.
+/// `Skipped` counts as passed in kit-core, so a typo in `kit.toml` or a tool
+/// missing from PATH would let a gate PASS without running anything.
+/// `exit_code: None` marks "never ran" apart from a real non-zero exit.
 fn unrunnable_check(label: &str, command: &str, duration: Duration, why: &str) -> GateCheck {
     GateCheck {
         label: label.to_owned(),
         command: command.to_owned(),
         status: CheckStatus::Fail,
         exit_code: None,
-        summary: Some(format!(
-            "{label}: did not run ({why}) — check the command in kit.toml and that it is on PATH"
-        )),
+        summary: Some(format!("{label}: did not run ({why})")),
         duration,
     }
 }
@@ -1181,11 +1191,13 @@ mod tests {
         );
     }
 
-    /// A declared check that never ran must not count as passed.
+    /// A check that never ran must not PASS the gate. It used to be
+    /// `Skipped`, which kit-core counts as passed: a typo in kit.toml
+    /// produced a PASS receipt with zero checks run.
     #[tokio::test]
-    async fn check_that_cannot_run_fails_the_gate() {
+    async fn missing_program_fails_the_gate() {
         let config = GateConfig {
-            test: Some("kit-gate-no-such-binary-7f3a --version".to_owned()),
+            test: Some("definitely-not-a-program-kit7 --run".to_owned()),
             ..GateConfig::default()
         };
         let outcome = KitGate::new().evaluate(Path::new("."), &config).await;
@@ -1196,10 +1208,8 @@ mod tests {
         assert_eq!(check.status, CheckStatus::Fail);
         assert_eq!(check.exit_code, None);
         let summary = check.summary.as_deref().unwrap_or_default();
-        assert!(
-            summary.contains("command was not found") && summary.contains("PATH"),
-            "summary should say why and how to fix it: {summary}"
-        );
+        assert!(summary.contains("did not run"), "{summary}");
+        assert!(summary.contains("fix kit.toml"), "{summary}");
     }
 
     #[tokio::test]

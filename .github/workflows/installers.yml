@@ -1,0 +1,178 @@
+name: Installers
+
+# Runs scripts/install.sh and scripts/install.ps1 against a fake release
+# served from 127.0.0.1 (KIT_DOWNLOAD_BASE). The archives hold a stub `kit`
+# that prints a version, so this tests the installers, not the binary.
+# It also checks that a corrupted archive is refused.
+
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/install.sh', 'scripts/install.ps1', '.github/workflows/installers.yml']
+  pull_request:
+    paths: ['scripts/install.sh', 'scripts/install.ps1', '.github/workflows/installers.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FAKE_VERSION: 9.9.9-test
+  PORT: 8765
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -s sh scripts/install.sh
+
+  unix:
+    name: install.sh (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make fake release
+        run: |
+          set -eu
+          rel="$RUNNER_TEMP/srv/v$FAKE_VERSION"
+          mkdir -p "$rel"
+          # One archive per unix target, so the test does not repeat the
+          # installer's platform detection.
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin; do
+            name="kit-$FAKE_VERSION-$target"
+            stage="$RUNNER_TEMP/stage/$name"
+            mkdir -p "$stage"
+            printf '#!/bin/sh\necho "kit %s"\n' "$FAKE_VERSION" > "$stage/kit"
+            chmod 755 "$stage/kit"
+            cp LICENSE README.md "$stage/"
+            tar -C "$RUNNER_TEMP/stage" -czf "$rel/$name.tar.gz" "$name"
+          done
+          cd "$rel"
+          if command -v sha256sum >/dev/null; then sha256sum -- kit-* > SHA256SUMS; else shasum -a 256 kit-* > SHA256SUMS; fi
+          cat SHA256SUMS
+
+      - name: Serve on 127.0.0.1
+        run: |
+          python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$RUNNER_TEMP/srv" > "$RUNNER_TEMP/http.log" 2>&1 &
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            curl -fsS "http://127.0.0.1:$PORT/v$FAKE_VERSION/SHA256SUMS" >/dev/null && exit 0
+            sleep 1
+          done
+          echo "server did not start" >&2; cat "$RUNNER_TEMP/http.log"; exit 1
+
+      - name: Install (file)
+        env:
+          KIT_DOWNLOAD_BASE: http://127.0.0.1:${{ env.PORT }}
+          KIT_INSTALL_DIR: ${{ runner.temp }}/bin-file
+        run: |
+          set -eu
+          sh scripts/install.sh --version "v$FAKE_VERSION"
+          test "$("$KIT_INSTALL_DIR/kit" --version)" = "kit $FAKE_VERSION"
+
+      - name: Install (curl | sh, KIT_VERSION)
+        env:
+          KIT_DOWNLOAD_BASE: http://127.0.0.1:${{ env.PORT }}
+          KIT_INSTALL_DIR: ${{ runner.temp }}/bin-pipe
+        run: |
+          set -eu
+          KIT_VERSION="$FAKE_VERSION" sh < scripts/install.sh
+          test "$("$KIT_INSTALL_DIR/kit" --version)" = "kit $FAKE_VERSION"
+
+      - name: Refuse plain http to a remote host
+        env:
+          KIT_DOWNLOAD_BASE: http://example.com
+          KIT_INSTALL_DIR: ${{ runner.temp }}/bin-http
+        run: |
+          if sh scripts/install.sh --version "$FAKE_VERSION"; then
+            echo "installer accepted plain http" >&2; exit 1
+          fi
+          test ! -e "$KIT_INSTALL_DIR/kit"
+
+      - name: Refuse a corrupted archive
+        env:
+          KIT_DOWNLOAD_BASE: http://127.0.0.1:${{ env.PORT }}
+          KIT_INSTALL_DIR: ${{ runner.temp }}/bin-bad
+        run: |
+          for f in "$RUNNER_TEMP"/srv/v"$FAKE_VERSION"/*.tar.gz; do printf 'x' >> "$f"; done
+          if sh scripts/install.sh --version "$FAKE_VERSION" 2> err.txt; then
+            echo "installer accepted a corrupted archive" >&2; exit 1
+          fi
+          cat err.txt
+          grep -q 'refusing to install' err.txt
+          test ! -e "$KIT_INSTALL_DIR/kit"
+
+  windows:
+    name: install.ps1 (${{ matrix.shell }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh] # Windows PowerShell 5.1 and PowerShell 7
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make fake release
+        shell: powershell # Add-Type -OutputType needs Windows PowerShell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = "kit-$env:FAKE_VERSION-x86_64-pc-windows-msvc"
+          $stage = Join-Path $env:RUNNER_TEMP "stage\$name"
+          $rel = Join-Path $env:RUNNER_TEMP "srv\v$env:FAKE_VERSION"
+          New-Item -ItemType Directory -Force $stage, $rel | Out-Null
+          $src = "class P { static void Main() { System.Console.WriteLine(""kit $env:FAKE_VERSION""); } }"
+          Add-Type -TypeDefinition $src -OutputType ConsoleApplication -OutputAssembly (Join-Path $stage 'kit.exe')
+          Copy-Item LICENSE, README.md $stage
+          Compress-Archive -Path $stage -DestinationPath (Join-Path $rel "$name.zip")
+          $hash = (Get-FileHash -Algorithm SHA256 (Join-Path $rel "$name.zip")).Hash.ToLower()
+          [IO.File]::WriteAllText((Join-Path $rel 'SHA256SUMS'), "$hash  $name.zip`n")
+          Get-Content (Join-Path $rel 'SHA256SUMS')
+
+      - name: Serve on 127.0.0.1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Start-Process python -ArgumentList '-m', 'http.server', $env:PORT, '--bind', '127.0.0.1', '--directory', (Join-Path $env:RUNNER_TEMP 'srv') -WindowStyle Hidden
+          foreach ($i in 1..10) {
+            try { Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$env:PORT/v$env:FAKE_VERSION/SHA256SUMS" | Out-Null; exit 0 } catch { Start-Sleep 1 }
+          }
+          throw 'server did not start'
+
+      - name: Install (file)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'bin-file'
+          & .\scripts\install.ps1 -Version $env:FAKE_VERSION -InstallDir $dir -DownloadBase "http://127.0.0.1:$env:PORT"
+          if ($LASTEXITCODE) { throw "installer exit $LASTEXITCODE" }
+          $out = & (Join-Path $dir 'kit.exe') --version
+          if ($out -ne "kit $env:FAKE_VERSION") { throw "unexpected output: $out" }
+
+      - name: Install (irm | iex, env)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:KIT_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'bin-iex'
+          $env:KIT_DOWNLOAD_BASE = "http://127.0.0.1:$env:PORT"
+          $env:KIT_VERSION = $env:FAKE_VERSION
+          Get-Content -Raw .\scripts\install.ps1 | Invoke-Expression
+          $out = & (Join-Path $env:KIT_INSTALL_DIR 'kit.exe') --version
+          if ($out -ne "kit $env:FAKE_VERSION") { throw "unexpected output: $out" }
+
+      - name: Refuse a corrupted archive
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'bin-bad'
+          $zip = Get-ChildItem (Join-Path $env:RUNNER_TEMP "srv\v$env:FAKE_VERSION\*.zip")
+          [IO.File]::AppendAllText($zip.FullName, 'x')
+          & .\scripts\install.ps1 -Version $env:FAKE_VERSION -InstallDir $dir -DownloadBase "http://127.0.0.1:$env:PORT" *> out.txt
+          $code = $LASTEXITCODE
+          Get-Content out.txt
+          if ($code -eq 0) { throw 'installer accepted a corrupted archive' }
+          if (-not (Select-String -Quiet 'refusing to install' out.txt)) { throw 'no refusal message' }
+          if (Test-Path (Join-Path $dir 'kit.exe')) { throw 'kit.exe was installed' }
+          exit 0

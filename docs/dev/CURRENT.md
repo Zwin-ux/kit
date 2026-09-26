@@ -21,7 +21,7 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven — and th
 | Gate (Guardian) | Real, thin | ~50 firewall fixtures in one test — not the PRD's 855-case suite |
 | **kit.toml (this repo)** | **Real** | root `kit.toml` — fmt + clippy -D warnings + `cargo test --workspace`, 15m, firewall block |
 | Worktree + receipt | Real | `kit run --dry-run --json` |
-| Agent adapters | Live | codex / claude / grok / ollama — `probe()` reports authenticated if the binary exists |
+| Agent adapters | Live | codex / claude / grok / ollama — `probe()` checks login: `codex login status`, `claude auth status`; grok has no status command, so only a missing `~/.grok/auth.json` + `XAI_API_KEY` reads as logged out (else "login not checked") |
 | Skills injection | Live | `.agents/skills` → worktree + prompt |
 | PTY attach | Stub | 1.0.1 (CEO stamp) |
 | Kill mid-run | Wired | proven on dry-run handles, **not** yet on a live Codex dogfood |
@@ -32,7 +32,7 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven — and th
 | Help overlay | Wired | `?` / Esc; arrows move, `k` kills (not j/k) |
 | Receipt browser | Wired | `kit receipt list` / `show` |
 | Dogfood | **Session A proven** | receipt `01M06A2PXBBH43ZFF3GJ9VQW94` — `gateVacuous: false`, fmt+clippy+test PASS. QA note: `docs/dev/dogfood-notes/2026-08-16-qa.md`. B still open |
-| Install / PATH | **In progress (2026-08-16)** | Repo `kit.cmd`/`kit.ps1` + `scripts/use-rust-kit.ps1` on disk. GitHub About/topics/release still sell 0.1 (human-only). No installer. |
+| Install / PATH | **In progress (2026-08-16)** | Repo `kit.cmd`/`kit.ps1` + `scripts/use-rust-kit.ps1` on disk. GitHub About/topics/release still sell 0.1 (human-only). npm platform packages staged + smoke-tested (`scripts/npm-smoke.mjs`, CI job `npm`); `release-npm.yml` publishes on a `v*` tag; 1.0.0-alpha.1 is on npm (2026-09-23). From the next tag it also makes a GitHub Release (archives + `SHA256SUMS`) for `scripts/install.sh` / `scripts/install.ps1`. See [`RELEASING.md`](RELEASING.md). |
 | 0.1 Node tree | Legacy, still in repo | `packages/` + Node CI (6 jobs) + keep-alive catalog bot |
 
 ## Spine

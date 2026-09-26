@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
+  <title id="title">Gate failure and retry in Kit</title>
+  <desc id="desc">A failed Control Room row shows the first error; pressing r queues a new run with previous gate failure context.</desc>
+  <rect width="1280" height="760" fill="#0B0E12"/>
+  <style>text{font-family:Consolas,'SFMono-Regular',monospace;fill:#F0F1E3}.muted{fill:#8D969A}.accent{fill:#00E6CC}.fail{fill:#FF3B4E}.small{font-size:16px}.body{font-size:20px}.label{font-size:13px;letter-spacing:3px}.head{font-size:28px;font-weight:700}</style>
+  <text x="48" y="55" class="label accent">KIT / FAILURE LOOP</text>
+  <text x="48" y="99" class="head">The first error stays in view.</text>
+  <text x="48" y="126" class="small muted">Demo fixture from the Control Room / retry state is illustrative</text>
+  <rect x="48" y="166" width="1184" height="308" rx="8" fill="#12171C" stroke="#344047"/>
+  <text x="72" y="205" class="body accent">KIT / CONTROL ROOM</text>
+  <text x="869" y="205" class="small">[ALL]  1 RUNNING  1 GATING  1 FAIL</text>
+  <path d="M72 225h1136" stroke="#344047"/>
+  <text x="72" y="256" class="small muted">REPO           AGENT        TASK                    STATE        GATE</text>
+  <text x="72" y="291" class="small">  kit          codex·eng    port guard.js           RUN 2m       --</text>
+  <text x="72" y="324" class="small">  kit          grok·eng     frame clock             GATING 2m    --</text>
+  <rect x="65" y="338" width="1149" height="69" rx="3" fill="#2A1216"/>
+  <rect x="65" y="338" width="4" height="69" fill="#00E6CC"/>
+  <text x="75" y="366" class="small">▶ trenchwire   codex·eng    fix red CI              DONE</text>
+  <text x="675" y="366" class="small fail">FAIL</text>
+  <text x="75" y="391" class="small fail">^ tsc: 3 errors — Type 'string' is not assignable</text>
+  <text x="72" y="439" class="small muted">[enter] open gate log     [r]etry failed run     [g]ate</text>
+  <path d="M640 489v45" stroke="#00E6CC" stroke-width="2"/>
+  <path d="m633 526 7 9 7-9" fill="none" stroke="#00E6CC" stroke-width="2"/>
+  <rect x="48" y="553" width="555" height="150" rx="8" fill="#12171C" stroke="#344047"/>
+  <rect x="627" y="553" width="605" height="150" rx="8" fill="#12171C" stroke="#344047"/>
+  <text x="72" y="585" class="label accent">GATE / DETAIL</text>
+  <text x="72" y="618" class="small fail">OVERALL  FAIL  (10000ms)</text>
+  <text x="72" y="648" class="small">PASS  format      pnpm format:check</text>
+  <text x="72" y="677" class="small fail">FAIL  typecheck   tsc --noEmit</text>
+  <text x="650" y="585" class="label accent">RETRY / NEW RUN</text>
+  <text x="650" y="619" class="small">retry queued from 01FIXRUN3 — starting engine</text>
+  <text x="650" y="648" class="small muted">## Previous gate failure</text>
+  <text x="650" y="677" class="small">tsc: 3 errors — Type 'string' is not assignable</text>
+  <text x="48" y="741" class="small muted">Retry keeps the original run and queues a new isolated run; this frame does not claim the retry passed.</text>
+</svg>
