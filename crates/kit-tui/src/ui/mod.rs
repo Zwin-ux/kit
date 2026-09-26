@@ -201,6 +201,54 @@ mod tests {
     }
 
     #[test]
+    fn empty_control_room_fox_snapshot() {
+        let app = App::with_motion(false);
+        let frame = render_to_string(&app, 100, 30);
+        assert!(frame.contains("▄███▀████▀█████"), "the fox rests: {frame}");
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
+    fn fox_wags_on_the_clock_and_never_moves_the_copy() {
+        let mut app = App::with_motion(true);
+        let rest = render_to_string(&app, 100, 30);
+        app.clock.tick = crate::fox::WAG_PERIOD - 9; // mid-wag
+        let wag = render_to_string(&app, 100, 30);
+        assert_ne!(rest, wag, "motion on: the tail moves");
+        let (rest_lines, wag_lines): (Vec<_>, Vec<_>) =
+            (rest.lines().collect(), wag.lines().collect());
+        let moved: Vec<usize> = (0..rest_lines.len())
+            .filter(|&i| rest_lines[i] != wag_lines[i])
+            .collect();
+        assert!(moved.len() <= 3, "only the tail rows change: {moved:?}");
+        for text in ["No runs yet", "press d to dispatch"] {
+            let row = |f: &str| f.lines().position(|l| l.contains(text));
+            assert_eq!(row(&rest), row(&wag), "{text} stays put");
+        }
+    }
+
+    #[test]
+    fn fox_stays_off_the_missing_agents_error() {
+        let mut app = App::with_motion(false);
+        app.set_agents_probe(vec![("codex".into(), false), ("claude".into(), false)]);
+        let frame = render_to_string(&app, 100, 30);
+        assert!(frame.contains("No coding agents on PATH"));
+        assert!(!frame.contains('▀'), "no fox over an error: {frame}");
+
+        app.set_agents_probe(vec![("codex".into(), true)]);
+        let frame = render_to_string(&app, 100, 30);
+        assert!(frame.contains("Ready to dispatch") && frame.contains('▀'));
+    }
+
+    #[test]
+    fn fox_hides_when_the_room_is_short() {
+        let app = App::with_motion(false);
+        let frame = render_to_string(&app, 100, 18);
+        assert!(!frame.contains('▀'), "no half-drawn fox: {frame}");
+        assert!(frame.contains("No runs yet"));
+    }
+
+    #[test]
     fn too_small_snapshot() {
         let app = App::with_motion(false);
         let frame = render_to_string(&app, 40, 8);

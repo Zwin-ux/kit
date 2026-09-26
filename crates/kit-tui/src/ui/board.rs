@@ -44,6 +44,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
             frame,
             chunks[1],
             &theme,
+            &[],
             "Nothing queued",
             "press n to add  ·  Enter prefills Dispatch  ·  not a live pull-queue",
         );
