@@ -415,7 +415,11 @@ fn only_difference(gone: &Applied, after: &str, before: &str) -> bool {
                 return false;
             };
             let key = drop_json(gone, &mut doc);
-            doc == was || (drop_empty(&mut doc, key) && doc == was)
+            if doc == was {
+                return true;
+            }
+            drop_empty(&mut doc, key);
+            doc == was
         }
         Applied::McpToml { name, previous, .. } => {
             let (Ok(mut doc), Ok(was)) = (
