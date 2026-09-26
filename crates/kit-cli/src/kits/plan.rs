@@ -218,6 +218,10 @@ pub enum Applied {
         kit: String,
         /// Commands this kit added; ones already in the gate are not listed.
         added: Vec<String>,
+        /// Every command the kit asked for, so removing another kit never
+        /// takes out a line this one still needs.
+        #[serde(default)]
+        wanted: Vec<String>,
         created: bool,
     },
 }
@@ -233,7 +237,9 @@ impl Applied {
             }
             Self::ClaudeMcp { name, .. } => format!("mcp {name} from Claude Code (user)"),
             Self::HookJson { file, event, .. } => format!("hook {event} from {}", tilde(file)),
-            Self::GateToml { file, kit, .. } => format!("gate {kit} from {}", tilde(file)),
+            Self::GateToml { file, kit, .. } => {
+                format!("gate checks of {kit} from {}", tilde(file))
+            }
         }
     }
 
@@ -316,6 +322,7 @@ pub fn in_place(action: &Action, record: &Applied) -> bool {
                     .as_array()
                     .is_some_and(|l| l.contains(entry))
             }),
+        (Action::GateToml { commands, .. }, Applied::GateToml { wanted, .. }) => commands == wanted,
         (Action::Skip { .. }, _) => true,
         _ => false,
     }
@@ -661,11 +668,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
             commands,
         } => {
             let created = !file.exists();
-            let raw = if created {
-                "# Written by kit add. `kit init` can add your repo's own checks.\n".to_string()
-            } else {
-                read_or_empty(file)?
-            };
+            let raw = read_or_empty(file)?;
             let mut doc: toml_edit::DocumentMut = raw
                 .parse()
                 .with_context(|| format!("{} is not valid TOML", file.display()))?;
@@ -699,12 +702,18 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                 for c in &added {
                     extra.push(c.as_str());
                 }
-                write(file, &doc.to_string())?;
+                let header = if created {
+                    "# Written by kit add. `kit init` can add your repo's own checks.\n"
+                } else {
+                    ""
+                };
+                write(file, &same_eol(&raw, format!("{header}{doc}")))?;
             }
             Applied::GateToml {
                 file: file.clone(),
                 kit: kit.clone(),
                 added,
+                wanted: commands.clone(),
                 created,
             }
         }
@@ -827,13 +836,19 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             ..
         } => {
             if file.exists() && !added.is_empty() {
-                let mut doc: toml_edit::DocumentMut = read_or_empty(file)?.parse()?;
+                let raw = read_or_empty(file)?;
+                let mut doc: toml_edit::DocumentMut = raw.parse()?;
                 if let Some(gate) = doc.get_mut("gate").and_then(|g| g.as_table_mut()) {
                     let empty = match gate.get_mut("extra").and_then(|e| e.as_array_mut()) {
                         Some(extra) => {
-                            extra.retain(|v| {
-                                !v.as_str().is_some_and(|c| added.iter().any(|a| a == c))
-                            });
+                            // One line per command Kit added: a copy the
+                            // user wrote by hand stays.
+                            for a in added {
+                                let at = extra.iter().position(|v| v.as_str() == Some(a));
+                                if let Some(i) = at {
+                                    extra.remove(i);
+                                }
+                            }
                             extra.is_empty()
                         }
                         None => false,
@@ -852,7 +867,7 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 if *created && only_comments {
                     std::fs::remove_file(file)?;
                 } else {
-                    write(file, &left)?;
+                    write(file, &same_eol(&raw, left))?;
                 }
             }
         }
@@ -1014,6 +1029,16 @@ fn read_or_empty(file: &Path) -> Result<String> {
         Ok(s) => Ok(s),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
         Err(e) => Err(e).with_context(|| format!("cannot read {}", file.display())),
+    }
+}
+
+/// `text` with the line endings `original` used: toml_edit writes `\n`, and
+/// a Windows kit.toml must stay CRLF so remove gives back its exact bytes.
+fn same_eol(original: &str, text: String) -> String {
+    if original.contains("\r\n") {
+        text.replace("\r\n", "\n").replace('\n', "\r\n")
+    } else {
+        text
     }
 }
 

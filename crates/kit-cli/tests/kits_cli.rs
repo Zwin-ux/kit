@@ -1098,6 +1098,13 @@ extra = ["swiftlint lint --strict"]
         "{}",
         text(&out.stdout)
     );
+    // The plan's "what runs" lists the gate command too.
+    assert!(
+        text(&out.stdout)
+            .contains("runs  swiftlint lint --strict   (in the gate of every kit run)"),
+        "{}",
+        text(&out.stdout)
+    );
     let raw = read(&repo.join("kit.toml"));
     assert!(raw.starts_with(ours), "{raw}");
     let cfg: kit_core::KitConfig = toml::from_str(&raw).unwrap();
@@ -1107,6 +1114,21 @@ extra = ["swiftlint lint --strict"]
     let out = env.kit(&repo, &["remove", "gated", "--yes"]);
     assert!(out.status.success(), "{}", text(&out.stderr));
     assert_eq!(read(&repo.join("kit.toml")), ours);
+
+    // A Windows (CRLF) kit.toml keeps its line endings, and remove gives
+    // back the exact bytes.
+    let crlf = "[gate]\r\ntest = \"cargo test\" # ours\r\n";
+    write(&repo.join("kit.toml"), crlf);
+    let out = env.kit(&repo, &["add", spec, "-a", "codex", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let raw = read(&repo.join("kit.toml"));
+    assert!(
+        !raw.replace("\r\n", "").contains('\n'),
+        "mixed line endings: {raw:?}"
+    );
+    let out = env.kit(&repo, &["remove", "gated", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&repo.join("kit.toml")), crlf);
 
     // With no kit.toml, Kit creates one and removes it again.
     std::fs::remove_file(repo.join("kit.toml")).unwrap();
@@ -1125,4 +1147,58 @@ extra = ["swiftlint lint --strict"]
         "{}",
         text(&out.stdout)
     );
+}
+
+/// Two kits that want the same gate command: removing one keeps it for the
+/// other, and a copy the user wrote by hand is never Kit's to remove.
+#[test]
+fn a_gate_command_two_kits_need_stays_until_both_are_gone() {
+    let root = scratch("gate-shared");
+    let gate_kit = |name: &str| {
+        let kit = root.join(format!("{name}-kit"));
+        write(
+            &kit.join("KIT.toml"),
+            &format!(
+                "schema = 1\n[kit]\nname = \"{name}\"\ntitle = \"{name}\"\nversion = \"0.1.0\"\ndescription = \"d\"\n[gate]\nextra = [\"swiftlint lint --strict\"]\n"
+            ),
+        );
+        kit
+    };
+    let (ga, gb) = (gate_kit("ga"), gate_kit("gb"));
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    for kit in [&ga, &gb] {
+        let out = env.kit(
+            &repo,
+            &["add", kit.to_str().unwrap(), "-a", "codex", "--yes"],
+        );
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    let raw = read(&repo.join("kit.toml"));
+    assert!(raw.starts_with("# Written by kit add."), "{raw}");
+    assert_eq!(raw.matches("swiftlint lint --strict").count(), 1, "{raw}");
+
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(
+        read(&repo.join("kit.toml")).contains("swiftlint lint --strict"),
+        "gb still needs it"
+    );
+
+    let out = env.kit(&repo, &["remove", "gb", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join("kit.toml").exists());
+
+    // A line the user already had stays after remove.
+    let ours = "[gate]\nextra = [\"swiftlint lint --strict\"]\n";
+    write(&repo.join("kit.toml"), ours);
+    let out = env.kit(
+        &repo,
+        &["add", ga.to_str().unwrap(), "-a", "codex", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let out = env.kit(&repo, &["remove", "ga", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&repo.join("kit.toml")), ours);
 }

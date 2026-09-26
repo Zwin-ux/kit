@@ -2,8 +2,8 @@
 //! the formatter and linter the project already uses on that one file.
 //!
 //! Tools come from the project (`node_modules/.bin`, `.venv/bin`) or PATH.
-//! Nothing is downloaded or installed, and a missing tool is skipped
-//! silently. Formatter failures are reported but never block. Lint findings
+//! Nothing is downloaded or installed; a missing Swift tool is named on
+//! stderr and skipped. Formatter failures are reported but never block. Lint findings
 //! exit 2 so Claude Code hands them to the model to fix.
 
 use super::plan::find_program;
@@ -63,8 +63,14 @@ fn run(t: &Tool) -> Result<(bool, String)> {
     Ok((out.status.success(), text))
 }
 
+/// The file as an absolute path, so it means the same file from any folder.
 fn file_arg(file: &Path) -> String {
-    file.display().to_string()
+    let abs = if file.is_absolute() {
+        file.to_path_buf()
+    } else {
+        std::env::current_dir().map_or_else(|_| file.to_path_buf(), |d| d.join(file))
+    };
+    abs.display().to_string()
 }
 
 /// The formatter and linter for this file's language, if installed.
@@ -75,6 +81,9 @@ fn tools_for(file: &Path) -> (Option<Tool>, Option<Tool>) {
         .unwrap_or("")
         .to_ascii_lowercase();
     let dir = file.parent().unwrap_or(Path::new(".")).to_path_buf();
+    // Run from the project root, so a root .swiftlint.yml or ruff config
+    // applies, with the file's full path.
+    let root = super::install::repo_root(&dir).unwrap_or_else(|| dir.clone());
     let f = file_arg(file);
     let tool = |exe: PathBuf, args: &[&str], cwd: &Path| Tool {
         exe,
@@ -84,12 +93,24 @@ fn tools_for(file: &Path) -> (Option<Tool>, Option<Tool>) {
     match ext.as_str() {
         "swift" => {
             let format = find_program("swiftformat")
-                .map(|exe| tool(exe, &["--quiet", &f], &dir))
+                .map(|exe| tool(exe, &["--quiet", &f], &root))
                 .or_else(|| {
-                    find_program("swift").map(|exe| tool(exe, &["format", "--in-place", &f], &dir))
+                    find_program("swift-format")
+                        .map(|exe| tool(exe, &["format", "--in-place", &f], &root))
+                })
+                .or_else(|| {
+                    find_program("swift").map(|exe| tool(exe, &["format", "--in-place", &f], &root))
                 });
             let lint = find_program("swiftlint")
-                .map(|exe| tool(exe, &["lint", "--quiet", "--strict", &f], &dir));
+                .map(|exe| tool(exe, &["lint", "--quiet", "--strict", &f], &root));
+            if format.is_none() {
+                eprintln!(
+                    "kit: no Swift formatter found (swiftformat, swift-format or swift); {f} was not formatted"
+                );
+            }
+            if lint.is_none() {
+                eprintln!("kit: swiftlint is not installed; {f} was not linted");
+            }
             (format, lint)
         }
         "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" | "mts" | "cts" | "vue" | "svelte" => (
@@ -106,8 +127,8 @@ fn tools_for(file: &Path) -> (Option<Tool>, Option<Tool>) {
             let ruff = venv_tool("ruff", &dir).or_else(|| find_program("ruff"));
             (
                 ruff.clone()
-                    .map(|exe| tool(exe, &["format", "--quiet", &f], &dir)),
-                ruff.map(|exe| tool(exe, &["check", "--quiet", &f], &dir)),
+                    .map(|exe| tool(exe, &["format", "--quiet", &f], &root)),
+                ruff.map(|exe| tool(exe, &["check", "--quiet", &f], &root)),
             )
         }
         "rs" => {

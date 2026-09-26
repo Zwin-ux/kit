@@ -531,21 +531,23 @@ fn ask(code: bool) -> Result<Answer> {
     })
 }
 
-/// Exactly what an action will run: the MCP server's command line, or for
-/// the hook, each of the kit's hook commands with the files it runs on.
+/// Exactly what an action will run: the MCP server's command line, for
+/// the hook each of the kit's hook commands with the files it runs on, and
+/// for the gate each command every `kit run` in the repo will run.
 fn runs(chosen: &Chosen, kit: &str, a: &Action) -> Vec<String> {
     match a {
+        Action::GateToml { commands, .. } => commands
+            .iter()
+            .map(|c| format!("{c}   (in the gate of every kit run)"))
+            .collect(),
         Action::HookJson { .. } => chosen
             .kits
             .iter()
             .filter(|k| k.name() == kit)
             .flat_map(|k| &k.manifest.hook)
-            .map(|h| {
-                let run = h.describe();
-                match &h.glob {
-                    Some(g) => format!("{run}   (after each edit of {g})"),
-                    None => format!("{run}   (after each edit)"),
-                }
+            .map(|h| match &h.glob {
+                Some(g) => format!("{}   (after each edit of {g})", h.describe()),
+                None => format!("{}   (after each edit)", h.describe()),
             })
             .collect(),
         _ => a.command().into_iter().collect(),
@@ -843,6 +845,37 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         }
     }
 
+    // A gate command another installed kit also wants stays, and becomes
+    // that kit's to remove.
+    // (kit, command, whether Kit created the file)
+    let mut handed: Vec<(String, String, bool)> = Vec::new();
+    for a in &mut undo {
+        if let Applied::GateToml {
+            file,
+            added,
+            created,
+            ..
+        } = a
+        {
+            let created = *created;
+            added.retain(|cmd| {
+                let heir = staying.iter().find(|s| {
+                    s.applied.iter().any(|x| {
+                        matches!(x, Applied::GateToml { file: f, wanted, .. }
+                            if f == file && wanted.contains(cmd))
+                    })
+                });
+                match heir {
+                    Some(h) => {
+                        handed.push((h.name.clone(), cmd.clone(), created));
+                        false
+                    }
+                    None => true,
+                }
+            });
+        }
+    }
+
     let summary = removal_summary(&undo);
     if !json {
         for (name, users) in &still_needed {
@@ -914,6 +947,25 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         }
     }
     lock.kits.retain(|e| !going.contains(&e.name));
+    for (kit, cmd, was_created) in &handed {
+        if let Some(e) = lock.get_mut(kit) {
+            for a in &mut e.applied {
+                if let Applied::GateToml {
+                    added,
+                    wanted,
+                    created,
+                    ..
+                } = a
+                    && wanted.contains(cmd)
+                {
+                    if !added.contains(cmd) {
+                        added.push(cmd.clone());
+                    }
+                    *created |= *was_created;
+                }
+            }
+        }
+    }
     for (name, _) in &still_needed {
         if let Some(e) = lock.get_mut(name) {
             e.requested = false;

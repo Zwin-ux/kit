@@ -115,7 +115,7 @@ https://developer.apple.com/design/human-interface-guidelines/layout-and-organiz
 
 ### Navigation and presentation
 HIG: https://developer.apple.com/design/human-interface-guidelines/tab-bars ·
-https://developer.apple.com/design/human-interface-guidelines/navigation-bars ·
+https://developer.apple.com/design/human-interface-guidelines/toolbars ·
 https://developer.apple.com/design/human-interface-guidelines/sheets ·
 https://developer.apple.com/design/human-interface-guidelines/modality
 

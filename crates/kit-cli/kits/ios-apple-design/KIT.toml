@@ -82,5 +82,7 @@ on   = "after_edit"
 glob = "*.swift"
 use  = "format-and-lint"
 
-[check]
-mcp_starts = ["xcodebuildmcp"]
+# Every `kit run` in the repo must pass SwiftLint with the project's own
+# .swiftlint.yml. Read-only: it changes no files.
+[gate]
+extra = ["swiftlint lint --quiet"]
