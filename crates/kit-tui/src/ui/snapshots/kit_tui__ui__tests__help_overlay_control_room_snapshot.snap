@@ -3,7 +3,6 @@ source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
 "┌ help ────────────────────────────────────────────────────────────────────────┐"
-"│Kit Control Room — keys                                                       │"
 "│Global                                                                        │"
 "│  ?          toggle this help                                                 │"
 "│  Esc        back / close help                                                │"
@@ -15,4 +14,5 @@ expression: frame
 "│  d          dispatch fan-out                                                 │"
 "│  k          kill selected run                                                │"
 "│  r          retry FAIL only                                                  │"
+"│  b / f      board · filter ALL → FAIL → RUN → DONE                           │"
 "└──────────────────────────────────────────────────────────────────────────────┘"

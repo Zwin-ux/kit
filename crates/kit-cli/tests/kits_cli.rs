@@ -873,6 +873,340 @@ fn doctor_starts_mcp_servers_only_when_asked() {
     assert_eq!(stdout.matches("srv MCP starts").count(), 1, "{stdout}");
 }
 
+/// Remove gives back an instruction file byte for byte: CRLF line endings
+/// stay CRLF (also while installed), and a missing final newline stays
+/// missing.
+#[test]
+fn rules_blocks_round_trip_crlf_and_no_final_newline_exactly() {
+    let root = scratch("rules-bytes");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let spec = kit.to_str().unwrap();
+    for mine in [
+        "# Mine\r\nline two\r\n",
+        "# Mine\r\nline two",
+        "# Mine\nno final newline",
+        "# Mine\n\n\ntrailing blank lines\n\n",
+    ] {
+        write(&repo.join("CLAUDE.md"), mine);
+        let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        let installed = read(&repo.join("CLAUDE.md"));
+        assert!(installed.contains("<!-- kit:demo "), "{installed:?}");
+        if mine.contains("\r\n") {
+            assert!(
+                !installed.replace("\r\n", "").contains('\n'),
+                "mixed line endings while installed: {installed:?}"
+            );
+        }
+        let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        assert_eq!(read(&repo.join("CLAUDE.md")), mine);
+    }
+
+    // An edit outside the block between add and remove is the user's and
+    // stays; only the block goes, and the file stays CRLF.
+    let mine = "# Mine\r\nline two\r\n";
+    write(&repo.join("CLAUDE.md"), mine);
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let installed = read(&repo.join("CLAUDE.md"));
+    write(
+        &repo.join("CLAUDE.md"),
+        &format!("# Added later\r\n{installed}"),
+    );
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(
+        read(&repo.join("CLAUDE.md")),
+        format!("# Added later\r\n{mine}")
+    );
+
+    // Two kits added separately, removed in the order they were added.
+    let other = root.join("other-ruled");
+    write(&other.join("RULES.md"), "Be exact.\n");
+    write(
+        &other.join("KIT.toml"),
+        "schema = 1\n[kit]\nname = \"other\"\ntitle = \"Other\"\nversion = \"0.1.0\"\ndescription = \"d\"\n[rules]\nfile = \"RULES.md\"\n",
+    );
+    for mine in ["# Mine\r\nline two", "# Mine\nline two\n"] {
+        write(&repo.join("CLAUDE.md"), mine);
+        for k in [spec, other.to_str().unwrap()] {
+            let out = env.kit(&repo, &["add", k, "-a", "claude", "--yes"]);
+            assert!(out.status.success(), "{}", text(&out.stderr));
+        }
+        for name in ["demo", "other"] {
+            let out = env.kit(&repo, &["remove", name, "--yes"]);
+            assert!(out.status.success(), "{}", text(&out.stderr));
+        }
+        assert_eq!(read(&repo.join("CLAUDE.md")), mine);
+    }
+
+    // Two stacked kits, two blocks: removing the top one takes both out
+    // and still gives back the exact bytes.
+    let top = root.join("ruled-top");
+    write(&top.join("RULES.md"), "Be brief.\n");
+    write(
+        &top.join("KIT.toml"),
+        &format!(
+            "schema = 1\n[kit]\nname = \"top\"\ntitle = \"Top\"\nversion = \"0.1.0\"\ndescription = \"d\"\nextends = [{:?}]\n[rules]\nfile = \"RULES.md\"\n",
+            spec
+        ),
+    );
+    let mine = "# Mine\r\nline two";
+    write(&repo.join("CLAUDE.md"), mine);
+    let out = env.kit(
+        &repo,
+        &["add", top.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(read(&repo.join("CLAUDE.md")).contains("<!-- kit:top "));
+    let out = env.kit(&repo, &["remove", "top", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&repo.join("CLAUDE.md")), mine);
+}
+
+/// Every file Kit edits comes back byte for byte after remove, whether it
+/// uses CRLF or ends without a newline: rules files, .mcp.json, Claude
+/// Code's settings.json and Codex's config.toml.
+#[test]
+fn every_writer_gives_back_crlf_and_no_final_newline_files_exactly() {
+    let root = scratch("every-writer-bytes");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let spec = kit.to_str().unwrap();
+    let files: [(&str, &str); 5] = [
+        ("CLAUDE.md", "# Mine PRIVATE-7f3\nline two\n"),
+        ("AGENTS.md", "# Ours PRIVATE-7f3\nline two\n"),
+        (
+            ".mcp.json",
+            "{\n  \"mcpServers\": {\n    \"mine\": {\n      \"command\": \"x\",\n      \"args\": [\"PRIVATE-7f3\"]\n    }\n  }\n}\n",
+        ),
+        (
+            ".claude/settings.json",
+            "{\n  \"theme\": \"PRIVATE-7f3\"\n}\n",
+        ),
+        (
+            ".codex/config.toml",
+            "model = \"o3\" # PRIVATE-7f3\n\n[mcp_servers.mine]\ncommand = \"x\"\n",
+        ),
+    ];
+    fn crlf(t: &str) -> String {
+        t.replace('\n', "\r\n")
+    }
+    fn no_final(t: &str) -> String {
+        t.trim_end_matches('\n').to_string()
+    }
+    fn crlf_no_final(t: &str) -> String {
+        crlf(&no_final(t))
+    }
+    let variants: [fn(&str) -> String; 3] = [crlf, no_final, crlf_no_final];
+    for variant in variants {
+        let seeded: Vec<(PathBuf, String)> = files
+            .iter()
+            .map(|(rel, body)| (repo.join(rel), variant(body)))
+            .collect();
+        for (path, body) in &seeded {
+            write(path, body);
+        }
+        let out = env.kit(
+            &repo,
+            &["add", spec, "-a", "claude", "-a", "codex", "--yes"],
+        );
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        // The pre-Kit text stays in Kit's private record, never in the
+        // kit.lock a team commits.
+        let shared = read(&repo.join("kit.lock"));
+        assert!(!shared.contains("PRIVATE-7f3"), "{shared}");
+        assert!(!shared.contains("\"original\""), "{shared}");
+        for (path, body) in &seeded {
+            let now = read(path);
+            assert_ne!(&now, body, "{} was not changed by add", path.display());
+            if body.contains("\r\n") {
+                assert!(
+                    !now.replace("\r\n", "").contains('\n'),
+                    "{} has mixed line endings while installed: {now:?}",
+                    path.display()
+                );
+            }
+        }
+        let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        for (path, body) in &seeded {
+            assert_eq!(&read(path), body, "{} is not byte-exact", path.display());
+        }
+    }
+}
+
+/// Every file under `dir`, `.git` aside, relative to it.
+fn files_under(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut todo = vec![dir.to_path_buf()];
+    while let Some(d) = todo.pop() {
+        for e in std::fs::read_dir(&d).unwrap() {
+            let path = e.unwrap().path();
+            if path.file_name().is_some_and(|n| n == ".git") {
+                continue;
+            }
+            out.push(path.strip_prefix(dir).unwrap().display().to_string());
+            if path.is_dir() {
+                todo.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// A second kit with rules, a local MCP server and a hook, to stack on `demo`.
+fn second_kit(root: &Path) -> PathBuf {
+    let kit = root.join("second-kit");
+    write(&kit.join("RULES.md"), "Be exact.\n");
+    write(
+        &kit.join("KIT.toml"),
+        r#"schema = 1
+[kit]
+name = "second"
+title = "Second"
+version = "0.1.0"
+description = "d"
+[rules]
+file = "RULES.md"
+[mcp.other]
+command = "npx"
+args = ["-y", "other@1.0.0"]
+[[hook]]
+on = "after_edit"
+glob = "*.rs"
+run = "echo checked"
+"#,
+    );
+    kit
+}
+
+/// Two kits added one after the other and removed in that same order leave
+/// nothing behind: the files the first kit created go with the second.
+#[test]
+fn stacked_kits_removed_in_install_order_leave_no_files_behind() {
+    let root = scratch("stacked-fifo");
+    let demo = demo_kit(&root);
+    let second = second_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let kits = [demo.to_str().unwrap(), second.to_str().unwrap()];
+
+    for k in kits {
+        let args = ["add", k, "-a", "claude", "-a", "codex", "--yes"];
+        let out = env.kit(&repo, &args);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    for rel in ["CLAUDE.md", "AGENTS.md", ".mcp.json", ".codex/config.toml"] {
+        assert!(repo.join(rel).is_file(), "{rel} was not written");
+    }
+    for name in ["demo", "second"] {
+        let out = env.kit(&repo, &["remove", name, "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    assert_eq!(files_under(&repo), Vec::<String>::new());
+
+    // The same in home, with Codex (Claude Code's user MCP goes through its
+    // own CLI instead of a file).
+    let before = files_under(&env.home);
+    for k in kits {
+        let args = ["add", k, "-a", "codex", "--global", "--yes"];
+        let out = env.kit(&root, &args);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    assert!(env.home.join(".codex/config.toml").is_file());
+    for name in ["demo", "second"] {
+        let out = env.kit(&root, &["remove", name, "--global", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    assert_eq!(files_under(&env.home), before);
+}
+
+/// Hand-formatted files that were there before Kit (4-space indent, CRLF,
+/// no final newline, the user's keys on both sides of Kit's) come back byte
+/// for byte when two stacked kits are removed in install order.
+#[test]
+fn stacked_kits_removed_in_install_order_give_back_hand_formatted_files() {
+    let root = scratch("stacked-hand");
+    let kits = [demo_kit(&root), second_kit(&root)];
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let crlf = |t: &str| t.replace('\n', "\r\n");
+    let seeds = [
+        ("CLAUDE.md", crlf("# Mine\nline two")),
+        ("AGENTS.md", crlf("# Ours\nline two")),
+        (
+            ".mcp.json",
+            crlf(
+                "{\n    \"a\": 1,\n    \"mcpServers\": {\n        \"mine\": {\n            \"command\": \"x\"\n        }\n    },\n    \"z\": true\n}",
+            ),
+        ),
+        (
+            ".claude/settings.json",
+            crlf("{\n    \"a\": 1,\n    \"hooks\": {},\n    \"z\": true\n}"),
+        ),
+        (
+            ".codex/config.toml",
+            crlf(
+                "model = \"o3\"\n\n[mcp_servers.mine]\ncommand = \"x\"\n\n[profiles.fast]\nmodel = \"o4\"",
+            ),
+        ),
+    ];
+    for (rel, body) in &seeds {
+        write(&repo.join(rel), body);
+    }
+    for k in &kits {
+        let args = [
+            "add",
+            k.to_str().unwrap(),
+            "-a",
+            "claude",
+            "-a",
+            "codex",
+            "--yes",
+        ];
+        let out = env.kit(&repo, &args);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    for name in ["demo", "second"] {
+        let out = env.kit(&repo, &["remove", name, "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    for (rel, body) in &seeds {
+        assert_eq!(&read(&repo.join(rel)), body, "{rel} is not byte-exact");
+    }
+
+    // Codex in home.
+    let config = env.home.join(".codex/config.toml");
+    write(&config, &seeds[4].1);
+    for k in &kits {
+        let args = [
+            "add",
+            k.to_str().unwrap(),
+            "-a",
+            "codex",
+            "--global",
+            "--yes",
+        ];
+        let out = env.kit(&root, &args);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    for name in ["demo", "second"] {
+        let out = env.kit(&root, &["remove", name, "--global", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    assert_eq!(read(&config), seeds[4].1);
+}
+
 /// A kit that extends `demo`, from a folder next to it.
 fn top_kit(root: &Path, base: &Path) -> PathBuf {
     let kit = root.join("top-kit");

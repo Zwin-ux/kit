@@ -1,0 +1,27 @@
+
+
+  sum
+    1) adds
+
+
+  0 passing (5ms)
+  1 failing
+
+  1) sum
+       adds:
+
+      AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+5 !== 6
+
+      + expected - actual
+
+      -5
+      +6
+      
+      at Context.<anonymous> (mo/sum.spec.js:2:51)
+      at process.processImmediate (node:internal/timers:484:21)
+
+
+
+

@@ -1,0 +1,6 @@
+
+> js@1.0.0 quote
+> printf "> expected 3, got 2\n"; exit 1
+
+> expected 3, got 2
+
