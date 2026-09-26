@@ -331,6 +331,32 @@ pub fn same_content(a: &Action, b: &Action) -> bool {
     }
 }
 
+/// After `gone` is undone, a kit stacked on the same rules file after it
+/// holds an `original` with `gone`'s block inside. When that is all that
+/// differs, it takes `gone`'s original, so removing the last kit still
+/// gives back the file as it was before Kit, final newline included.
+pub fn hand_over_original(gone: &Applied, kept: &mut Applied) {
+    if let (
+        Applied::Rules {
+            file: gf,
+            kit: gk,
+            original: Some(go),
+            ..
+        },
+        Applied::Rules {
+            file: kf,
+            original: Some(ko),
+            ..
+        },
+    ) = (gone, kept)
+        && gf == kf
+        && ko.contains(&open_marker(gk))
+        && remove_block(ko, gk) == remove_block(&set_block(go, gk, "", ""), gk)
+    {
+        *ko = go.clone();
+    }
+}
+
 /// A record replaced by a newer apply keeps what only the first knew:
 /// that Kit created the file, and the user's server it replaced.
 pub fn merge(old: &Applied, new: Applied) -> Applied {

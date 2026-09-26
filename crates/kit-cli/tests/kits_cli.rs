@@ -906,6 +906,44 @@ fn rules_blocks_round_trip_crlf_and_no_final_newline_exactly() {
         assert_eq!(read(&repo.join("CLAUDE.md")), mine);
     }
 
+    // An edit outside the block between add and remove is the user's and
+    // stays; only the block goes, and the file stays CRLF.
+    let mine = "# Mine\r\nline two\r\n";
+    write(&repo.join("CLAUDE.md"), mine);
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let installed = read(&repo.join("CLAUDE.md"));
+    write(
+        &repo.join("CLAUDE.md"),
+        &format!("# Added later\r\n{installed}"),
+    );
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(
+        read(&repo.join("CLAUDE.md")),
+        format!("# Added later\r\n{mine}")
+    );
+
+    // Two kits added separately, removed in the order they were added.
+    let other = root.join("other-ruled");
+    write(&other.join("RULES.md"), "Be exact.\n");
+    write(
+        &other.join("KIT.toml"),
+        "schema = 1\n[kit]\nname = \"other\"\ntitle = \"Other\"\nversion = \"0.1.0\"\ndescription = \"d\"\n[rules]\nfile = \"RULES.md\"\n",
+    );
+    for mine in ["# Mine\r\nline two", "# Mine\nline two\n"] {
+        write(&repo.join("CLAUDE.md"), mine);
+        for k in [spec, other.to_str().unwrap()] {
+            let out = env.kit(&repo, &["add", k, "-a", "claude", "--yes"]);
+            assert!(out.status.success(), "{}", text(&out.stderr));
+        }
+        for name in ["demo", "other"] {
+            let out = env.kit(&repo, &["remove", name, "--yes"]);
+            assert!(out.status.success(), "{}", text(&out.stderr));
+        }
+        assert_eq!(read(&repo.join("CLAUDE.md")), mine);
+    }
+
     // Two stacked kits, two blocks: removing the top one takes both out
     // and still gives back the exact bytes.
     let top = root.join("ruled-top");
@@ -942,16 +980,19 @@ fn every_writer_gives_back_crlf_and_no_final_newline_files_exactly() {
     git_repo(&repo);
     let spec = kit.to_str().unwrap();
     let files: [(&str, &str); 5] = [
-        ("CLAUDE.md", "# Mine\nline two\n"),
-        ("AGENTS.md", "# Ours\nline two\n"),
+        ("CLAUDE.md", "# Mine PRIVATE-7f3\nline two\n"),
+        ("AGENTS.md", "# Ours PRIVATE-7f3\nline two\n"),
         (
             ".mcp.json",
-            "{\n  \"mcpServers\": {\n    \"mine\": {\n      \"command\": \"x\"\n    }\n  }\n}\n",
+            "{\n  \"mcpServers\": {\n    \"mine\": {\n      \"command\": \"x\",\n      \"args\": [\"PRIVATE-7f3\"]\n    }\n  }\n}\n",
         ),
-        (".claude/settings.json", "{\n  \"theme\": \"dark\"\n}\n"),
+        (
+            ".claude/settings.json",
+            "{\n  \"theme\": \"PRIVATE-7f3\"\n}\n",
+        ),
         (
             ".codex/config.toml",
-            "model = \"o3\" # keep me\n\n[mcp_servers.mine]\ncommand = \"x\"\n",
+            "model = \"o3\" # PRIVATE-7f3\n\n[mcp_servers.mine]\ncommand = \"x\"\n",
         ),
     ];
     fn crlf(t: &str) -> String {
@@ -977,6 +1018,11 @@ fn every_writer_gives_back_crlf_and_no_final_newline_files_exactly() {
             &["add", spec, "-a", "claude", "-a", "codex", "--yes"],
         );
         assert!(out.status.success(), "{}", text(&out.stderr));
+        // The pre-Kit text stays in Kit's private record, never in the
+        // kit.lock a team commits.
+        let shared = read(&repo.join("kit.lock"));
+        assert!(!shared.contains("PRIVATE-7f3"), "{shared}");
+        assert!(!shared.contains("\"original\""), "{shared}");
         for (path, body) in &seeded {
             let now = read(path);
             assert_ne!(&now, body, "{} was not changed by add", path.display());
