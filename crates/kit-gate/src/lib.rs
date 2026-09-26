@@ -972,16 +972,36 @@ fn summarize_failure(command: &str, output: &str) -> String {
             if tsc_errors == 1 { "" } else { "s" }
         );
     }
-    let first = output
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
+    // The first line that reads as the failure, else the first line at all.
+    // Build tools print progress first ("Checking x v0.1.0"), and that line
+    // is what the Control Room would show as the reason.
+    let lines = || {
+        output
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+    };
+    let first = lines()
+        .find(|line| looks_like_failure(line))
+        .or_else(|| lines().next())
         .unwrap_or("(no output)");
     let program = tokenize(command)
         .and_then(|argv| argv.first().cloned())
         .and_then(|program| program.rsplit(['/', '\\']).next().map(ToOwned::to_owned))
         .unwrap_or_else(|| "check".to_owned());
     format!("{program}: {first}")
+}
+
+/// `error: …`, `error[E0425]: …`, `FAILED …`, `thread '…' panicked …`,
+/// `Diff in …` (rustfmt), `npm ERR! …`, `E   AssertionError` (pytest).
+fn looks_like_failure(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.starts_with("error")
+        || lower.starts_with("fail")
+        || lower.starts_with("diff in ")
+        || lower.starts_with("npm err!")
+        || lower.starts_with("e   ")
+        || lower.contains(" panicked at ")
 }
 
 fn scope_violations(worktree: &Path, allow: &[String], deny: &[String]) -> Result<Vec<String>, ()> {
@@ -1160,6 +1180,20 @@ mod tests {
             KitGate::new().screened("rm -rf '\"", &context),
             FirewallVerdict::Allow
         ));
+    }
+
+    #[test]
+    fn summary_skips_build_progress_to_the_error() {
+        let cargo = "    Checking x v0.1.0 (/w)\nerror: function `add` is never used\n --> src/main.rs:1:4\n";
+        assert_eq!(
+            summarize_failure("cargo clippy -- -D warnings", cargo),
+            "cargo: error: function `add` is never used"
+        );
+        let plain = "something odd\nmore";
+        assert_eq!(
+            summarize_failure("make check", plain),
+            "make: something odd"
+        );
     }
 
     #[test]

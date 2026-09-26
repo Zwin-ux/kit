@@ -105,6 +105,10 @@ async fn execute_with(
     let started_at = SystemTime::now();
 
     send(&tx, &id, RunDelta::State(RunState::Running)).await;
+    if super::store::declares_firewall(&repo) {
+        let notice = super::store::FIREWALL_NOTICE.to_string();
+        send(&tx, &id, RunDelta::Output(notice)).await;
+    }
 
     let wt_path = worktrees_dir().join(&id.0);
     let branch = branch_name(&id.0);

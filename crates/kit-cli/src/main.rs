@@ -469,7 +469,7 @@ fn cmd_receipt_list(limit: usize, json: bool) -> Result<()> {
         );
     } else if rows.is_empty() {
         println!(
-            "no receipts under {} — run `kit run --dry-run --task smoke` first",
+            "no runs yet under {}. Start one with kit run \"describe a task\"",
             engine::paths::runs_dir().display()
         );
     } else {
@@ -855,9 +855,8 @@ fn print_doctor(version: &str, json: bool) {
     if kit_toml.is_none() {
         println!("  kit init");
     }
+    println!("  kit run \"describe a task\"");
     println!("  kit --demo");
-    println!("  kit run --dry-run --task \"smoke\" --json");
-    println!("  kit run --agent codex --task \"…\"");
 }
 
 #[cfg(test)]

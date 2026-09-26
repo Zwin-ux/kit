@@ -148,7 +148,7 @@ pub async fn cmd_init(args: crate::cli::InitArgs, json: bool) -> Result<()> {
         println!();
         let verb = if existed { "Replaced" } else { "Wrote" };
         println!("{verb} {}.", path.display());
-        println!("Next: commit kit.toml, then run `kit run --task \"...\"`.");
+        println!("next      commit kit.toml, then kit run \"describe a task\"");
     }
     Ok(())
 }

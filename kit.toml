@@ -11,6 +11,3 @@ timeout   = "15m"
 [gate.scope]
 allow = ["crates/**", "docs/**", "tasks/**", "wiki/**", "*.md", "kit.toml"]
 deny  = [".github/**", "packages/**", "catalog/**"]
-
-[firewall]
-mode = "block"
