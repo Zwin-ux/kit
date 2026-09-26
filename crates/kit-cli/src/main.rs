@@ -394,12 +394,12 @@ impl RunSummary<'_> {
         out.push(format!(
             "run       {}  (receipt {})",
             short_id(self.id),
-            self.receipt_dir.display()
+            kits::plan::tilde(self.receipt_dir)
         ));
         if let Some(wt) = self.worktree {
             out.push(format!(
                 "worktree  {} (kept: it has the run's changes)",
-                wt.display()
+                kits::plan::tilde(wt)
             ));
         }
         out.push(format!("next      {}", self.next()));

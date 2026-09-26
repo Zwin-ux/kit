@@ -257,9 +257,14 @@ impl KitManifest {
                 );
             }
             for (key, value) in &mcp.env {
-                if !value.starts_with('$') {
+                if !env_ref(value) {
                     bail!(
-                        "kit {name}: mcp {server} env {key} must name an environment variable (\"$NAME\"). Kits never carry secrets"
+                        "kit {name}: mcp {server} env {key} must name one environment variable (\"$NAME\", capitals, digits and _). Kits never carry secrets"
+                    );
+                }
+                if steers_program(key) {
+                    bail!(
+                        "kit {name}: mcp {server} env {key} changes what the program runs; kits may not set it"
                     );
                 }
             }
@@ -532,6 +537,39 @@ fn hands_over_code(arg: &str) -> bool {
         && flag[1..].contains(['c', 'e']))
 }
 
+/// `$NAME`: exactly one variable, capitals, digits and `_`.
+fn env_ref(value: &str) -> bool {
+    let Some(name) = value.strip_prefix('$') else {
+        return false;
+    };
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_uppercase() || c == '_')
+        && chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// Variables that make an approved program load or run other code.
+fn steers_program(key: &str) -> bool {
+    let k = key.to_ascii_uppercase();
+    k.starts_with("LD_")
+        || k.starts_with("DYLD_")
+        || k.starts_with("PYTHON")
+        || k.starts_with("NPM_CONFIG_")
+        || matches!(
+            k.as_str(),
+            "NODE_OPTIONS"
+                | "NODE_PATH"
+                | "RUBYOPT"
+                | "RUBYLIB"
+                | "PERL5OPT"
+                | "PERL5LIB"
+                | "JAVA_TOOL_OPTIONS"
+                | "BASH_ENV"
+                | "ENV"
+        )
+}
+
 /// `name@1.2.3` or `@scope/name@1.2.3`: a registry name and an exact
 /// version. No ranges, tags, URLs, tarballs, git or file specs.
 fn npm_exact(spec: &str) -> bool {
@@ -709,6 +747,33 @@ mod tests {
             ("sudo", r#""some-server""#),
         ] {
             assert!(mcp(cmd, args).is_err(), "{cmd} {args} should be refused");
+        }
+    }
+
+    #[test]
+    fn mcp_env_names_one_variable_and_never_steers_the_program() {
+        let env = |k: &str, v: &str| {
+            parse(&format!(
+                "[mcp.p]\ncommand = \"npx\"\nargs = [\"-y\", \"a@1.2.3\"]\n[mcp.p.env]\n{k} = \"{v}\"\n"
+            ))
+        };
+        assert!(env("API_KEY", "$MY_API_KEY").is_ok());
+        for (k, v) in [
+            ("API_KEY", "$my_key"),
+            ("API_KEY", "$A $B"),
+            ("API_KEY", "${A}"),
+            ("API_KEY", "$"),
+            ("NODE_OPTIONS", "$X"),
+            ("LD_PRELOAD", "$X"),
+            ("DYLD_INSERT_LIBRARIES", "$X"),
+            ("PYTHONSTARTUP", "$X"),
+            ("BASH_ENV", "$X"),
+            ("ENV", "$X"),
+            ("npm_config_registry", "$X"),
+            ("NODE_PATH", "$X"),
+            ("JAVA_TOOL_OPTIONS", "$X"),
+        ] {
+            assert!(env(k, v).is_err(), "{k}={v} should be refused");
         }
     }
 

@@ -568,10 +568,7 @@ fn runs(chosen: &Chosen, kit: &str, a: &Action) -> Vec<String> {
             .iter()
             .filter(|k| k.name() == kit)
             .flat_map(|k| &k.manifest.hook)
-            .map(|h| match &h.glob {
-                Some(g) => format!("{}   (after each edit of {g})", h.describe()),
-                None => format!("{}   (after each edit)", h.describe()),
-            })
+            .map(|h| h.describe())
             .collect(),
         _ => a.command().into_iter().collect(),
     }
@@ -701,6 +698,21 @@ fn render_plan(
                 for cmd in runs(chosen, kit, a) {
                     let _ = writeln!(s, "            runs  {cmd}");
                 }
+                // When a hook runs goes on its own line, so neither wraps.
+                if matches!(a, Action::HookJson { .. }) {
+                    for h in chosen
+                        .kits
+                        .iter()
+                        .filter(|k| k.name() == kit)
+                        .flat_map(|k| &k.manifest.hook)
+                    {
+                        let when = match &h.glob {
+                            Some(g) => format!("after each edit of {g}"),
+                            None => "after each edit".into(),
+                        };
+                        let _ = writeln!(s, "            when  {when}");
+                    }
+                }
             }
             _ => {
                 let _ = writeln!(s, "{}", a.describe());
@@ -822,6 +834,9 @@ fn scope_json(scope: &Scope) -> serde_json::Value {
 pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
     let scope = scope(args.global)?;
     plan::follow_links_within(scope.root());
+    // Before undoing anything: a linked lock would refuse the save after
+    // the files were already changed, leaving a stale record.
+    super::lock::check_not_linked(&scope)?;
     let mut lock = Lock::load(&scope)?;
     let flag = if args.global { " --global" } else { "" };
     for name in &args.kits {
