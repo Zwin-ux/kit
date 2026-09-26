@@ -117,7 +117,7 @@ record() {
   elif [ "$fake" = 1 ]; then use_fakes claude; write_env fake
   else write_env real; fi
   case $name in
-    control-room|fleet) configured ;;
+    control-room|control-room-empty|fleet) configured ;;
     doctor) HOME=$demo PATH="$demo/agents:$PATH" "$kit" -C "$demo/code/shop" add essentials --yes >/dev/null ;;
   esac
   echo "== $name"
@@ -143,7 +143,7 @@ record() {
   cp "$work"/out/"$name"*.png "$out/" 2>/dev/null || true
 }
 
-all=(setup add doctor control-room run fleet)
+all=(setup add doctor control-room control-room-empty run fleet)
 [ ${#only[@]} -gt 0 ] && all=("${only[@]}")
 for name in "${all[@]}"; do
   case $name in

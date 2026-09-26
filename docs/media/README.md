@@ -36,6 +36,7 @@ These keep the set looking like one product, and like the product as designed (`
 | Tape | Terminal | Why |
 |---|---|---|
 | `control-room` | 120×16 | Header keeps its flash and counts; four rows plus the error line fill the table |
+| `control-room-empty` | 120×26 | The fox shows only in an empty table at about 19 rows or more |
 | `fleet` | 120×18 | 10–12 visible rows plus `↓ N more below` |
 | `setup` | 110×44 | The whole plan and prompts; the ending (`undo`, `Try it`) scrolls the top off |
 | `add` | 110×32 | Backend Engineer's licence column (`Apache-2.0 AND CC-BY-SA-4.0`) reaches 105 columns |
@@ -51,6 +52,7 @@ These keep the set looking like one product, and like the product as designed (`
 | File | Shows | Used in |
 |---|---|---|
 | `control-room.gif` / `.png` | Every run in one table; the failed run leads with its first error; detail, gate log, diff | README hero, Release |
+| `control-room-empty.gif` / `.png` | Bare `kit` before the first run: the empty Control Room and the fox | README "Prove what agents do" |
 | `setup.gif`, `setup-plan.png`, `setup-done.png` | The first five minutes: agents found, three questions, the full plan, yes, done | README "Get started" |
 | `add.gif`, `add-plan.png` | The plan as the trust surface: paths, pins, licences, what runs code | README "Kits" |
 | `doctor.gif` / `.png` | Agents ready or missing, the repo's gate, installed kits still intact | README "Check" |
