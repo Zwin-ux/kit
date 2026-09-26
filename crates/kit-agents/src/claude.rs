@@ -4,7 +4,7 @@ use crate::auth;
 use crate::process::{command_for, full_auto, probe_binary, spawn_streaming_with_stdin};
 use crate::skills;
 use crate::{Agent, AgentHandle, AgentStatus, SpawnError};
-use kit_core::{AgentKind, KitConfig, RunDelta, RunSpec};
+use kit_core::{AgentKind, RunDelta, RunSpec};
 use std::path::Path;
 use tokio::process::Command;
 use tokio::sync::mpsc;
@@ -54,31 +54,36 @@ impl Agent for ClaudeAgent {
                 .await;
         }
 
-        let checks = if bypass {
-            Vec::new()
-        } else {
-            gate_checks(&spec.repo)
-        };
-        if !checks.is_empty() {
+        let allowed = if !bypass && agent_runs_checks() {
+            let (allowed, skipped) = allowed_checks(&spec.gate_checks);
             // Said in the stream, so it lands in the receipt's output.log.
-            let _ = tx
-                .send(RunDelta::Output(format!(
-                    "kit: claude may run the gate's checks without asking: {}\n",
-                    checks.join(", ")
-                )))
-                .await;
-            prompt.push_str(&format!(
-                "\n\nTo check your work, run the same checks Kit runs after you finish \
-                 (allowed without asking): {}\n",
-                checks
-                    .iter()
-                    .map(|c| format!("`{c}`"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
+            if !allowed.is_empty() {
+                let _ = tx
+                    .send(RunDelta::Output(format!(
+                        "kit: KIT_AGENT_RUNS_CHECKS=1 — claude may run these gate checks \
+                         without asking, and they run code it wrote: {}\n",
+                        allowed.join(", ")
+                    )))
+                    .await;
+            }
+            if !skipped.is_empty() {
+                let _ = tx
+                    .send(RunDelta::Output(format!(
+                        "kit: claude may not run these gate checks itself (characters Kit \
+                         cannot pass on claude's command line); the gate still runs them: {}\n",
+                        skipped.join(", ")
+                    )))
+                    .await;
+            }
+            allowed
+        } else {
+            Vec::new()
+        };
 
-        let cmd = claude_command("claude", worktree, bypass, &checks);
+        let runnable = if bypass { &spec.gate_checks } else { &allowed };
+        prompt.push_str(&checks_note(&spec.gate_checks, runnable));
+
+        let cmd = claude_command("claude", worktree, bypass, &allowed);
         spawn_streaming_with_stdin(AgentKind::Claude, cmd, prompt, tx).await
     }
 }
@@ -90,9 +95,11 @@ impl Agent for ClaudeAgent {
 /// would end the quoted argument and let `&` run a host command. Only fixed
 /// flags go on that line.
 ///
-/// `checks` are the gate's own commands. Each is allowed as an exact
-/// `Bash(<command>)` rule and nothing broader, so claude can verify its work
-/// with what the gate will run. Every other shell command still asks.
+/// `checks` is empty unless the user opted in with `KIT_AGENT_RUNS_CHECKS=1`.
+/// Then each gate command is allowed as an exact `Bash(<command>)` rule and
+/// nothing broader. Those commands run code the agent may have just written
+/// (a test file, a package.json script), so this is the user's call, never
+/// the repo's. Edits to `kit.toml`, `.git` and `.claude` are denied with it.
 fn claude_command(binary: &str, worktree: &Path, bypass: bool, checks: &[String]) -> Command {
     let mut cmd = command_for(binary);
     cmd.arg("-p");
@@ -104,43 +111,73 @@ fn claude_command(binary: &str, worktree: &Path, bypass: bool, checks: &[String]
         // unless KIT_FULL_AUTO=1. Without this, `-p` can read but not write.
         cmd.arg("--permission-mode").arg("acceptEdits");
         if !checks.is_empty() {
+            // Both flags take several values; nothing else follows them.
+            cmd.arg("--disallowedTools");
+            cmd.args(PROTECTED.map(|path| format!("Edit({path})")));
             cmd.arg("--allowedTools");
-            for check in checks {
-                cmd.arg(format!("Bash({check})"));
-            }
+            cmd.args(checks.iter().map(|check| format!("Bash({check})")));
         }
     }
     cmd.current_dir(worktree);
     cmd
 }
 
-/// The gate commands from the repo's `kit.toml` that can go on claude's
-/// command line. The engine reads the same file before the agent starts, so
-/// these are exactly the checks the run is held to.
-///
-/// A command with a character cmd.exe treats specially is left out: on
-/// Windows the argument passes through `cmd /C` (see [`claude_command`]),
-/// where a `"` or `&` would end the argument. Leaving it out only means
-/// claude asks before running it, as it did before.
-fn gate_checks(repo: &Path) -> Vec<String> {
-    let Ok(raw) = std::fs::read_to_string(repo.join("kit.toml")) else {
-        return Vec::new();
+/// Paths claude may not edit while it can run the gate's checks: the gate
+/// itself, git's state and claude's own settings.
+const PROTECTED: [&str; 3] = ["./kit.toml", "./.git/**", "./.claude/**"];
+
+/// `KIT_AGENT_RUNS_CHECKS=1`: the user lets claude run the gate's checks
+/// itself. Read from the user's environment only, never from the repo.
+fn agent_runs_checks() -> bool {
+    matches!(
+        std::env::var("KIT_AGENT_RUNS_CHECKS").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
+}
+
+/// The prompt line about checking. Without `--dangerously-skip-permissions`
+/// or an allowed rule, claude cannot run a shell command under `-p` (nobody
+/// can answer the prompt), so it is told Kit runs the checks instead of
+/// spending turns on refused commands. `runnable` are the checks it may run.
+fn checks_note(checks: &[String], runnable: &[String]) -> String {
+    let named = |list: &[String]| {
+        list.iter()
+            .map(|c| format!("`{}`", c.trim()))
+            .collect::<Vec<_>>()
+            .join(", ")
     };
-    let Ok(config) = toml::from_str::<KitConfig>(&raw) else {
-        return Vec::new();
-    };
-    config
-        .gate
-        .checks()
-        .into_iter()
-        .map(|(_, command)| command.trim())
-        .filter(|command| !command.is_empty() && command.chars().all(safe_on_command_line))
+    if checks.is_empty() {
+        "\nDo not run tests or checks yourself; Kit checks the result after you finish.\n".into()
+    } else if runnable.is_empty() {
+        format!(
+            "\nDo not run tests or checks yourself; Kit runs these after you finish: {}\n",
+            named(checks)
+        )
+    } else {
+        format!(
+            "\nKit runs these checks after you finish: {}. You may run {} yourself first.\n",
+            named(checks),
+            named(runnable)
+        )
+    }
+}
+
+/// Splits gate commands into those that can go on claude's command line and
+/// those left out. On Windows the arguments pass through `cmd /C` (see
+/// [`claude_command`]), where a `"`, `&`, `%` or `\` would end or change the
+/// argument, and claude reads a `,` in `--allowedTools` as a separator. A
+/// command left out only means claude asks before running it.
+fn allowed_checks(checks: &[String]) -> (Vec<String>, Vec<String>) {
+    checks
+        .iter()
+        .map(|c| c.trim())
+        .filter(|c| !c.is_empty())
         .map(str::to_owned)
-        .collect()
+        .partition(|c| c.chars().all(safe_on_command_line))
 }
 
 fn safe_on_command_line(c: char) -> bool {
-    c.is_ascii_alphanumeric() || " -_./:=,+@~".contains(c)
+    c.is_ascii_alphanumeric() || " -_./:=+@~".contains(c)
 }
 
 async fn install_skills(
@@ -201,10 +238,11 @@ mod tests {
         assert_eq!(bypass.as_std().get_current_dir(), Some(Path::new("wt")));
     }
 
-    /// Claude may run exactly the gate's commands without asking, one exact
-    /// `Bash(…)` rule each; full auto needs none.
+    /// With the user's opt-in, claude may run exactly the gate's commands, one
+    /// exact `Bash(…)` rule each, and may not edit the gate, git or its own
+    /// settings. The rules come last, so no later argument joins the list.
     #[test]
-    fn gate_checks_become_exact_allowed_tools() {
+    fn opted_in_checks_become_exact_allowed_tools() {
         let checks = ["npm run test".to_owned(), "cargo fmt --check".to_owned()];
         let cmd = claude_command("claude", Path::new("wt"), false, &checks);
         let args: Vec<&OsStr> = cmd.as_std().get_args().collect();
@@ -213,6 +251,10 @@ mod tests {
                 &[
                     "--permission-mode",
                     "acceptEdits",
+                    "--disallowedTools",
+                    "Edit(./kit.toml)",
+                    "Edit(./.git/**)",
+                    "Edit(./.claude/**)",
                     "--allowedTools",
                     "Bash(npm run test)",
                     "Bash(cargo fmt --check)",
@@ -227,33 +269,55 @@ mod tests {
     }
 
     #[test]
-    fn gate_checks_come_from_kit_toml_and_skip_cmd_metacharacters() {
-        let repo = std::env::temp_dir().join(format!("kit-claude-gate-{}", std::process::id()));
-        std::fs::create_dir_all(&repo).unwrap();
-        assert!(
-            gate_checks(&repo).is_empty(),
-            "no kit.toml, nothing allowed"
-        );
-        std::fs::write(
-            repo.join("kit.toml"),
-            "[gate]\nformat = \"cargo fmt --check\"\ntest = \"npm run test\"\n\
-             extra = [\"npm run lint && echo x\", \"make \\\"all\\\"\", \"cargo clippy -- -D warnings\"]\n",
-        )
-        .unwrap();
+    fn checks_with_cmd_metacharacters_or_commas_stay_off_the_command_line() {
+        let checks = [
+            " cargo fmt --check ",
+            "npm run lint && echo x",
+            "make \"all\"",
+            "echo %PATH%",
+            "cargo test --features a,b",
+            "scripts\\check.bat",
+            "npm run test | tee out",
+            "cargo clippy -- -D warnings",
+            "",
+        ]
+        .map(str::to_owned);
+        let (allowed, skipped) = allowed_checks(&checks);
         assert_eq!(
-            gate_checks(&repo),
+            allowed,
+            ["cargo fmt --check", "cargo clippy -- -D warnings"]
+        );
+        assert_eq!(
+            skipped,
             [
-                "cargo fmt --check",
-                "npm run test",
-                "cargo clippy -- -D warnings"
+                "npm run lint && echo x",
+                "make \"all\"",
+                "echo %PATH%",
+                "cargo test --features a,b",
+                "scripts\\check.bat",
+                "npm run test | tee out",
             ]
         );
-        std::fs::write(repo.join("kit.toml"), "[gate]\nlint = \"x\"\n").unwrap();
+    }
+
+    /// By default claude is told Kit runs the checks, named, and not to run
+    /// them itself; a repo with no checks still gets told.
+    #[test]
+    fn prompt_says_kit_runs_the_checks() {
+        let checks = ["npm test".to_owned(), "npx tsc --noEmit".to_owned()];
+        let note = checks_note(&checks, &[]);
         assert!(
-            gate_checks(&repo).is_empty(),
-            "a broken kit.toml allows nothing"
+            note.contains("Do not run tests or checks yourself"),
+            "{note}"
         );
-        let _ = std::fs::remove_dir_all(&repo);
+        assert!(note.contains("`npm test`, `npx tsc --noEmit`"), "{note}");
+        let none = checks_note(&[], &[]);
+        assert!(
+            none.contains("Do not run tests or checks yourself"),
+            "{none}"
+        );
+        let some = checks_note(&checks, &checks[..1]);
+        assert!(some.contains("You may run `npm test` yourself"), "{some}");
     }
 
     /// End to end through the real spawn path: a stand-in `claude` echoes its

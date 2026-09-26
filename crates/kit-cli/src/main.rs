@@ -402,6 +402,7 @@ fn print_help(version: &str) {
     println!("  --json                   One JSON result on stdout (errors too)");
     println!("  KIT_HOME=…               Data root (default ~/.kit)");
     println!("  KIT_FULL_AUTO=1          Bypass agent approval prompts (dangerous)");
+    println!("  KIT_AGENT_RUNS_CHECKS=1  Let claude run the gate's commands itself");
     println!("  KIT_SKILLS_DIR=…         Override skills pack path");
     println!();
     println!("Land flags:");
