@@ -1,5 +1,8 @@
 //! Kit core — the shared contracts every other crate builds against.
 //!
+//! Part of the `kit` command (crate `kitctl`), published only because
+//! `cargo install` needs it. Not a stable library API: no semver promise.
+//!
 //! This crate is types and seams, not behaviour. `kit-gate` and `kit-agents`
 //! provide implementations; `kit-tui` and `kit-cli` consume them.
 //!

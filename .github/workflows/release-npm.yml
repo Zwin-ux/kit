@@ -71,11 +71,11 @@ jobs:
         if: ${{ !matrix.zig }}
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-        run: cargo build --release --locked -p kit-cli --target ${{ matrix.target }}
+        run: cargo build --release --locked -p kitctl --target ${{ matrix.target }}
 
       - name: Build (glibc 2.17)
         if: matrix.zig
-        run: cargo zigbuild --release --locked -p kit-cli --target ${{ matrix.target }}.2.17
+        run: cargo zigbuild --release --locked -p kitctl --target ${{ matrix.target }}.2.17
 
       - name: Check glibc floor
         if: matrix.zig

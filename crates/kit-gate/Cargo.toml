@@ -1,11 +1,15 @@
 [package]
-name = "kit-gate"
+name = "kitctl-gate"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Definition-of-done gate and blast-radius firewall for Kit"
+
+[lib]
+# Package renamed for crates.io (kit-cli is taken); code keeps `kit_gate`.
+name = "kit_gate"
 
 [dependencies]
 kit-core.workspace = true

@@ -596,11 +596,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "kit-agents"
+name = "kitctl"
+version = "1.0.0-alpha.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "clap",
+ "clap_complete",
+ "kitctl-agents",
+ "kitctl-core",
+ "kitctl-gate",
+ "kitctl-tui",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+]
+
+[[package]]
+name = "kitctl-agents"
 version = "1.0.0-alpha.1"
 dependencies = [
  "async-trait",
- "kit-core",
+ "kitctl-core",
  "libc",
  "serde_json",
  "thiserror",
@@ -609,25 +627,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kit-cli"
-version = "1.0.0-alpha.1"
-dependencies = [
- "anyhow",
- "async-trait",
- "clap",
- "clap_complete",
- "kit-agents",
- "kit-core",
- "kit-gate",
- "kit-tui",
- "serde",
- "serde_json",
- "tokio",
- "toml",
-]
-
-[[package]]
-name = "kit-core"
+name = "kitctl-core"
 version = "1.0.0-alpha.1"
 dependencies = [
  "async-trait",
@@ -640,26 +640,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "kit-gate"
+name = "kitctl-gate"
 version = "1.0.0-alpha.1"
 dependencies = [
  "async-trait",
  "insta",
- "kit-core",
+ "kitctl-core",
  "tokio",
 ]
 
 [[package]]
-name = "kit-tui"
+name = "kitctl-tui"
 version = "1.0.0-alpha.1"
 dependencies = [
  "anyhow",
  "crossterm",
  "futures",
  "insta",
- "kit-agents",
- "kit-core",
- "kit-gate",
+ "kitctl-agents",
+ "kitctl-core",
+ "kitctl-gate",
  "ratatui",
  "tokio",
 ]

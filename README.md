@@ -28,21 +28,21 @@ KIT / CONTROL ROOM                    [ALL]  1 RUNNING  1 GATING  1 FAIL
 
 ```bash
 # From this repo — lands on FAIL, r retries
-cargo run -p kit-cli -- --demo
+cargo run -p kitctl -- --demo
 ```
 
 Repo shims (`.\kit.cmd` / `.\kit.ps1`, or `. .\scripts\use-rust-kit.ps1`) launch the Rust binary. Bare `kit` on this Windows PATH is still npm `@mzwin/kit@0.1.3` until you dot-source `scripts/use-rust-kit.ps1` or put `target\release` on PATH.
 
 | Command | What it does |
 |---------|----------------|
-| `cargo run -p kit-cli -- --demo` / `.\kit.cmd --demo` | Control Room TUI |
-| `cargo run -p kit-cli -- init` | Write `kit.toml`: a gate for the repo (`--print`, `--check`, `--force`) |
-| `cargo run -p kit-cli -- run --task "…"` | One isolated run (live agent if on PATH) |
-| `cargo run -p kit-cli -- doctor` | Probe codex / claude / grok / ollama + skills pack |
-| `cargo run -p kit-cli -- run --dry-run --json` | Offline path (worktree → stream → **this repo's gate** → receipt) |
-| `cargo run -p kit-cli -- receipt list` | Browse proof under `~/.kit/runs/` |
-| `cargo run -p kit-cli -- receipt show <id>` | One receipt (+ `--output` for log tail) |
-| `cargo run -p kit-cli -- land <id>` | Put a passed run's changes on a new branch `kit/<id>` (`--apply`, `--branch`, `--force`) |
+| `cargo run -p kitctl -- --demo` / `.\kit.cmd --demo` | Control Room TUI |
+| `cargo run -p kitctl -- init` | Write `kit.toml`: a gate for the repo (`--print`, `--check`, `--force`) |
+| `cargo run -p kitctl -- run --task "…"` | One isolated run (live agent if on PATH) |
+| `cargo run -p kitctl -- doctor` | Probe codex / claude / grok / ollama + skills pack |
+| `cargo run -p kitctl -- run --dry-run --json` | Offline path (worktree → stream → **this repo's gate** → receipt) |
+| `cargo run -p kitctl -- receipt list` | Browse proof under `~/.kit/runs/` |
+| `cargo run -p kitctl -- receipt show <id>` | One receipt (+ `--output` for log tail) |
+| `cargo run -p kitctl -- land <id>` | Put a passed run's changes on a new branch `kit/<id>` (`--apply`, `--branch`, `--force`) |
 
 **Your repo:** `kit init` reads `Cargo.toml`, `go.mod`, `package.json` or `pyproject.toml`, prints the `kit.toml` gate it proposes and writes it. It uses only commands that check and do not change files. `kit init --print` shows the proposal only; `kit init --check` runs each command once and keeps the ones that pass; `--force` replaces an existing file.
 
@@ -73,7 +73,7 @@ Use one of these lines. Each installs the same `kit` binary.
 | npm (primary) | `npm install -g @mzwin/kit@alpha` |
 | Linux, macOS | `curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh \| sh -s -- --prerelease` |
 | Windows PowerShell | `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.ps1))) -Prerelease` |
-| Cargo | `cargo install --git https://github.com/Zwin-ux/kit kit-cli --locked` |
+| Cargo | `cargo install --git https://github.com/Zwin-ux/kit kitctl --locked` |
 
 - npm without `@alpha` installs the old 0.1 app until 1.0.0.
 - The install scripts need a GitHub Release with archives. The first one comes with the release after 1.0.0-alpha.1. Until then, use npm or Cargo.
@@ -96,7 +96,7 @@ From source:
 ```bash
 git clone https://github.com/Zwin-ux/kit.git
 cd kit
-cargo build -p kit-cli --release
+cargo build -p kitctl --release
 ./target/release/kit doctor
 ./target/release/kit --demo
 ```
@@ -130,7 +130,7 @@ Every live run copies a skill pack into the worktree and prepends routing to the
 git clone https://github.com/harness/harness-skills.git
 # Point Kit at the skills tree (not the repo root)
 export KIT_SKILLS_DIR="$PWD/harness-skills/skills"
-cargo run -p kit-cli -- run --agent claude --task "debug my failed pipeline"
+cargo run -p kitctl -- run --agent claude --task "debug my failed pipeline"
 ```
 
 Or place a `skills/` directory (Harness layout) in the target repo — Kit discovers it after `.agents/skills`.
@@ -151,7 +151,7 @@ Resolution order: `KIT_SKILLS_DIR` → `<repo>/.agents/skills` → `<repo>/skill
 - Kill mid-run (`k`) and retry failed (`r`) with gate failure context
 
 ```bash
-cargo run -p kit-cli -- --demo   # lands on a FAIL so the proof loop is obvious
+cargo run -p kitctl -- --demo   # lands on a FAIL so the proof loop is obvious
 ```
 
 ## Receipts
@@ -159,9 +159,9 @@ cargo run -p kit-cli -- --demo   # lands on a FAIL so the proof loop is obvious
 Every run writes `~/.kit/runs/<id>/` (`receipt.json`, `output.log`, optional `diff.patch` / `gate.json` / `base.txt`). `diff.patch` holds every change since the run's base commit (`base.txt`): edits, new files, binary files and commits the agent made. It applies with `git apply` to that commit.
 
 ```bash
-cargo run -p kit-cli -- receipt list
-cargo run -p kit-cli -- receipt show 01KZD0… --output
-cargo run -p kit-cli -- receipt list --json --limit 10
+cargo run -p kitctl -- receipt list
+cargo run -p kitctl -- receipt show 01KZD0… --output
+cargo run -p kitctl -- receipt list --json --limit 10
 ```
 
 Override data root with `KIT_HOME`. Contract: [`docs/json-contract.md`](docs/json-contract.md).  

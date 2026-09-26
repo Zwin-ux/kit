@@ -16,7 +16,7 @@ Dispatch many agents. Watch them in one place. Nothing ships unproven — and th
 
 | Layer | Status | Prove it |
 |-------|--------|----------|
-| Control Room TUI | Real (1.0 craft) | `cargo run -p kit-cli -- --demo` — FAIL selected + wash; `f` cycles ALL/FAIL/RUN/DONE |
+| Control Room TUI | Real (1.0 craft) | `cargo run -p kitctl -- --demo` — FAIL selected + wash; `f` cycles ALL/FAIL/RUN/DONE |
 | Dispatch / Board / Detail | Real | Board is **prefill only**. Dispatch is repos × agents × **personas** (product/design/eng/qa). Persona is TUI-local — prepended to the engine task, not a kit-core field |
 | Gate (Guardian) | Real, thin | ~50 firewall fixtures in one test — not the PRD's 855-case suite |
 | **kit.toml (this repo)** | **Real** | root `kit.toml` — fmt + clippy -D warnings + `cargo test --workspace`, 15m, firewall block |
@@ -60,9 +60,9 @@ Windows: prefer the repo shims. Bare `kit` on this Windows PATH is still npm `@m
 . .\scripts\use-rust-kit.ps1    # then `kit` is Rust for this session
 
 # cargo remains valid
-cargo run -p kit-cli -- doctor
-cargo run -p kit-cli -- --demo
-cargo run -p kit-cli -- run --dry-run --task "smoke" --json
+cargo run -p kitctl -- doctor
+cargo run -p kitctl -- --demo
+cargo run -p kitctl -- run --dry-run --task "smoke" --json
 ```
 
 ## Specs

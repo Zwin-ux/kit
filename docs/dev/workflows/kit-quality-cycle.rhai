@@ -494,10 +494,10 @@ phase("Prove");
 let prove_prompt = "";
 prove_prompt += "You are Kit verification Power. Run quality gates and report evidence.\n";
 prove_prompt += "Commands to run (shell):\n";
-prove_prompt += "  cargo test -p kit-tui -p kit-cli -p kit-agents --all-targets\n";
-prove_prompt += "  cargo clippy -p kit-tui -p kit-cli -p kit-agents --all-targets -- -D warnings\n";
+prove_prompt += "  cargo test -p kitctl-tui -p kitctl -p kitctl-agents --all-targets\n";
+prove_prompt += "  cargo clippy -p kitctl-tui -p kitctl -p kitctl-agents --all-targets -- -D warnings\n";
 prove_prompt += "  cargo fmt --all --check\n";
-prove_prompt += "Optional: cargo run -p kit-cli -- doctor --json  (check schemaVersion)\n";
+prove_prompt += "Optional: cargo run -p kitctl -- doctor --json  (check schemaVersion)\n";
 prove_prompt += "Set tests_ok/clippy_ok from actual exit codes. notes = short summary of failures if any.\n";
 prove_prompt += "Do not claim green without running commands.\n";
 

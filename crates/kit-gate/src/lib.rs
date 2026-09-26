@@ -1,5 +1,8 @@
 //! Definition-of-done gate and blast-radius firewall.
 //!
+//! Part of the `kit` command (crate `kitctl`), published only because
+//! `cargo install` needs it. Not a stable library API: no semver promise.
+//!
 //! This crate deliberately has a narrow threat model: it catches obvious,
 //! catastrophic mistakes from an agent while failing open when it cannot make a
 //! reliable decision.  It is not intended to be a shell security boundary.
