@@ -318,6 +318,13 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         }
         println!("  kit run \"{example}\"   (in its own worktree, proven by your checks)");
     }
+    if tty {
+        // The fox, resting, signs off after the last step. Terminals only.
+        println!();
+        for line in kit_tui::fox::lines(0) {
+            println!("  {}", line.trim_end());
+        }
+    }
     Ok(())
 }
 
