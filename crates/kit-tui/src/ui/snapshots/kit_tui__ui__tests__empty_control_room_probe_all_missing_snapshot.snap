@@ -2,7 +2,7 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / CONTROL ROOM                 codex·claude·grok·ollama missing — kit doctor"
+"KIT / CONTROL ROOM                 claude·codex·grok·ollama missing — kit doctor"
 "┌──────────────────────────────────────────────────────────────────────────────┐"
 "│                                                                              │"
 "│                           No coding agents on PATH                           │"

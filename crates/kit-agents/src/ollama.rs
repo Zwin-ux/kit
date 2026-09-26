@@ -62,13 +62,12 @@ impl Agent for OllamaAgent {
             });
         }
 
-        let skills_src = install_skills(worktree, &spec.repo, &tx).await;
-        let prompt = skills::build_prompt(&spec.task, skills_src.as_deref());
+        let prompt = skills::build_prompt(&spec.task);
 
         let _ = tx
             .send(RunDelta::Output(format!(
                 "kit: spawning ollama run {model} (cwd {})\n",
-                worktree.display()
+                crate::process::tilde(worktree)
             )))
             .await;
 
@@ -121,26 +120,6 @@ fn has_model(installed: &[String], model: &str) -> bool {
     installed.iter().any(|name| {
         name == model || (!model.contains(':') && name.strip_suffix(":latest") == Some(model))
     })
-}
-
-async fn install_skills(
-    worktree: &Path,
-    repo: &Path,
-    tx: &mpsc::Sender<RunDelta>,
-) -> Option<std::path::PathBuf> {
-    let src = skills::resolve_skills_dir(repo)?;
-    match skills::install_into_worktree(worktree, &src) {
-        Ok(n) => {
-            let _ = skills::ensure_agents_md(worktree);
-            let _ = tx
-                .send(RunDelta::Output(format!(
-                    "kit: installed {n} skills for ollama context\n"
-                )))
-                .await;
-            Some(src)
-        }
-        Err(_) => None,
-    }
 }
 
 #[cfg(test)]
