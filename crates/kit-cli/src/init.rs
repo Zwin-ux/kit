@@ -109,7 +109,7 @@ pub async fn cmd_init(args: crate::cli::InitArgs, json: bool) -> Result<()> {
     if !left_out.is_empty() && !o.drop_failing && !o.print {
         let names: Vec<&str> = left_out.iter().map(|(label, _)| label.as_str()).collect();
         bail!(
-            "these checks fail today: {}. kit.toml was not written. Fix them and run `kit init` again, or run `kit init --drop-failing` to write a gate without them",
+            "these checks fail today: {}. kit.toml was not written. To keep them, so a run passes only once it fixes them, run `kit init --no-check`. To leave them out, run `kit init --drop-failing`",
             names.join(", ")
         );
     }

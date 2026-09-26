@@ -1,7 +1,9 @@
 //! Grok Build adapter — `grok -p` single-turn with always-approve.
+//!
+//! `grok -p` has no edit-only mode, so it runs only with KIT_FULL_AUTO=1.
 
 use crate::auth;
-use crate::process::{probe_binary, spawn_streaming};
+use crate::process::{full_auto, probe_binary, spawn_streaming};
 use crate::skills;
 use crate::{Agent, AgentHandle, AgentStatus, SpawnError};
 use kit_core::{AgentKind, RunDelta, RunSpec};
@@ -33,11 +35,15 @@ impl Agent for GrokAgent {
         worktree: &Path,
         tx: mpsc::Sender<RunDelta>,
     ) -> Result<Box<dyn AgentHandle>, SpawnError> {
+        // Always-approve takes shell commands too: the user opts in.
+        if !full_auto() {
+            return Err(SpawnError::NeedsFullAuto(AgentKind::Grok));
+        }
         let prompt = skills::build_prompt(&spec.task);
 
         let _ = tx
             .send(RunDelta::Output(format!(
-                "kit: spawning grok -p --cwd {} --always-approve\n",
+                "kit: KIT_FULL_AUTO=1 — spawning grok -p --cwd {} --always-approve\n",
                 crate::process::tilde(worktree)
             )))
             .await;

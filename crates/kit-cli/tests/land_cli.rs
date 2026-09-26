@@ -260,7 +260,7 @@ fn land_refuses_fail_vacuous_and_empty_runs() {
         v["gate"]["checks"] = Value::Array(Vec::new());
     });
     for (rid, why) in [
-        ("01TESTLANDFAIL0000000000001", "is fail, not pass"),
+        ("01TESTLANDFAIL0000000000001", "failed the gate"),
         ("01TESTLANDVACUOUS000000001", "UNCONFIGURED"),
     ] {
         let (out, env) = land_json(&fx, &[rid]);

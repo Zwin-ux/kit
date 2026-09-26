@@ -520,6 +520,10 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         ""
     };
     println!("check     kit list{flag}");
+    if matches!(scope, Scope::Repo(_)) {
+        // `kit run` works in a fresh worktree of the last commit.
+        println!("commit    these files, so kit run's worktree has them too");
+    }
     println!("undo      kit remove {}{flag}", names.join(" "));
     Ok(Outcome::Installed)
 }
@@ -617,7 +621,7 @@ enum Answer {
 fn ask(code: bool) -> Result<Answer> {
     if !std::io::stdin().is_terminal() {
         bail!(
-            "kit add needs your yes before it writes anything. Run it in a terminal, or add --yes (and --no-code to skip anything that runs code)"
+            "Kit needs your yes before it writes anything. Run it in a terminal, or add --yes (and --no-code to skip anything that runs code)"
         );
     }
     let prompt = if code {
