@@ -1062,16 +1062,12 @@ fn files_under(dir: &Path) -> Vec<String> {
     out
 }
 
-/// Two kits added one after the other and removed in that same order leave
-/// nothing behind: the files the first kit created go with the second.
-#[test]
-fn stacked_kits_removed_in_install_order_leave_no_files_behind() {
-    let root = scratch("stacked-fifo");
-    let demo = demo_kit(&root);
-    let second = root.join("second-kit");
-    write(&second.join("RULES.md"), "Be exact.\n");
+/// A second kit with rules, a local MCP server and a hook, to stack on `demo`.
+fn second_kit(root: &Path) -> PathBuf {
+    let kit = root.join("second-kit");
+    write(&kit.join("RULES.md"), "Be exact.\n");
     write(
-        &second.join("KIT.toml"),
+        &kit.join("KIT.toml"),
         r#"schema = 1
 [kit]
 name = "second"
@@ -1089,6 +1085,16 @@ glob = "*.rs"
 run = "echo checked"
 "#,
     );
+    kit
+}
+
+/// Two kits added one after the other and removed in that same order leave
+/// nothing behind: the files the first kit created go with the second.
+#[test]
+fn stacked_kits_removed_in_install_order_leave_no_files_behind() {
+    let root = scratch("stacked-fifo");
+    let demo = demo_kit(&root);
+    let second = second_kit(&root);
     let env = Env::new(&root);
     let repo = root.join("repo");
     git_repo(&repo);
@@ -1122,6 +1128,83 @@ run = "echo checked"
         assert!(out.status.success(), "{}", text(&out.stderr));
     }
     assert_eq!(files_under(&env.home), before);
+}
+
+/// Hand-formatted files that were there before Kit (4-space indent, CRLF,
+/// no final newline, the user's keys on both sides of Kit's) come back byte
+/// for byte when two stacked kits are removed in install order.
+#[test]
+fn stacked_kits_removed_in_install_order_give_back_hand_formatted_files() {
+    let root = scratch("stacked-hand");
+    let kits = [demo_kit(&root), second_kit(&root)];
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let crlf = |t: &str| t.replace('\n', "\r\n");
+    let seeds = [
+        ("CLAUDE.md", crlf("# Mine\nline two")),
+        ("AGENTS.md", crlf("# Ours\nline two")),
+        (
+            ".mcp.json",
+            crlf(
+                "{\n    \"a\": 1,\n    \"mcpServers\": {\n        \"mine\": {\n            \"command\": \"x\"\n        }\n    },\n    \"z\": true\n}",
+            ),
+        ),
+        (
+            ".claude/settings.json",
+            crlf("{\n    \"a\": 1,\n    \"hooks\": {},\n    \"z\": true\n}"),
+        ),
+        (
+            ".codex/config.toml",
+            crlf(
+                "model = \"o3\"\n\n[mcp_servers.mine]\ncommand = \"x\"\n\n[profiles.fast]\nmodel = \"o4\"",
+            ),
+        ),
+    ];
+    for (rel, body) in &seeds {
+        write(&repo.join(rel), body);
+    }
+    for k in &kits {
+        let args = [
+            "add",
+            k.to_str().unwrap(),
+            "-a",
+            "claude",
+            "-a",
+            "codex",
+            "--yes",
+        ];
+        let out = env.kit(&repo, &args);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    for name in ["demo", "second"] {
+        let out = env.kit(&repo, &["remove", name, "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    for (rel, body) in &seeds {
+        assert_eq!(&read(&repo.join(rel)), body, "{rel} is not byte-exact");
+    }
+
+    // Codex in home.
+    let config = env.home.join(".codex/config.toml");
+    write(&config, &seeds[4].1);
+    for k in &kits {
+        let args = [
+            "add",
+            k.to_str().unwrap(),
+            "-a",
+            "codex",
+            "--global",
+            "--yes",
+        ];
+        let out = env.kit(&root, &args);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    for name in ["demo", "second"] {
+        let out = env.kit(&root, &["remove", name, "--global", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    assert_eq!(read(&config), seeds[4].1);
 }
 
 /// A kit that extends `demo`, from a folder next to it.

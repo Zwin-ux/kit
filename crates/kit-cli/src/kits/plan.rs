@@ -247,6 +247,17 @@ pub enum Applied {
 }
 
 impl Applied {
+    /// The file's text before this record's change, if kept.
+    fn original(&self) -> Option<&str> {
+        match self {
+            Self::Rules { original, .. }
+            | Self::McpJson { original, .. }
+            | Self::McpToml { original, .. }
+            | Self::HookJson { original, .. } => original.as_deref(),
+            _ => None,
+        }
+    }
+
     /// Kit created this record's file (a skill folder does not count).
     fn created_file(&self) -> bool {
         match self {
@@ -409,8 +420,10 @@ pub fn same_content(a: &Action, b: &Action) -> bool {
 /// over what only `gone` knew about that file, so removing kits in install
 /// order ends where removing them in reverse does:
 /// - `gone` created the file: the kit that stays now deletes it once empty.
-/// - `gone`'s rules block is all that differs between the two originals:
-///   the kit that stays takes `gone`'s, final newline included.
+/// - Undoing `gone` on the stayer's pre-Kit text gives exactly `gone`'s:
+///   the stayer takes `gone`'s, so its remove gives back those bytes.
+///
+/// Call it for the removed records in undo order (last applied first).
 pub fn hand_over(gone: &Applied, kept: &mut Applied) {
     let (Some(gf), Some(kf)) = (gone.path(), kept.path()) else {
         return;
@@ -418,29 +431,54 @@ pub fn hand_over(gone: &Applied, kept: &mut Applied) {
     if gf != kf {
         return;
     }
-    if gone.created_file() {
-        if let Some((created, original)) = kept.file_state() {
-            *created = true;
-            if let Some(original) = original {
-                *original = None;
-            }
-        }
+    let Some((created, original)) = kept.file_state() else {
         return;
-    }
-    if let (
-        Applied::Rules {
-            kit: gk,
-            original: Some(go),
-            ..
-        },
-        Applied::Rules {
-            original: Some(ko), ..
-        },
-    ) = (gone, kept)
-        && ko.contains(&open_marker(gk))
-        && remove_block(ko, gk) == remove_block(&set_block(go, gk, "", ""), gk)
+    };
+    if gone.created_file() {
+        *created = true;
+        if let Some(original) = original {
+            *original = None;
+        }
+    } else if let (Some(go), Some(Some(ko))) = (gone.original(), original)
+        && only_difference(gone, ko, go)
     {
-        *ko = go.clone();
+        *ko = go.to_string();
+    }
+}
+
+/// `after` is `before` plus what `gone` added and nothing else.
+fn only_difference(gone: &Applied, after: &str, before: &str) -> bool {
+    match gone {
+        Applied::Rules { kit, .. } => {
+            after.contains(&open_marker(kit))
+                && remove_block(after, kit) == remove_block(&set_block(before, kit, "", ""), kit)
+        }
+        Applied::McpJson { .. } | Applied::HookJson { .. } => {
+            let (Ok(mut doc), Ok(was)) = (
+                serde_json::from_str::<serde_json::Value>(after),
+                serde_json::from_str::<serde_json::Value>(before),
+            ) else {
+                return false;
+            };
+            let key = drop_json(gone, &mut doc);
+            if doc == was {
+                return true;
+            }
+            drop_empty(&mut doc, key);
+            doc == was
+        }
+        Applied::McpToml { name, previous, .. } => {
+            let (Ok(mut doc), Ok(was)) = (
+                after.parse::<toml_edit::DocumentMut>(),
+                before.parse::<toml_edit::DocumentMut>(),
+            ) else {
+                return false;
+            };
+            drop_toml(&mut doc, name, previous.as_deref());
+            let lf = |t: String| t.replace("\r\n", "\n");
+            lf(doc.to_string()) == lf(was.to_string())
+        }
+        _ => false,
     }
 }
 
@@ -991,20 +1029,14 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
         }
         Applied::McpJson {
             file,
-            name,
             created,
-            previous,
             original,
+            ..
         } => {
             if file.exists() {
                 let mut doc = read_json(file)?;
-                if let Some(servers) = doc.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-                    match previous {
-                        Some(v) => servers.insert(name.clone(), v.clone()),
-                        None => servers.shift_remove(name),
-                    };
-                }
-                finish_json(file, &doc, *created, "mcpServers", original.as_deref())?;
+                let key = drop_json(applied, &mut doc);
+                finish_json(file, &doc, *created, key, original.as_deref())?;
             }
         }
         Applied::McpToml {
@@ -1017,27 +1049,7 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             if file.exists() {
                 let raw = read_or_empty(file)?;
                 let mut doc: toml_edit::DocumentMut = raw.parse()?;
-                let empty = match doc.get_mut("mcp_servers").and_then(|t| t.as_table_mut()) {
-                    Some(servers) => {
-                        match previous
-                            .as_deref()
-                            .map(str::parse::<toml_edit::DocumentMut>)
-                        {
-                            Some(Ok(prev)) => {
-                                servers
-                                    .insert(name, toml_edit::Item::Table(prev.as_table().clone()));
-                            }
-                            _ => {
-                                servers.remove(name);
-                            }
-                        }
-                        servers.is_empty()
-                    }
-                    None => true,
-                };
-                if empty {
-                    doc.remove("mcp_servers");
-                }
+                drop_toml(&mut doc, name, previous.as_deref());
                 let lf = |t: &str| t.replace("\r\n", "\n");
                 // Back to what the user had: their exact bytes.
                 let unchanged = original.as_deref().is_some_and(|o| {
@@ -1059,22 +1071,14 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
         }
         Applied::HookJson {
             file,
-            event,
-            entry,
             created,
             original,
+            ..
         } => {
             if file.exists() {
                 let mut doc = read_json(file)?;
-                if let Some(hooks) = doc.get_mut("hooks").and_then(|v| v.as_object_mut())
-                    && let Some(list) = hooks.get_mut(event).and_then(|v| v.as_array_mut())
-                {
-                    list.retain(|e| e != entry);
-                    if list.is_empty() {
-                        hooks.shift_remove(event);
-                    }
-                }
-                finish_json(file, &doc, *created, "hooks", original.as_deref())?;
+                let key = drop_json(applied, &mut doc);
+                finish_json(file, &doc, *created, key, original.as_deref())?;
             }
         }
         Applied::GateToml {
@@ -1645,6 +1649,70 @@ fn render_json(doc: &serde_json::Value, like: &str) -> Result<String> {
     Ok(text)
 }
 
+/// Takes out what an `McpJson` or `HookJson` record added (or puts back
+/// the server it replaced). Returns the top-level key it lives under.
+fn drop_json(applied: &Applied, doc: &mut serde_json::Value) -> &'static str {
+    match applied {
+        Applied::McpJson { name, previous, .. } => {
+            if let Some(servers) = doc.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
+                match previous {
+                    Some(v) => servers.insert(name.clone(), v.clone()),
+                    None => servers.shift_remove(name),
+                };
+            }
+            "mcpServers"
+        }
+        Applied::HookJson { event, entry, .. } => {
+            if let Some(hooks) = doc.get_mut("hooks").and_then(|v| v.as_object_mut())
+                && let Some(list) = hooks.get_mut(event).and_then(|v| v.as_array_mut())
+            {
+                list.retain(|e| e != entry);
+                if list.is_empty() {
+                    hooks.shift_remove(event);
+                }
+            }
+            "hooks"
+        }
+        _ => "",
+    }
+}
+
+/// Removes `key` when it holds an empty object. True if it did.
+fn drop_empty(doc: &mut serde_json::Value, key: &str) -> bool {
+    if let Some(obj) = doc.as_object_mut()
+        && obj
+            .get(key)
+            .and_then(|v| v.as_object())
+            .is_some_and(|o| o.is_empty())
+    {
+        obj.shift_remove(key);
+        return true;
+    }
+    false
+}
+
+/// Takes out an `McpToml` server (or puts back the one it replaced), and
+/// the `mcp_servers` table once it is empty.
+fn drop_toml(doc: &mut toml_edit::DocumentMut, name: &str, previous: Option<&str>) {
+    let empty = match doc.get_mut("mcp_servers").and_then(|t| t.as_table_mut()) {
+        Some(servers) => {
+            match previous.map(str::parse::<toml_edit::DocumentMut>) {
+                Some(Ok(prev)) => {
+                    servers.insert(name, toml_edit::Item::Table(prev.as_table().clone()));
+                }
+                _ => {
+                    servers.remove(name);
+                }
+            }
+            servers.is_empty()
+        }
+        None => true,
+    };
+    if empty {
+        doc.remove("mcp_servers");
+    }
+}
+
 /// Write `doc` back, deleting the file if Kit created it and nothing else is
 /// left. When what is left is what the file held before Kit, its original
 /// bytes go back exactly.
@@ -1662,14 +1730,7 @@ fn finish_json(
         return write(file, text);
     }
     let mut doc = doc.clone();
-    if let Some(obj) = doc.as_object_mut()
-        && obj
-            .get(key)
-            .and_then(|v| v.as_object())
-            .is_some_and(|o| o.is_empty())
-    {
-        obj.shift_remove(key);
-    }
+    drop_empty(&mut doc, key);
     if let (Some(text), Some(v)) = (original, &before)
         && *v == doc
     {
