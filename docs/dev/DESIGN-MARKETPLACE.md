@@ -150,7 +150,11 @@ tags    = ["ios", "macos", "design"]
   names, versions, pins and skill hashes from it and installs through the
   same plan and yes as `kit add`; its hooks, checks and paths never enter
   Kit's own record (`~/.kit/repos/<id>/kit.lock`), and `--check` compares
-  the proposal with that record and the files it names.
+  the proposal with that record and the files it names. On a machine
+  with no record for the repo (a fresh CI runner), `--check` instead
+  compares kit.lock with the files committed beside it (skill hashes,
+  rules blocks, MCP and hook entries) and with each kit's own `KIT.toml`;
+  it reads only, runs nothing, and says which it compared against.
 - **`kit sync` does not remove kits** that are installed but not in the
   lock. It only adds what is missing; `kit remove` stays the one way to
   take things out.

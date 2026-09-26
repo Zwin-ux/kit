@@ -123,6 +123,113 @@ fn spec_of(e: &Entry, root: Option<&Path>) -> Result<String> {
     Ok(s.to_string())
 }
 
+/// `path` from a proposal, under `root`: relative, no `..`, and no link on
+/// the way (a planted link must not make the check read outside the repo).
+fn inside(root: &Path, path: &Path) -> Option<std::path::PathBuf> {
+    let plain = path.components().next().is_some()
+        && path
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+    if !plain {
+        return None;
+    }
+    let mut at = root.to_path_buf();
+    for c in path.components() {
+        at.push(c);
+        if std::fs::symlink_metadata(&at).is_ok_and(|m| m.file_type().is_symlink()) {
+            return None;
+        }
+    }
+    Some(at)
+}
+
+/// `kit sync --check` in a repo this machine has no Kit record for (a
+/// fresh CI runner): the repo's kit.lock against the files committed with
+/// it and against each kit's own `KIT.toml`. Reads only; runs nothing.
+/// Exit 1 on any drift.
+fn check_committed(
+    source: &Lock,
+    requested: &[&Entry],
+    label: &str,
+    root: &Path,
+    json: bool,
+) -> Result<()> {
+    let mut gone: Vec<String> = Vec::new();
+    let mut skills = std::collections::BTreeSet::new();
+    for a in source.applied() {
+        let mut here = a.clone();
+        if let Some(path) = here.path_mut() {
+            let Some(full) = inside(root, path) else {
+                bail!(
+                    "{label} names {}, outside this repo. Kit will not read it",
+                    path.display()
+                );
+            };
+            *path = full;
+        }
+        if let Applied::Skill { dir, .. } = a
+            && let Some(name) = dir.file_name()
+        {
+            skills.insert(name.to_string_lossy().into_owned());
+        }
+        if !present(&here) {
+            gone.push(match (a, &here) {
+                (Applied::Skill { dir, .. }, Applied::Skill { dir: full, .. }) if full.is_dir() => {
+                    format!("skill {} differs from {label}", dir.display())
+                }
+                _ => describe(a),
+            });
+        }
+    }
+    for e in &source.kits {
+        let kit = super::catalog::find(&spec_of(e, Some(root))?)?;
+        let m = &kit.manifest;
+        if m.kit.version != e.version {
+            gone.push(format!(
+                "kit {}: {label} pins {}, the kit is {}",
+                e.name, e.version, m.kit.version
+            ));
+        }
+        for s in m.skill.iter().filter(|s| !skills.contains(&s.name)) {
+            gone.push(format!("skill {} of {} is not in {label}", s.name, e.name));
+        }
+    }
+    let names: Vec<String> = requested
+        .iter()
+        .map(|e| format!("{} {}", e.name, e.version))
+        .collect();
+    let against = format!("{label} and the files in this repo (this machine has no Kit record)");
+    if json {
+        let data = serde_json::json!({
+            "inSync": gone.is_empty(), "kits": names, "missing": gone, "checkedAgainst": against,
+        });
+        let err =
+            (!gone.is_empty()).then(|| format!("{} out of sync", plural(gone.len(), "change")));
+        let env = crate::envelope("sync", gone.is_empty(), data, err, vec![]);
+        println!("{}", serde_json::to_string_pretty(&env)?);
+    } else if gone.is_empty() {
+        println!(
+            "In sync: {label} pins {} and every file it lists is in place.",
+            plural(requested.len(), "kit")
+        );
+        println!("checked   {against}");
+    } else {
+        println!(
+            "Not in sync with {label}: {} missing or changed",
+            gone.len()
+        );
+        for l in &gone {
+            println!("  {l}");
+        }
+        println!("checked   {against}");
+        println!("Fix it: kit sync, then commit what it writes");
+    }
+    if !gone.is_empty() {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
 pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
     let target_scope = scope(args.global)?;
     let flag = if matches!(target_scope, Scope::Global { .. }) {
@@ -167,6 +274,15 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
         Scope::Repo(r) => Some(r.clone()),
         Scope::Global { .. } => super::install::repo_root(Path::new(".")),
     };
+
+    // A fresh CI runner has no record of this repo: check the committed
+    // files against the proposal instead of reporting everything missing.
+    if args.check
+        && let Scope::Repo(root) = &target_scope
+        && !lock::path(&target_scope).exists()
+    {
+        return check_committed(&source, &requested, &label, root, json);
+    }
 
     let mut target = Lock::load(&target_scope)?;
     // Kits proposed but not installed here (or at another version).

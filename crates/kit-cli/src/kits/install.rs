@@ -1102,7 +1102,7 @@ pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
                 "This repo's kit.lock lists {}, not installed on this machine.",
                 proposed.join(", ")
             );
-            println!("next      kit add <kit>   (shows the plan before anything runs)");
+            println!("next      kit sync   (shows the plan before anything runs)");
             println!();
         }
     }
