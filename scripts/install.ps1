@@ -50,8 +50,8 @@ function Install-Kit {
             $tags = @($response | ForEach-Object { $_ } | ForEach-Object { $_.tag_name } |
                 Where-Object { $_ -and $_ -notmatch '^v?0\.' })
             if ($tags.Count -eq 0) {
-                if ($Prerelease) { throw 'no 1.x release found; use -Version' }
-                throw 'no stable 1.x release yet; use -Prerelease or -Version'
+                if ($Prerelease) { throw 'no kit release found; use -Version' }
+                throw 'no stable release of kit yet; use -Prerelease or -Version'
             }
             $Version = $tags[0]
         }
