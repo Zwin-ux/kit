@@ -2,13 +2,13 @@
 
 All notable changes to Kit. Versions follow [Semantic Versioning](https://semver.org/): the public API is the `kit` command, `KIT.toml` / `kit.toml`, `kit.lock`, `--json` output and receipts. The Rust library crates carry no semver promise of their own.
 
-## Unreleased
+## 2.0.0 — Kits
 
 Kit 2.0.0 is the first release of the Rust `kit` as the default install everywhere. It sets your coding agents up for one job, then proves what they do. (0.1.x was the Node workbench; 1.0.0-alpha.1 was an npm-only preview of the Control Room.)
 
 ### Highlights
 
-- **Kits.** A kit is a bundle for one job: skills, rules, MCP servers and hooks, pinned to exact versions. `kit setup` asks which agents (Claude Code, Codex, Grok) and which focus, shows everything it will install, and installs only after you say yes. Starter kits: Essentials, Frontend Design, Full-stack Design, Backend Engineer and LLM Engineer.
+- **Kits.** A kit is a bundle for one job: skills, rules, MCP servers and hooks, pinned to exact versions. `kit setup` asks which agents (Claude Code, Codex, Grok) and which focus, shows everything it will install, and installs only after you say yes. Starter kits: Essentials, Frontend Design, Full-stack Design, Backend Engineer, LLM Engineer and iOS / Apple Design (SwiftUI, the Human Interface Guidelines, accessibility; its formatter hook, `swiftlint` check and XcodeBuildMCP server are labelled as running code and left out when you choose skills and rules only).
 - **Install, change your mind, undo.** `kit add`, `kit remove` and `kit list` install and remove kits exactly as added; hand edits are kept and reported. A failed install rolls back. Kit refuses to overwrite files it did not write.
 - **Share a setup.** `kit.lock` records what a repo uses; `kit sync` installs it for a teammate, a new machine or CI through the same plan and yes, and `kit sync --check` fails CI when a machine drifts. `kit search` finds kits, `kit add github:owner/repo` installs a kit from GitHub at a pinned commit, and `kit new` starts your own.
 - **Proof.** `kit run` runs one agent in its own git worktree, then your repo's checks from `kit.toml`, and writes a receipt for every ending, Ctrl-C included. `kit land` puts a proven run on a new branch. `kit init` writes the checks for Rust, Go, Node and Python repos.

@@ -683,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "kitctl"
-version = "1.0.0-alpha.1"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -705,7 +705,7 @@ dependencies = [
 
 [[package]]
 name = "kitctl-agents"
-version = "1.0.0-alpha.1"
+version = "2.0.0"
 dependencies = [
  "async-trait",
  "kitctl-core",
@@ -718,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "kitctl-core"
-version = "1.0.0-alpha.1"
+version = "2.0.0"
 dependencies = [
  "async-trait",
  "insta",
@@ -731,7 +731,7 @@ dependencies = [
 
 [[package]]
 name = "kitctl-gate"
-version = "1.0.0-alpha.1"
+version = "2.0.0"
 dependencies = [
  "async-trait",
  "insta",
@@ -741,7 +741,7 @@ dependencies = [
 
 [[package]]
 name = "kitctl-tui"
-version = "1.0.0-alpha.1"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "crossterm",

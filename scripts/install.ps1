@@ -1,6 +1,6 @@
 # Install the kit binary on Windows x64 from a GitHub Release.
 #   irm https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.ps1 | iex
-#   & .\install.ps1 -Version 1.0.0-alpha.1
+#   & .\install.ps1 -Version 2.0.0
 # Env: KIT_VERSION, KIT_INSTALL_DIR (default %LOCALAPPDATA%\kit\bin),
 #      KIT_DOWNLOAD_BASE (for testing and mirrors; needs a version).
 # The archive must match its SHA-256 line in SHA256SUMS. PATH is not edited.

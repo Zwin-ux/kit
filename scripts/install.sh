@@ -43,7 +43,7 @@ main() {
             --help)
                 cat <<'HELP'
 Usage: curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh | sh
-       curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh | sh -s -- --version 1.0.0-alpha.1
+       curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh | sh -s -- --version 2.0.0
 Options: --version <v>  --prerelease  --help
 Env: KIT_VERSION, KIT_INSTALL_DIR (default ~/.local/bin),
      KIT_DOWNLOAD_BASE (for testing and mirrors; requires a version)
