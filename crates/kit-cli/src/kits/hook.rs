@@ -2,11 +2,13 @@
 //! agent's hook JSON on stdin, finds the edited file, and runs the kit's
 //! `after_edit` hooks whose glob matches, with `FILE` set.
 //!
-//! A failing hook is reported (exit 1) but never blocks the agent (exit 2
-//! would feed the error back to Claude Code as an instruction).
+//! A failing `run` hook is reported (exit 1) but never blocks the agent.
+//! The built-in lint exits 2 on findings, which Claude Code shows to the
+//! model so it fixes them in its next step.
 
 use super::install::{home_dir, repo_root};
 use super::lock::{Lock, LockedHook};
+use super::manifest::Builtin;
 use super::writers::Scope;
 use crate::cli::HookScope;
 use anyhow::Result;
@@ -25,9 +27,12 @@ pub fn after_edit(kit: &str, scope: Option<HookScope>) -> Result<i32> {
         if h.glob.as_deref().is_some_and(|g| !glob_match(g, &file)) {
             continue;
         }
-        if !run(&h.run, &file)? {
-            code = 1;
-        }
+        let result = match (&h.run, h.builtin) {
+            (Some(cmd), _) => i32::from(!run(cmd, &file)?),
+            (None, Some(Builtin::FormatAndLint)) => super::fmt::format_and_lint(&file)?,
+            (None, None) => 0,
+        };
+        code = code.max(result);
     }
     Ok(code)
 }

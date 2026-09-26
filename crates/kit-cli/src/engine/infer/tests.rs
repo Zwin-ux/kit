@@ -250,3 +250,76 @@ fn live_inference_matches_init_on_this_workspace() {
     // what `kit init` proposes.
     assert_eq!(infer_gate(&root), detect(&root).gate);
 }
+
+#[test]
+fn a_kits_extra_checks_add_to_the_inferred_ones() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    if !on_path("cargo") {
+        return;
+    }
+    let kit_only = GateConfig {
+        extra: vec!["swiftlint lint --quiet".into()],
+        ..GateConfig::default()
+    };
+    let kits = ["swiftlint lint --quiet".to_string()];
+    let gate = with_inferred(&kit_only, &root, &kits).expect("inferred");
+    let inferred = infer_gate(&root);
+    assert_eq!(gate.test, inferred.test);
+    assert_eq!(gate.format, inferred.format);
+    assert_eq!(
+        gate.extra.last().map(String::as_str),
+        Some("swiftlint lint --quiet")
+    );
+    assert_eq!(gate.timeout, inferred.timeout);
+
+    // A gate with a named check of its own is left as it is.
+    let own = GateConfig {
+        test: Some("make test".into()),
+        ..kit_only
+    };
+    assert_eq!(with_inferred(&own, &root, &kits), None);
+}
+
+#[test]
+fn a_user_written_gate_with_only_extra_runs_exactly_that_gate() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let mine = GateConfig {
+        extra: vec!["make lint".into()],
+        ..GateConfig::default()
+    };
+    // No kit added it, or a kit added something else: nothing is inferred.
+    assert_eq!(with_inferred(&mine, &root, &[]), None);
+    let lint = ["make lint".to_string()];
+    // Written by the user: no note, ever.
+    assert_eq!(inference_note(&mine, &root, &[], &[]), None);
+    // The team's kit.lock says a kit added it, but this machine has no
+    // record (a clone, CI): the run says why nothing is inferred.
+    if on_path("cargo") {
+        let note = inference_note(&mine, &root, &[], &lint).expect("a note");
+        assert!(
+            note.contains("runs kit.toml as written") && note.contains("`kit add <kit>`"),
+            "{note}"
+        );
+    }
+    // Recorded on this machine: inferred, so no note.
+    assert_eq!(inference_note(&mine, &root, &lint, &lint), None);
+    let own = GateConfig {
+        test: Some("make test".into()),
+        ..mine.clone()
+    };
+    assert_eq!(
+        inference_note(&own, &root, &[], &lint),
+        None,
+        "a named check: as written"
+    );
+    assert_eq!(
+        with_inferred(&mine, &root, &["swiftlint lint --quiet".to_string()]),
+        None
+    );
+}

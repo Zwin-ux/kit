@@ -71,7 +71,10 @@ pub struct ApprovedChecks {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LockedHook {
     pub glob: Option<String>,
-    pub run: String,
+    #[serde(default)]
+    pub run: Option<String>,
+    #[serde(default, rename = "use")]
+    pub builtin: Option<super::manifest::Builtin>,
 }
 
 /// Kit's own record for this scope: the one Kit acts on.
@@ -225,6 +228,58 @@ impl Lock {
     }
 }
 
+/// The gate commands Kit's own record says kits added to `repo`'s
+/// kit.toml. Only these count as a kit's; anything else in `[gate] extra`
+/// the user wrote. Empty outside a repo or without a record.
+pub fn kit_gate_commands(repo: &Path) -> Vec<String> {
+    let Some(root) = super::install::repo_root(repo) else {
+        return Vec::new();
+    };
+    let file = root.join("kit.toml");
+    let Ok(lock) = Lock::load(&Scope::Repo(root)) else {
+        return Vec::new();
+    };
+    lock.applied()
+        .filter_map(|a| match a {
+            Applied::GateToml { file: f, added, .. } if *f == file => Some(added.iter()),
+            _ => None,
+        })
+        .flatten()
+        .cloned()
+        .collect()
+}
+
+/// The gate commands the repo's committed kit.lock (the team copy) says
+/// kits added to kit.toml. Untrusted: only ever used to decide whether to
+/// show a hint, never to change what runs.
+pub fn team_gate_commands(repo: &Path) -> Vec<String> {
+    let Some(root) = super::install::repo_root(repo) else {
+        return Vec::new();
+    };
+    let file = root.join("kit.lock");
+    // Untrusted repo content: a link, anything but a file, or a file over
+    // 1 MiB is not read at all.
+    const MAX: u64 = 1 << 20;
+    if std::fs::symlink_metadata(&file).is_ok_and(|m| !m.is_file() || m.len() > MAX) {
+        return Vec::new();
+    }
+    let Some(doc) = std::fs::read_to_string(&file)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+    else {
+        return Vec::new();
+    };
+    doc["kits"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|k| k["applied"].as_array().into_iter().flatten())
+        .filter(|a| a["kind"] == "gate_toml" && a["file"] == "kit.toml")
+        .flat_map(|a| a["added"].as_array().into_iter().flatten())
+        .filter_map(|c| c.as_str().map(str::to_string))
+        .collect()
+}
+
 /// `path` relative to the scope's root, with `/` separators.
 fn relative(path: &Path, scope: &Scope) -> Result<PathBuf> {
     let rel = path.strip_prefix(base(scope)).with_context(|| {
@@ -291,6 +346,27 @@ fn write_or_remove(file: &std::path::Path, body: Option<&String>, private: bool)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_team_copy_names_kit_gate_lines_and_is_capped() {
+        let repo = std::env::temp_dir().join(format!("kit-team-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        let ok = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&repo)
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(ok, "git init");
+        let lock = r#"{"schema":1,"kits":[{"name":"k","applied":[{"kind":"gate_toml","file":"kit.toml","kit":"k","added":["lint-x"],"wanted":["lint-x"],"created":true}]}]}"#;
+        std::fs::write(repo.join("kit.lock"), lock).unwrap();
+        assert_eq!(team_gate_commands(&repo), ["lint-x"]);
+        // Over 1 MiB: not read.
+        let big = format!("{lock}{}", " ".repeat(1 << 20));
+        std::fs::write(repo.join("kit.lock"), big).unwrap();
+        assert!(team_gate_commands(&repo).is_empty());
+        let _ = std::fs::remove_dir_all(&repo);
+    }
 
     #[test]
     fn recorded_paths_stay_inside_their_scope() {

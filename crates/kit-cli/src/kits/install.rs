@@ -207,7 +207,35 @@ fn prepare(
                     {
                         p.edited.push(msg);
                     }
-                    p.todo.push((name.clone(), action.clone()));
+                    let mut action = action.clone();
+                    // The older version's gate commands come out unless this
+                    // version or another installed kit still wants them.
+                    if let (
+                        Action::GateToml {
+                            file,
+                            previous,
+                            shared,
+                            ..
+                        },
+                        Applied::GateToml { added, .. },
+                    ) = (&mut action, done)
+                    {
+                        previous.clone_from(added);
+                        *shared = lock
+                            .kits
+                            .iter()
+                            .filter(|e| e.name != name)
+                            .flat_map(|e| &e.applied)
+                            .filter_map(|a| match a {
+                                Applied::GateToml {
+                                    file: f, wanted, ..
+                                } if f == file => Some(wanted.iter().cloned()),
+                                _ => None,
+                            })
+                            .flatten()
+                            .collect();
+                    }
+                    p.todo.push((name.clone(), action));
                 }
             }
         }
@@ -404,7 +432,7 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
                 return Ok(Outcome::Cancelled);
             }
             Answer::NoCode => {
-                println!("Leaving out MCP servers and hooks. Skills and rules only.");
+                println!("Leaving out MCP servers, hooks and gate checks. Skills and rules only.");
                 opts.no_code = true;
                 prepared = prepare(&resolved, agents, scope, opts, &lock)?;
                 confine(&prepared, scope)?;
@@ -432,8 +460,15 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         .zip(applied)
         .filter_map(|(k, a)| Some((k, a?)))
         .collect();
+    // A dropped gate command another installed kit wants stays for it.
+    let mut stale = prepared.stale.clone();
+    let mut handed = Vec::new();
+    for (kit, old) in &mut stale {
+        let others: Vec<&Entry> = lock.kits.iter().filter(|e| &e.name != kit).collect();
+        handed.extend(hand_over_gate(std::slice::from_mut(old), &others));
+    }
     let mut left = Vec::new();
-    for (_, old) in prepared.stale.iter().rev() {
+    for (_, old) in stale.iter().rev() {
         match plan::undo(old, req.force) {
             Ok(Some(msg)) => left.push(msg),
             Ok(None) => {}
@@ -446,6 +481,7 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         }
     }
     record(&mut lock, &chosen, agents, opts, pairs, &prepared.shared);
+    take_handed(&mut lock, &handed);
     lock.save(scope)?;
     for msg in &left {
         eprintln!("kept      {msg}");
@@ -538,6 +574,7 @@ fn record(
                 .map(|h| LockedHook {
                     glob: h.glob.clone(),
                     run: h.run.clone(),
+                    builtin: h.builtin,
                 })
                 .collect();
         }
@@ -599,19 +636,141 @@ fn ask(code: bool) -> Result<Answer> {
     })
 }
 
-/// Exactly what an action will run: the MCP server's command line, or for
-/// the hook, each of the kit's hook commands with the files it runs on.
+/// Exactly what an action will run: the MCP server's command line, for
+/// the hook each of the kit's hook commands with the files it runs on, and
+/// for the gate each command every `kit run` in the repo will run.
 fn runs(chosen: &Chosen, kit: &str, a: &Action) -> Vec<String> {
     match a {
+        Action::GateToml { file, commands, .. } => inferred_checks(file)
+            .into_iter()
+            .map(|(label, c)| format!("{c}   (inferred {label} check, still runs)"))
+            .chain(
+                commands
+                    .iter()
+                    .map(|c| format!("{c}   (in the gate of every kit run)")),
+            )
+            .collect(),
         Action::HookJson { .. } => chosen
             .kits
             .iter()
             .filter(|k| k.name() == kit)
             .flat_map(|k| &k.manifest.hook)
-            .map(|h| h.run.clone())
+            .map(|h| h.describe())
             .collect(),
         _ => a.command().into_iter().collect(),
     }
+}
+
+/// A gate command a staying kit also wants is taken out of the undo: it
+/// stays in the file and becomes that kit's to remove.
+/// Returns (kit, command, whether Kit created the file).
+fn hand_over_gate(undo: &mut [Applied], staying: &[&Entry]) -> Vec<(String, String, bool)> {
+    let mut handed = Vec::new();
+    for a in undo {
+        if let Applied::GateToml {
+            file,
+            added,
+            created,
+            ..
+        } = a
+        {
+            let created = *created;
+            added.retain(|cmd| {
+                let heir = staying.iter().find(|s| {
+                    s.applied.iter().any(|x| {
+                        matches!(x, Applied::GateToml { file: f, wanted, .. }
+                            if f == file && wanted.contains(cmd))
+                    })
+                });
+                match heir {
+                    Some(h) => {
+                        handed.push((h.name.clone(), cmd.clone(), created));
+                        false
+                    }
+                    None => true,
+                }
+            });
+        }
+    }
+    handed
+}
+
+/// Record each handed-over gate command as its heir's.
+fn take_handed(lock: &mut Lock, handed: &[(String, String, bool)]) {
+    for (kit, cmd, was_created) in handed {
+        if let Some(e) = lock.get_mut(kit) {
+            for a in &mut e.applied {
+                if let Applied::GateToml {
+                    added,
+                    wanted,
+                    created,
+                    ..
+                } = a
+                    && wanted.contains(cmd)
+                {
+                    if !added.contains(cmd) {
+                        added.push(cmd.clone());
+                    }
+                    *created |= *was_created;
+                }
+            }
+        }
+    }
+}
+
+/// The checks Kit infers for the repo that holds `kit_toml`, when that file
+/// names no format, typecheck or test check of its own. A kit's gate
+/// commands run after these; they never replace them.
+fn inferred_checks(kit_toml: &Path) -> Vec<(String, String)> {
+    let Some(root) = kit_toml.parent() else {
+        return Vec::new();
+    };
+    let gate = match std::fs::read_to_string(kit_toml) {
+        Ok(text) => match toml::from_str::<kit_core::KitConfig>(&text) {
+            Ok(cfg) => cfg.gate,
+            Err(_) => return Vec::new(),
+        },
+        Err(_) => kit_core::GateConfig::default(),
+    };
+    let kit_added = super::lock::kit_gate_commands(root);
+    crate::engine::infer::with_inferred(&gate, root, &kit_added)
+        .map(|g| {
+            g.checks()
+                .into_iter()
+                .filter(|(label, _)| *label != "extra")
+                .map(|(l, c)| (l.to_string(), c.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Plan notes under a gate change: commands an upgrade takes out, and
+/// programs this machine does not have (every run would fail its gate).
+fn gate_notes(kit: &str, a: &Action) -> Vec<String> {
+    let Action::GateToml {
+        commands,
+        previous,
+        shared,
+        ..
+    } = a
+    else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = previous
+        .iter()
+        .filter(|c| !commands.contains(c) && !shared.contains(c))
+        .map(|c| format!("drop  {c}   (no longer in {kit})"))
+        .collect();
+    let gate = kit_core::GateConfig {
+        extra: commands.clone(),
+        ..kit_core::GateConfig::default()
+    };
+    for program in crate::engine::infer::missing_programs(&gate) {
+        out.push(format!(
+            "note  {program} is not installed here; until it is, every kit run in this repo fails its gate"
+        ));
+    }
+    out
 }
 
 /// `[check]` commands `kit doctor` will run later, per kit (none with no code).
@@ -756,6 +915,9 @@ fn render_plan(
                 for cmd in runs(chosen, kit, a) {
                     let _ = writeln!(s, "            runs  {cmd}");
                 }
+                for note in gate_notes(kit, a) {
+                    let _ = writeln!(s, "            {note}");
+                }
                 // When a hook runs goes on its own line, so neither wraps.
                 if matches!(a, Action::HookJson { .. }) {
                     for h in chosen
@@ -852,6 +1014,7 @@ fn print_json(
             serde_json::json!({
                 "kit": kit, "change": a.describe(), "key": a.key(),
                 "runsCode": a.runs_code(), "runs": runs(chosen, kit, a),
+                "notes": gate_notes(kit, a),
                 "skipped": matches!(a, Action::Skip { .. }),
             })
         })
@@ -966,6 +1129,8 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         }
     }
 
+    let handed = hand_over_gate(&mut undo, &staying);
+
     let summary = removal_summary(&undo);
     if !json {
         for (name, users) in &still_needed {
@@ -1037,6 +1202,7 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         }
     }
     lock.kits.retain(|e| !going.contains(&e.name));
+    take_handed(&mut lock, &handed);
     for (name, _) in &still_needed {
         if let Some(e) = lock.get_mut(name) {
             e.requested = false;
@@ -1089,6 +1255,11 @@ fn removal_summary(undo: &[Applied]) -> String {
             count(|a| matches!(a, Applied::HookJson { .. })),
             "hook",
             "hooks",
+        ),
+        (
+            count(|a| matches!(a, Applied::GateToml { added, .. } if !added.is_empty())),
+            "gate entry",
+            "gate entries",
         ),
     ];
     let words: Vec<String> = parts

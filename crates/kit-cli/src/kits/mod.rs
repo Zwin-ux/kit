@@ -5,6 +5,7 @@ pub mod catalog;
 pub mod config;
 pub mod doctor;
 pub mod fetch;
+mod fmt;
 pub mod hook;
 pub mod index;
 pub mod install;

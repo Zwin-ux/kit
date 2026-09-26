@@ -292,22 +292,38 @@ async fn agent_and_gate(
     // CEO stamp P2: infer defaults on live runs only. Dry-run stays offline-fast
     // and is exempt from vacuous non-zero exit. Inferred from the repo before
     // the agent starts, so the agent is told the checks it will be held to.
-    if config.gate.is_empty() && !use_dry {
-        let inferred = super::infer::infer_gate(repo);
-        if !inferred.is_empty() {
-            let line = format!(
-                "gate: inferred checks (no kit.toml gate) — {}\n",
-                inferred
-                    .checks()
-                    .iter()
-                    .map(|(l, c)| format!("{l}:{c}"))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            );
-            append_capped(output, truncated, opts.bounds.output_cap_bytes, &line);
-            send(tx, id, RunDelta::Output(line)).await;
-            config.gate = inferred;
-        }
+    // kit.toml without checks of its own (none, or only commands kits
+    // added, per Kit's own record) runs the inferred ones too.
+    let cap = opts.bounds.output_cap_bytes;
+    let kit_added = if use_dry {
+        Vec::new()
+    } else {
+        crate::kits::lock::kit_gate_commands(repo)
+    };
+    let team_added = if use_dry {
+        Vec::new()
+    } else {
+        crate::kits::lock::team_gate_commands(repo)
+    };
+    if !use_dry
+        && let Some(line) =
+            super::infer::inference_note(&config.gate, repo, &kit_added, &team_added)
+    {
+        append_capped(output, truncated, cap, &line);
+        send(tx, id, RunDelta::Output(line)).await;
+    }
+    if !use_dry && let Some(gate) = super::infer::with_inferred(&config.gate, repo, &kit_added) {
+        let line = format!(
+            "gate: inferred checks (kit.toml names none of its own) — {}\n",
+            gate.checks()
+                .iter()
+                .map(|(l, c)| format!("{l}:{c}"))
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        append_capped(output, truncated, cap, &line);
+        send(tx, id, RunDelta::Output(line)).await;
+        config.gate = gate;
     }
     let gate_checks: Vec<String> = config
         .gate
