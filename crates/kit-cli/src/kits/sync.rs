@@ -476,6 +476,7 @@ mod tests {
             name: "docs".into(),
             created: true,
             previous: None,
+            original: None,
         };
         std::fs::write(&mcp, r#"{"mcpServers":{"other":{}}}"#).unwrap();
         assert!(!present(&a));
@@ -499,6 +500,7 @@ mod tests {
             event: "PostToolUse".into(),
             entry: entry.clone(),
             created: true,
+            original: None,
         };
         std::fs::write(&settings, r#"{"hooks":{"PostToolUse":[]}}"#).unwrap();
         assert!(!present(&a));

@@ -43,6 +43,13 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
              kit setup --agent claude --kit frontend-design --global --yes"
         );
     }
+    if !args.yes && !json && !std::io::stdin().is_terminal() {
+        bail!(
+            "kit setup asks before it writes anything, and needs a terminal for that. \
+             To run it unattended, add --yes (and --no-code to skip anything that runs code), \
+             or use `kit add <kit> --yes`"
+        );
+    }
 
     // Screen 1: welcome and detection.
     if !json {
@@ -222,7 +229,7 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         no_code: args.no_code,
         yes: args.yes,
         print: false,
-        force: false,
+        force: args.force,
     };
     let outcome = install::add(&req, json)?;
     if matches!(outcome, Outcome::Cancelled | Outcome::Printed) {

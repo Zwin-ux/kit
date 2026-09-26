@@ -136,6 +136,8 @@ struct Prepared {
     /// (kit, record) an older version of the kit installed that the new
     /// one no longer has: undone after the new version is in place.
     stale: Vec<(String, Applied)>,
+    /// Skill folders changed by hand that this upgrade would replace.
+    edited: Vec<String>,
 }
 
 fn prepare(
@@ -150,6 +152,7 @@ fn prepare(
         todo: Vec::new(),
         shared: Vec::new(),
         stale: Vec::new(),
+        edited: Vec::new(),
     };
     for r in resolved {
         let name = r.kit.name().to_string();
@@ -195,8 +198,17 @@ fn prepare(
                         .collect::<Vec<_>>()
                         .join(" ")
                 ),
-                // An older version of this kit: replace it.
-                None => p.todo.push((name.clone(), action.clone())),
+                // An older version of this kit: replace it, unless the
+                // user changed what Kit installed; that needs --force.
+                None => {
+                    if let Applied::Skill { dir, .. } = done
+                        && dir.exists()
+                        && let Some(msg) = plan::drifted(done)?
+                    {
+                        p.edited.push(msg);
+                    }
+                    p.todo.push((name.clone(), action.clone()));
+                }
             }
         }
         // What an older version installed that this one no longer has. Only
@@ -222,7 +234,8 @@ fn prepare(
 }
 
 /// In a repo, every file Kit writes must land inside it. A repo can make
-/// `.claude` or `CLAUDE.md` a link to elsewhere; Kit refuses to follow it.
+/// `.claude` or `CLAUDE.md` a link to elsewhere; Kit refuses to follow it,
+/// unless it is a link to another file in the same repo.
 fn confine(p: &Prepared, scope: &Scope) -> Result<()> {
     let Scope::Repo(root) = scope else {
         return Ok(());
@@ -290,6 +303,8 @@ pub struct Expect {
 /// that differs from `expect`.
 pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Result<Outcome> {
     let (scope, agents) = (&req.scope, req.agents.as_slice());
+    plan::follow_links_within(scope.root());
+    super::lock::check_not_linked(scope)?;
     let chosen = choose(&req.kits)?;
     for kit in &chosen.kits {
         let have = &kit.manifest.kit.version;
@@ -354,6 +369,14 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
     if !json {
         print!("{text}");
     }
+    if let Some(first) = prepared.edited.first()
+        && !req.force
+    {
+        bail!(
+            "{first} since Kit installed it, and the upgrade would replace your edit. \
+             Copy your changes somewhere safe, then run again with --force"
+        );
+    }
     if !work {
         record(
             &mut lock,
@@ -411,7 +434,7 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         .collect();
     let mut left = Vec::new();
     for (_, old) in prepared.stale.iter().rev() {
-        match plan::undo(old, false) {
+        match plan::undo(old, req.force) {
             Ok(Some(msg)) => left.push(msg),
             Ok(None) => {}
             Err(err) => left.push(format!("{err:#}")),
@@ -736,7 +759,23 @@ fn render_plan(
         }
     }
     for (kit, old) in &p.stale {
-        let _ = writeln!(s, "remove    {}   (no longer in {kit})", old.describe());
+        match plan::drifted(old).ok().flatten() {
+            Some(msg) if old.path().is_some_and(|p| p.exists()) => {
+                let _ = writeln!(
+                    s,
+                    "keep      {msg}; no longer in {kit}, left in place (--force removes it)"
+                );
+            }
+            _ => {
+                let _ = writeln!(s, "remove    {}   (no longer in {kit})", old.describe());
+            }
+        }
+    }
+    for msg in &p.edited {
+        let _ = writeln!(
+            s,
+            "edited    {msg}; the upgrade replaces it (needs --force)"
+        );
     }
     if !p.shared.is_empty() {
         let _ = writeln!(
@@ -809,6 +848,7 @@ fn print_json(
             .map(|(kit, run)| serde_json::json!({ "kit": kit, "runs": run }))
             .collect::<Vec<_>>(),
         "shared": p.shared.len(),
+        "edited": p.edited,
         "applied": applied,
     });
     let warnings = if applied {
@@ -832,6 +872,7 @@ fn scope_json(scope: &Scope) -> serde_json::Value {
 
 pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
     let scope = scope(args.global)?;
+    plan::follow_links_within(scope.root());
     let mut lock = Lock::load(&scope)?;
     let flag = if args.global { " --global" } else { "" };
     for name in &args.kits {

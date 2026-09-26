@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Run coding agents (Claude Code, Codex, Grok, Ollama) in isolated git worktrees, prove the result with your repo's own checks, then land it"
+description = "Set up Claude Code, Codex and Grok for one job with kits of skills, rules, MCP servers and hooks, then run agents in isolated worktrees and prove the result with your repo's own checks"
 readme = "../../README.md"
 keywords = ["agents", "claude", "codex", "worktree", "cli"]
 categories = ["command-line-utilities", "development-tools"]
@@ -25,7 +25,8 @@ clap_complete.workspace = true
 include_dir = "0.7"
 sha2 = "0.10"
 serde.workspace = true
-serde_json.workspace = true
+# Keys stay in the order the user wrote them when Kit edits their JSON.
+serde_json = { workspace = true, features = ["preserve_order"] }
 tokio.workspace = true
 toml.workspace = true
 toml_edit.workspace = true
