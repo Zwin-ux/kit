@@ -14,6 +14,11 @@ MCP server so the agent can look at the page, and a hook that formats each
 file it edits. Kit writes each piece in the format your agent reads, shows you
 every file first, and can take it all out again.
 
+<p align="center"><img src="docs/media/setup.gif" width="880" alt="kit setup: finds Claude Code, asks which kit and where, shows every file and skill it will install with its pinned source and licence, then installs after y" /></p>
+
+<details>
+<summary>The same first run as text</summary>
+
 ```console
 $ npm install -g @mzwin/kit
 $ kit
@@ -57,6 +62,8 @@ Try it:
   kit run "build a pricing page with three tiers"   (in its own worktree, proven by your checks)
 ```
 
+</details>
+
 That is the first run. After it, bare `kit` opens the Control Room.
 
 ---
@@ -98,6 +105,8 @@ kit remove frontend-design --global   # exactly what was added, nothing else
 kit doctor                            # agents found, and each kit's checks
 kit doctor --start-mcp                # also start each kit's MCP servers once
 ```
+
+<p align="center"><img src="docs/media/add-plan.png" width="820" alt="kit add backend-engineer: 17 skills, each with its source repo, pinned commit and licence, and the rules blocks, before anything is written" /></p>
 
 Kits stack. Frontend Design and LLM Engineer can both be installed, and
 Essentials, which both extend, installs once and stays until neither needs it.
@@ -217,21 +226,25 @@ proposes checks that do not change files, and runs each once before writing
 them (`--drop-failing` leaves out the ones that fail today). A run with no checks is `UNCONFIGURED`, never a silent pass, and a run whose agent changed nothing reads `NO CHANGES`. Every run
 writes a receipt to `~/.kit/runs/<id>/` (`kit receipt list`, `kit receipt show <id>`).
 
-```
-KIT / CONTROL ROOM                    [ALL]  1 RUNNING  1 GATING  1 FAIL
-┌ runs ─────────────────────────────────────────────────────────────────┐
-│  kit          codex·eng  port guard.js            RUN 2m      --      │
-│  kit          grok·eng   frame clock              GATING 2m   --      │
-│▶ trenchwire   codex·eng  fix red CI               DONE        FAIL    │
-│^ tsc: 3 errors — Type 'string' is not assignable                      │
-│  guardian     claude·eng 855-case suite           DONE        PASS    │
-└───────────────────────────────────────────────────────────────────────┘
- [↑↓] select  [d]ispatch  [enter] open  [g]ate  [k]ill  [r]etry  [?]help
-```
+<p align="center"><img src="docs/media/control-room-empty.png" width="880" alt="Bare kit before the first run: the empty Control Room with the Kit fox and the keys to dispatch a run" /></p>
+
+<p align="center"><img src="docs/media/run.gif" width="820" alt="kit run: the agent works in its own worktree, then Kit runs the repo's checks, prints PASS and the receipt, and kit land puts the change on a branch" /></p>
+
+<sub>Recorded with a scripted stand-in for Claude Code ([docs/media/fakeagent.sh](docs/media/fakeagent.sh)); the worktree, checks, receipt and branch are Kit's own.</sub>
+
+<p align="center"><img src="docs/media/control-room.gif" width="880" alt="The Control Room: every run in one table, with running, gating, passed and failed rows and a failure's first error line" /></p>
 
 `kit --demo` opens it with sample runs. Keys: `↑↓` select · `f` filter ·
 `Enter` open · `g` gate · `d` dispatch · `b` board · `k` kill · `r` retry
 with the failure · `?` help · `q` quit.
+
+Dispatch (`d`) sends one task to several agents and roles at once. Kit runs
+eight at a time, queues the rest, and gives each its own worktree, checks and
+receipt.
+
+<p align="center"><img src="docs/media/fleet.gif" width="880" alt="Dispatch sends one task to three agents in four roles: 12 runs, eight running and four queued, until every row reads DONE and PASS" /></p>
+
+<sub>The agents in this recording are scripted stand-ins ([docs/media/fakeagent.sh](docs/media/fakeagent.sh)); Kit, the worktrees, the checks and the receipts are real.</sub>
 
 ---
 
