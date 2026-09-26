@@ -483,7 +483,18 @@ pub struct ListKitsArgs {
 #[derive(Debug, Subcommand)]
 pub enum HookCommand {
     /// Run a kit's after-edit hooks for the file in the hook payload (stdin)
-    AfterEdit { kit: String },
+    AfterEdit {
+        kit: String,
+        /// Which install's record to read (written into the hook by kit add)
+        #[arg(long, value_enum)]
+        scope: Option<HookScope>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum HookScope {
+    Global,
+    Repo,
 }
 
 #[derive(Debug, Default, Args)]

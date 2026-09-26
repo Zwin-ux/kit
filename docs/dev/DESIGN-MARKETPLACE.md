@@ -146,6 +146,11 @@ tags    = ["ios", "macos", "design"]
   with `..`; before this, a kit from a stranger could name
   `~/.ssh/id_rsa` as its rules file and have it copied into `CLAUDE.md`
   (after the yes, but unnoticed in a one-line plan).
+- **A repo's `kit.lock` is a proposal, not a record.** `kit sync` reads
+  names, versions, pins and skill hashes from it and installs through the
+  same plan and yes as `kit add`; its hooks, checks and paths never enter
+  Kit's own record (`~/.kit/repos/<id>/kit.lock`), and `--check` compares
+  the proposal with that record and the files it names.
 - **`kit sync` does not remove kits** that are installed but not in the
   lock. It only adds what is missing; `kit remove` stays the one way to
   take things out.

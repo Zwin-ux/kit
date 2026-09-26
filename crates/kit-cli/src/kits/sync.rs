@@ -36,7 +36,7 @@ pub fn present(a: &Applied) -> bool {
                 .is_some_and(|l| l.contains(entry))
         }),
         // An agent's own CLI owns this (`claude mcp add`); `kit doctor` checks it.
-        Applied::Command { .. } => true,
+        Applied::ClaudeMcp { .. } => true,
     }
 }
 
@@ -49,7 +49,7 @@ fn describe(a: &Applied) -> String {
             format!("MCP server {name} in {}", tilde(file))
         }
         Applied::HookJson { file, .. } => format!("hook in {}", tilde(file)),
-        Applied::Command { undo } => undo.join(" "),
+        Applied::ClaudeMcp { name } => format!("Claude Code MCP server {name}"),
     }
 }
 
@@ -59,7 +59,7 @@ fn runs_code(a: &Applied) -> bool {
         a,
         Applied::McpJson { .. }
             | Applied::McpToml { .. }
-            | Applied::Command { .. }
+            | Applied::ClaudeMcp { .. }
             | Applied::HookJson { .. }
     )
 }
@@ -98,6 +98,31 @@ fn load_from(file: &Path) -> Result<Lock> {
     Ok(lock)
 }
 
+/// The kit spec an entry of a proposal installs from. A folder kit in a
+/// repo's kit.lock is named relative to the repo (`./kits/mine`).
+fn spec_of(e: &Entry, root: Option<&Path>) -> Result<String> {
+    let s = e.pin.as_deref().unwrap_or(&e.source);
+    if let Some(rel) = s.strip_prefix("./") {
+        let plain = Path::new(rel)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+        let Some(root) = root.filter(|_| plain) else {
+            bail!(
+                "kit.lock names {} at {s}, which is not a folder in this repo",
+                e.name
+            );
+        };
+        return Ok(root.join(rel).display().to_string());
+    }
+    if let Some(folder) = s.strip_prefix("folder ") {
+        bail!(
+            "kit.lock names {} from a folder outside the repo ({folder}), which is on someone else's machine. Add it by path: kit add <folder>",
+            e.name
+        );
+    }
+    Ok(s.to_string())
+}
+
 pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
     let target_scope = scope(args.global)?;
     let flag = if matches!(target_scope, Scope::Global { .. }) {
@@ -105,26 +130,60 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
     } else {
         ""
     };
-    let source = match &args.from {
-        Some(file) => load_from(file)?,
+    // The proposal: what to install. A repo's kit.lock (or a --from file)
+    // is only a proposal; it goes through the same plan and yes as kit add,
+    // and nothing in it (hooks, checks, applied paths) enters Kit's record.
+    // Kit's own record for this scope is what is installed here.
+    let proposal_file = match (&args.from, &target_scope) {
+        (Some(file), _) => Some(file.clone()),
+        (None, Scope::Repo(_)) => lock::shared_path(&target_scope),
+        (None, Scope::Global { .. }) => None,
+    };
+    let source = match &proposal_file {
+        Some(file) if file.is_file() => load_from(file)?,
+        Some(file) => bail!(
+            "no kit.lock at {}. Install kits with kit add <kit>{flag}, or name one with --from",
+            tilde(file)
+        ),
         None => Lock::load(&target_scope)?,
     };
+    let label = proposal_file.as_deref().map_or_else(
+        || "kit.lock".to_string(),
+        |f| {
+            if args.from.is_some() {
+                tilde(f)
+            } else {
+                "kit.lock".into()
+            }
+        },
+    );
     let requested: Vec<&Entry> = source.kits.iter().filter(|e| e.requested).collect();
     if requested.is_empty() {
-        let lock_file = args
-            .from
-            .clone()
-            .unwrap_or_else(|| lock::path(&target_scope));
         bail!(
-            "{} pins no kits. Install one with kit add <kit>{flag}, or name another lock with --from",
-            tilde(&lock_file)
+            "{label} pins no kits. Install one with kit add <kit>{flag}, or name another lock with --from"
         );
     }
+    let root = match &target_scope {
+        Scope::Repo(r) => Some(r.clone()),
+        Scope::Global { .. } => super::install::repo_root(Path::new(".")),
+    };
 
-    // What the target already has, minus anything no longer on disk.
     let mut target = Lock::load(&target_scope)?;
-    // A skill edited by hand is kept (and its record, so nothing rewrites
-    // it) unless --force; only kits in the source lock are looked at.
+    // Kits proposed but not installed here (or at another version).
+    let mut missing_kits: Vec<String> = Vec::new();
+    for e in &requested {
+        match target.get(&e.name) {
+            Some(t) if t.version == e.version => {}
+            Some(t) => missing_kits.push(format!(
+                "{} {} (installed here: {})",
+                e.name, e.version, t.version
+            )),
+            None => missing_kits.push(format!("kit {} {}", e.name, e.version)),
+        }
+    }
+    // Pieces Kit's record says are installed but are gone from disk. A
+    // skill edited by hand is kept (and its record, so nothing rewrites it)
+    // unless --force.
     let mut missing: Vec<Applied> = Vec::new();
     let mut edited: Vec<String> = Vec::new();
     for e in &mut target.kits {
@@ -153,13 +212,17 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
             );
         }
     };
-    let total: usize = source.kits.iter().map(|e| e.applied.len()).sum();
+    let gone: Vec<String> = missing_kits
+        .iter()
+        .cloned()
+        .chain(missing.iter().map(describe))
+        .collect();
     let names: Vec<String> = requested
         .iter()
         .map(|e| format!("{} {}", e.name, e.version))
         .collect();
 
-    if args.from.is_none() && missing.is_empty() {
+    if gone.is_empty() {
         if json {
             let data = serde_json::json!({ "inSync": true, "kits": names, "missing": [] });
             let env = crate::envelope("sync", true, data, None, vec![]);
@@ -167,12 +230,12 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
         } else {
             if edited.is_empty() {
                 println!(
-                    "In sync: kit.lock pins {} and everything is in place.",
-                    plural(requested.len(), "kit")
+                    "In sync: {label} pins {} and everything is in place.",
+                    plural(requested.len(), "kit"),
                 );
             } else {
                 println!(
-                    "In sync, apart from hand edits: kit.lock pins {}.",
+                    "In sync, apart from hand edits: {label} pins {}.",
                     plural(requested.len(), "kit")
                 );
                 kept_note(&edited);
@@ -181,7 +244,7 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
         return Ok(());
     }
     if args.check {
-        let lines: Vec<String> = missing.iter().map(describe).collect();
+        let lines = &gone;
         if json {
             let data = serde_json::json!({ "inSync": false, "kits": names, "missing": lines });
             let env = crate::envelope(
@@ -196,11 +259,8 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
         }
         // Out of sync is an answer, not a failure to run: exit 1, like
         // `cargo fmt --check`. Could-not-run errors stay exit 2.
-        println!(
-            "Not in sync with kit.lock: {} of {total} missing",
-            missing.len()
-        );
-        for l in &lines {
+        println!("Not in sync with {label}: {} missing", gone.len());
+        for l in lines {
             println!("  {l}");
         }
         kept_note(&edited);
@@ -221,33 +281,24 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
         args.agent.clone()
     };
     if agents.is_empty() {
-        bail!("kit.lock names no agent Kit knows. Name one with --agent");
+        bail!("{label} names no agent Kit knows. Name one with --agent");
     }
     let kits: Vec<String> = requested
         .iter()
-        .map(|e| e.pin.clone().unwrap_or_else(|| e.source.clone()))
-        .collect();
+        .map(|e| spec_of(e, root.as_deref()))
+        .collect::<Result<_>>()?;
     // Code was left out at install if the lock records none; keep it out.
     let no_code = args.no_code || !source.kits.iter().flat_map(|e| &e.applied).any(runs_code);
 
     if !json {
-        match &args.from {
-            Some(f) => println!("Installing what {} pins: {}", tilde(f), names.join(", ")),
-            None => {
-                let first: Vec<String> = missing.iter().take(3).map(describe).collect();
-                let more = missing.len().saturating_sub(first.len());
-                let more = if more > 0 {
-                    format!(", {more} more")
-                } else {
-                    String::new()
-                };
-                println!(
-                    "Missing   {} of {total}: {}{more}",
-                    missing.len(),
-                    first.join(", ")
-                );
-            }
-        }
+        let first: Vec<&str> = gone.iter().take(3).map(String::as_str).collect();
+        let more = gone.len().saturating_sub(first.len());
+        let more = if more > 0 {
+            format!(", {more} more")
+        } else {
+            String::new()
+        };
+        println!("Missing   {}: {}{more}", gone.len(), first.join(", "));
         println!();
     }
     let req = Request {
@@ -270,7 +321,7 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
                 Scope::Global { .. } => "This machine",
                 Scope::Repo(_) => "This repo",
             },
-            args.from.as_deref().map_or("kit.lock".into(), tilde)
+            label
         );
     }
     Ok(())

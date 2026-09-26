@@ -219,7 +219,10 @@ fn index_and_github_kits_install_and_sync_restores_exactly_what_the_lock_pins() 
     assert!(!out.status.success());
     assert_eq!(out.status.code(), Some(1), "out of sync is exit 1");
     let err = text(&out.stdout);
-    assert!(err.contains("3 of"), "{err}");
+    assert!(
+        err.contains("Missing") || err.contains("3 missing"),
+        "{err}"
+    );
     assert!(err.contains(".claude/skills/tip"), "{err}");
     assert!(
         !repo.join(".claude/skills/tip").exists(),
@@ -235,7 +238,7 @@ fn index_and_github_kits_install_and_sync_restores_exactly_what_the_lock_pins() 
     git(&kits, &["commit", "-q", "-am", "move"]);
 
     let out = env.ok(&repo, &["sync", "--yes"]);
-    assert!(out.contains("Missing   3 of"), "{out}");
+    assert!(out.contains("Missing   3:"), "{out}");
     assert!(out.contains("This repo matches kit.lock."), "{out}");
     let skill = std::fs::read_to_string(repo.join(".claude/skills/tip/SKILL.md")).unwrap();
     assert!(skill.contains("Tip."), "{skill}");
@@ -411,4 +414,38 @@ fn sync_keeps_hand_edits_and_pinned_kits_cannot_float() {
         "{}",
         text(&out.stderr)
     );
+}
+
+#[test]
+fn a_teammates_clone_installs_what_the_repos_kit_lock_proposes() {
+    let env = Env::new("clone");
+    let repo = env.repo();
+    env.ok(&repo, &["add", "tipper", "-a", "claude", "--yes"]);
+    // The team commits only the shared kit.lock; agent files stay local.
+    git(&repo, &["add", "kit.lock"]);
+    git(&repo, &["commit", "-q", "-m", "kits"]);
+    let clone = env.root.join("clone");
+    git(&env.root, &["clone", "-q", repo.to_str().unwrap(), "clone"]);
+
+    let out = env.kit(&clone, &["sync", "--check"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stdout).contains("kit tipper 0.3.0"),
+        "{}",
+        text(&out.stdout)
+    );
+
+    let out = env.kit(&clone, &["sync"]);
+    assert!(
+        !out.status.success(),
+        "no terminal and no --yes must not write"
+    );
+    assert!(!clone.join(".claude").exists());
+
+    let out = env.ok(&clone, &["sync", "--yes"]);
+    assert!(out.contains("Index: listed in the kit index"), "{out}");
+    assert!(clone.join(".claude/skills/tip/SKILL.md").is_file());
+    assert!(env.ok(&clone, &["sync", "--check"]).contains("In sync"));
+    // The original checkout is untouched by anything the clone did.
+    assert!(repo.join(".claude/skills/tip/SKILL.md").is_file());
 }

@@ -2,7 +2,7 @@
 //! them in `kit.lock`, undo them exactly. See `docs/dev/DESIGN-KITS.md` §1, §4.
 
 use super::catalog::{self, Kit};
-use super::lock::{Entry, Lock, LockedHook};
+use super::lock::{ApprovedChecks, Entry, Lock, LockedHook};
 use super::plan::{self, Action, Applied, tilde};
 use super::writers::{self, Agent, Options, Resolved, Scope};
 use crate::cli::{AddArgs, ListKitsArgs, RemoveArgs};
@@ -177,6 +177,25 @@ fn prepare(
     Ok(p)
 }
 
+/// In a repo, every file Kit writes must land inside it. A repo can make
+/// `.claude` or `CLAUDE.md` a link to elsewhere; Kit refuses to follow it.
+fn confine(p: &Prepared, scope: &Scope) -> Result<()> {
+    let Scope::Repo(root) = scope else {
+        return Ok(());
+    };
+    for (_, a) in &p.todo {
+        if let Some(path) = a.path()
+            && !plan::inside(path, root)
+        {
+            bail!(
+                "{} is a link, or leads outside this repo. Kit will not write through it",
+                tilde(path)
+            );
+        }
+    }
+    Ok(())
+}
+
 /// One `kit add`, from the command line or from `kit setup`.
 pub struct Request {
     pub kits: Vec<String>,
@@ -276,6 +295,7 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         no_code: req.no_code,
     };
     let mut prepared = prepare(&resolved, agents, scope, opts, &lock)?;
+    confine(&prepared, scope)?;
     let text = render_plan(&chosen, agents, scope, &prepared);
 
     if req.print || json && !req.yes {
@@ -319,6 +339,7 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
                 println!("Leaving out MCP servers and hooks. Skills and rules only.");
                 opts.no_code = true;
                 prepared = prepare(&resolved, agents, scope, opts, &lock)?;
+                confine(&prepared, scope)?;
             }
         }
     }
@@ -360,7 +381,14 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         titles.join(" and "),
         scope.label()
     );
-    println!("Recorded in {}.", tilde(&super::lock::path(scope)));
+    match super::lock::shared_path(scope) {
+        Some(shared) => println!(
+            "Recorded in {}; {} is a copy to commit for your team.",
+            tilde(&super::lock::path(scope)),
+            tilde(&shared)
+        ),
+        None => println!("Recorded in {}.", tilde(&super::lock::path(scope))),
+    }
     let flag = if matches!(scope, Scope::Global { .. }) {
         " --global"
     } else {
@@ -392,6 +420,7 @@ fn record(
                 required_by: Vec::new(),
                 agents: Vec::new(),
                 hooks: Vec::new(),
+                checks: ApprovedChecks::default(),
                 applied: Vec::new(),
             });
         }
@@ -427,6 +456,21 @@ fn record(
                 })
                 .collect();
         }
+        // What doctor may run later: fixed now, from what the user approved.
+        let check = &kit.manifest.check;
+        entry.checks = ApprovedChecks {
+            mcp: check
+                .mcp_starts
+                .iter()
+                .filter_map(|n| Some((n.clone(), kit.manifest.mcp.get(n)?.clone())))
+                .filter(|(_, s)| !(opts.no_code && s.runs_code()))
+                .collect(),
+            commands: if opts.no_code {
+                Vec::new()
+            } else {
+                check.commands.clone()
+            },
+        };
         let mine = applied
             .iter()
             .chain(shared)
@@ -741,6 +785,15 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
 
     let mut kept = Vec::new();
     for a in undo.iter().rev() {
+        if let (Scope::Repo(root), Some(path)) = (&scope, a.path())
+            && !plan::inside(path, root)
+        {
+            kept.push(format!(
+                "{} is now a link, or leads outside this repo; left alone",
+                tilde(path)
+            ));
+            continue;
+        }
         if let Some(msg) = plan::undo(a, args.force)? {
             kept.push(msg);
         }
@@ -783,7 +836,7 @@ fn removal_summary(undo: &[Applied]) -> String {
             count(|a| {
                 matches!(
                     a,
-                    Applied::McpJson { .. } | Applied::McpToml { .. } | Applied::Command { .. }
+                    Applied::McpJson { .. } | Applied::McpToml { .. } | Applied::ClaudeMcp { .. }
                 )
             }),
             "MCP server",
@@ -829,13 +882,14 @@ pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
             }
             rows.push((e.clone(), drift));
         }
-        out.push((scope.clone(), rows));
+        let proposed = proposed_here(scope, &lock);
+        out.push((scope.clone(), rows, proposed));
     }
 
     if json {
         let data: Vec<_> = out
             .iter()
-            .map(|(scope, rows)| {
+            .map(|(scope, rows, proposed)| {
                 let kits: Vec<_> = rows
                     .iter()
                     .map(|(e, drift)| {
@@ -846,7 +900,9 @@ pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
                         })
                     })
                     .collect();
-                serde_json::json!({ "scope": scope_json(scope), "kits": kits })
+                serde_json::json!({
+                    "scope": scope_json(scope), "kits": kits, "notInstalledHere": proposed,
+                })
             })
             .collect();
         let env = crate::envelope(
@@ -860,12 +916,22 @@ pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    if out.iter().all(|(_, rows)| rows.is_empty()) {
+    for (_, _, proposed) in &out {
+        if !proposed.is_empty() {
+            println!(
+                "This repo's kit.lock lists {}, not installed on this machine.",
+                proposed.join(", ")
+            );
+            println!("next      kit add <kit>   (shows the plan before anything runs)");
+            println!();
+        }
+    }
+    if out.iter().all(|(_, rows, _)| rows.is_empty()) {
         println!("No kits installed.");
         println!("next      kit show");
         return Ok(());
     }
-    for (scope, rows) in &out {
+    for (scope, rows, _) in &out {
         if rows.is_empty() {
             continue;
         }
@@ -879,7 +945,9 @@ pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
                 .filter(|a| {
                     matches!(
                         a,
-                        Applied::McpJson { .. } | Applied::McpToml { .. } | Applied::Command { .. }
+                        Applied::McpJson { .. }
+                            | Applied::McpToml { .. }
+                            | Applied::ClaudeMcp { .. }
                     )
                 })
                 .count();
@@ -909,6 +977,29 @@ pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Kit names in the repo's shared kit.lock that this machine has not
+/// installed. Names only: nothing else in that file is trusted or used.
+fn proposed_here(scope: &Scope, lock: &Lock) -> Vec<String> {
+    let Some(file) = super::lock::shared_path(scope) else {
+        return Vec::new();
+    };
+    let Ok(raw) = std::fs::read_to_string(file) else {
+        return Vec::new();
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return Vec::new();
+    };
+    v["kits"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|k| k["requested"].as_bool().unwrap_or(true))
+        .filter_map(|k| k["name"].as_str())
+        .filter(|n| super::manifest::is_slug(n) && lock.get(n).is_none())
+        .map(str::to_string)
+        .collect()
 }
 
 fn skill_names(e: &Entry) -> BTreeSet<String> {

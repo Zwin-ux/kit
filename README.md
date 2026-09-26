@@ -102,7 +102,10 @@ Essentials, which both extend, installs once and stays until neither needs it.
 | hooks | `PostToolUse` in `settings.json` | not yet (the plan says so) | reads Claude Code's |
 
 `--global` writes the home-directory column. Without it, Kit installs into the
-git repo you are in, and records it in `kit.lock` so your team can commit it.
+git repo you are in. Kit keeps its record of what it installed in `~/.kit`, and
+writes a copy to `kit.lock` in the repo for your team to commit. Kit never acts
+on that copy: a repo you clone cannot choose what Kit runs or deletes. `kit list`
+names any kit it lists that you have not installed.
 
 ## What Kit promises
 
@@ -115,8 +118,9 @@ git repo you are in, and records it in `kit.lock` so your team can commit it.
 - **Your files stay yours.** Kit edits only between its own markers in
   `CLAUDE.md` and `AGENTS.md`, only its own keys in JSON and TOML (comments
   kept), and only skill folders it wrote. A folder you made is never overwritten.
-- **Removal is exact.** Every change is recorded in `kit.lock` with its
-  inverse. A skill you edited by hand is left in place and named.
+- **Removal is exact.** Every change is recorded with its inverse in Kit's
+  own record, never read from the repo. A skill you edited by hand is left
+  in place and named.
 - **A failed install changes nothing.** It rolls back what it did.
 - **No secrets, no telemetry.** Kits refer to environment variables by name.
   Fetching is `git` over HTTPS from the named repos.
@@ -243,7 +247,7 @@ cargo run -p kitctl -- --demo
 
 | Env | Effect |
 |-----|--------|
-| `KIT_HOME` | Where Kit keeps its lock, config, cache and receipts (default `~/.kit`) |
+| `KIT_HOME` | Where Kit keeps its records, config, cache and receipts (default `~/.kit`) |
 | `KIT_FULL_AUTO=1` | Skip agent approval prompts in `kit run` (sandboxes only) |
 | `KIT_SKILLS_DIR` | Skill pack copied into `kit run` worktrees |
 | `KIT_OLLAMA_MODEL` | Model for the Ollama adapter (default `llama3.2`) |
