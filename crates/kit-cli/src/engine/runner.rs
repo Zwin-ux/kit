@@ -716,7 +716,7 @@ async fn live_agent(
                                 let _ = ui.send((id_tee.clone(), delta)).await;
                             }
                         }
-                        // A clean exit needs no line: "agent done" follows.
+                        // A clean exit needs no line: the state change to gating follows.
                         if code != 0 {
                             let line = format!("kit: {} exited with code {code}\n", opts.agent);
                             append_capped(output, truncated, cap, &line);
