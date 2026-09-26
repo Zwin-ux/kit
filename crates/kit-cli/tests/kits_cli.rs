@@ -1328,3 +1328,44 @@ fn private_files_stay_private() {
         .join("kit.lock");
     assert_eq!(mode(&record), 0o600, "{}", record.display());
 }
+
+/// A worktree inside a bare clone (`git clone --bare url proj.git`, then
+/// `git worktree add main`) is a normal repo: its bare store above it is
+/// not "git's folder" for what Kit writes there.
+#[test]
+fn a_worktree_inside_a_bare_clone_takes_kits() {
+    let root = scratch("bare");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let src = root.join("src");
+    git_repo(&src);
+    write(&src.join("README.md"), "hi\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-qm", "init"]);
+    let bare = root.join("proj.git");
+    git(
+        &root,
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            src.to_str().unwrap(),
+            bare.to_str().unwrap(),
+        ],
+    );
+    git(&bare, &["worktree", "add", "-q", "main"]);
+    let main = bare.join("main");
+    let out = env.kit(
+        &main,
+        &[
+            "add",
+            kit.to_str().unwrap(),
+            "-a",
+            "claude",
+            "--no-code",
+            "--yes",
+        ],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(main.join(".claude/skills/hello/SKILL.md").is_file());
+}
