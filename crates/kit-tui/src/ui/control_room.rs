@@ -73,7 +73,13 @@ fn header_stats(app: &App, width: usize) -> String {
         app.gated_count(),
         app.fail_count(),
     );
-    let fits = |s: &str| TITLE.chars().count() + 2 + s.chars().count() <= width;
+    // A live flash carries the next action, so it wins: room for all of it
+    // first, then the longest stats that still fit beside it (maybe none).
+    let flash = app
+        .flash_message()
+        .map_or(0, |f| format!("  · {f}").chars().count());
+    let fits =
+        |s: &str| s.is_empty() || TITLE.chars().count() + 2 + s.chars().count() + flash <= width;
     let strips = [app.agents_strip(), app.agents_strip_short()];
     if app.runs.is_empty()
         && let Some(strip) = strips.iter().find(|s| !s.is_empty() && fits(s))
@@ -100,6 +106,10 @@ fn header_stats(app: &App, width: usize) -> String {
             }
         }
         candidates.push(counts.clone());
+    }
+    if flash > 0 {
+        // The flash lives 2 s; the counts come back when it goes.
+        candidates.push(String::new());
     }
     candidates.into_iter().find(|s| fits(s)).unwrap_or(short)
 }

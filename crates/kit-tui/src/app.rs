@@ -1348,7 +1348,7 @@ impl App {
         }
     }
 
-    fn set_flash(&mut self, msg: impl Into<String>) {
+    pub(crate) fn set_flash(&mut self, msg: impl Into<String>) {
         self.flash = Some((msg.into(), self.clock.tick));
     }
 

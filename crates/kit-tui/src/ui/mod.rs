@@ -388,6 +388,11 @@ mod tests {
             ("grok".into(), false),
             ("ollama".into(), false),
         ]);
+        // Past the demo's opening flash, which takes the width while it lives.
+        for _ in 0..=crate::event::TICK_HZ * 2 {
+            app.update(crate::event::AppEvent::AnimationTick);
+        }
+        assert_eq!(app.flash_message(), None);
         for width in [60u16, 80, 120] {
             let frame = render_to_string(&app, width, 14);
             let header = frame.lines().next().unwrap_or("");
@@ -467,6 +472,50 @@ mod tests {
         row.output = "kit: codex exited with code 1\ngate: running\n".into();
         let frame = render_to_string(&app, 80, 14);
         assert!(frame.contains("^ codex exited with code 1"), "{frame}");
+    }
+
+    /// A live flash carries the next action: it shows whole, and the counts
+    /// shrink or step aside for its 2 s.
+    #[test]
+    fn flash_shows_whole_beside_the_counts() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let flash = "demo row — press d to dispatch a real run";
+        app.set_flash(flash);
+        for w in [60u16, 80, 103, 120] {
+            let frame = render_to_string(&app, w, 14);
+            let header = frame.lines().next().unwrap();
+            if w >= 80 {
+                assert!(header.contains(flash), "{w}: {header}");
+            }
+            assert!(header.contains("· demo row"), "{w}: {header}");
+        }
+        // Without a flash the counts and the strip come back.
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let frame = render_to_string(&app, 120, 14);
+        assert!(frame.lines().next().unwrap().contains("1 FAIL"), "{frame}");
+    }
+
+    /// Run detail's worktree line writes the home folder as `~`.
+    #[test]
+    fn worktree_path_is_tilde_shortened() {
+        let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) else {
+            return;
+        };
+        let wt = std::path::Path::new(&home).join(".kit/worktrees/01ABC");
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            super::common::tilde(&wt),
+            format!(
+                "~{sep}{}",
+                std::path::Path::new(".kit/worktrees/01ABC").display()
+            )
+        );
+        assert_eq!(
+            super::common::tilde(std::path::Path::new("/elsewhere")),
+            "/elsewhere"
+        );
     }
 
     /// The selection rail on a non-FAIL row is a caret, not a reversed block.

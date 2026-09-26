@@ -1,7 +1,8 @@
 //! Run detail — stream, gate log, diff panes (1.0 craft remake).
 
 use super::common::{
-    draw_footer, draw_header, draw_too_small, style_log_line, too_small, truncate, viewport_start,
+    draw_footer, draw_header, draw_too_small, style_log_line, tilde, too_small, truncate,
+    viewport_start,
 };
 use crate::app::{App, DetailPane, RunRow, format_gate_label, format_state_label, gate_log_lines};
 use crate::theme::Theme;
@@ -133,7 +134,7 @@ fn draw_run_header(frame: &mut Frame, app: &App, run: &RunRow, area: Rect, theme
     let wt = run
         .worktree
         .as_ref()
-        .map(|p| p.display().to_string())
+        .map(|p| tilde(p))
         .unwrap_or_else(|| "—".into());
     let l2 = format!(
         "worktree  {}",
