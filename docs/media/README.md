@@ -37,8 +37,9 @@ These keep the set looking like one product, and like the product as designed (`
 |---|---|---|
 | `control-room` | 120×16 | Header keeps its flash and counts; four rows plus the error line fill the table |
 | `fleet` | 120×18 | 10–12 visible rows plus `↓ N more below` |
-| `setup` | 110×44 | The whole plan, prompts to `Try it`, without scrolling |
-| `add`, `doctor` | 100×32–34 | Widest plan line is 92 columns |
+| `setup` | 110×44 | The whole plan and prompts; the ending (`undo`, `Try it`) scrolls the top off |
+| `add` | 110×32 | Backend Engineer's licence column (`Apache-2.0 AND CC-BY-SA-4.0`) reaches 105 columns |
+| `doctor` | 100×32 | Widest line is about 80 columns |
 | `run` | 110×32 | Worktree paths are about 75 columns plus the home |
 
 **Timing.** Kit animates on one 20 Hz clock; the spinner turns once every 0.8 s and a flash lasts 2 s. Record at 30 fps. Hold a moving frame at least 1.6 s (two spinner turns) and a still frame (a plan, a receipt) 3–4 s. Type at 45 ms per key. Always sleep 300 ms or more after `Escape`, or the terminal merges it with the next key. Wait on the screen (`Wait+Screen /…/`) for anything that depends on the network or an agent, not a fixed sleep.

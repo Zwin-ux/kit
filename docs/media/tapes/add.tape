@@ -1,7 +1,7 @@
 # The plan is the trust surface: every path, every pin and licence,
 # what runs code, and nothing written until yes.
 Output "out/add.gif"
-Set Width 1080
+Set Width 1180
 Set Height 680
 Source "kit-theme.tape"
 Source "env.tape"

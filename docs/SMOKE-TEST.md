@@ -51,13 +51,22 @@ The first lists the starter kits with one line each. The second lists every skil
 
 ```sh
 mkdir kit-smoke && cd kit-smoke && git init
-git commit --allow-empty -m init
+printf '[gate]\ntest = "git --version"\n' > kit.toml
+git add kit.toml && git commit -m init
 kit setup
 ```
 
-`kit setup` finds your agents, asks which to set up, which kit and where (pick Essentials and "this repo"), then shows the plan: every file it will write and every skill with its pin. Nothing is written until you say yes. After yes you should see `Done.`, where the record is, and `undo  kit remove essentials`.
+The one-line `kit.toml` gives step 8 a check to run. This folder has no project files for Kit to infer checks from, so without it a run ends `UNCONFIGURED`: nothing checked the change, and Kit never calls that a pass.
 
-Check: `git status` shows only the new skill folders (for Claude Code, `.claude/skills/`), the rules file (`CLAUDE.md` or `AGENTS.md`) and `kit.lock`.
+`kit setup` finds your agents, asks which to set up (every agent it finds is ticked), which kit and where (pick Essentials and "this repo"), then shows the plan: every file it will write and every skill with its pin. Nothing is written until you answer `y` at `Continue? [y/N]`. After yes you should see `Done.`, where the record is, and `undo  kit remove essentials`.
+
+Check: `git status` shows only `kit.lock` and, for each agent you set up:
+
+| Agent | Skills | Rules |
+|---|---|---|
+| Claude Code | `.claude/skills/` | `CLAUDE.md` |
+| Codex | `.agents/skills/` | `AGENTS.md` |
+| Grok | nothing of its own: it reads the Claude Code files, or `.agents/skills/` and `AGENTS.md` | |
 
 ## 6. It knows what it installed
 
@@ -66,7 +75,9 @@ kit list
 kit doctor
 ```
 
-`kit list` shows `essentials` with your agent and `ok`. `kit doctor` now has a `kits:` section with `ok` lines. Edit one installed `SKILL.md` by hand and run `kit list` again: it reports the change instead of hiding it.
+`kit list` shows `essentials` with your agent and `ok`. `kit doctor` now has a `kits:` section with `ok` lines.
+
+Edit one installed `SKILL.md` by hand, then run both again. Neither hides the change: `kit list` reports it, and `kit doctor` prints a `note` line (`1 of 8 skills changed by hand … kept as yours`, with ``kit add <kit> --force`` to put Kit's copy back) and still exits 0. A skill that is missing altogether is a `FAIL` line and exit code 1.
 
 ## 7. The Control Room
 
@@ -82,7 +93,7 @@ Opens a table of sample runs (no agent starts): running, gating, passed and fail
 kit run "add a README that says hello"
 ```
 
-Kit makes a git worktree, runs your agent there, then runs this repo's checks. It ends with a verdict and a receipt id. `kit receipt show <id>` shows the diff, what ran and how long it took. Your own working tree is untouched.
+Kit makes a git worktree, runs your agent there, then runs the check from step 5. It ends with `PASS  test` and a receipt id. `kit receipt show <id>` shows the diff, what ran and how long it took. Your own working tree is untouched.
 
 ## 9. Undo
 

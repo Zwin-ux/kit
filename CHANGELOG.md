@@ -26,6 +26,7 @@ Kit 2.0.0 is the first release of the Rust `kit` as the default install everywhe
 - `kit doctor --json` no longer has the `skillsPack` field.
 - `KIT_SKILLS_DIR` is removed. `kit run` no longer copies skill packs or writes `AGENTS.md` into the run's worktree; the agent uses the skills your kits installed.
 - A run sees only committed files. If a kit is installed into the repo (not `--global`) and the agent should use it, commit the kit's files before `kit run`.
+- A run with no checks (no `kit.toml` and nothing Kit can infer) is recorded with state `unconfigured` and `gatePassed: false` in its receipt, where it used to say `pass`; old receipts read the same way. The Control Room shows `GATE UNCONFIGURED`, and `kit land` refuses such a run without `--force`.
 
 ### Details
 
