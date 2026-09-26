@@ -402,7 +402,6 @@ fn print_help(version: &str) {
     println!("  --json                   One JSON result on stdout (errors too)");
     println!("  KIT_HOME=…               Data root (default ~/.kit)");
     println!("  KIT_FULL_AUTO=1          Bypass agent approval prompts (dangerous)");
-    println!("  KIT_SKILLS_DIR=…         Override skills pack path");
     println!();
     println!("Land flags:");
     println!(
@@ -759,7 +758,6 @@ fn classify_shim_text(text: &str) -> PathKit {
 
 fn print_doctor(version: &str, json: bool) {
     let kit_home = engine::paths::kit_home();
-    let skills = kit_agents::skills::resolve_skills_dir(std::path::Path::new("."));
     let statuses = tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(kit_agents::probe_all())
     });
@@ -817,7 +815,6 @@ fn print_doctor(version: &str, json: bool) {
             "gateEngine": "ok",
             "runEngine": "ok",
             "kitHome": kit_home,
-            "skillsPack": skills.as_ref().map(|p| p.display().to_string()),
             "agents": agents,
             "kitToml": kit_toml.as_ref().map(|p| p.display().to_string()),
         });
@@ -839,11 +836,6 @@ fn print_doctor(version: &str, json: bool) {
     println!("  gate engine     ok (kit-gate)");
     println!("  run engine      ok (worktree + adapters + receipt)");
     println!("  kit home        {}", kit_home.display());
-    if let Some(s) = skills {
-        println!("  skills pack     {}", s.display());
-    } else {
-        println!("  skills pack     missing (.agents/skills)");
-    }
     match &kit_toml {
         Some(p) => println!("  kit.toml        {}", p.display()),
         None if cwd.join(".git").exists() => {
