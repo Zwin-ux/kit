@@ -1,11 +1,15 @@
 [package]
-name = "kit-tui"
+name = "kitctl-tui"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Kit Control Room — the terminal surface"
+
+[lib]
+# Package renamed for crates.io (kit-cli is taken); code keeps `kit_tui`.
+name = "kit_tui"
 
 [dependencies]
 kit-core.workspace = true

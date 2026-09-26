@@ -73,7 +73,7 @@ pub fn render(det: &Detection, gate: &GateConfig, left_out: &[(String, String)])
     }
     s.push_str(&line("timeout", &quote(&duration(gate.timeout))));
     if !left_out.is_empty() {
-        s.push_str("\n# Failed at `kit init --check`. Fix each one, then remove the \"# \".\n");
+        s.push_str("\n# Failed at `kit init`. Fix each one, then remove the \"# \".\n");
         for (label, cmd) in left_out {
             let value = if label == "extra" {
                 format!("[{}]", quote(cmd))

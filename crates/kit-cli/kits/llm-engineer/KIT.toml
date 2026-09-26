@@ -1,0 +1,69 @@
+schema = 1
+
+[kit]
+name        = "llm-engineer"
+title       = "LLM Engineer"
+version     = "0.1.0"
+description = "Prompts, evals, RAG, model APIs, cost and latency"
+extends     = ["essentials"]
+agents      = ["claude", "codex", "grok"]
+licence     = "MIT"
+example     = "write an eval for the summarizer prompt"
+
+[rules]
+file = "RULES.md"
+
+[[skill]]
+name    = "llm-evals"
+path    = "skills/llm-evals"
+licence = "MIT"
+
+[[skill]]
+name    = "llm-cost-latency"
+path    = "skills/llm-cost-latency"
+licence = "MIT"
+
+[[skill]]
+name    = "context-engineering"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/context-engineering"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "source-driven-development"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/source-driven-development"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "doubt-driven-development"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/doubt-driven-development"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "claude-api"
+source  = "github:anthropics/skills"
+path    = "skills/claude-api"
+rev     = "33375500bcea98d610eb30ce10ac4e59b89c390d"
+licence = "Apache-2.0"
+
+[[skill]]
+name    = "mcp-builder"
+source  = "github:anthropics/skills"
+path    = "skills/mcp-builder"
+rev     = "33375500bcea98d610eb30ce10ac4e59b89c390d"
+licence = "Apache-2.0"
+
+[[skill]]
+name    = "prompt-optimizer"
+source  = "github:getsentry/skills"
+path    = "skills/prompt-optimizer"
+rev     = "c2f99a5b04b4cd992ec3022d7c2c3e23e938d241"
+licence = "Apache-2.0"
+
+[mcp.openai-docs]
+url = "https://developers.openai.com/mcp"

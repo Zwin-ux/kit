@@ -1,11 +1,15 @@
 [package]
-name = "kit-agents"
+name = "kitctl-agents"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Agent adapters for Codex, Claude Code, Grok Build, and Ollama"
+
+[lib]
+# Package renamed for crates.io (kit-cli is taken); code keeps `kit_agents`.
+name = "kit_agents"
 
 [dependencies]
 kit-core.workspace = true

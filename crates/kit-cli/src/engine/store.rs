@@ -251,10 +251,36 @@ pub fn load_kit_config(repo: &Path) -> anyhow::Result<kit_core::KitConfig> {
     toml::from_str(&raw).map_err(|e| anyhow::anyhow!("{} is not valid: {}", path.display(), e))
 }
 
+/// True when `kit.toml` has a `[firewall]` table. It parses (old files keep
+/// working) but nothing enforces it yet, so runs say so instead of implying
+/// a protection that is not there.
+pub fn declares_firewall(repo: &Path) -> bool {
+    fs::read_to_string(repo.join("kit.toml"))
+        .ok()
+        .and_then(|raw| raw.parse::<toml::Table>().ok())
+        .is_some_and(|t| t.contains_key("firewall"))
+}
+
+/// Printed once per run when [`declares_firewall`].
+pub const FIREWALL_NOTICE: &str =
+    "kit: [firewall] in kit.toml is not enforced yet and has no effect. Remove it to hide this\n";
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::engine::paths::kit_home_test_lock;
+
+    #[test]
+    fn firewall_table_is_noticed() {
+        let root = std::env::temp_dir().join(format!("kit-fw-{}", RunId::default().0));
+        fs::create_dir_all(&root).unwrap();
+        assert!(!declares_firewall(&root), "no kit.toml");
+        fs::write(root.join("kit.toml"), "[gate]\ntest = \"true\"\n").unwrap();
+        assert!(!declares_firewall(&root));
+        fs::write(root.join("kit.toml"), "[firewall]\nmode = \"block\"\n").unwrap();
+        assert!(declares_firewall(&root));
+        let _ = fs::remove_dir_all(&root);
+    }
     use kit_core::{AgentKind, Bounds, RunId, RunSpec, RunState};
     use std::time::{Duration, SystemTime};
 

@@ -46,9 +46,9 @@ QA evidence: [`dogfood-notes/2026-08-16-qa.md`](dogfood-notes/2026-08-16-qa.md)
 
 ```text
 cargo fmt --all --check
-cargo clippy -p kit-cli -p kit-tui --all-targets -- -D warnings
+cargo clippy -p kitctl -p kitctl-tui --all-targets -- -D warnings
 cargo test --workspace
-cargo test -p kit-tui
+cargo test -p kitctl-tui
 .\kit.cmd --version
 .\kit.cmd doctor
 .\kit.cmd doctor --json
@@ -68,7 +68,7 @@ Gate (this repo): [`kit.toml`](../../kit.toml) — fmt + clippy -D warnings + `c
 
 | ID | What | Evidence |
 |----|------|----------|
-| D1 | Rust workspace + Control Room / Detail / Dispatch / Board | snapshots, `cargo test -p kit-tui` (75) |
+| D1 | Rust workspace + Control Room / Detail / Dispatch / Board | snapshots, `cargo test -p kitctl-tui` (75) |
 | D2 | Filter `f`/`F`, help `?`, kill/retry wired | #13 + later TUI work |
 | D3 | Root `kit.toml` + engine tests on `bare_git_fixture()` | `workspace_kit_toml_declares_a_real_gate` |
 | D4 | Session A Kit-on-Kit dry-run | receipt `01M06A2PXBBH43ZFF3GJ9VQW94`, `gateVacuous: false`, PASS |
@@ -174,7 +174,7 @@ packages/           0.1 Node — isolate, do not feature
 
 ## Testing strategy
 
-- Reducer + insta for TUI (`cargo test -p kit-tui`).
+- Reducer + insta for TUI (`cargo test -p kitctl-tui`).
 - Engine tests **must** use `bare_git_fixture()`, never this repo’s `kit.toml`.
 - Dogfood proof = receipt ids in `docs/dev/dogfood-notes/`.
 - Clippy `-D warnings` on `kit-cli` + `kit-tui`.

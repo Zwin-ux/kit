@@ -6,7 +6,7 @@ if (-not (Test-Path $KitBin)) {
     $KitBin = Join-Path $KitRoot "target\debug\kit.exe"
 }
 if (-not (Test-Path $KitBin)) {
-    Write-Error "kit: Rust binary not built.`n  cargo build -p kit-cli --release`nThen run: kit --demo"
+    Write-Error "kit: Rust binary not built.`n  cargo build -p kitctl --release`nThen run: kit --demo"
     exit 1
 }
 & $KitBin @args

@@ -195,7 +195,7 @@ Each run is a `tokio` task owning a PTY. Output streams through a bounded channe
 npm stays the primary channel so the existing `@mzwin/kit` install path and its users carry forward unbroken.
 
 - **`npm i -g @mzwin/kit`** — launcher resolves a platform binary package. This is the pattern already built and proven in `dist/npm/trenchwire-*` — reuse it directly.
-- **`cargo install kit-cli`** — for Rust users.
+- **`cargo install kitctl`** — for Rust users (package `kitctl`, binary `kit`; `kit-cli` is taken on crates.io).
 - **`curl -fsSL … | sh`** — checksum-verifying installer, copied from `fennec/scripts/install.sh`.
 
 Targets: macOS arm64/x64, Linux glibc arm64/x64, Windows x64.

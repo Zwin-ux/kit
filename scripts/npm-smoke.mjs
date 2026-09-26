@@ -8,7 +8,7 @@
  *    npm bin shim: --version, doctor --json, exit-code and argv passthrough.
  * 4. Install the launcher alone and check it stops with a clear error.
  *
- * Usage: cargo build --release -p kit-cli && node scripts/npm-smoke.mjs [--binary <path>]
+ * Usage: cargo build --release -p kitctl && node scripts/npm-smoke.mjs [--binary <path>]
  * Exit 0 = every check passed. On failure the temp dir is kept for debugging.
  */
 import { spawnSync } from "node:child_process";

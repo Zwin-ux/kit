@@ -93,13 +93,13 @@ Reference architecture: `C:/Users/mzwin/Documents/fennec/crates/fennec-tui`
 
 ```text
 # Run the product
-cargo run -p kit-cli -- --demo    # Control Room + PRD fixture
-cargo run -p kit-cli              # empty Control Room
-cargo run -p kit-cli -- doctor
+cargo run -p kitctl -- --demo    # Control Room + PRD fixture
+cargo run -p kitctl              # empty Control Room
+cargo run -p kitctl -- doctor
 
 # Verify
-cargo test -p kit-tui
-cargo clippy -p kit-cli -p kit-tui --all-targets -- -D warnings
+cargo test -p kitctl-tui
+cargo clippy -p kitctl -p kitctl-tui --all-targets -- -D warnings
 cargo fmt --all --check
 cargo test --workspace
 ```

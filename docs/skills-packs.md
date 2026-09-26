@@ -27,7 +27,7 @@ git clone https://github.com/harness/harness-skills.git
 export KIT_SKILLS_DIR="$(pwd)/harness-skills/skills"
 
 # Claude is the natural agent for this pack
-cargo run -p kit-cli -- run --agent claude --task "debug pipeline X in org Y"
+cargo run -p kitctl -- run --agent claude --task "debug pipeline X in org Y"
 ```
 
 Or clone/copy `skills/` into the target repo root (Harness layout). Kit resolves:

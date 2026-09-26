@@ -1,5 +1,8 @@
 //! Agent adapters — the seam between Kit and each coding CLI.
 //!
+//! Part of the `kit` command (crate `kitctl`), published only because
+//! `cargo install` needs it. Not a stable library API: no semver promise.
+//!
 //! One trait, four implementations. A broken adapter degrades one agent and
 //! never the control room (PRD risk table).
 //!

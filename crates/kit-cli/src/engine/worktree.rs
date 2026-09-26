@@ -19,12 +19,7 @@ pub fn create_worktree(repo: &Path, dest: &Path, branch: &str) -> Result<String>
             .with_context(|| format!("create worktree parent {}", parent.display()))?;
     }
     // Pin the sha first: HEAD can move while the worktree is being added.
-    let base = head_commit(repo).with_context(|| {
-        format!(
-            "{} has no commit. Make a first commit, then run again",
-            repo.display()
-        )
-    })?;
+    let base = head_commit(repo)?;
 
     // Nothing from git reaches kit's stdout (it carries `--json`) or the
     // terminal (the TUI owns it; a post-checkout hook would paint over it).
@@ -33,7 +28,7 @@ pub fn create_worktree(repo: &Path, dest: &Path, branch: &str) -> Result<String>
     let out = git(repo)
         .args(["worktree", "add", "--quiet", "--detach", dest_str, &base])
         .output()
-        .context("git worktree add")?;
+        .with_context(|| format!("cannot run git worktree add {dest_str}"))?;
 
     if !out.status.success() {
         // Fallback: branch-based add when detach is rejected (older git).
@@ -61,7 +56,10 @@ pub fn head_commit(dir: &Path) -> Result<String> {
         .context("git rev-parse HEAD")?;
     let sha = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     if !out.status.success() || sha.is_empty() {
-        bail!("no HEAD commit in {}", dir.display());
+        bail!(
+            "{} has no commits yet. Make a first commit, then run again",
+            dir.display()
+        );
     }
     Ok(sha)
 }
