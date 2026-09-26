@@ -730,7 +730,8 @@ mod tests {
         })
         .await;
 
-        assert_eq!(result.state, RunState::Pass);
+        // The fixture has no gate: nothing proved the run, so it is not a pass.
+        assert_eq!(result.state, RunState::Unconfigured);
         assert!(result.receipt_dir.join("receipt.json").exists());
         assert!(result.receipt_dir.join("output.log").exists());
         assert!(
