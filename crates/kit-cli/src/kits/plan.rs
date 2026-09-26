@@ -852,7 +852,25 @@ fn link_target_within(link: &Path, root: &Path) -> Option<PathBuf> {
     let parent = link.parent().filter(|p| !p.as_os_str().is_empty())?;
     let parent = std::fs::canonicalize(parent).ok()?;
     let target = std::fs::canonicalize(link).ok()?;
-    (parent.starts_with(root) && target.starts_with(root) && target.is_file()).then_some(target)
+    let in_git = target
+        .strip_prefix(root)
+        .is_ok_and(|rest| rest.components().any(|c| c.as_os_str() == ".git"));
+    (parent.starts_with(root) && target.starts_with(root) && target.is_file())
+        .then_some(target)
+        .filter(|t| !in_git && !executable(t))
+}
+
+/// A link that leads to a program (a git hook, a script) is never written
+/// through: Kit's text in it would run.
+#[cfg(unix)]
+fn executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn executable(_: &Path) -> bool {
+    false
 }
 
 /// Remove up to `levels` parent folders of `path` while they are empty

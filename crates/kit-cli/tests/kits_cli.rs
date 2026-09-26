@@ -1172,6 +1172,19 @@ fn links_that_stay_inside_the_scope_are_followed() {
     assert!(out.status.success(), "{}", text(&out.stderr));
     assert_eq!(read(&repo.join("AGENTS.md")), "# Team rules\n");
 
+    // Not into .git, and not into a program: Kit's text there would run.
+    for (i, target) in [".git/hooks/pre-commit", "tools/run.sh"].iter().enumerate() {
+        let repo = root.join(format!("hook-{i}"));
+        git_repo(&repo);
+        write(&repo.join(target), "#!/bin/sh\nexit 0\n");
+        let mode = std::os::unix::fs::PermissionsExt::from_mode(0o755);
+        std::fs::set_permissions(repo.join(target), mode).unwrap();
+        std::os::unix::fs::symlink(target, repo.join("CLAUDE.md")).unwrap();
+        let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+        assert!(!out.status.success(), "{target}");
+        assert_eq!(read(&repo.join(target)), "#!/bin/sh\nexit 0\n");
+    }
+
     let dotfiles = env.home.join("dotfiles/CLAUDE.md");
     write(&dotfiles, "# Mine\n");
     std::fs::create_dir_all(env.home.join(".claude")).unwrap();
