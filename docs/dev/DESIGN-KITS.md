@@ -308,8 +308,8 @@ remove is "apply the inverses recorded in the lock", not a guess.
 A repo is untrusted input: anyone can commit a `kit.lock`. So Kit acts
 only on its own record, written by `kit add` after the user said yes:
 `~/.kit/kit.lock` for global installs and `~/.kit/repos/<id>/kit.lock`
-for a repo, where `<id>` comes from the repo's git folder (each clone has
-its own; `kit run` worktrees share their checkout's).
+for a repo, where `<id>` comes from the repo's root and git folder (each clone has
+its own, and so does each worktree).
 
 - The record is data, never commands. Undo runs Kit's own code, plus
   `claude mcp remove --scope user <name>` built by Kit from a validated
