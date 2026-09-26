@@ -219,11 +219,10 @@ fn overflow_line(above: usize, below: usize, theme: &Theme) -> Line<'static> {
 /// they paint full inner width so `^ tsc: 3 errors` survives 60 cols.
 fn column_widths(total: u16) -> [usize; 5] {
     let usable = total.saturating_sub(4) as usize; // 4 gaps between 5 cols
-    let pct = if total < 70 {
-        [18usize, 16, 30, 18, 18]
-    } else {
-        [20, 14, 36, 15, 15]
-    };
+    if total < 70 {
+        return narrow_widths(usable);
+    }
+    let pct = [20usize, 14, 36, 15, 15];
     let mut w = [0usize; 5];
     let mut used = 0;
     for i in 0..4 {
@@ -243,6 +242,19 @@ fn column_widths(total: u16) -> [usize; 5] {
         w[3] += need;
     }
     w
+}
+
+/// STATE (`⠋ GATING 12m`) and GATE (`UNCONFIGURED`) never clip: they take
+/// their full width first. REPO, AGENT and TASK share the rest, and AGENT
+/// (`codex·eng`) is the first to give way.
+fn narrow_widths(usable: usize) -> [usize; 5] {
+    const STATE: usize = 12;
+    const GATE: usize = 12;
+    let rest = usable.saturating_sub(STATE + GATE);
+    let repo = (rest / 4).max(1);
+    let agent = (rest * 3 / 10).max(1);
+    let task = rest.saturating_sub(repo + agent).max(1);
+    [repo, agent, task, STATE, GATE]
 }
 
 fn pad_cell(s: &str, width: usize) -> String {

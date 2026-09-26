@@ -367,6 +367,8 @@ async fn agent_and_gate(
 
     let state = if phase == AgentPhase::Failed {
         RunState::Error
+    } else if gate.is_vacuous() {
+        RunState::Unconfigured
     } else if gate.passed {
         RunState::Pass
     } else {
@@ -673,9 +675,12 @@ async fn live_agent(
                                 let _ = ui.send((id_tee.clone(), delta)).await;
                             }
                         }
-                        let line = format!("kit: {} exited with code {code}\n", opts.agent);
-                        append_capped(output, truncated, cap, &line);
-                        send(tx, id, RunDelta::Output(line)).await;
+                        // A clean exit needs no line: the state change to gating follows.
+                        if code != 0 {
+                            let line = format!("kit: {} exited with code {code}\n", opts.agent);
+                            append_capped(output, truncated, cap, &line);
+                            send(tx, id, RunDelta::Output(line)).await;
+                        }
                         break if code == 0 {
                             AgentPhase::Ok
                         } else {
@@ -812,7 +817,8 @@ mod tests {
         })
         .await;
 
-        assert_eq!(result.state, RunState::Pass);
+        // The fixture has no gate: nothing proved the run, so it is not a pass.
+        assert_eq!(result.state, RunState::Unconfigured);
         assert!(result.receipt_dir.join("receipt.json").exists());
         assert!(result.receipt_dir.join("output.log").exists());
         assert!(
@@ -1463,6 +1469,6 @@ mod tests {
             .expect("exit poll starved: live_agent never saw the agent exit")
             .expect("live_agent");
         assert_eq!(phase, AgentPhase::Ok);
-        assert!(output.contains("kit: codex exited with code 0"), "{output}");
+        assert!(!output.contains("exited with code"), "{output}");
     }
 }

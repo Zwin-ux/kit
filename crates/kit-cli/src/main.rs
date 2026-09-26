@@ -14,7 +14,7 @@ use kit_tui::{EngineCommand, LaunchConfig, run_configured};
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -134,6 +134,7 @@ async fn launch_tui(demo: bool) -> Result<()> {
             demo,
             engine_tx: Some(cmd_tx),
             probe_agents: true,
+            runs_dir: Some(engine::paths::runs_dir()),
         },
         delta_rx,
     )
@@ -216,11 +217,13 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     // Dry-run has no proof claim (CEO stamp); live vacuous fails unless allowed.
     let dry = dry_run == Some(true);
 
-    let exit_nonzero = matches!(
-        result.state,
-        RunState::Pass if gate_vacuous && !allow_vacuous && !dry
-    ) || matches!(result.state, RunState::Fail)
-        || !matches!(result.state, RunState::Pass | RunState::Fail);
+    let code = match result.state {
+        RunState::Pass => 0,
+        RunState::Unconfigured if allow_vacuous || dry => 0,
+        RunState::Fail | RunState::Unconfigured => 1,
+        _ => 2,
+    };
+    let exit_nonzero = code != 0;
 
     if json {
         let data = serde_json::json!({
@@ -267,12 +270,6 @@ async fn cmd_run(args: &[String]) -> Result<()> {
         }
     }
 
-    let code = match result.state {
-        RunState::Pass if gate_vacuous && !allow_vacuous && !dry => 1,
-        RunState::Pass => 0,
-        RunState::Fail => 1,
-        _ => 2,
-    };
     if code != 0 {
         std::process::exit(code);
     }
@@ -327,6 +324,21 @@ fn delta_line(delta: &RunDelta) -> Option<String> {
         RunDelta::State(state) => Some(format!("kit: state {}\n", state_label(*state))),
         RunDelta::Worktree(_) | RunDelta::Gate(_) => None,
     }
+}
+
+/// How long a run took, from its receipt: `850ms`, `12.3s`, `4m 05s`, `1h 02m`.
+fn run_duration(start: Option<SystemTime>, end: Option<SystemTime>) -> Option<String> {
+    let d = end?.duration_since(start?).ok()?;
+    let secs = d.as_secs();
+    Some(if secs == 0 {
+        format!("{}ms", d.as_millis())
+    } else if secs < 60 {
+        format!("{:.1}s", d.as_secs_f64())
+    } else if secs < 3600 {
+        format!("{}m {:02}s", secs / 60, secs % 60)
+    } else {
+        format!("{}h {:02}m", secs / 3600, secs % 3600 / 60)
+    })
 }
 
 /// The next step after a proven run with changes: `Next: kit land <id>`.
@@ -486,7 +498,7 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
                 );
             } else {
                 println!(
-                    "{:<28} {:<8} {:<8} {:<12} TASK",
+                    "{:<28} {:<12} {:<8} {:<12} TASK",
                     "ID", "STATE", "AGENT", "REPO"
                 );
                 for r in &rows {
@@ -496,7 +508,7 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
                         r.id.clone()
                     };
                     println!(
-                        "{:<28} {:<8} {:<8} {:<12} {}",
+                        "{:<28} {:<12} {:<8} {:<12} {}",
                         short, r.state, r.agent, r.repo, r.task
                     );
                 }
@@ -548,6 +560,9 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
                 println!("receipt {}", receipt.id);
                 println!("  dir       {}", dir.display());
                 println!("  state     {}", state_label(receipt.state));
+                if let Some(took) = run_duration(receipt.started_at, receipt.ended_at) {
+                    println!("  took      {took}");
+                }
                 println!("  agent     {}", receipt.spec.agent.label());
                 println!("  repo      {}", receipt.spec.repo.display());
                 println!(
@@ -950,6 +965,22 @@ mod tests {
     }
 
     /// Only a proven PASS with a diff points to `kit land`.
+    #[test]
+    fn run_duration_reads_like_the_gate_log() {
+        let t = SystemTime::UNIX_EPOCH;
+        let took = |ms: u64| run_duration(Some(t), Some(t + Duration::from_millis(ms)));
+        assert_eq!(took(850).as_deref(), Some("850ms"));
+        assert_eq!(took(12_300).as_deref(), Some("12.3s"));
+        assert_eq!(took(245_000).as_deref(), Some("4m 05s"));
+        assert_eq!(took(3_720_000).as_deref(), Some("1h 02m"));
+        assert_eq!(run_duration(Some(t), None), None);
+        // A clock that went backwards says nothing rather than something wrong.
+        assert_eq!(
+            run_duration(Some(t + Duration::from_secs(5)), Some(t)),
+            None
+        );
+    }
+
     #[test]
     fn land_hint_only_for_proven_runs_with_a_diff() {
         let dir = scratch("landhint");

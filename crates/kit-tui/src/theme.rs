@@ -167,6 +167,7 @@ impl Theme {
             RunState::Gating => self.warn,
             RunState::Pass => self.success,
             RunState::Fail => self.danger,
+            RunState::Unconfigured => self.warn,
             RunState::Killed => self.muted,
             RunState::Error => self.danger,
         };
