@@ -873,6 +873,63 @@ fn doctor_starts_mcp_servers_only_when_asked() {
     assert_eq!(stdout.matches("srv MCP starts").count(), 1, "{stdout}");
 }
 
+/// Remove gives back an instruction file byte for byte: CRLF line endings
+/// stay CRLF (also while installed), and a missing final newline stays
+/// missing.
+#[test]
+fn rules_blocks_round_trip_crlf_and_no_final_newline_exactly() {
+    let root = scratch("rules-bytes");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let spec = kit.to_str().unwrap();
+    for mine in [
+        "# Mine\r\nline two\r\n",
+        "# Mine\r\nline two",
+        "# Mine\nno final newline",
+        "# Mine\n\n\ntrailing blank lines\n\n",
+    ] {
+        write(&repo.join("CLAUDE.md"), mine);
+        let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        let installed = read(&repo.join("CLAUDE.md"));
+        assert!(installed.contains("<!-- kit:demo "), "{installed:?}");
+        if mine.contains("\r\n") {
+            assert!(
+                !installed.replace("\r\n", "").contains('\n'),
+                "mixed line endings while installed: {installed:?}"
+            );
+        }
+        let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+        assert_eq!(read(&repo.join("CLAUDE.md")), mine);
+    }
+
+    // Two stacked kits, two blocks: removing the top one takes both out
+    // and still gives back the exact bytes.
+    let top = root.join("ruled-top");
+    write(&top.join("RULES.md"), "Be brief.\n");
+    write(
+        &top.join("KIT.toml"),
+        &format!(
+            "schema = 1\n[kit]\nname = \"top\"\ntitle = \"Top\"\nversion = \"0.1.0\"\ndescription = \"d\"\nextends = [{:?}]\n[rules]\nfile = \"RULES.md\"\n",
+            spec
+        ),
+    );
+    let mine = "# Mine\r\nline two";
+    write(&repo.join("CLAUDE.md"), mine);
+    let out = env.kit(
+        &repo,
+        &["add", top.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(read(&repo.join("CLAUDE.md")).contains("<!-- kit:top "));
+    let out = env.kit(&repo, &["remove", "top", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&repo.join("CLAUDE.md")), mine);
+}
+
 /// A kit that extends `demo`, from a folder next to it.
 fn top_kit(root: &Path, base: &Path) -> PathBuf {
     let kit = root.join("top-kit");

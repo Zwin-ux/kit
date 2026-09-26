@@ -165,6 +165,11 @@ pub enum Applied {
         kit: String,
         /// Kit created the file, so remove deletes it once empty.
         created: bool,
+        /// The file's text before Kit added this block, so remove gives
+        /// back its exact bytes (line endings, final newline) when nothing
+        /// outside the block changed. Never in the repo's shared kit.lock.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original: Option<String>,
     },
     McpJson {
         file: PathBuf,
@@ -207,7 +212,10 @@ pub enum Applied {
 impl Applied {
     /// Drop the copy of the user's file text (for the repo's shared kit.lock).
     pub fn forget_original(&mut self) {
-        if let Self::McpJson { original, .. } | Self::HookJson { original, .. } = self {
+        if let Self::McpJson { original, .. }
+        | Self::HookJson { original, .. }
+        | Self::Rules { original, .. } = self
+        {
             *original = None;
         }
     }
@@ -279,7 +287,7 @@ pub fn in_place(action: &Action, record: &Applied) -> bool {
             Applied::Rules { .. },
         ) => {
             let block = set_block("", kit, version, text);
-            read_or_empty(file).is_ok_and(|t| t.contains(block.trim_end()))
+            read_or_empty(file).is_ok_and(|t| t.replace("\r\n", "\n").contains(block.trim_end()))
         }
         (Action::McpJson { file, name, value }, Applied::McpJson { .. }) => read_json(file)
             .is_ok_and(|d| d.get("mcpServers").and_then(|s| s.get(name)) == Some(value)),
@@ -323,13 +331,24 @@ pub fn same_content(a: &Action, b: &Action) -> bool {
 /// that Kit created the file, and the user's server it replaced.
 pub fn merge(old: &Applied, new: Applied) -> Applied {
     match (old, new) {
-        (Applied::Rules { created: c, .. }, Applied::Rules { file, kit, created }) => {
+        (
+            Applied::Rules {
+                created: c,
+                original: o,
+                ..
+            },
             Applied::Rules {
                 file,
                 kit,
-                created: created || *c,
-            }
-        }
+                created,
+                original,
+            },
+        ) => Applied::Rules {
+            file,
+            kit,
+            created: created || *c,
+            original: o.clone().or(original),
+        },
         (
             Applied::McpJson {
                 created: c,
@@ -588,10 +607,14 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
             let created = !file.exists();
             let old = read_or_empty(file)?;
             write(file, &set_block(&old, kit, version, text))?;
+            // Text from before any block of this kit: the bytes remove
+            // gives back.
+            let original = (!created && !old.contains(&open_marker(kit))).then_some(old);
             Applied::Rules {
                 file: file.clone(),
                 kit: kit.clone(),
                 created,
+                original,
             }
         }
         Action::McpJson { file, name, value } => {
@@ -719,9 +742,20 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 .with_context(|| format!("cannot remove {}", dir.display()))?;
             prune(dir, 2);
         }
-        Applied::Rules { file, kit, created } => {
+        Applied::Rules {
+            file,
+            kit,
+            created,
+            original,
+        } => {
             if file.exists() {
                 let text = remove_block(&read_or_empty(file)?, kit);
+                // Nothing outside the block changed: the exact bytes the
+                // user had, final newline and line endings included.
+                let text = match original {
+                    Some(o) if remove_block(&set_block(o, kit, "", ""), kit) == text => o.clone(),
+                    _ => text,
+                };
                 if *created && text.trim().is_empty() {
                     std::fs::remove_file(file)?;
                     prune(file, 1);
@@ -1126,12 +1160,19 @@ fn close_marker(kit: &str) -> String {
     format!("<!-- /kit:{kit} -->")
 }
 
-/// `text` with this kit's block added, or replaced if present.
+/// The file's line ending: CRLF when it has any, else LF.
+fn eol_of(text: &str) -> &'static str {
+    if text.contains("\r\n") { "\r\n" } else { "\n" }
+}
+
+/// `text` with this kit's block added, or replaced if present. The block
+/// uses the file's own line ending, so a CRLF file stays all CRLF.
 pub fn set_block(text: &str, kit: &str, version: &str, body: &str) -> String {
+    let eol = eol_of(text);
+    let body = body.trim_end().replace("\r\n", "\n").replace('\n', eol);
     let block = format!(
-        "{}{version} (managed by kit; edits inside are replaced) -->\n{}\n{}\n",
+        "{}{version} (managed by kit; edits inside are replaced) -->{eol}{body}{eol}{}{eol}",
         open_marker(kit),
-        body.trim_end(),
         close_marker(kit)
     );
     let stripped = remove_block(text, kit);
@@ -1139,12 +1180,13 @@ pub fn set_block(text: &str, kit: &str, version: &str, body: &str) -> String {
     if base.is_empty() {
         block
     } else {
-        format!("{base}\n\n{block}")
+        format!("{base}{eol}{eol}{block}")
     }
 }
 
 /// `text` without this kit's block. Text outside the markers is untouched.
 pub fn remove_block(text: &str, kit: &str) -> String {
+    let eol = eol_of(text);
     let (open, close) = (open_marker(kit), close_marker(kit));
     let Some(start) = text.find(&open) else {
         return text.to_string();
@@ -1153,15 +1195,17 @@ pub fn remove_block(text: &str, kit: &str) -> String {
         return text.to_string();
     };
     let mut end = start + rel_end + close.len();
-    if text[end..].starts_with('\n') {
+    if text[end..].starts_with("\r\n") {
+        end += 2;
+    } else if text[end..].starts_with('\n') {
         end += 1;
     }
-    let before = text[..start].trim_end_matches('\n');
-    let after = text[end..].trim_start_matches('\n');
+    let before = text[..start].trim_end_matches(['\r', '\n']);
+    let after = text[end..].trim_start_matches(['\r', '\n']);
     match (before.is_empty(), after.is_empty()) {
         (true, _) => after.to_string(),
-        (false, true) => format!("{before}\n"),
-        (false, false) => format!("{before}\n\n{after}"),
+        (false, true) => format!("{before}{eol}"),
+        (false, false) => format!("{before}{eol}{eol}{after}"),
     }
 }
 
