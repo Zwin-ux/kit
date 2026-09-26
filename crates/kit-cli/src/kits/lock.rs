@@ -247,7 +247,10 @@ pub fn team_gate_commands(repo: &Path) -> Vec<String> {
         return Vec::new();
     };
     let file = root.join("kit.lock");
-    if std::fs::symlink_metadata(&file).is_ok_and(|m| !m.is_file()) {
+    // Untrusted repo content: a link, anything but a file, or a file over
+    // 1 MiB is not read at all.
+    const MAX: u64 = 1 << 20;
+    if std::fs::symlink_metadata(&file).is_ok_and(|m| !m.is_file() || m.len() > MAX) {
         return Vec::new();
     }
     let Some(doc) = std::fs::read_to_string(&file)
@@ -333,6 +336,27 @@ fn write_or_remove(file: &std::path::Path, body: Option<&String>, private: bool)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_team_copy_names_kit_gate_lines_and_is_capped() {
+        let repo = std::env::temp_dir().join(format!("kit-team-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        let ok = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&repo)
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(ok, "git init");
+        let lock = r#"{"schema":1,"kits":[{"name":"k","applied":[{"kind":"gate_toml","file":"kit.toml","kit":"k","added":["lint-x"],"wanted":["lint-x"],"created":true}]}]}"#;
+        std::fs::write(repo.join("kit.lock"), lock).unwrap();
+        assert_eq!(team_gate_commands(&repo), ["lint-x"]);
+        // Over 1 MiB: not read.
+        let big = format!("{lock}{}", " ".repeat(1 << 20));
+        std::fs::write(repo.join("kit.lock"), big).unwrap();
+        assert!(team_gate_commands(&repo).is_empty());
+        let _ = std::fs::remove_dir_all(&repo);
+    }
 
     #[test]
     fn recorded_paths_stay_inside_their_scope() {
