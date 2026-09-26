@@ -50,13 +50,14 @@ fn one(spec: &str, json: bool) -> Result<()> {
         let env = crate::envelope("show", true, to_json(&chain), None, vec![]);
         println!("{}", serde_json::to_string_pretty(&env)?);
     } else {
-        print!("{}", render(&chain)?);
+        print!("{}", render(&chain, spec)?);
     }
     Ok(())
 }
 
 /// The kit (last in `chain`) and what it brings from the kits it extends.
-pub fn render(chain: &[Kit]) -> Result<String> {
+/// `spec` is how the user named it, so the `next` line works as typed.
+pub fn render(chain: &[Kit], spec: &str) -> Result<String> {
     let top = chain.last().expect("resolve returns the kit itself");
     let meta = &top.manifest.kit;
     let mut s = String::new();
@@ -173,7 +174,7 @@ pub fn render(chain: &[Kit]) -> Result<String> {
             "Runs code on your machine: {code} (MCP servers, hooks and gate checks). Kit asks before installing them."
         )?;
     }
-    writeln!(s, "next      kit add {} --global", top.name())?;
+    writeln!(s, "next      kit add {spec} --global")?;
     Ok(s)
 }
 
@@ -225,7 +226,11 @@ mod tests {
 
     #[test]
     fn frontend_design_shows_its_bases_code_and_next_step() {
-        let text = render(&catalog::resolve("frontend-design").unwrap()).unwrap();
+        let text = render(
+            &catalog::resolve("frontend-design").unwrap(),
+            "frontend-design",
+        )
+        .unwrap();
         assert!(
             text.starts_with("Frontend Design 0.1.0   Official   MIT\n"),
             "{text}"
@@ -260,7 +265,7 @@ mod tests {
 
     #[test]
     fn a_kit_without_code_says_nothing_about_code() {
-        let text = render(&catalog::resolve("essentials").unwrap()).unwrap();
+        let text = render(&catalog::resolve("essentials").unwrap(), "essentials").unwrap();
         assert!(!text.contains("RUNS CODE"), "{text}");
         assert!(!text.contains("extends"), "{text}");
     }

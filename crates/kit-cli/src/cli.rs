@@ -470,6 +470,7 @@ pub struct AddArgs {
 
 #[derive(Debug, Args)]
 pub struct RemoveArgs {
+    /// Kits to remove, by name (see `kit list`)
     #[arg(value_name = "KIT", required = true)]
     pub kits: Vec<String>,
     /// Remove from all projects instead of this repo

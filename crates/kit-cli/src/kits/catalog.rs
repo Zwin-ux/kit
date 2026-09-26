@@ -195,7 +195,7 @@ pub fn find(spec: &str) -> Result<Kit> {
         names.extend(index.entries.iter().map(|e| e.name.as_str()));
     }
     let unreachable = match &index {
-        Err(e) => format!(" (the kit index could not be read: {e:#})"),
+        Err(e) => format!(" ({e:#})"),
         Ok(_) => String::new(),
     };
     match closest(spec, &names) {

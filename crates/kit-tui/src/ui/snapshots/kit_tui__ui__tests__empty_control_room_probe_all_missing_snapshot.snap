@@ -6,7 +6,7 @@ expression: frame
 "┌──────────────────────────────────────────────────────────────────────────────┐"
 "│                                                                              │"
 "│                           No coding agents on PATH                           │"
-"│     install codex / claude / grok / ollama  ·  kit doctor  ·  kit --demo     │"
+"│      install claude, codex or grok  ·  kit doctor  ·  or try kit --demo      │"
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"

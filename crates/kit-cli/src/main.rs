@@ -23,6 +23,7 @@ use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() {
+    quiet_on_closed_stdout();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let json = args.iter().any(|a| a == "--json");
     let cli = match Cli::try_parse() {
@@ -152,6 +153,10 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
         None => {
             let mut statuses = Vec::new();
             for kind in cli::AgentArg::PREFERENCE {
+                // Never picked for the user: it runs without approval prompts.
+                if kind == AgentKind::Grok && !kit_agents::full_auto() {
+                    continue;
+                }
                 let status = kit_agents::adapter(kind).probe().await;
                 let ready = status.is_ready();
                 statuses.push(status);
@@ -164,9 +169,17 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
             kind
         }
     };
+    if kind == AgentKind::Grok && dry_run.is_none() && !kit_agents::full_auto() {
+        anyhow::bail!("{}", kit_agents::SpawnError::NeedsFullAuto(kind));
+    }
     // Stderr only: under --json, stdout holds one envelope.
     if let Some(hint) = init_hint(&root) {
         eprintln!("kit: {hint}");
+    }
+    if let Some(n) = uncommitted(&root) {
+        eprintln!(
+            "kit: {n} uncommitted change(s) here are not in the run's worktree. Commit them first if the agent needs them"
+        );
     }
     let opts = RunOptions {
         repo,
@@ -207,6 +220,7 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
     if json {
         let data = serde_json::json!({
             "id": result.id.0,
+            "changedFiles": changed_files(&result.receipt_dir),
             "state": format!("{:?}", result.state).to_ascii_lowercase(),
             "receiptDir": result.receipt_dir,
             "worktreeRemoved": result.worktree_removed,
@@ -237,6 +251,35 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
         std::process::exit(code);
     }
     Ok(())
+}
+
+/// `kit receipt | head`: once the reader is gone, println! panics with
+/// "Broken pipe". End the way other CLIs do (141, as if by SIGPIPE) without
+/// a panic message. SIGPIPE itself stays ignored: an agent that exits before
+/// reading its prompt must not kill Kit.
+fn quiet_on_closed_stdout() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let msg = info
+            .payload()
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| info.payload().downcast_ref::<&str>().copied())
+            .unwrap_or("");
+        // Broken pipe: os error 32 on unix, 232 on Windows.
+        let closed = msg.contains("Broken pipe") || msg.contains("(os error 232)");
+        if msg.contains("failed printing to stdout") && closed {
+            std::process::exit(141);
+        }
+        default(info);
+    }));
+}
+
+/// How many files the run's diff touches (0 when the agent changed none).
+fn changed_files(receipt_dir: &Path) -> usize {
+    std::fs::read_to_string(receipt_dir.join("diff.patch"))
+        .map(|d| d.lines().filter(|l| l.starts_with("diff --git ")).count())
+        .unwrap_or(0)
 }
 
 /// The first ready agent in preference order, or an error naming the fix.
@@ -337,6 +380,8 @@ impl RunSummary<'_> {
             RunState::Pass | RunState::Unconfigured if self.dry => "DRY RUN",
             RunState::Unconfigured => "UNCONFIGURED",
             RunState::Pass if self.vacuous => "UNCONFIGURED",
+            // The checks passed, but there is nothing they proved the agent did.
+            RunState::Pass if !self.has_diff => "NO CHANGES",
             RunState::Pass => "PASS",
             RunState::Fail => "FAIL",
             RunState::Killed => "KILLED",
@@ -444,6 +489,17 @@ fn init_hint(repo: &Path) -> Option<String> {
         "no kit.toml in this repo, so Kit infers the checks. Run `kit init` to write them down."
             .to_string()
     })
+}
+
+/// Changed or untracked paths `git status` shows, if any.
+fn uncommitted(repo: &Path) -> Option<usize> {
+    let out = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(repo)
+        .output()
+        .ok()?;
+    let n = String::from_utf8_lossy(&out.stdout).lines().count();
+    (out.status.success() && n > 0).then_some(n)
 }
 
 fn state_label(state: RunState) -> String {
@@ -564,7 +620,13 @@ fn cmd_receipt_show(id: &str, show_output: bool, json: bool) -> Result<()> {
     } else {
         println!("receipt {}", receipt.id);
         println!("  dir       {}", kits::plan::tilde(&dir));
-        println!("  state     {}", state_label(receipt.state));
+        // Same word as `kit run` for a pass with nothing changed.
+        let state = if receipt.state == RunState::Pass && !dir.join("diff.patch").is_file() {
+            "no changes".to_string()
+        } else {
+            state_label(receipt.state)
+        };
+        println!("  state     {state}");
         if let Some(took) = run_duration(receipt.started_at, receipt.ended_at) {
             println!("  took      {took}");
         }
@@ -600,10 +662,11 @@ fn cmd_receipt_show(id: &str, show_output: bool, json: bool) -> Result<()> {
         } else {
             println!("  gate      (none)");
         }
-        if !receipt.diff.is_empty() {
+        if dir.join("diff.patch").is_file() {
+            let files = changed_files(&dir);
             println!(
-                "  diff      {} bytes (see {})",
-                receipt.diff.len(),
+                "  diff      {files} file{} (see {})",
+                if files == 1 { "" } else { "s" },
                 kits::plan::tilde(&dir.join("diff.patch"))
             );
         }
@@ -907,6 +970,11 @@ fn print_doctor(version: &str, start_mcp: bool, json: bool) {
         if let Some(r) = st.remedy {
             println!("            → {r}");
         }
+        if st.kind == AgentKind::Grok && st.installed && !kit_agents::full_auto() {
+            println!(
+                "            → kit run starts grok only with KIT_FULL_AUTO=1 (it never asks before a command)"
+            );
+        }
     }
     kits::doctor::print(&kits);
     println!();
@@ -1049,6 +1117,8 @@ mod tests {
             ..pass
         };
         assert!(empty.next().starts_with("nothing to land"));
+        assert_eq!(empty.verdict(), "NO CHANGES");
+        assert_eq!(pass.verdict(), "PASS");
         let vacuous = RunSummary {
             vacuous: true,
             ..pass

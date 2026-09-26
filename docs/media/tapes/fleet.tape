@@ -1,4 +1,4 @@
-# Many agents at once: 4 agents x 4 roles = 16 runs, 8 at a time, the rest
+# Many agents at once: 3 agents x 4 roles = 12 runs, 8 at a time, the rest
 # queued. Agents here are scripted stand-ins (docs/media/fakeagent.sh);
 # the Control Room, worktrees, checks and receipts are real.
 Output "out/fleet.gif"
@@ -25,7 +25,8 @@ Type@35ms "add a greet script" Sleep 500ms
 Enter
 Sleep 2.5s
 Screenshot "out/fleet.png"
+Sleep 1s
 Down@120ms 12
-Sleep 1.5s
-Sleep 8s
-Type "q" Sleep 500ms
+# End on the finished fleet, not on the quit prompt.
+Wait+Screen@180s / 0 RUNNING +0 GATING/
+Sleep 3s

@@ -23,5 +23,6 @@ Type `kit run "add a greet script that prints hello and a test for it"` Sleep 40
 Wait+Screen@600s /next +kit land/
 Sleep 3.5s
 Screenshot "out/run.png"
+Sleep 1s
 Type "kit land $(last)" Sleep 300ms Enter
 Sleep 3.5s

@@ -78,13 +78,14 @@ Semantic tokens (truecolor default). Map to ANSI16 when truecolor unavailable; d
 | `KIT_MOTION=off` | No spinner; RUNNING stays `RUN 2m` (resting frame) |
 | `KIT_THEME=high` | High-contrast palette |
 
-## Motion (F5 — no mascot)
+## Motion (F5)
 
 Kit 0.1 jittered because eight widgets each owned a timer. 1.0 has one clock (`AppEvent::AnimationTick`, 20 Hz). Motion is a **product signal**, not decoration:
 
-- **What moves:** RUNNING and GATING rows only — a one-cell Braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧`) plus the elapsed word. FAIL/DONE/idle rooms stay still. `--demo` includes one GATING row so motion means “checking done,” not “session manager.”
-- **Cadence:** spinner frame every 2 ticks (10 Hz). Redraw only then, or while a flash is live. Idle Control Room does not paint on tick.
+- **What moves:** RUNNING and GATING rows only — a one-cell Braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧`) plus the elapsed word. FAIL/DONE rows stay still; an idle room moves only the fox's tail. `--demo` includes one GATING row so motion means “checking done,” not “session manager.”
+- **Cadence:** spinner frame every 2 ticks (10 Hz). Redraw only then, or while a flash is live. An idle Control Room paints only when the fox's tail frame changes.
 - **Reduced motion:** `KIT_MOTION=off` or `NO_COLOR` → no spinner, no dirty-on-tick for live rows. The word `RUN` still carries the state (never color-alone).
+- **The fox:** the empty Control Room shows Kit's fox (the 0.1 mascot, `kit-tui/src/fox.rs`), 18×12 half blocks in the muted colour, centred above the message and hint. Its tail flicks once every 8 s (5 frames × 200 ms) off the same clock, and the room redraws only on those 6 frame changes. It rests under `KIT_MOTION=off` / `NO_COLOR`, hides when the terminal is under 19 rows, and never sits over the `No coding agents on PATH` error. `kit setup` prints the resting fox after its last line, in a terminal only.
 - **Not motion:** mascot GIF, blink, progress % columns, Nerd Font glyphs.
 
 The spinner is Unicode Braille, not a Nerd Font. Pair it with `RUN` / `GATING` so monochrome and CVD still read.
@@ -96,4 +97,4 @@ The spinner is Unicode Braille, not a Nerd Font. Pair it with `RUN` / `GATING` s
 - Nerd Font icons as required glyphs
 - Purple gradients / glassmorphism / marketing dashboard chrome
 - Progress % columns in Control Room
-- Animated mascot (ASCII mark optional later)
+- An animated mascot anywhere but the empty Control Room

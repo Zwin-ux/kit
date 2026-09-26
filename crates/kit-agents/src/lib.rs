@@ -29,6 +29,7 @@ pub use claude::ClaudeAgent;
 pub use codex::CodexAgent;
 pub use grok::GrokAgent;
 pub use ollama::OllamaAgent;
+pub use process::full_auto;
 
 /// Why an adapter could not start.
 #[derive(Debug, thiserror::Error)]
@@ -37,6 +38,13 @@ pub enum SpawnError {
     NotInstalled(AgentKind),
     #[error("{0} is installed but not authenticated")]
     NotAuthenticated(AgentKind),
+    /// The agent's headless mode has no edit-only setting, so it would run
+    /// shell commands without asking. It runs only with KIT_FULL_AUTO=1.
+    #[error(
+        "{0} runs without approval prompts (its headless mode has no edit-only setting), \
+         so Kit starts it only with KIT_FULL_AUTO=1. Set that in a sandbox, or use another agent"
+    )]
+    NeedsFullAuto(AgentKind),
     #[error("failed to start {kind}: {source}")]
     Io {
         kind: AgentKind,

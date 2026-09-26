@@ -1,0 +1,20 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / CONTROL ROOM                                                        [ALL]  1 RUNNING  0 GATING  0 FAIL  ·  14 past"
+"┌ runs ────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐"
+"│REPO                   AGENT           TASK                                      STATE             GATE               │"
+"│  kit                  codex·eng       port guard.js                             RUN 0s            --                 │"
+"│── earlier · from receipts ───────────────────────────────────────────────────────────────────────────────────────────│"
+"│▶ shop                 claude·eng      make the parser strict                    DONE 5m ago       FAIL               │"
+"│^ npm test: 2 failing                                                                                                 │"
+"│  shop                 codex·eng       fix the failing test                      NO CHANGES 2h ago PASS               │"
+"│  shop                 claude·eng      add a greeting file                       DONE 3d ago       PASS               │"
+"│  ↓ 11 more · kit receipt                                                                                             │"
+"│                                                                                                                      │"
+"│                                                                                                                      │"
+"│                                                                                                                      │"
+"│                                                                                                                      │"
+"└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
+" [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate  [r]etry  [?]help                                     "

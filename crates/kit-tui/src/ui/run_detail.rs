@@ -42,13 +42,21 @@ pub fn draw(frame: &mut Frame, app: &App, pane: DetailPane) {
     draw_tabs(frame, pane, chunks[1], &theme);
     draw_body(frame, app, run, pane, chunks[2], &theme);
     let follow = if app.stream_follow { "follow" } else { "" };
-    draw_footer(
-        frame,
-        chunks[3],
-        &theme,
-        " [esc] back  [1]stream  [2]gate  [3]diff  [a]ttach  [k]ill  [r]etry",
-        follow,
-    );
+    draw_footer(frame, chunks[3], &theme, &footer_hints(run), follow);
+}
+
+/// Run detail keys: no `[k]ill` on a past run, `[l]and` on a proven run
+/// with changes.
+fn footer_hints(run: &RunRow) -> String {
+    let mut hints = String::from(" [esc] back  [1]stream  [2]gate  [3]diff");
+    if !run.past {
+        hints.push_str("  [k]ill");
+    }
+    hints.push_str("  [r]etry");
+    if run.landable() {
+        hints.push_str("  [l]and");
+    }
+    hints
 }
 
 pub fn draw_attached(frame: &mut Frame, app: &App) {
@@ -83,24 +91,18 @@ pub fn draw_attached(frame: &mut Frame, app: &App) {
         chunks[0],
         &theme,
         &title,
-        "PTY 1.0.1",
+        "",
         app.flash_message(),
         None,
     );
 
+    // No key opens this screen until the agent's terminal can be attached.
     let body: Vec<Line> = vec![
-        Line::from(Span::styled("PTY attach ships in 1.0.1", theme.title())),
+        Line::from(Span::styled("Attach is not available.", theme.title())),
         Line::from(""),
         Line::from(Span::styled(
-            "Esc detaches without killing the run.",
+            "Esc goes back without stopping the run.",
             theme.body(),
-        )),
-        Line::from(Span::styled("q is disabled while attached.", theme.dim())),
-        Line::from(""),
-        Line::from(Span::styled(
-            app.flash_message()
-                .unwrap_or("[ waiting for agent PTY supervision ]"),
-            theme.warn(),
         )),
     ];
 
@@ -124,6 +126,11 @@ fn draw_run_header(frame: &mut Frame, app: &App, run: &RunRow, area: Rect, theme
         .split(area);
 
     let state = format_state_label(run, &app.clock, app.motion_enabled());
+    let state_style = if run.no_changes() {
+        theme.warn().add_modifier(Modifier::BOLD)
+    } else {
+        theme.state_style(run.state)
+    };
     let gate = format_gate_label(run);
     let suffix = format!("  {state}  GATE {gate}");
     let title_budget = (area.width as usize).saturating_sub(suffix.chars().count());
@@ -131,28 +138,32 @@ fn draw_run_header(frame: &mut Frame, app: &App, run: &RunRow, area: Rect, theme
     let task_budget = title_budget.saturating_sub(prefix.chars().count());
     let l1 = format!("{prefix}{}", truncate(run.task_line(), task_budget));
 
-    let wt = run
-        .worktree
-        .as_ref()
-        .map(|p| tilde(p))
-        .unwrap_or_else(|| "—".into());
+    // A past run's worktree is gone; its receipt holds the proof.
+    let (label, path) = match (&run.worktree, &app.runs_dir) {
+        (None, Some(dir)) if run.past => ("receipt ", tilde(&dir.join(&run.id.0))),
+        (Some(p), _) => ("worktree", tilde(p)),
+        (None, _) => ("worktree", "—".into()),
+    };
     let l2 = format!(
-        "worktree  {}",
-        truncate(&wt, area.width.saturating_sub(12) as usize)
+        "{label}  {}",
+        truncate(&path, area.width.saturating_sub(12) as usize)
     );
 
     let header_line = Line::from(vec![
         Span::styled(l1, theme.title()),
         Span::raw("  "),
-        Span::styled(state, theme.state_style(run.state)),
+        Span::styled(state, state_style),
         Span::raw("  GATE "),
         Span::styled(gate.clone(), theme.gate_style(&gate)),
     ]);
     frame.render_widget(Paragraph::new(header_line), chunks[0]);
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(l2, theme.dim()))),
-        chunks[1],
-    );
+    // A flash (the land command, a refused key) takes the second row for
+    // its 2 s; the worktree line comes back after.
+    let second = match app.flash_message() {
+        Some(flash) => Span::styled(truncate(flash, area.width as usize), theme.accent()),
+        None => Span::styled(l2, theme.dim()),
+    };
+    frame.render_widget(Paragraph::new(Line::from(second)), chunks[1]);
 }
 
 fn draw_tabs(frame: &mut Frame, pane: DetailPane, area: Rect, theme: &Theme) {
@@ -218,8 +229,10 @@ fn draw_body(
                 .skip(start)
                 .take(inner.height as usize)
                 .map(|l| {
-                    let style = if l.contains("UNCONFIGURED") {
+                    let style = if l.contains("UNCONFIGURED") || l.starts_with("NO CHANGES") {
                         theme.warn()
+                    } else if l.starts_with("next  ") {
+                        theme.accent()
                     } else if l.contains("FAIL") || l.contains("OVERALL  FAIL") {
                         theme.danger()
                     } else if l.contains("PASS") || l.contains("OVERALL  PASS") {

@@ -34,6 +34,11 @@ while [ $# -gt 0 ]; do
 done
 [ -x "$kit" ] || { echo "record-media: no kit binary at $kit (cargo build --release -p kitctl)" >&2; exit 1; }
 command -v vhs >/dev/null || { echo "record-media: vhs is not installed" >&2; exit 1; }
+# Record only the release being shipped: the binary must report this
+# checkout's version (Cargo.toml).
+want=$(node "$root/scripts/version.mjs")
+got=$("$kit" --version 2>/dev/null || true)
+[ "$got" = "kit $want" ] || { echo "record-media: $kit reports \"$got\", expected \"kit $want\"; build this checkout first" >&2; exit 1; }
 if [ "$fake" = 0 ] && [ -n "${CLAUDECODE:-}${CLAUDE_CODE_REMOTE:-}" ]; then
   echo "record-media: inside a Claude Code session; use --fake" >&2; exit 2
 fi
@@ -117,7 +122,7 @@ record() {
   elif [ "$fake" = 1 ]; then use_fakes claude; write_env fake
   else write_env real; fi
   case $name in
-    control-room|fleet) configured ;;
+    control-room|control-room-empty|fleet) configured ;;
     doctor) HOME=$demo PATH="$demo/agents:$PATH" "$kit" -C "$demo/code/shop" add essentials --yes >/dev/null ;;
   esac
   echo "== $name"
@@ -143,7 +148,7 @@ record() {
   cp "$work"/out/"$name"*.png "$out/" 2>/dev/null || true
 }
 
-all=(setup add doctor control-room run fleet)
+all=(setup add doctor control-room control-room-empty run fleet)
 [ ${#only[@]} -gt 0 ] && all=("${only[@]}")
 for name in "${all[@]}"; do
   case $name in

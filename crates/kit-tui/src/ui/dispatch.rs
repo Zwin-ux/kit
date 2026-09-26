@@ -39,17 +39,23 @@ pub fn draw(frame: &mut Frame, app: &App) {
     );
 
     let cwd = std::env::current_dir().ok();
-    let repo_items: Vec<(String, bool)> = app
+    let repo_items: Vec<(String, bool, bool)> = app
         .dispatch
         .repos
         .iter()
-        .map(|(path, on)| (crate::app::format_repo_label(path, cwd.as_deref()), *on))
+        .map(|(path, on)| {
+            (
+                crate::app::format_repo_label(path, cwd.as_deref()),
+                *on,
+                false,
+            )
+        })
         .collect();
     // One repo should not own a third of the screen. Size that column to
     // the longest label, then let agents/personas take the remaining well.
     let repo_label_w = repo_items
         .iter()
-        .map(|(s, _)| s.chars().count())
+        .map(|(s, _, _)| s.chars().count())
         .max()
         .unwrap_or(4);
     let repo_col = ((repo_label_w + 8) as u16).clamp(20, chunks[1].width / 3);
@@ -70,11 +76,15 @@ pub fn draw(frame: &mut Frame, app: &App) {
         app.dispatch.list_cursor,
         &theme,
     );
-    let agent_items: Vec<(String, bool)> = app
+    let agent_items: Vec<(String, bool, bool)> = app
         .dispatch
         .agents
         .iter()
-        .map(|(id, on)| (agent_display_label(id, &app.agents_probe), *on))
+        .map(|(id, on)| match app.agent_blocked(id) {
+            // Refused before the run starts, in the words `kit doctor` uses.
+            Some(why) => (format!("{id}  {why}"), *on, true),
+            None => (agent_display_label(id, &app.agents_probe), *on, false),
+        })
         .collect();
     draw_toggle_list(
         frame,
@@ -85,11 +95,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
         app.dispatch.list_cursor,
         &theme,
     );
-    let persona_items: Vec<(String, bool)> = app
+    let persona_items: Vec<(String, bool, bool)> = app
         .dispatch
         .personas
         .iter()
-        .map(|(p, on)| (p.label().to_string(), *on))
+        .map(|(p, on)| (p.label().to_string(), *on, false))
         .collect();
     draw_toggle_list(
         frame,
@@ -176,20 +186,24 @@ fn draw_toggle_list(
     frame: &mut Frame,
     area: Rect,
     title: &str,
-    items: &[(String, bool)],
+    items: &[(String, bool, bool)],
     focused: bool,
     cursor: usize,
     theme: &Theme,
 ) {
+    // Inside the borders; a long label ends in `…` instead of a hard clip.
+    let width = area.width.saturating_sub(2) as usize;
     let items: Vec<ListItem> = items
         .iter()
         .enumerate()
-        .map(|(i, (name, on))| {
+        .map(|(i, (name, on, warn))| {
             let mark = if *on { "[x]" } else { "[ ]" };
             let caret = if focused && i == cursor { "▶ " } else { "  " };
-            let line = format!("{caret}{mark} {name}");
+            let line = truncate(&format!("{caret}{mark} {name}"), width);
             let style = if focused && i == cursor {
                 theme.selected_row()
+            } else if *warn {
+                theme.warn()
             } else if *on {
                 theme.accent()
             } else {

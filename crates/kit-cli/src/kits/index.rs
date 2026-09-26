@@ -271,7 +271,7 @@ fn plain(err: &anyhow::Error, spec: &GithubSpec, src: &str) -> String {
     let url = fetch::remote_url(&spec.repo);
     match remote::failure(err) {
         remote::Failure::Missing | remote::Failure::Commit => {
-            format!("the kit index {src} is not published yet (no public repo at {url})")
+            format!("the kit index {src} is not published yet ({url} has no index)")
         }
         remote::Failure::Network => format!("cannot reach {url} to read the kit index"),
         remote::Failure::Other => format!("cannot read the kit index {src}"),
