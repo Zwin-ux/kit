@@ -115,8 +115,10 @@ names any kit it lists that you have not installed.
   `RUNS CODE` and counted. `[s]` or `--no-code` installs skills and rules only.
 - **Everything is pinned.** Skills by commit and content hash. A local MCP
   server starts through `npx`, `bunx`, `pnpm dlx` or `uvx` with one package
-  at an exact version (never `@latest`, a range, a URL or a tarball), or is a
-  program already on your PATH. Kits cannot start a shell.
+  at an exact version (never `@latest`, a range, a URL or a tarball), or is
+  the server's own program already on your PATH. Kits cannot start a shell,
+  an interpreter, or a wrapper such as `env` or `nohup`, and cannot pass
+  inline code.
 - **Your files stay yours.** Kit edits only between its own markers in
   `CLAUDE.md` and `AGENTS.md`, only its own keys in JSON and TOML (comments
   kept), and only skill folders it wrote. A folder you made is never overwritten.
@@ -124,6 +126,9 @@ names any kit it lists that you have not installed.
   own record, never read from the repo. A skill you edited by hand is left
   in place and named.
 - **A failed install changes nothing.** It rolls back what it did.
+- **Known limits.** A change to a skill file's permissions alone is not seen
+  as an edit. Kit's record for a repo is keyed on where the repo sits, so
+  after moving or renaming the folder, `kit add` the kits again there.
 - **No secrets, no telemetry.** Kits refer to environment variables by name.
   Fetching is `git` over HTTPS from the named repos.
 
@@ -248,7 +253,6 @@ cargo run -p kitctl -- --demo
 |-----|--------|
 | `KIT_HOME` | Where Kit keeps its records, config, cache and receipts (default `~/.kit`) |
 | `KIT_FULL_AUTO=1` | Skip agent approval prompts in `kit run` (sandboxes only) |
-| `KIT_SKILLS_DIR` | Skill pack copied into `kit run` worktrees |
 | `KIT_OLLAMA_MODEL` | Model for the Ollama adapter (default `llama3.2`) |
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
 | `KIT_THEME=high` | High-contrast palette |

@@ -86,6 +86,15 @@ pub fn render(chain: &[Kit]) -> Result<String> {
         .map(|sk| sk.name.len())
         .max()
         .unwrap_or(0);
+    let origin = |kit: &Kit, sk: &super::manifest::SkillRef| {
+        sk.origin()
+            .unwrap_or_else(|| format!("{} (in the kit)", kit.name()))
+    };
+    let from_width = chain
+        .iter()
+        .flat_map(|k| k.manifest.skill.iter().map(move |sk| origin(k, sk).len()))
+        .max()
+        .unwrap_or(0);
     for kit in chain {
         if kit.manifest.skill.is_empty() {
             continue;
@@ -94,11 +103,13 @@ pub fn render(chain: &[Kit]) -> Result<String> {
             writeln!(s, "  from {}", kit.name())?;
         }
         for sk in &kit.manifest.skill {
-            let origin = sk
-                .origin()
-                .unwrap_or_else(|| format!("{} (in the kit)", kit.name()));
             let licence = sk.licence.as_deref().unwrap_or("no licence");
-            writeln!(s, "    {:width$}  {origin:32}  {licence}", sk.name)?;
+            writeln!(
+                s,
+                "    {:width$}  {:from_width$}  {licence}",
+                sk.name,
+                origin(kit, sk)
+            )?;
         }
     }
 
@@ -128,12 +139,8 @@ pub fn render(chain: &[Kit]) -> Result<String> {
                 .as_deref()
                 .map(|g| format!(" ({g})"))
                 .unwrap_or_default();
-            writeln!(
-                s,
-                "hook      {}{only}   {}   RUNS CODE",
-                hook.on.label(),
-                hook.run
-            )?;
+            writeln!(s, "hook      {}{only}   RUNS CODE", hook.on.label())?;
+            writeln!(s, "            runs  {}", hook.run)?;
         }
         if let Some(gate) = &kit.manifest.gate {
             let names: Vec<&str> = gate.checks().iter().map(|(label, _)| *label).collect();
@@ -220,8 +227,18 @@ mod tests {
         );
         assert!(text.contains("extends   essentials"), "{text}");
         assert!(text.contains("  from essentials\n"), "{text}");
+        // Every licence starts in the same column.
+        let cols: Vec<usize> = text
+            .lines()
+            .filter(|l| l.starts_with("    ") && !l.starts_with("     "))
+            .filter_map(|l| l.rfind("  ").map(|i| i + 2))
+            .collect();
         assert!(
-            text.contains("anthropics/skills@3337550         Apache-2.0"),
+            cols.len() > 3 && cols.iter().all(|c| *c == cols[0]),
+            "{text}"
+        );
+        assert!(
+            text.contains("            runs  npx --no-install prettier"),
             "{text}"
         );
         assert!(text.contains("core-web-vitals"), "{text}");

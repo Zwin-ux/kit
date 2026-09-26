@@ -173,7 +173,9 @@ impl Lock {
             }
         }
         let body = format!("{}\n", serde_json::to_string_pretty(&stored)?);
-        write_or_remove(&path(scope), (!self.kits.is_empty()).then_some(&body))?;
+        // Kit's own record can hold the text of the user's settings files
+        // (to restore them exactly), so only this user may read it.
+        write_or_remove(&path(scope), (!self.kits.is_empty()).then_some(&body), true)?;
         if let Some(shared) = shared_path(scope) {
             // A kit from a folder is named by where it sits in the repo, or
             // only by its folder name: never a path on this machine.
@@ -194,7 +196,7 @@ impl Lock {
                 }
             }
             let body = format!("{}\n", serde_json::to_string_pretty(&stored)?);
-            write_or_remove(&shared, (!self.kits.is_empty()).then_some(&body))?;
+            write_or_remove(&shared, (!self.kits.is_empty()).then_some(&body), false)?;
         }
         Ok(())
     }
@@ -243,14 +245,37 @@ fn anchor(rel: &Path, scope: &Scope) -> Result<PathBuf> {
     Ok(base(scope).join(rel))
 }
 
-fn write_or_remove(file: &std::path::Path, body: Option<&String>) -> Result<()> {
+/// Kit's lock files are never links, not even to a file in the same repo.
+pub fn check_not_linked(scope: &Scope) -> Result<()> {
+    for file in std::iter::once(path(scope)).chain(shared_path(scope)) {
+        if std::fs::symlink_metadata(&file).is_ok_and(|m| m.file_type().is_symlink()) {
+            bail!(
+                "{} is a link. Kit keeps its record there and will not write through it. Remove the link and run again",
+                file.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn write_or_remove(file: &std::path::Path, body: Option<&String>, private: bool) -> Result<()> {
+    if std::fs::symlink_metadata(file).is_ok_and(|m| m.file_type().is_symlink()) {
+        bail!(
+            "{} is a link. Kit will not write through it",
+            file.display()
+        );
+    }
     let Some(body) = body else {
         if file.exists() {
             std::fs::remove_file(file)?;
         }
         return Ok(());
     };
-    super::plan::write_file(file, body.as_bytes())
+    if private {
+        super::plan::write_private(file, body.as_bytes())
+    } else {
+        super::plan::write_file(file, body.as_bytes())
+    }
 }
 
 #[cfg(test)]

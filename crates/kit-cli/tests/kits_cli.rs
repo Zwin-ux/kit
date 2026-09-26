@@ -335,18 +335,17 @@ fn setup_with_flags_needs_no_terminal_and_later_adds_use_its_agents() {
         text(&out.stderr)
     );
 
-    let out = env.kit(
-        &repo,
-        &[
-            "setup",
-            "--agent",
-            "codex",
-            "--kit",
-            spec,
-            "--this-repo",
-            "--yes",
-        ],
+    let flags = ["setup", "--agent", "codex", "--kit", spec, "--this-repo"];
+    let out = env.kit(&repo, &flags);
+    assert!(!out.status.success());
+    let err = text(&out.stderr);
+    assert!(
+        err.contains("kit setup asks before") && err.contains("--yes"),
+        "{err}"
     );
+    assert!(!repo.join(".agents").exists(), "nothing written");
+
+    let out = env.kit(&repo, &[&flags[..], &["--yes"]].concat());
     assert!(out.status.success(), "{}", text(&out.stderr));
     let config = read(&env.home.join(".kit/config.toml"));
     assert!(config.contains(r#"agents = ["codex"]"#), "{config}");
@@ -719,7 +718,8 @@ fn the_plan_shows_exactly_what_will_run() {
     let plan = text(&out.stdout);
     for want in [
         "runs  npx -y thing@1.0.0",
-        "runs  echo formatted   (after each edit of *.md)",
+        "runs  echo formatted\n",
+        "when  after each edit of *.md",
         "check     kit doctor runs `test -f README.md`   RUNS CODE",
         "Runs code on your machine: 3",
     ] {
@@ -1143,5 +1143,229 @@ fn planted_links_never_redirect_a_write() {
                 .is_symlink(),
             "{planted} is left as it was"
         );
+        if planted == "kit.lock" {
+            assert!(!repo.join(".claude").exists(), "stopped before writing");
+        }
     }
+}
+
+/// A link to another file in the same repo (or, for --global, in home) is
+/// a normal setup: Kit writes the file it leads to and leaves the link.
+#[cfg(unix)]
+#[test]
+fn links_that_stay_inside_the_scope_are_followed() {
+    let root = scratch("inner-links");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let spec = kit.to_str().unwrap();
+
+    let repo = root.join("repo");
+    git_repo(&repo);
+    write(&repo.join("AGENTS.md"), "# Team rules\n");
+    std::os::unix::fs::symlink("AGENTS.md", repo.join("CLAUDE.md")).unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(read(&repo.join("AGENTS.md")).contains("Be kind."));
+    assert!(
+        std::fs::symlink_metadata(repo.join("CLAUDE.md"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&repo.join("AGENTS.md")), "# Team rules\n");
+
+    // Not into .git, and not into a program: Kit's text there would run.
+    for (i, target) in [".git/hooks/pre-commit", "tools/run.sh"].iter().enumerate() {
+        let repo = root.join(format!("hook-{i}"));
+        git_repo(&repo);
+        write(&repo.join(target), "#!/bin/sh\nexit 0\n");
+        let mode = std::os::unix::fs::PermissionsExt::from_mode(0o755);
+        std::fs::set_permissions(repo.join(target), mode).unwrap();
+        std::os::unix::fs::symlink(target, repo.join("CLAUDE.md")).unwrap();
+        let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+        assert!(!out.status.success(), "{target}");
+        assert_eq!(read(&repo.join(target)), "#!/bin/sh\nexit 0\n");
+    }
+
+    let dotfiles = env.home.join("dotfiles/CLAUDE.md");
+    write(&dotfiles, "# Mine\n");
+    std::fs::create_dir_all(env.home.join(".claude")).unwrap();
+    std::os::unix::fs::symlink(&dotfiles, env.home.join(".claude/CLAUDE.md")).unwrap();
+    let out = env.kit(
+        &root,
+        &[
+            "add",
+            spec,
+            "-a",
+            "claude",
+            "--global",
+            "--no-code",
+            "--yes",
+        ],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(read(&dotfiles).contains("Be kind."));
+    let out = env.kit(&root, &["remove", "demo", "--global", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&dotfiles), "# Mine\n");
+}
+
+/// A rollback copy keeps links as links, and a pipe in a skill folder
+/// stops Kit before it reads it (no hang, nothing changed).
+#[cfg(unix)]
+#[test]
+fn links_and_pipes_in_a_skill_folder_are_never_read_through() {
+    let root = scratch("special");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let spec = kit.to_str().unwrap();
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let skill = repo.join(".claude/skills/hello");
+    std::os::unix::fs::symlink("SKILL.md", skill.join("alias.md")).unwrap();
+    std::os::unix::fs::symlink("loop", skill.join("loop")).unwrap();
+
+    // An upgrade that must stop: the edit (the links) survives as links.
+    let toml = read(&kit.join("KIT.toml")).replace("version = \"0.1.0\"", "version = \"0.2.0\"");
+    write(&kit.join("KIT.toml"), &toml);
+    write(
+        &kit.join("skills/hello/SKILL.md"),
+        "---\nname: hello\n---\nHi.\n",
+    );
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(!out.status.success());
+    assert!(
+        !text(&out.stderr).contains("os error"),
+        "{}",
+        text(&out.stderr)
+    );
+    let meta = std::fs::symlink_metadata(skill.join("alias.md")).unwrap();
+    assert!(meta.file_type().is_symlink(), "still a link");
+
+    // A pipe is refused before anything reads it.
+    std::fs::remove_file(skill.join("loop")).unwrap();
+    let ok = Command::new("mkfifo")
+        .arg(skill.join("pipe"))
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok, "mkfifo");
+    let out = env.kit(
+        &repo,
+        &["add", spec, "-a", "claude", "--no-code", "--print"],
+    );
+    assert!(!out.status.success());
+    assert!(
+        text(&out.stderr).contains("not a regular file"),
+        "{}",
+        text(&out.stderr)
+    );
+}
+
+/// A folder link partway down a path never lets Kit write into, or
+/// remove from, git's own folder, even with --force.
+#[cfg(unix)]
+#[test]
+fn nothing_is_written_into_git_through_a_folder_link() {
+    let root = scratch("git-dir");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let spec = kit.to_str().unwrap();
+    for (link, to, force) in [
+        (".claude", ".git", false),
+        (".claude/skills", "../.git", true),
+    ] {
+        let repo = root.join(format!("repo-{force}"));
+        git_repo(&repo);
+        let at = repo.join(link);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(to, &at).unwrap();
+        let mut args = vec!["add", spec, "-a", "claude", "--no-code", "--yes"];
+        if force {
+            args.push("--force");
+        }
+        let out = env.kit(&repo, &args);
+        assert!(!out.status.success(), "{link} -> {to}");
+        assert!(!repo.join(".git/hello").exists(), "{link} -> {to}");
+        assert!(!repo.join(".git/skills").exists(), "{link} -> {to}");
+        assert!(!repo.join(".git/settings.json").exists(), "{link} -> {to}");
+        assert!(repo.join(".git/HEAD").is_file());
+    }
+}
+
+/// A 0600 settings file stays 0600 after Kit edits it, and Kit's own
+/// record (which can hold that file's text) is readable by this user only.
+#[cfg(unix)]
+#[test]
+fn private_files_stay_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = scratch("modes");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let settings = repo.join(".claude/settings.json");
+    write(&settings, "{\"env\":{\"TOKEN\":\"secret\"}}\n");
+    std::fs::set_permissions(&settings, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let out = env.kit(
+        &repo,
+        &["add", kit.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&settings), 0o600);
+    let records = env.home.join(".kit/repos");
+    let record = std::fs::read_dir(&records)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path()
+        .join("kit.lock");
+    assert_eq!(mode(&record), 0o600, "{}", record.display());
+}
+
+/// A worktree inside a bare clone (`git clone --bare url proj.git`, then
+/// `git worktree add main`) is a normal repo: its bare store above it is
+/// not "git's folder" for what Kit writes there.
+#[test]
+fn a_worktree_inside_a_bare_clone_takes_kits() {
+    let root = scratch("bare");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let src = root.join("src");
+    git_repo(&src);
+    write(&src.join("README.md"), "hi\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-qm", "init"]);
+    let bare = root.join("proj.git");
+    git(
+        &root,
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            src.to_str().unwrap(),
+            bare.to_str().unwrap(),
+        ],
+    );
+    git(&bare, &["worktree", "add", "-q", "main"]);
+    let main = bare.join("main");
+    let out = env.kit(
+        &main,
+        &[
+            "add",
+            kit.to_str().unwrap(),
+            "-a",
+            "claude",
+            "--no-code",
+            "--yes",
+        ],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(main.join(".claude/skills/hello/SKILL.md").is_file());
 }
