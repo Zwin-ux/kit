@@ -15,3 +15,5 @@ Type "kit doctor" Sleep 400ms Enter
 Wait+Screen@60s /try:/
 Sleep 4s
 Screenshot "out/doctor.png"
+# VHS writes a screenshot asynchronously; let it land before the tape ends.
+Sleep 1s

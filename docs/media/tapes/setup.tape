@@ -26,3 +26,5 @@ Type "y" Sleep 300ms Enter
 Wait+Screen@120s /undo +kit remove/
 Sleep 4s
 Screenshot "out/setup-done.png"
+# VHS writes a screenshot asynchronously; let it land before the tape ends.
+Sleep 1s
