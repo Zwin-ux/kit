@@ -207,7 +207,7 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
                 .with_default(&defaults)
                 .with_formatter(&names)
                 .with_page_size(8)
-                .with_help_message("space toggle · enter confirm · see one with kit show <kit>")
+                .with_help_message("↑↓ move · space toggle · enter confirm · esc cancel · kit show <kit> for details")
                 .with_validator(|l: &[inquire::list_option::ListOption<&String>]| {
                     Ok(if l.is_empty() {
                         inquire::validator::Validation::Invalid("Pick at least one".into())
@@ -239,8 +239,8 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         }
     } else if let Some(root) = &in_repo {
         let repo_label = format!(
-            "This repo only   {} (commit it to share with your team)",
-            install::display_root(root)
+            "This repo only   {}   commit it to share with your team",
+            short_path(&install::display_root(root))
         );
         let options = vec![
             "All my projects   your agents use it everywhere".to_string(),
@@ -250,6 +250,7 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         let picked = answered(
             inquire::Select::new("Install for", options)
                 .with_starting_cursor(start)
+                .with_help_message("↑↓ move · enter confirm · esc cancel")
                 .with_formatter(&|o| {
                     if o.index == 0 {
                         "All my projects".into()
@@ -336,10 +337,41 @@ fn short_version(v: Option<&str>) -> &str {
 }
 
 /// "A", "A and B", "A, B and C".
+/// A path short enough for one option line: the last two folders after
+/// `…/` when it is long, so it never breaks mid-word.
+fn short_path(path: &str) -> String {
+    const MAX: usize = 40;
+    if path.chars().count() <= MAX {
+        return path.to_string();
+    }
+    let sep = if path.contains('\\') && !path.contains('/') {
+        '\\'
+    } else {
+        '/'
+    };
+    let parts: Vec<&str> = path.split(sep).filter(|p| !p.is_empty()).collect();
+    let tail = parts[parts.len().saturating_sub(2)..].join(&sep.to_string());
+    format!("…{sep}{tail}")
+}
+
 pub fn and_list(items: &[&str]) -> String {
     match items {
         [] => String::new(),
         [one] => (*one).to_string(),
         [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::short_path;
+
+    #[test]
+    fn long_paths_keep_whole_folder_names() {
+        assert_eq!(short_path("~/code/kit"), "~/code/kit");
+        let long = "/home/someone/work/clients/acme/projects/storefront-web";
+        assert_eq!(short_path(long), "…/projects/storefront-web");
+        let win = r"C:\Users\someone\work\clients\acme\projects\storefront";
+        assert_eq!(short_path(win), r"…\projects\storefront");
     }
 }

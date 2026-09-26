@@ -243,7 +243,7 @@ mod tests {
         );
         assert!(text.contains("core-web-vitals"), "{text}");
         assert!(
-            text.contains("npx -y chrome-devtools-mcp@1.10.1   RUNS CODE"),
+            text.contains("npx -y chrome-devtools-mcp@1.10.1 --no-usage-statistics   RUNS CODE"),
             "{text}"
         );
         assert!(text.contains("Runs code on your machine: 2"), "{text}");
