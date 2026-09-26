@@ -618,7 +618,13 @@ fn cmd_receipt_show(id: &str, show_output: bool, json: bool) -> Result<()> {
     } else {
         println!("receipt {}", receipt.id);
         println!("  dir       {}", kits::plan::tilde(&dir));
-        println!("  state     {}", state_label(receipt.state));
+        // Same word as `kit run` for a pass with nothing changed.
+        let state = if receipt.state == RunState::Pass && !dir.join("diff.patch").is_file() {
+            "no changes".to_string()
+        } else {
+            state_label(receipt.state)
+        };
+        println!("  state     {state}");
         if let Some(took) = run_duration(receipt.started_at, receipt.ended_at) {
             println!("  took      {took}");
         }
@@ -655,9 +661,10 @@ fn cmd_receipt_show(id: &str, show_output: bool, json: bool) -> Result<()> {
             println!("  gate      (none)");
         }
         if !receipt.diff.is_empty() {
+            let files = changed_files(&dir);
             println!(
-                "  diff      {} bytes (see {})",
-                receipt.diff.len(),
+                "  diff      {files} file{} (see {})",
+                if files == 1 { "" } else { "s" },
                 kits::plan::tilde(&dir.join("diff.patch"))
             );
         }
@@ -960,6 +967,11 @@ fn print_doctor(version: &str, start_mcp: bool, json: bool) {
         println!("  {:8}  {flag:9}  {ver}", st.kind.label());
         if let Some(r) = st.remedy {
             println!("            → {r}");
+        }
+        if st.kind == AgentKind::Grok && st.installed && !kit_agents::full_auto() {
+            println!(
+                "            → kit run starts grok only with KIT_FULL_AUTO=1 (it never asks before a command)"
+            );
         }
     }
     kits::doctor::print(&kits);
