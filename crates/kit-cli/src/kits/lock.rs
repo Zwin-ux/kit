@@ -173,7 +173,9 @@ impl Lock {
             }
         }
         let body = format!("{}\n", serde_json::to_string_pretty(&stored)?);
-        write_or_remove(&path(scope), (!self.kits.is_empty()).then_some(&body))?;
+        // Kit's own record can hold the text of the user's settings files
+        // (to restore them exactly), so only this user may read it.
+        write_or_remove(&path(scope), (!self.kits.is_empty()).then_some(&body), true)?;
         if let Some(shared) = shared_path(scope) {
             // A kit from a folder is named by where it sits in the repo, or
             // only by its folder name: never a path on this machine.
@@ -194,7 +196,7 @@ impl Lock {
                 }
             }
             let body = format!("{}\n", serde_json::to_string_pretty(&stored)?);
-            write_or_remove(&shared, (!self.kits.is_empty()).then_some(&body))?;
+            write_or_remove(&shared, (!self.kits.is_empty()).then_some(&body), false)?;
         }
         Ok(())
     }
@@ -256,7 +258,7 @@ pub fn check_not_linked(scope: &Scope) -> Result<()> {
     Ok(())
 }
 
-fn write_or_remove(file: &std::path::Path, body: Option<&String>) -> Result<()> {
+fn write_or_remove(file: &std::path::Path, body: Option<&String>, private: bool) -> Result<()> {
     if std::fs::symlink_metadata(file).is_ok_and(|m| m.file_type().is_symlink()) {
         bail!(
             "{} is a link. Kit will not write through it",
@@ -269,7 +271,11 @@ fn write_or_remove(file: &std::path::Path, body: Option<&String>) -> Result<()> 
         }
         return Ok(());
     };
-    super::plan::write_file(file, body.as_bytes())
+    if private {
+        super::plan::write_private(file, body.as_bytes())
+    } else {
+        super::plan::write_file(file, body.as_bytes())
+    }
 }
 
 #[cfg(test)]

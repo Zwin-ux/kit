@@ -1296,3 +1296,35 @@ fn nothing_is_written_into_git_through_a_folder_link() {
         assert!(repo.join(".git/HEAD").is_file());
     }
 }
+
+/// A 0600 settings file stays 0600 after Kit edits it, and Kit's own
+/// record (which can hold that file's text) is readable by this user only.
+#[cfg(unix)]
+#[test]
+fn private_files_stay_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = scratch("modes");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let settings = repo.join(".claude/settings.json");
+    write(&settings, "{\"env\":{\"TOKEN\":\"secret\"}}\n");
+    std::fs::set_permissions(&settings, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let out = env.kit(
+        &repo,
+        &["add", kit.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&settings), 0o600);
+    let records = env.home.join(".kit/repos");
+    let record = std::fs::read_dir(&records)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path()
+        .join("kit.lock");
+    assert_eq!(mode(&record), 0o600, "{}", record.display());
+}

@@ -1159,8 +1159,19 @@ fn write(file: &Path, text: &str) -> Result<()> {
 /// be a link, the data goes to a new temp file opened with `create_new`
 /// (O_EXCL) under a fresh name in the same folder, and it is renamed over
 /// the file only after checking again. A planted link, at the file or at a
-/// guessable temp name, cannot redirect the write elsewhere.
+/// guessable temp name, cannot redirect the write elsewhere. The file keeps
+/// its permissions (a 0600 settings file stays 0600).
 pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
+    write_with_mode(file, bytes, false)
+}
+
+/// As `write_file`, readable by this user only (0600 on Unix): for Kit's
+/// own record, which can hold the text of the user's settings files.
+pub fn write_private(file: &Path, bytes: &[u8]) -> Result<()> {
+    write_with_mode(file, bytes, true)
+}
+
+fn write_with_mode(file: &Path, bytes: &[u8], private: bool) -> Result<()> {
     use std::io::Write as _;
     use std::sync::atomic::{AtomicU64, Ordering};
     static N: AtomicU64 = AtomicU64::new(0);
@@ -1171,7 +1182,7 @@ pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
             .ok()
             .and_then(|r| r.as_ref().map(|r| r.root.clone()));
         if let Some(target) = root.and_then(|r| link_target_within(file, &r)) {
-            return write_file(&target, bytes);
+            return write_with_mode(&target, bytes, private);
         }
         bail!(
             "{} is a link that leads outside this repo (or home, for --global). Kit will not write through it",
@@ -1199,7 +1210,19 @@ pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
             .create_new(true)
             .open(&tmp)?;
         f.write_all(bytes)?;
-        f.sync_all()
+        f.sync_all()?;
+        #[cfg(unix)]
+        if private {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+            return Ok(());
+        }
+        if let Ok(old) = std::fs::symlink_metadata(file)
+            && old.is_file()
+        {
+            std::fs::set_permissions(&tmp, old.permissions())?;
+        }
+        Ok(())
     })();
     if let Err(e) = written {
         let _ = std::fs::remove_file(&tmp);
