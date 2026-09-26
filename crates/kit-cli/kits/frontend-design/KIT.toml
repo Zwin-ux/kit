@@ -13,8 +13,24 @@ licence     = "MIT"
 file = "RULES.md"
 
 [[skill]]
-name    = "accessibility-pass"
-path    = "skills/accessibility-pass"
+name    = "frontend-design"
+source  = "github:anthropics/skills"
+path    = "skills/frontend-design"
+rev     = "33375500bcea98d610eb30ce10ac4e59b89c390d"
+licence = "Apache-2.0"
+
+[[skill]]
+name    = "accessibility"
+source  = "github:addyosmani/web-quality-skills"
+path    = "skills/accessibility"
+rev     = "afa8da942115f2961fdbfa80807ea0b232ff6c00"
+licence = "MIT"
+
+[[skill]]
+name    = "core-web-vitals"
+source  = "github:addyosmani/web-quality-skills"
+path    = "skills/core-web-vitals"
+rev     = "afa8da942115f2961fdbfa80807ea0b232ff6c00"
 licence = "MIT"
 
 [[skill]]
@@ -31,16 +47,9 @@ path    = "skills/browser-testing-with-devtools"
 rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
 licence = "MIT"
 
-[[skill]]
-name    = "performance-optimization"
-source  = "github:addyosmani/agent-skills"
-path    = "skills/performance-optimization"
-rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
-licence = "MIT"
-
-[mcp.playwright]
+[mcp.chrome-devtools]
 command = "npx"
-args    = ["-y", "@playwright/mcp@0.0.82"]
+args    = ["-y", "chrome-devtools-mcp@1.10.1"]
 
 [[hook]]
 on   = "after_edit"
@@ -48,4 +57,4 @@ glob = "*.{js,jsx,ts,tsx,css,scss,html,md}"
 run  = "npx --no-install prettier --write \"$FILE\""
 
 [check]
-mcp_starts = ["playwright"]
+mcp_starts = ["chrome-devtools"]

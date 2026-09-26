@@ -115,7 +115,12 @@ pub fn render(chain: &[Kit]) -> Result<String> {
     }
     for kit in chain {
         for (name, mcp) in &kit.manifest.mcp {
-            writeln!(s, "mcp       {name}   {}   RUNS CODE", mcp.command_line())?;
+            let code = if mcp.runs_code() {
+                "   RUNS CODE"
+            } else {
+                "   remote"
+            };
+            writeln!(s, "mcp       {name}   {}{code}", mcp.command_line())?;
         }
         for hook in &kit.manifest.hook {
             let only = hook
@@ -177,7 +182,7 @@ fn to_json(chain: &[Kit]) -> serde_json::Value {
         .iter()
         .flat_map(|k| {
             k.manifest.mcp.iter().map(|(name, m)| {
-                serde_json::json!({ "name": name, "command": m.command, "args": m.args })
+                serde_json::json!({ "name": name, "command": m.command, "args": m.args, "url": m.url })
             })
         })
         .collect();
@@ -216,12 +221,12 @@ mod tests {
         assert!(text.contains("extends   essentials"), "{text}");
         assert!(text.contains("  from essentials\n"), "{text}");
         assert!(
-            text.contains("addyosmani/agent-skills@2686b62   MIT"),
+            text.contains("anthropics/skills@3337550         Apache-2.0"),
             "{text}"
         );
-        assert!(text.contains("accessibility-pass"), "{text}");
+        assert!(text.contains("core-web-vitals"), "{text}");
         assert!(
-            text.contains("npx -y @playwright/mcp@0.0.82   RUNS CODE"),
+            text.contains("npx -y chrome-devtools-mcp@1.10.1   RUNS CODE"),
             "{text}"
         );
         assert!(text.contains("Runs code on your machine: 2"), "{text}");

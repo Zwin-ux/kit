@@ -53,3 +53,24 @@ source  = "github:addyosmani/agent-skills"
 path    = "skills/ci-cd-and-automation"
 rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
 licence = "MIT"
+
+[[skill]]
+name    = "security-review"
+source  = "github:getsentry/skills"
+path    = "skills/security-review"
+rev     = "c2f99a5b04b4cd992ec3022d7c2c3e23e938d241"
+licence = "Apache-2.0 AND CC-BY-SA-4.0"
+
+[[skill]]
+name    = "find-bugs"
+source  = "github:getsentry/skills"
+path    = "skills/find-bugs"
+rev     = "c2f99a5b04b4cd992ec3022d7c2c3e23e938d241"
+licence = "Apache-2.0"
+
+[[skill]]
+name    = "supabase-postgres-best-practices"
+source  = "github:supabase/agent-skills"
+path    = "skills/supabase-postgres-best-practices"
+rev     = "551274ed2fe97c8fea1325f7ceb05803a542f8df"
+licence = "MIT"

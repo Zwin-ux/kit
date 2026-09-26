@@ -39,3 +39,10 @@ source  = "github:addyosmani/agent-skills"
 path    = "skills/observability-and-instrumentation"
 rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
 licence = "MIT"
+
+[[skill]]
+name    = "supabase-postgres-best-practices"
+source  = "github:supabase/agent-skills"
+path    = "skills/supabase-postgres-best-practices"
+rev     = "551274ed2fe97c8fea1325f7ceb05803a542f8df"
+licence = "MIT"

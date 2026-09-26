@@ -252,7 +252,16 @@ mod tests {
                     s.name
                 );
             }
-            resolve(kit.name()).unwrap();
+            let chain = resolve(kit.name()).unwrap();
+            let mut seen = std::collections::HashSet::new();
+            for sk in chain.iter().flat_map(|k| &k.manifest.skill) {
+                assert!(
+                    seen.insert(&sk.name),
+                    "{}: skill {} twice",
+                    kit.name(),
+                    sk.name
+                );
+            }
         }
     }
 

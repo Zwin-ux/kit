@@ -74,7 +74,10 @@ pub struct Rules {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct McpServer {
-    pub command: String,
+    /// A local server: the program to start (with `args`).
+    pub command: Option<String>,
+    /// A remote server: an `https://` URL. Exactly one of `command`, `url`.
+    pub url: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
     /// Values may only name the user's environment: `"$API_KEY"`.
@@ -83,11 +86,21 @@ pub struct McpServer {
 }
 
 impl McpServer {
+    /// What the plan shows: the command line, or the URL.
     pub fn command_line(&self) -> String {
-        std::iter::once(self.command.as_str())
-            .chain(self.args.iter().map(String::as_str))
-            .collect::<Vec<_>>()
-            .join(" ")
+        match (&self.command, &self.url) {
+            (Some(cmd), _) => std::iter::once(cmd.as_str())
+                .chain(self.args.iter().map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" "),
+            (None, Some(url)) => url.clone(),
+            (None, None) => String::new(),
+        }
+    }
+
+    /// A local server runs code on the user's machine; a remote one does not.
+    pub fn runs_code(&self) -> bool {
+        self.command.is_some()
     }
 }
 
@@ -137,7 +150,7 @@ impl KitManifest {
 
     /// Anything that runs on the user's machine: hooks and MCP servers.
     pub fn runs_code(&self) -> usize {
-        self.mcp.len() + self.hook.len()
+        self.mcp.values().filter(|m| m.runs_code()).count() + self.hook.len()
     }
 
     fn validate(&self, origin: &str) -> Result<()> {
@@ -200,7 +213,15 @@ impl KitManifest {
                     );
                 }
             }
-            if mcp.command == "npx" && !npx_is_pinned(&mcp.args) {
+            match (&mcp.command, &mcp.url) {
+                (Some(_), None) => {}
+                (None, Some(url)) if url.starts_with("https://") => {}
+                (None, Some(url)) => {
+                    bail!("kit {name}: mcp {server} url '{url}' must start with https://")
+                }
+                _ => bail!("kit {name}: mcp {server} needs exactly one of command or url"),
+            }
+            if mcp.command.as_deref() == Some("npx") && !npx_is_pinned(&mcp.args) {
                 bail!(
                     "kit {name}: mcp {server} must pin its package version (npx -y package@1.2.3)"
                 );
@@ -297,6 +318,18 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("never carry secrets"), "{err}");
+    }
+
+    #[test]
+    fn remote_mcp_is_https_and_runs_no_code() {
+        let m = parse("[mcp.docs]\nurl = \"https://example.com/mcp\"\n").unwrap();
+        assert_eq!(m.runs_code(), 0);
+        let err = parse("[mcp.docs]\nurl = \"http://example.com/mcp\"\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("https://"), "{err}");
+        let err = parse("[mcp.docs]\nargs = []\n").unwrap_err().to_string();
+        assert!(err.contains("exactly one"), "{err}");
     }
 
     #[test]

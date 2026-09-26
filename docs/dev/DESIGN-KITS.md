@@ -6,8 +6,9 @@ Decisions already taken: kits lead the product; the marketplace starts as a
 public Git repo of kits; kits point at upstream skills by pinned commit.
 Package name for `cargo install` is **`kitctl`** (binary `kit`).
 
-Facts about agent config locations are marked **(verify)** until the
-"Open-source skills for kits" research thread confirms them.
+Agent config locations and kit sources come from the "Open-source skills
+for kits" research thread (`kit-1.0/kit-catalogue.md`). What nobody has
+tried yet is marked **(unverified)**.
 
 Contents:
 
@@ -236,16 +237,26 @@ each agent's native format, and an exact record so it can be undone.
 
 ### Mapping table
 
-| Kit piece | Claude Code | Codex | Grok |
-|-----------|-------------|-------|------|
-| skill (all projects) | `~/.claude/skills/<name>/` | `~/.codex/skills/<name>/` (verify) | `~/.grok/skills/<name>/` (verify) |
-| skill (this repo) | `.claude/skills/<name>/` | `.agents/skills/<name>/` (verify) | `.grok/skills/<name>/` (verify) |
-| rules (all projects) | `~/.claude/CLAUDE.md` block | `~/.codex/AGENTS.md` block | `~/.grok/AGENTS.md` block (verify) |
-| rules (this repo) | `CLAUDE.md` block | `AGENTS.md` block | `AGENTS.md` block |
-| mcp (all projects) | `claude mcp add --scope user` (Claude owns `~/.claude.json`) | `[mcp_servers.<name>]` in `~/.codex/config.toml` | skipped: "Grok MCP not supported yet" (verify) |
-| mcp (this repo) | `.mcp.json` `mcpServers.<name>` | user config only; plan says so (verify) | skipped |
-| hook `after_edit` | `settings.json` `hooks.PostToolUse`, matcher `Edit\|Write\|MultiEdit` | skipped: no edit hook (verify) | skipped (verify) |
+Confirmed by the research thread (`kit-1.0/kit-catalogue.md` §2 and
+`kit-research/`), 2026-09-26. **(unverified)** marks what comes from docs
+nobody has tried yet.
+
+| Kit piece | Claude Code | Codex | Grok Build |
+|-----------|-------------|-------|------------|
+| skill (all projects) | `~/.claude/skills/<name>/` | `~/.agents/skills/<name>/` | reads `~/.agents/skills` natively and `~/.claude/skills` via compat |
+| skill (this repo) | `.claude/skills/<name>/` | `.agents/skills/<name>/` | reads `.claude/skills` via compat (unverified); `.grok/skills` natively |
+| rules (all projects) | `~/.claude/CLAUDE.md` block | `~/.codex/AGENTS.md` block | reads `CLAUDE.md` and `AGENTS.md` |
+| rules (this repo) | `CLAUDE.md` block | `AGENTS.md` block | same files |
+| mcp (all projects) | `claude mcp add --scope user` (Claude owns `~/.claude.json`) | `~/.codex/config.toml` `[mcp_servers.<name>]` | reads `~/.claude.json` via compat; else `~/.grok/config.toml`, same TOML as Codex |
+| mcp (this repo) | `.mcp.json` `mcpServers.<name>` | `.codex/config.toml` (loads only in trusted projects) | reads `.mcp.json`; else `.grok/config.toml` |
+| hook `after_edit` | `settings.json` `hooks.PostToolUse`, matcher `Edit\|Write\|MultiEdit` | `hooks.json` `PostToolUse`, matcher `Edit\|Write` (same shape) | reads Claude's hooks; project hooks need `/hooks-trust` once |
 | gate | `kit.toml` `[gate]` (repo scope only) | same | same |
+
+So Kit needs **two writers**, Claude and Codex. Grok is covered by its
+Claude compatibility plus `~/.agents/skills`; `kit doctor` confirms it
+loaded and, if compat fails, a Grok-native writer reuses the Codex TOML
+emitter. Two different tools install as `grok` (xAI's Grok Build and the
+community `grok-cli`); Kit checks `grok --version` before writing for it.
 
 A piece an agent cannot take is a line in the plan
 (`hooks  after_edit  skipped for Codex: no edit hook`), never silent.
@@ -293,6 +304,35 @@ pub enum Action {
 remove is "apply the inverses recorded in the lock", not a guess.
 
 ---
+
+### Format decision: KIT.toml in, Agent Plugins out
+
+The research found Agent Plugins (agent-plugins.org, 1.0, steered by
+Amazon, Cursor, Microsoft, OpenAI and Vercel): `plugin.json` + `skills/` +
+`mcp.json` + `hooks/`, loaded natively by Codex and accepted by Cursor.
+
+**Decision: keep `KIT.toml` as the source a kit author writes, and emit
+Agent Plugins as an install target.** Why:
+
+- `plugin.json` describes what is *in a folder*. A kit also has to say
+  where each piece *comes from* and whether Kit may copy it (vendor,
+  fetch at install, link only), its pin and licence, what it `extends`,
+  the gate that proves the work, and the check that proves it loaded.
+  None of that is in the plugin schema; putting it in an extension blob
+  would make the real manifest the blob.
+- Several kit pieces cannot be inside a redistributable folder at all
+  (fetch-only CC-BY-SA skills, link-only Apple skills), so a kit is not
+  a finished plugin until it is resolved on the user's machine. That
+  resolved output is exactly what an Agent Plugin is.
+- Emitting it gives the benefit anyway: for Codex (and Cursor later),
+  "install a kit" becomes "write one plugin folder", and uninstall is
+  deleting it. `kit export <kit>` can also publish a resolved kit to a
+  Codex or Cursor marketplace.
+
+The on-disk spec could not be fetched from this environment, so the
+emitter is built against Codex's documented layout and checked against
+the spec before it ships. This is reversible: KIT.toml maps onto
+`plugin.json` plus an extension table if the standard grows these fields.
 
 ## 4. Composition and lifecycle
 
@@ -375,13 +415,22 @@ A kit must be all of:
 
 ### Starter kits (v0.1)
 
-| Kit | Extends | Core of it |
-|-----|---------|-----------|
-| Essentials | — | spec, plan, incremental build, tests, review, ship (addyosmani/agent-skills) |
-| Frontend Design | Essentials | UI engineering, accessibility, browser testing, design tokens; Playwright MCP; prettier hook |
-| Full-stack Design | Frontend Design | API design, data and migrations, security, end-to-end tests |
-| Backend Engineer | Essentials | API design, security, performance, debugging, TDD; read-only DB MCP (candidate) |
-| LLM Engineer | Essentials | prompt and eval design, model API usage, RAG, cost and latency; docs MCP (candidate) |
+Bundled in `crates/kit-cli/kits/`, sources confirmed by the research
+thread and pinned to commits checked on 2026-09-26.
+
+| Kit | Extends | Skills (source, licence) | MCP / hooks |
+|-----|---------|--------------------------|-------------|
+| Essentials | — | spec, plan, incremental build, TDD, review, debugging, git, shipping (addyosmani/agent-skills, MIT) | none: installs nothing that runs code |
+| Frontend Design | Essentials | `frontend-design` (anthropics/skills, Apache-2.0); `accessibility`, `core-web-vitals` (addyosmani/web-quality-skills, MIT); `frontend-ui-engineering`, `browser-testing-with-devtools` (addyosmani, MIT) | Chrome DevTools MCP 1.10.1; prettier after edits |
+| Full-stack Design | Frontend Design | API design, security, migrations, observability (addyosmani, MIT); `supabase-postgres-best-practices` (supabase/agent-skills, MIT) | inherits Frontend's |
+| Backend Engineer | Essentials | API design, security, performance, observability, migrations, CI (addyosmani, MIT); `security-review` (getsentry/skills, Apache-2.0 and CC-BY-SA-4.0, fetched only); `find-bugs` (getsentry, Apache-2.0); Postgres best practices (supabase, MIT) | none yet (database MCPs need a connection string; stack-conditional, after v0.1) |
+| LLM Engineer | Essentials | `claude-api`, `mcp-builder` (anthropics/skills, Apache-2.0); `prompt-optimizer` (getsentry, Apache-2.0); context engineering, source-driven, doubt-driven (addyosmani, MIT); `llm-evals`, `llm-cost-latency` (Kit, MIT) | OpenAI Docs MCP (remote, no code runs) |
+
+Kit authors next, from the research gaps: a cross-agent format/lint hook
+(replacing the prettier hook), `design-review` with screenshots at three
+widths, `design-tokens`, a Tailwind v4 skill, an xAI/Grok API skill
+(none exists), `provider-router`, and for the iOS kit an `apple-design`
+skill that paraphrases and cites the HIG.
 
 ### Next kits (index, after v0.1)
 
@@ -444,6 +493,7 @@ Build order (each a tested commit on `claude/kit-product-design-uz9njt`):
 3. Claude Code writer and `Action` apply/undo, `kit.lock`,
    `kit add | remove | list`.
 4. `kit setup` screens and `~/.kit/config.toml`.
-5. Codex and Grok writers (skills, rules).
+5. Codex writer (skills, rules, MCP, hooks); Grok via compat, confirmed
+   by `kit doctor`.
 6. `[check]` in `kit doctor`.
 7. README rewritten around Screen 0 to Screen 6.
