@@ -101,6 +101,7 @@ fn check(scope: &Scope, e: &Entry) -> KitReport {
             continue;
         }
         let Some(server) = e.checks.mcp.get(name) else {
+            checks.push((format!("{name} MCP configured"), true, String::new()));
             continue;
         };
         let what = format!("{name} MCP starts");

@@ -181,6 +181,10 @@ impl Lock {
             // A kit from a folder is named by where it sits in the repo, or
             // only by its folder name: never a path on this machine.
             for e in &mut stored.kits {
+                // What the user's files held before Kit stays on this machine.
+                for a in &mut e.applied {
+                    a.forget_original();
+                }
                 let src = Path::new(&e.source);
                 if src.is_absolute() {
                     e.source = match relative(src, scope) {
@@ -242,7 +246,26 @@ fn anchor(rel: &Path, scope: &Scope) -> Result<PathBuf> {
     Ok(base(scope).join(rel))
 }
 
+/// Kit's lock files are never links, not even to a file in the same repo.
+pub fn check_not_linked(scope: &Scope) -> Result<()> {
+    for file in std::iter::once(path(scope)).chain(shared_path(scope)) {
+        if std::fs::symlink_metadata(&file).is_ok_and(|m| m.file_type().is_symlink()) {
+            bail!(
+                "{} is a link. Kit keeps its record there and will not write through it. Remove the link and run again",
+                file.display()
+            );
+        }
+    }
+    Ok(())
+}
+
 fn write_or_remove(file: &std::path::Path, body: Option<&String>) -> Result<()> {
+    if std::fs::symlink_metadata(file).is_ok_and(|m| m.file_type().is_symlink()) {
+        bail!(
+            "{} is a link. Kit will not write through it",
+            file.display()
+        );
+    }
     let Some(body) = body else {
         if file.exists() {
             std::fs::remove_file(file)?;

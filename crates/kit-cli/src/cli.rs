@@ -10,16 +10,21 @@ use std::time::Duration;
 
 const AFTER_HELP: &str = "\
 Start here:
-  kit init                     Write kit.toml: the checks that prove a run
+  kit setup                    Pick your agents and a focus, then install its kit
+  kit show                     See the kits you can add
+  kit add frontend-design      Add a kit to this repo (shows every file first)
+
+Then prove the work:
   kit run \"add a test for X\"   Run an agent in its own worktree, then the checks
   kit land <id>                Put a proven run's changes on a new branch
 
 Docs: https://github.com/Zwin-ux/kit#readme";
 
-/// Run coding agents in isolated worktrees, prove the result, then land it.
+/// Set your coding agents up for one job, then prove what they do.
 ///
-/// With no command, kit opens the Control Room: dispatch many runs and
-/// watch them in one place.
+/// The first time, bare `kit` asks which agents and which focus, then
+/// installs that kit. After that it opens the Control Room: dispatch many
+/// runs and watch them in one place.
 #[derive(Debug, Parser)]
 #[command(
     name = "kit",
@@ -435,7 +440,9 @@ pub struct AddArgs {
     /// Do not ask; install the plan as shown
     #[arg(short, long)]
     pub yes: bool,
-    /// Replace skill folders and config entries Kit did not write
+    /// Replace skill folders and config entries Kit did not write, or that
+    /// were changed by hand; with an upgrade, also remove edited skills the
+    /// new version dropped
     #[arg(long)]
     pub force: bool,
 }
@@ -499,4 +506,8 @@ pub struct SetupArgs {
     /// Do not ask before installing
     #[arg(short, long)]
     pub yes: bool,
+    /// Replace skill folders and config entries Kit did not write, or that
+    /// were changed by hand
+    #[arg(long)]
+    pub force: bool,
 }

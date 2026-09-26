@@ -105,6 +105,11 @@ fn collect_path(dir: &Path, base: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) -> R
         refuse_link(&path)?;
         if path.is_dir() {
             collect_path(&path, base, out)?;
+        } else if !path.is_file() {
+            bail!(
+                "{} is not a regular file. Kit copies only files",
+                path.display()
+            );
         } else {
             let rel = path.strip_prefix(base).unwrap_or(&path).to_path_buf();
             out.push((rel, std::fs::read(&path)?));

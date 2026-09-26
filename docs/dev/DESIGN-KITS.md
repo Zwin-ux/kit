@@ -396,6 +396,12 @@ Removes 11 skills, 1 CLAUDE.md block, playwright MCP, 1 hook. Continue? [y/N]
   The repo copy is committed; Kit's own record lives in `~/.kit/`.
 - `kit doctor` runs each installed kit's `[check]` and reports drift.
 
+**Known limitations (2.0).** The skill hash covers paths and bytes, not
+file modes, so a permissions-only change is not drift. The repo record is
+keyed on the canonical worktree root and git-common-dir, so moving or
+renaming a repo orphans its record: the files stay, and `kit add` there
+starts a fresh record.
+
 ---
 
 ## 5. Trust

@@ -307,7 +307,9 @@ fn global_install_uses_claudes_own_cli_for_mcp() {
     assert!(out.status.success(), "{}", text(&out.stderr));
     let log = read(&env.home.join("claude.log"));
     assert!(
-        log.contains("mcp add-json --scope user local {\"args\":[\"-y\",\"thing@1.0.0\"]"),
+        log.contains(
+            "mcp add-json --scope user local {\"type\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"thing@1.0.0\"]"
+        ),
         "{log}"
     );
     assert!(log.contains("mcp remove --scope user local"), "{log}");
@@ -333,18 +335,17 @@ fn setup_with_flags_needs_no_terminal_and_later_adds_use_its_agents() {
         text(&out.stderr)
     );
 
-    let out = env.kit(
-        &repo,
-        &[
-            "setup",
-            "--agent",
-            "codex",
-            "--kit",
-            spec,
-            "--this-repo",
-            "--yes",
-        ],
+    let flags = ["setup", "--agent", "codex", "--kit", spec, "--this-repo"];
+    let out = env.kit(&repo, &flags);
+    assert!(!out.status.success());
+    let err = text(&out.stderr);
+    assert!(
+        err.contains("kit setup asks before") && err.contains("--yes"),
+        "{err}"
     );
+    assert!(!repo.join(".agents").exists(), "nothing written");
+
+    let out = env.kit(&repo, &[&flags[..], &["--yes"]].concat());
     assert!(out.status.success(), "{}", text(&out.stderr));
     let config = read(&env.home.join(".kit/config.toml"));
     assert!(config.contains(r#"agents = ["codex"]"#), "{config}");
@@ -978,6 +979,91 @@ fn an_upgrade_replaces_old_config_and_removes_dropped_pieces() {
     }
 }
 
+#[test]
+fn an_upgrade_never_silently_replaces_a_hand_edited_skill() {
+    let root = scratch("upgrade-edited");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let spec = kit.to_str().unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let skill = repo.join(".claude/skills/hello/SKILL.md");
+    let edited = format!("{}USER EDIT\n", read(&skill));
+    write(&skill, &edited);
+
+    let toml = read(&kit.join("KIT.toml")).replace("version = \"0.1.0\"", "version = \"0.2.0\"");
+    write(&kit.join("KIT.toml"), &toml);
+    write(
+        &kit.join("skills/hello/SKILL.md"),
+        "---\nname: hello\n---\nSay hi.\n",
+    );
+
+    let out = env.kit(
+        &repo,
+        &["add", spec, "-a", "claude", "--no-code", "--print"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let plan = text(&out.stdout);
+    assert!(
+        plan.contains("edited    ") && plan.contains("hello was changed by hand"),
+        "{plan}"
+    );
+
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(!out.status.success(), "the upgrade must stop");
+    assert!(
+        text(&out.stderr).contains("--force"),
+        "{}",
+        text(&out.stderr)
+    );
+    assert_eq!(read(&skill), edited, "the edit must survive");
+    assert!(read(&repo.join("CLAUDE.md")).contains("kit:demo 0.1.0"));
+
+    let out = env.kit(
+        &repo,
+        &["add", spec, "-a", "claude", "--no-code", "--yes", "--force"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(read(&skill).contains("Say hi."), "{}", read(&skill));
+}
+
+#[test]
+fn add_keeps_a_json_files_layout_and_remove_restores_its_bytes() {
+    let root = scratch("json-layout");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let settings = repo.join(".claude/settings.json");
+    let compact = "{\"permissions\":{\"allow\":[\"Bash(ls)\"]},\"env\":{\"A\":\"b\"}}\n";
+    write(&settings, compact);
+    let mcp = repo.join(".mcp.json");
+    let odd = "{\r\n    \"mcpServers\" : {\r\n        \"mine\": {\"url\": \"https://x\"}\r\n    }\r\n}\r\n";
+    write(&mcp, odd);
+
+    let spec = kit.to_str().unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let added = read(&settings);
+    assert_eq!(added.lines().count(), 1, "compact stays compact: {added}");
+    assert!(
+        added.starts_with("{\"permissions\""),
+        "key order kept: {added}"
+    );
+    let added = read(&mcp);
+    assert!(
+        added.contains("\r\n    \"mcpServers\""),
+        "indent and CRLF kept: {added:?}"
+    );
+
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&settings), compact);
+    assert_eq!(read(&mcp), odd);
+}
+
 /// Two kits that define an MCP server of the same name differently.
 #[test]
 fn two_kits_cannot_share_an_mcp_name_with_different_servers() {
@@ -1056,6 +1142,9 @@ fn planted_links_never_redirect_a_write() {
                 .is_symlink(),
             "{planted} is left as it was"
         );
+        if planted == "kit.lock" {
+            assert!(!repo.join(".claude").exists(), "stopped before writing");
+        }
     }
 }
 
@@ -1201,4 +1290,121 @@ fn a_gate_command_two_kits_need_stays_until_both_are_gone() {
     let out = env.kit(&repo, &["remove", "ga", "--yes"]);
     assert!(out.status.success(), "{}", text(&out.stderr));
     assert_eq!(read(&repo.join("kit.toml")), ours);
+}
+
+/// A link to another file in the same repo (or, for --global, in home) is
+/// a normal setup: Kit writes the file it leads to and leaves the link.
+#[cfg(unix)]
+#[test]
+fn links_that_stay_inside_the_scope_are_followed() {
+    let root = scratch("inner-links");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let spec = kit.to_str().unwrap();
+
+    let repo = root.join("repo");
+    git_repo(&repo);
+    write(&repo.join("AGENTS.md"), "# Team rules\n");
+    std::os::unix::fs::symlink("AGENTS.md", repo.join("CLAUDE.md")).unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(read(&repo.join("AGENTS.md")).contains("Be kind."));
+    assert!(
+        std::fs::symlink_metadata(repo.join("CLAUDE.md"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&repo.join("AGENTS.md")), "# Team rules\n");
+
+    // Not into .git, and not into a program: Kit's text there would run.
+    for (i, target) in [".git/hooks/pre-commit", "tools/run.sh"].iter().enumerate() {
+        let repo = root.join(format!("hook-{i}"));
+        git_repo(&repo);
+        write(&repo.join(target), "#!/bin/sh\nexit 0\n");
+        let mode = std::os::unix::fs::PermissionsExt::from_mode(0o755);
+        std::fs::set_permissions(repo.join(target), mode).unwrap();
+        std::os::unix::fs::symlink(target, repo.join("CLAUDE.md")).unwrap();
+        let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+        assert!(!out.status.success(), "{target}");
+        assert_eq!(read(&repo.join(target)), "#!/bin/sh\nexit 0\n");
+    }
+
+    let dotfiles = env.home.join("dotfiles/CLAUDE.md");
+    write(&dotfiles, "# Mine\n");
+    std::fs::create_dir_all(env.home.join(".claude")).unwrap();
+    std::os::unix::fs::symlink(&dotfiles, env.home.join(".claude/CLAUDE.md")).unwrap();
+    let out = env.kit(
+        &root,
+        &[
+            "add",
+            spec,
+            "-a",
+            "claude",
+            "--global",
+            "--no-code",
+            "--yes",
+        ],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(read(&dotfiles).contains("Be kind."));
+    let out = env.kit(&root, &["remove", "demo", "--global", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&dotfiles), "# Mine\n");
+}
+
+/// A rollback copy keeps links as links, and a pipe in a skill folder
+/// stops Kit before it reads it (no hang, nothing changed).
+#[cfg(unix)]
+#[test]
+fn links_and_pipes_in_a_skill_folder_are_never_read_through() {
+    let root = scratch("special");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let spec = kit.to_str().unwrap();
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let skill = repo.join(".claude/skills/hello");
+    std::os::unix::fs::symlink("SKILL.md", skill.join("alias.md")).unwrap();
+    std::os::unix::fs::symlink("loop", skill.join("loop")).unwrap();
+
+    // An upgrade that must stop: the edit (the links) survives as links.
+    let toml = read(&kit.join("KIT.toml")).replace("version = \"0.1.0\"", "version = \"0.2.0\"");
+    write(&kit.join("KIT.toml"), &toml);
+    write(
+        &kit.join("skills/hello/SKILL.md"),
+        "---\nname: hello\n---\nHi.\n",
+    );
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(!out.status.success());
+    assert!(
+        !text(&out.stderr).contains("os error"),
+        "{}",
+        text(&out.stderr)
+    );
+    let meta = std::fs::symlink_metadata(skill.join("alias.md")).unwrap();
+    assert!(meta.file_type().is_symlink(), "still a link");
+
+    // A pipe is refused before anything reads it.
+    std::fs::remove_file(skill.join("loop")).unwrap();
+    let ok = Command::new("mkfifo")
+        .arg(skill.join("pipe"))
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok, "mkfifo");
+    let out = env.kit(
+        &repo,
+        &["add", spec, "-a", "claude", "--no-code", "--print"],
+    );
+    assert!(!out.status.success());
+    assert!(
+        text(&out.stderr).contains("not a regular file"),
+        "{}",
+        text(&out.stderr)
+    );
 }

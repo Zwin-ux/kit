@@ -192,6 +192,10 @@ pub enum Applied {
         /// remove puts it back.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         previous: Option<serde_json::Value>,
+        /// The file's text before Kit changed it, so remove can put back
+        /// exactly those bytes. Never copied into the repo's kit.lock.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original: Option<String>,
     },
     McpToml {
         file: PathBuf,
@@ -212,6 +216,9 @@ pub enum Applied {
         event: String,
         entry: serde_json::Value,
         created: bool,
+        /// As for `McpJson`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original: Option<String>,
     },
     GateToml {
         file: PathBuf,
@@ -227,6 +234,13 @@ pub enum Applied {
 }
 
 impl Applied {
+    /// Drop the copy of the user's file text (for the repo's shared kit.lock).
+    pub fn forget_original(&mut self) {
+        if let Self::McpJson { original, .. } | Self::HookJson { original, .. } = self {
+            *original = None;
+        }
+    }
+
     /// One line for the plan screen.
     pub fn describe(&self) -> String {
         match self {
@@ -356,6 +370,7 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
             Applied::McpJson {
                 created: c,
                 previous: p,
+                original: o,
                 ..
             },
             Applied::McpJson {
@@ -363,12 +378,14 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
                 name,
                 created,
                 previous,
+                original,
             },
         ) => Applied::McpJson {
             file,
             name,
             created: created || *c,
             previous: previous.or_else(|| p.clone()),
+            original: o.clone().or(original),
         },
         (
             Applied::McpToml {
@@ -389,18 +406,24 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
             previous: previous.or_else(|| p.clone()),
         },
         (
-            Applied::HookJson { created: c, .. },
+            Applied::HookJson {
+                created: c,
+                original: o,
+                ..
+            },
             Applied::HookJson {
                 file,
                 event,
                 entry,
                 created,
+                original,
             },
         ) => Applied::HookJson {
             file,
             event,
             entry,
             created: created || *c,
+            original: o.clone().or(original),
         },
         (_, new) => new,
     }
@@ -481,6 +504,12 @@ fn save(action: &Action) -> Result<Saved> {
                 .path()
                 .expect("file actions have a path")
                 .to_path_buf();
+            if std::fs::metadata(&path).is_ok_and(|m| !m.is_file()) {
+                bail!(
+                    "{} is not a regular file. Kit will not touch it",
+                    path.display()
+                );
+            }
             let bytes = match std::fs::read(&path) {
                 Ok(b) => Some(b),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -529,16 +558,43 @@ impl Saved {
     }
 }
 
+/// Copy a folder for rollback. Links are copied as links, never read
+/// through, and a pipe, device or socket stops the install untouched.
 fn copy_dir(from: &Path, to: &Path) -> Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
         let (src, dst) = (entry.path(), to.join(entry.file_name()));
-        if entry.file_type()?.is_dir() {
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            copy_link(&src, &dst)?;
+        } else if kind.is_dir() {
             copy_dir(&src, &dst)?;
-        } else {
+        } else if kind.is_file() {
             std::fs::copy(&src, &dst)?;
+        } else {
+            bail!(
+                "{} is not a regular file. Kit will not touch that folder",
+                src.display()
+            );
         }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn copy_link(src: &Path, dst: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(std::fs::read_link(src)?, dst)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn copy_link(src: &Path, dst: &Path) -> Result<()> {
+    let target = std::fs::read_link(src)?;
+    if std::fs::metadata(src).is_ok_and(|m| m.is_dir()) {
+        std::os::windows::fs::symlink_dir(target, dst)?;
+    } else {
+        std::os::windows::fs::symlink_file(target, dst)?;
     }
     Ok(())
 }
@@ -569,6 +625,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
         }
         Action::McpJson { file, name, value } => {
             let created = !file.exists();
+            let original = (!created).then(|| read_or_empty(file)).transpose()?;
             let mut doc = read_json(file)?;
             let servers = object_at(&mut doc, "mcpServers", file)?;
             let existing = servers.get(name).cloned();
@@ -590,6 +647,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                 name: name.clone(),
                 created,
                 previous,
+                original,
             }
         }
         Action::McpToml { file, name, value } => {
@@ -640,6 +698,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
         }
         Action::HookJson { file, event, entry } => {
             let created = !file.exists();
+            let original = (!created).then(|| read_or_empty(file)).transpose()?;
             let mut doc = read_json(file)?;
             let hooks = object_at(&mut doc, "hooks", file)?;
             let list = hooks
@@ -660,6 +719,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                 event: event.clone(),
                 entry: entry.clone(),
                 created,
+                original,
             }
         }
         Action::GateToml {
@@ -758,16 +818,17 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             name,
             created,
             previous,
+            original,
         } => {
             if file.exists() {
                 let mut doc = read_json(file)?;
                 if let Some(servers) = doc.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
                     match previous {
                         Some(v) => servers.insert(name.clone(), v.clone()),
-                        None => servers.remove(name),
+                        None => servers.shift_remove(name),
                     };
                 }
-                finish_json(file, &doc, *created, "mcpServers")?;
+                finish_json(file, &doc, *created, "mcpServers", original.as_deref())?;
             }
         }
         Applied::McpToml {
@@ -815,6 +876,7 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             event,
             entry,
             created,
+            original,
         } => {
             if file.exists() {
                 let mut doc = read_json(file)?;
@@ -823,10 +885,10 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 {
                     list.retain(|e| e != entry);
                     if list.is_empty() {
-                        hooks.remove(event);
+                        hooks.shift_remove(event);
                     }
                 }
-                finish_json(file, &doc, *created, "hooks")?;
+                finish_json(file, &doc, *created, "hooks", original.as_deref())?;
             }
         }
         Applied::GateToml {
@@ -894,15 +956,54 @@ pub fn inside(path: &Path, base: &Path) -> bool {
     let Ok(base) = std::fs::canonicalize(base) else {
         return false;
     };
-    // Kit never writes a link itself, so one in the final place is foreign.
+    // A link in the final place counts only when it and the file it leads
+    // to both sit inside `base` (`CLAUDE.md -> AGENTS.md`).
     if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
-        return false;
+        return link_target_within(path, &base).is_some();
     }
     // The deepest part that exists decides where the rest would land.
     path.ancestors()
         .find(|p| p.exists())
         .and_then(|p| std::fs::canonicalize(p).ok())
         .is_some_and(|real| real.starts_with(&base))
+}
+
+/// Where Kit may follow a link to a file: the repo, or home for `--global`.
+static LINK_ROOT: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// Let writes follow a link when the link and the file it leads to are both
+/// inside `root`. Anything else stays refused.
+pub fn follow_links_within(root: &Path) {
+    if let Ok(mut r) = LINK_ROOT.lock() {
+        *r = std::fs::canonicalize(root).ok();
+    }
+}
+
+/// The file a link leads to, when the link and that file are both inside
+/// `root` (already canonical). Links to folders are never followed.
+fn link_target_within(link: &Path, root: &Path) -> Option<PathBuf> {
+    let parent = link.parent().filter(|p| !p.as_os_str().is_empty())?;
+    let parent = std::fs::canonicalize(parent).ok()?;
+    let target = std::fs::canonicalize(link).ok()?;
+    let in_git = target
+        .strip_prefix(root)
+        .is_ok_and(|rest| rest.components().any(|c| c.as_os_str() == ".git"));
+    (parent.starts_with(root) && target.starts_with(root) && target.is_file())
+        .then_some(target)
+        .filter(|t| !in_git && !executable(t))
+}
+
+/// A link that leads to a program (a git hook, a script) is never written
+/// through: Kit's text in it would run.
+#[cfg(unix)]
+fn executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn executable(_: &Path) -> bool {
+    false
 }
 
 /// Remove up to `levels` parent folders of `path` while they are empty
@@ -926,8 +1027,20 @@ fn write_skill(dir: &Path, payload: &SkillPayload, force: bool) -> Result<()> {
                 tilde(dir)
             );
         }
-        if disk_hash(dir)?.as_deref() == Some(payload.hash.as_str()) {
+        let on_disk = disk_hash(dir)?;
+        if on_disk.as_deref() == Some(payload.hash.as_str()) {
             return Ok(());
+        }
+        // The marker holds the hash Kit wrote. A folder that no longer
+        // matches it was edited by hand: never replace that silently.
+        if owned && !force {
+            let wrote = std::fs::read_to_string(dir.join(OWNED)).unwrap_or_default();
+            if on_disk.as_deref() != Some(wrote.trim()) {
+                bail!(
+                    "{} was changed by hand since Kit installed it. Copy your changes, or use --force",
+                    tilde(dir)
+                );
+            }
         }
         std::fs::remove_dir_all(dir)?;
     }
@@ -957,18 +1070,47 @@ fn disk_hash(dir: &Path) -> Result<Option<String>> {
     Ok(Some(super::fetch::content_hash(&files)))
 }
 
+/// Every entry of a skill folder as hashed. Links are never followed (a
+/// link counts as its target's name), and anything Kit never writes (a
+/// link, an empty folder, a file named like the marker below the top)
+/// shows up as a change. A pipe, device or socket is refused, not read.
 fn collect(root: &Path, dir: &Path, out: &mut Vec<super::fetch::SkillFile>) -> Result<()> {
+    let rel = |p: &Path| p.strip_prefix(root).unwrap_or(p).to_path_buf();
+    let mut empty = true;
     for entry in std::fs::read_dir(dir)? {
-        let path = entry?.path();
-        if path.is_dir() {
+        let entry = entry?;
+        let (path, kind) = (entry.path(), entry.file_type()?);
+        empty = false;
+        let bytes = if kind.is_dir() {
             collect(root, &path, out)?;
-        } else if path.file_name().is_some_and(|n| n != OWNED) {
-            out.push(super::fetch::SkillFile {
-                path: path.strip_prefix(root).unwrap_or(&path).to_path_buf(),
-                bytes: std::fs::read(&path)?,
-                executable: false,
-            });
-        }
+            continue;
+        } else if kind.is_symlink() {
+            let mut b = b"\0link\0".to_vec();
+            b.extend(std::fs::read_link(&path)?.to_string_lossy().as_bytes());
+            b
+        } else if kind.is_file() {
+            if dir == root && entry.file_name() == OWNED {
+                continue;
+            }
+            std::fs::read(&path)?
+        } else {
+            bail!(
+                "{} is not a regular file. Kit will not touch that folder",
+                path.display()
+            );
+        };
+        out.push(super::fetch::SkillFile {
+            path: rel(&path),
+            bytes,
+            executable: false,
+        });
+    }
+    if empty && dir != root {
+        out.push(super::fetch::SkillFile {
+            path: rel(dir).join("."),
+            bytes: Vec::new(),
+            executable: false,
+        });
     }
     Ok(())
 }
@@ -1057,8 +1199,12 @@ pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
     static N: AtomicU64 = AtomicU64::new(0);
     let is_link = |p: &Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
     if is_link(file) {
+        let root = LINK_ROOT.lock().ok().and_then(|r| r.clone());
+        if let Some(target) = root.and_then(|r| link_target_within(file, &r)) {
+            return write_file(&target, bytes);
+        }
         bail!(
-            "{} is a link. Kit will not write through it",
+            "{} is a link that leads outside this repo (or home, for --global). Kit will not write through it",
             file.display()
         );
     }
@@ -1114,12 +1260,55 @@ fn read_json(file: &Path) -> Result<serde_json::Value> {
     })
 }
 
+/// Write `doc` laid out the way the file already is: compact stays
+/// compact, an indent of 4 or a tab is kept, and so are CRLF line ends
+/// and the final newline. Keys keep their order (`preserve_order`).
 fn write_json(file: &Path, doc: &serde_json::Value) -> Result<()> {
-    write(file, &format!("{}\n", serde_json::to_string_pretty(doc)?))
+    write(file, &render_json(doc, &read_or_empty(file)?)?)
 }
 
-/// Write `doc` back, deleting the file if Kit created it and nothing else is left.
-fn finish_json(file: &Path, doc: &serde_json::Value, created: bool, key: &str) -> Result<()> {
+fn render_json(doc: &serde_json::Value, like: &str) -> Result<String> {
+    use serde::Serialize;
+    let body = like.trim_end();
+    let mut text = if body.is_empty() || body.contains('\n') {
+        let indent = body
+            .lines()
+            .skip(1)
+            .map(|l| &l[..l.len() - l.trim_start_matches([' ', '\t']).len()])
+            .find(|w| !w.is_empty())
+            .unwrap_or("  ");
+        let mut out = Vec::new();
+        let fmt = serde_json::ser::PrettyFormatter::with_indent(indent.as_bytes());
+        doc.serialize(&mut serde_json::Serializer::with_formatter(&mut out, fmt))?;
+        String::from_utf8(out)?
+    } else {
+        serde_json::to_string(doc)?
+    };
+    if like.is_empty() || like.ends_with('\n') {
+        text.push('\n');
+    }
+    if like.contains("\r\n") {
+        text = text.replace('\n', "\r\n");
+    }
+    Ok(text)
+}
+
+/// Write `doc` back, deleting the file if Kit created it and nothing else is
+/// left. When what is left is what the file held before Kit, its original
+/// bytes go back exactly.
+fn finish_json(
+    file: &Path,
+    doc: &serde_json::Value,
+    created: bool,
+    key: &str,
+    original: Option<&str>,
+) -> Result<()> {
+    let before = original.and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok());
+    if let (Some(text), Some(v)) = (original, &before)
+        && v == doc
+    {
+        return write(file, text);
+    }
     let mut doc = doc.clone();
     if let Some(obj) = doc.as_object_mut()
         && obj
@@ -1127,7 +1316,12 @@ fn finish_json(file: &Path, doc: &serde_json::Value, created: bool, key: &str) -
             .and_then(|v| v.as_object())
             .is_some_and(|o| o.is_empty())
     {
-        obj.remove(key);
+        obj.shift_remove(key);
+    }
+    if let (Some(text), Some(v)) = (original, &before)
+        && *v == doc
+    {
+        return write(file, text);
     }
     if created && doc.as_object().is_some_and(|o| o.is_empty()) {
         std::fs::remove_file(file)?;
