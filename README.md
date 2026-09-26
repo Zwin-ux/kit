@@ -257,7 +257,7 @@ cargo run -p kitctl -- --demo
 |-----|--------|
 | `KIT_HOME` | Where Kit keeps its records, config, cache and receipts (default `~/.kit`) |
 | `KIT_FULL_AUTO=1` | Skip agent approval prompts in `kit run` (sandboxes only) |
-| `KIT_AGENT_RUNS_CHECKS=1` | Let Claude Code run the gate's own commands during `kit run` (they run code the agent wrote; edits to `kit.toml`, `.git` and `.claude` stay denied). Off by default: Kit runs the gate after the agent finishes |
+| `KIT_AGENT_RUNS_CHECKS=1` | Let Claude Code run the gate's own commands during `kit run` (they run code the agent wrote, with your permissions). Claude's file tools may never edit `kit.toml`, `.git` or `.claude`, with or without this; the checks themselves are not bound by that. Off by default: Kit runs the gate after the agent finishes |
 | `KIT_OLLAMA_MODEL` | Model for the Ollama adapter (default `llama3.2`) |
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
 | `KIT_THEME=high` | High-contrast palette |

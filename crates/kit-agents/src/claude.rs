@@ -98,7 +98,11 @@ impl Agent for ClaudeAgent {
 /// Then each gate command is allowed as an exact `Bash(<command>)` rule and
 /// nothing broader. Those commands run code the agent may have just written
 /// (a test file, a package.json script), so this is the user's call, never
-/// the repo's. Edits to `kit.toml`, `.git` and `.claude` are denied with it.
+/// the repo's.
+///
+/// On every run, full auto included, claude's file tools may never edit `kit.toml`, `.git`
+/// or `.claude`, opt-in or not. That binds only claude's own tools: an
+/// allowed check runs code the agent wrote, with the user's permissions.
 fn claude_command(binary: &str, worktree: &Path, bypass: bool, checks: &[String]) -> Command {
     let mut cmd = command_for(binary);
     cmd.arg("-p");
@@ -109,16 +113,18 @@ fn claude_command(binary: &str, worktree: &Path, bypass: bool, checks: &[String]
         // Same bar as codex's `-s workspace-write`; shell commands still ask
         // unless KIT_FULL_AUTO=1. Without this, `-p` can read but not write.
         cmd.arg("--permission-mode").arg("acceptEdits");
-        if !checks.is_empty() {
-            // Both flags take several values; nothing else follows them.
-            cmd.arg("--disallowedTools");
-            for path in PROTECTED {
-                rule_arg(&mut cmd, &format!("Edit({path})"));
-            }
-            cmd.arg("--allowedTools");
-            for check in checks {
-                rule_arg(&mut cmd, &format!("Bash({check})"));
-            }
+    }
+    // Both flags take several values; nothing else follows them. The deny
+    // list goes on in full auto too: where claude honours it there, it still
+    // guards the gate, git and claude's settings.
+    cmd.arg("--disallowedTools");
+    for path in PROTECTED {
+        rule_arg(&mut cmd, &format!("Edit({path})"));
+    }
+    if !bypass && !checks.is_empty() {
+        cmd.arg("--allowedTools");
+        for check in checks {
+            rule_arg(&mut cmd, &format!("Bash({check})"));
         }
     }
     cmd.current_dir(worktree);
@@ -130,6 +136,11 @@ fn claude_command(binary: &str, worktree: &Path, bypass: bool, checks: &[String]
 /// quoted there, with or without spaces. Rules hold no `"` (see
 /// [`allowed_checks`]), so the quotes cannot be closed early.
 fn rule_arg(cmd: &mut Command, rule: &str) {
+    debug_assert!(
+        rule.chars()
+            .all(|c| safe_on_command_line(c) || "()*".contains(c)),
+        "unsafe permission rule: {rule}"
+    );
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -139,17 +150,17 @@ fn rule_arg(cmd: &mut Command, rule: &str) {
     cmd.arg(rule);
 }
 
-/// Paths claude may not edit while it can run the gate's checks: the gate
-/// itself, git's state and claude's own settings.
-const PROTECTED: [&str; 3] = ["./kit.toml", "./.git/**", "./.claude/**"];
+/// Paths claude's file tools may never edit: the gate itself, git's state and
+/// claude's own settings. In a run's worktree `.git` is a file naming the git
+/// folder; repointed, Kit's own later `git diff` would run that folder's hooks
+/// and fsmonitor, so the file is protected as well as a `.git` folder.
+const PROTECTED: [&str; 4] = ["./kit.toml", "./.git", "./.git/**", "./.claude/**"];
 
 /// `KIT_AGENT_RUNS_CHECKS=1`: the user lets claude run the gate's checks
 /// itself. Read from the user's environment only, never from the repo.
+/// Only `1` turns it on, as documented.
 fn agent_runs_checks() -> bool {
-    matches!(
-        std::env::var("KIT_AGENT_RUNS_CHECKS").as_deref(),
-        Ok("1") | Ok("true") | Ok("yes")
-    )
+    std::env::var("KIT_AGENT_RUNS_CHECKS").as_deref() == Ok("1")
 }
 
 /// The prompt line about checking. Without `--dangerously-skip-permissions`
@@ -210,27 +221,54 @@ mod tests {
     fn claude_argv_carries_no_prompt_text() {
         // On Windows `command_for` prefixes `/C claude`; the tail is ours.
         let plain = claude_command("claude", Path::new("wt"), false, &[]);
-        let args: Vec<&OsStr> = plain.as_std().get_args().collect();
+        let args = rule_args(&plain);
         // Without a permission mode, `-p` can read the worktree but every
         // edit waits for an approval nobody can give (live smoke
-        // 01M3F7N9N2VNT7FMWJ3208T9ZX ended FAIL that way).
+        // 01M3F7N9N2VNT7FMWJ3208T9ZX ended FAIL that way). The protected
+        // paths are denied even without the opt-in.
         assert!(
-            args.ends_with(&["-p", "--permission-mode", "acceptEdits"].map(OsStr::new)),
+            args.ends_with(
+                &[
+                    "-p",
+                    "--permission-mode",
+                    "acceptEdits",
+                    "--disallowedTools",
+                    "Edit(./kit.toml)",
+                    "Edit(./.git)",
+                    "Edit(./.git/**)",
+                    "Edit(./.claude/**)",
+                ]
+                .map(String::from)
+            ),
             "{args:?}"
         );
+        assert!(!args.iter().any(|a| a == "--allowedTools"), "{args:?}");
         let bypass = claude_command("claude", Path::new("wt"), true, &[]);
-        let args: Vec<&OsStr> = bypass.as_std().get_args().collect();
+        let args = rule_args(&bypass);
+        // Full auto keeps the deny list: where claude honours it there, the
+        // gate, git and claude's settings stay out of reach.
         assert!(
-            args.ends_with(&["-p", "--dangerously-skip-permissions"].map(OsStr::new)),
+            args.ends_with(
+                &[
+                    "-p",
+                    "--dangerously-skip-permissions",
+                    "--disallowedTools",
+                    "Edit(./kit.toml)",
+                    "Edit(./.git)",
+                    "Edit(./.git/**)",
+                    "Edit(./.claude/**)",
+                ]
+                .map(String::from)
+            ),
             "{args:?}"
         );
         assert!(
-            !args.contains(&OsStr::new("acceptEdits")),
+            !args.iter().any(|a| a == "acceptEdits"),
             "full auto already skips every check: {args:?}"
         );
         assert!(
-            args.len() <= 4,
-            "nothing but the shim and fixed flags: {args:?}"
+            args.len() <= 10,
+            "nothing but the shim, fixed flags and the deny list: {args:?}"
         );
         assert_eq!(bypass.as_std().get_current_dir(), Some(Path::new("wt")));
     }
@@ -242,12 +280,7 @@ mod tests {
     fn opted_in_checks_become_exact_allowed_tools() {
         let checks = ["npm run test".to_owned(), "cargo fmt --check".to_owned()];
         let cmd = claude_command("claude", Path::new("wt"), false, &checks);
-        // On Windows each rule is quoted for cmd.exe; the rule inside is the same.
-        let args: Vec<String> = cmd
-            .as_std()
-            .get_args()
-            .map(|a| a.to_string_lossy().trim_matches('"').to_owned())
-            .collect();
+        let args = rule_args(&cmd);
         assert!(
             args.ends_with(
                 &[
@@ -255,6 +288,7 @@ mod tests {
                     "acceptEdits",
                     "--disallowedTools",
                     "Edit(./kit.toml)",
+                    "Edit(./.git)",
                     "Edit(./.git/**)",
                     "Edit(./.claude/**)",
                     "--allowedTools",
@@ -281,6 +315,9 @@ mod tests {
             "scripts\\check.bat",
             "npm run test | tee out",
             "cargo clippy -- -D warnings",
+            "npm test), Bash(*",
+            "npm test) Bash(*)",
+            "rm -rf *",
             "",
         ]
         .map(str::to_owned);
@@ -298,8 +335,20 @@ mod tests {
                 "cargo test --features a,b",
                 "scripts\\check.bat",
                 "npm run test | tee out",
+                "npm test), Bash(*",
+                "npm test) Bash(*)",
+                "rm -rf *",
             ]
         );
+    }
+
+    /// The argv as strings; on Windows each rule is quoted for cmd.exe and
+    /// the rule inside is the same.
+    fn rule_args(cmd: &Command) -> Vec<String> {
+        cmd.as_std()
+            .get_args()
+            .map(|a| a.to_string_lossy().trim_matches('"').to_owned())
+            .collect()
     }
 
     /// By default claude is told Kit runs the checks, named, and not to run
