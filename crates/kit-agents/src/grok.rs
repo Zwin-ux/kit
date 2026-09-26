@@ -33,8 +33,7 @@ impl Agent for GrokAgent {
         worktree: &Path,
         tx: mpsc::Sender<RunDelta>,
     ) -> Result<Box<dyn AgentHandle>, SpawnError> {
-        let skills_src = install_skills(worktree, &spec.repo, &tx).await;
-        let prompt = skills::build_prompt(&spec.task, skills_src.as_deref());
+        let prompt = skills::build_prompt(&spec.task);
 
         let _ = tx
             .send(RunDelta::Output(format!(
@@ -64,26 +63,6 @@ fn grok_command(prompt: &str, worktree: &Path) -> Command {
         .arg("streaming-json");
     cmd.current_dir(worktree);
     cmd
-}
-
-async fn install_skills(
-    worktree: &Path,
-    repo: &Path,
-    tx: &mpsc::Sender<RunDelta>,
-) -> Option<std::path::PathBuf> {
-    let src = skills::resolve_skills_dir(repo)?;
-    match skills::install_into_worktree(worktree, &src) {
-        Ok(n) => {
-            let _ = skills::ensure_agents_md(worktree);
-            let _ = tx
-                .send(RunDelta::Output(format!(
-                    "kit: installed {n} skills for grok\n"
-                )))
-                .await;
-            Some(src)
-        }
-        Err(_) => None,
-    }
 }
 
 #[cfg(test)]
