@@ -6,7 +6,7 @@
 //! Parsing lives here, not in kit-cli's store, so kit-tui never depends on
 //! kit-cli (which depends on kit-tui).
 
-use crate::app::{OUTPUT_DISPLAY_CAP_BYTES, RunRow};
+use crate::app::RunRow;
 use crate::persona::Persona;
 use kit_core::{Receipt, RunState};
 use std::io::{Read, Seek, SeekFrom};
@@ -79,9 +79,8 @@ fn read_row(dir: &Path) -> Option<RunRow> {
             .ok()
     });
     row.set_diff(&receipt.diff);
-    let (output, cut) = read_tail(&dir.join("output.log"), OUTPUT_DISPLAY_CAP_BYTES);
-    row.append_output(&output);
-    row.output_truncated |= cut || receipt.output_truncated;
+    row.past_output = Some(dir.join("output.log"));
+    row.output_truncated |= receipt.output_truncated;
     Some(row)
 }
 
@@ -101,7 +100,7 @@ fn split_role(task: &str) -> (String, Persona) {
 }
 
 /// The last `cap` bytes of a file (lossy UTF-8), and whether it was cut.
-fn read_tail(path: &Path, cap: usize) -> (String, bool) {
+pub(crate) fn read_tail(path: &Path, cap: usize) -> (String, bool) {
     let Ok(mut file) = std::fs::File::open(path) else {
         return (String::new(), false);
     };
@@ -281,7 +280,12 @@ pub(crate) mod tests {
             Duration::from_secs(300),
         );
         let past = load(&tmp.0, PAST_CAP);
-        let row = &past.rows[0];
+        let mut row = past.rows[0].clone();
+        assert!(
+            row.output.is_empty(),
+            "output waits until the run is opened"
+        );
+        row.load_past_output();
         assert_eq!(row.task, "fix the parser");
         assert_eq!(row.persona, Persona::Qa);
         assert_eq!(row.agent, "codex");

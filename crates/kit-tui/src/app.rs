@@ -434,6 +434,9 @@ pub struct RunRow {
     /// Read from a receipt at launch: finished before this session, read-only
     /// (Enter opens it, `r` runs it again, `k` has nothing to stop).
     pub past: bool,
+    /// A past run's output.log, read the first time its detail opens so
+    /// launch stays cheap.
+    pub past_output: Option<PathBuf>,
     /// When a past run ended; the STATE column shows its age.
     pub ended_at: Option<std::time::SystemTime>,
     /// The receipt's diff has been read, so an empty `diff` means the agent
@@ -465,8 +468,18 @@ impl RunRow {
             diff: String::new(),
             demo: false,
             past: false,
+            past_output: None,
             ended_at: None,
             diff_checked: false,
+        }
+    }
+
+    /// Read a past run's output the first time it is shown.
+    pub fn load_past_output(&mut self) {
+        if let Some(path) = self.past_output.take() {
+            let (output, cut) = crate::past::read_tail(&path, OUTPUT_DISPLAY_CAP_BYTES);
+            self.append_output(&output);
+            self.output_truncated |= cut;
         }
     }
 
@@ -722,10 +735,12 @@ impl App {
         if self.agents_probe.is_empty() {
             return String::new();
         }
+        // Grok without KIT_FULL_AUTO is installed but will not start, so it
+        // is neither ready nor missing here (Dispatch says why).
         let ready: Vec<&str> = self
             .agents_probe
             .iter()
-            .filter(|(_, ok)| *ok)
+            .filter(|(n, ok)| *ok && (n != "grok" || self.full_auto))
             .map(|(n, _)| n.as_str())
             .collect();
         let missing: Vec<&str> = self
@@ -751,10 +766,12 @@ impl App {
         if self.agents_probe.is_empty() {
             return String::new();
         }
+        // Grok without KIT_FULL_AUTO is installed but will not start, so it
+        // is neither ready nor missing here (Dispatch says why).
         let ready: Vec<&str> = self
             .agents_probe
             .iter()
-            .filter(|(_, ok)| *ok)
+            .filter(|(n, ok)| *ok && (n != "grok" || self.full_auto))
             .map(|(n, _)| n.as_str())
             .collect();
         let missing = self.agents_probe.len() - ready.len();
@@ -1423,6 +1440,11 @@ impl App {
         if self.selected_id.is_none() {
             self.set_flash("no runs yet — press d to give your agents a task");
             return;
+        }
+        if let Some(id) = self.selected_id.clone()
+            && let Some(run) = self.runs.iter_mut().find(|r| r.id == id)
+        {
+            run.load_past_output();
         }
         self.screen = Screen::RunDetail { pane };
         self.stream_follow = true;

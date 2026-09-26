@@ -266,7 +266,9 @@ fn quiet_on_closed_stdout() {
             .map(String::as_str)
             .or_else(|| info.payload().downcast_ref::<&str>().copied())
             .unwrap_or("");
-        if msg.contains("failed printing to stdout") && msg.contains("Broken pipe") {
+        // Broken pipe: os error 32 on unix, 232 on Windows.
+        let closed = msg.contains("Broken pipe") || msg.contains("(os error 232)");
+        if msg.contains("failed printing to stdout") && closed {
             std::process::exit(141);
         }
         default(info);
@@ -660,7 +662,7 @@ fn cmd_receipt_show(id: &str, show_output: bool, json: bool) -> Result<()> {
         } else {
             println!("  gate      (none)");
         }
-        if !receipt.diff.is_empty() {
+        if dir.join("diff.patch").is_file() {
             let files = changed_files(&dir);
             println!(
                 "  diff      {files} file{} (see {})",
