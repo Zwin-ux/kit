@@ -455,6 +455,70 @@ pub fn full_auto() -> bool {
     )
 }
 
+/// Stand-in agent for adapter tests: records its argv and stdin, then exits.
+#[cfg(all(test, unix))]
+pub(crate) mod test_support {
+    use super::*;
+    use std::path::Path;
+
+    pub struct FakeRun {
+        /// One argument per line.
+        pub argv: String,
+        pub stdin: String,
+    }
+
+    /// Spawn `build(fake_binary, worktree)` through the real stdin spawn path.
+    pub async fn run_fake_agent(build: impl Fn(&str, &Path) -> Command, prompt: &str) -> FakeRun {
+        use std::os::unix::fs::PermissionsExt;
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let dir =
+            std::env::temp_dir().join(format!("kit-fake-agent-{}-{nanos}", std::process::id()));
+        let worktree = dir.join("wt");
+        std::fs::create_dir_all(&worktree).expect("fake agent dir");
+        let fake = dir.join("fake-agent");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\nd=$(dirname \"$0\")\nprintf '%s\\n' \"$@\" > \"$d/argv\"\ncat > \"$d/stdin\"\n",
+        )
+        .expect("write fake agent");
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod fake agent");
+
+        // A test running in parallel can fork while our write fd to the fresh
+        // script is still open in its child, so exec fails with ETXTBSY until
+        // that child execs. Retry that one error briefly.
+        let fake = fake.to_str().expect("utf-8 temp path");
+        let mut attempts = 0;
+        let mut handle = loop {
+            let (tx, _rx) = mpsc::channel(64);
+            let cmd = build(fake, &worktree);
+            match spawn_streaming_with_stdin(AgentKind::Codex, cmd, prompt.to_owned(), tx).await {
+                Ok(handle) => break handle,
+                Err(SpawnError::Io { source, .. })
+                    if source.raw_os_error() == Some(libc::ETXTBSY) && attempts < 50 =>
+                {
+                    attempts += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+                Err(err) => panic!("spawn fake agent: {err}"),
+            }
+        };
+        let code = handle.wait().await.expect("fake agent exit");
+        assert_eq!(code, 0, "fake agent failed");
+
+        let run = FakeRun {
+            argv: std::fs::read_to_string(dir.join("argv")).expect("argv recorded"),
+            stdin: std::fs::read_to_string(dir.join("stdin")).expect("stdin recorded"),
+        };
+        let _ = std::fs::remove_dir_all(&dir);
+        run
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
