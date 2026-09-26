@@ -941,7 +941,11 @@ fn disk_hash(dir: &Path) -> Result<Option<String>> {
 /// link counts as its target's name), and anything Kit never writes (a
 /// link, an empty folder, a file named like the marker below the top)
 /// shows up as a change. A pipe, device or socket is refused, not read.
-fn collect(root: &Path, dir: &Path, out: &mut Vec<super::fetch::SkillFile>) -> Result<()> {
+pub(crate) fn collect(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<super::fetch::SkillFile>,
+) -> Result<()> {
     let rel = |p: &Path| p.strip_prefix(root).unwrap_or(p).to_path_buf();
     let mut empty = true;
     for entry in std::fs::read_dir(dir)? {

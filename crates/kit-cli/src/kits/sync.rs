@@ -145,6 +145,25 @@ fn inside(root: &Path, path: &Path) -> Option<std::path::PathBuf> {
     Some(at)
 }
 
+/// A committed skill that git checked out with CRLF line endings (its
+/// `core.autocrlf` default on Windows) is the same skill once they are LF.
+fn same_but_line_endings(dir: &Path, hash: &str) -> bool {
+    let mut files = Vec::new();
+    if super::plan::collect(dir, dir, &mut files).is_err() {
+        return false;
+    }
+    for f in &mut files {
+        let mut lf = Vec::with_capacity(f.bytes.len());
+        for (i, b) in f.bytes.iter().enumerate() {
+            if !(*b == b'\r' && f.bytes.get(i + 1) == Some(&b'\n')) {
+                lf.push(*b);
+            }
+        }
+        f.bytes = lf;
+    }
+    super::fetch::content_hash(&files) == hash
+}
+
 /// `kit sync --check` in a repo this machine has no Kit record for (a
 /// fresh CI runner): the repo's kit.lock against the files committed with
 /// it and against each kit's own `KIT.toml`. Runs nothing and writes
@@ -175,7 +194,9 @@ fn check_committed(
         {
             skills.insert(name.to_string_lossy().into_owned());
         }
-        if !present(&here) {
+        let crlf_only =
+            matches!(&here, Applied::Skill { dir, hash } if same_but_line_endings(dir, hash));
+        if !present(&here) && !crlf_only {
             gone.push(match (a, &here) {
                 (Applied::Skill { dir, .. }, Applied::Skill { dir: full, .. }) if full.is_dir() => {
                     format!("skill {} differs from {label}", dir.display())
@@ -550,5 +571,21 @@ mod tests {
             "KIT.toml itself may not be a link"
         );
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_skill_checked_out_with_crlf_is_the_same_skill() {
+        let dir = std::env::temp_dir().join(format!("kit-sync-crlf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "a\nb\n").unwrap();
+        let mut files = Vec::new();
+        crate::kits::plan::collect(&dir, &dir, &mut files).unwrap();
+        let hash = crate::kits::fetch::content_hash(&files);
+        std::fs::write(dir.join("SKILL.md"), "a\r\nb\r\n").unwrap();
+        assert!(same_but_line_endings(&dir, &hash));
+        std::fs::write(dir.join("SKILL.md"), "a\r\nc\r\n").unwrap();
+        assert!(!same_but_line_endings(&dir, &hash));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
