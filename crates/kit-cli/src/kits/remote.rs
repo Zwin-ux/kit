@@ -59,7 +59,7 @@ pub fn parse(spec: &str) -> Result<Option<GithubSpec>> {
         bail!("'{spec}': owner and repo may only use letters, digits, '-', '_' and '.'");
     }
     let path: Vec<&str> = parts.collect();
-    if path.iter().any(|p| p.is_empty() || *p == "." || *p == "..") {
+    if path.iter().any(|p| !name_ok(p)) {
         bail!("'{spec}': the path inside the repo must be plain folder names");
     }
     if let Some(r) = &rev
@@ -146,18 +146,21 @@ pub fn fetch_at(spec: &GithubSpec, sha: &str, level: Level) -> Result<Kit> {
 
 /// Unpack the kit folder at `sha` once; later calls reuse it.
 fn unpack(spec: &GithubSpec, sha: &str) -> Result<PathBuf> {
-    let base = kit_home()
+    // One flat folder per (commit, kit path), so two kits in one repo at
+    // one commit (every kit in an index repo) never share or clear a folder.
+    let key = if spec.path.is_empty() {
+        "+root".to_string()
+    } else {
+        spec.path.replace('/', "+")
+    };
+    let dir = kit_home()
         .join("cache")
         .join("kits")
         .join(&spec.repo)
         .join(sha);
-    let root = if spec.path.is_empty() {
-        base.clone()
-    } else {
-        base.join(&spec.path)
-    };
-    let done = base.join(".kit-complete");
-    if done.is_file() {
+    let root = dir.join(&key);
+    let done = dir.join(format!("{key}.kit-complete"));
+    if done.is_file() && root.join("KIT.toml").is_file() {
         return Ok(root);
     }
     let source = format!("github:{}", spec.repo);
@@ -168,9 +171,9 @@ fn unpack(spec: &GithubSpec, sha: &str) -> Result<PathBuf> {
     };
     let files = fetch::upstream_files(&source, sha, folder)
         .with_context(|| format!("cannot fetch the kit {}", spec.pinned(sha)))?;
-    if base.exists() {
-        std::fs::remove_dir_all(&base)
-            .with_context(|| format!("cannot clear {}", base.display()))?;
+    if root.exists() {
+        std::fs::remove_dir_all(&root)
+            .with_context(|| format!("cannot clear {}", root.display()))?;
     }
     for f in &files {
         if !plain_relative(&f.path) {
@@ -270,6 +273,8 @@ pub(crate) mod tests {
             "github:a/b@--upload-pack=evil",
             "github:a/b@",
             "github:a b/c",
+            "github:a/b/c:d",
+            "github:a/b/.git",
         ] {
             assert!(parse(bad).is_err(), "{bad} should be refused");
         }
@@ -303,6 +308,16 @@ pub(crate) mod tests {
                 "Remote rules.\n"
             );
         }
+        // Two kits in one repo at one commit each get their own folder.
+        let root_kit = crate::kits::catalog::find(&format!("github:owner/kits@{sha}"));
+        assert!(root_kit.is_err(), "the repo root has no KIT.toml");
+        let again =
+            crate::kits::catalog::find(&format!("github:owner/kits/kits/tipper@{sha}")).unwrap();
+        assert_eq!(
+            again.files.read_to_string("RULES.md").unwrap(),
+            "Remote rules.\n"
+        );
+
         // Pinned by sha: served from the cache with the remote gone.
         std::fs::remove_dir_all(base.join("owner")).unwrap();
         let kit =
