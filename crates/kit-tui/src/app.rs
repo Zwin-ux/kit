@@ -719,9 +719,14 @@ impl App {
         })
     }
 
+    /// Whether the fox is on screen: the empty Control Room, no overlay.
+    fn fox_on_screen(&self) -> bool {
+        self.runs.is_empty() && self.screen == Screen::ControlRoom && !self.help_open
+    }
+
     /// Whether anything on the current frame would change with the clock.
     pub fn animated_on_screen(&self) -> bool {
-        if self.flash.is_some() {
+        if self.flash.is_some() || self.fox_on_screen() {
             return true;
         }
         self.runs
@@ -744,10 +749,7 @@ impl App {
                 let spinner_tick = live && next.is_multiple_of(2);
                 // The fox in the empty Control Room redraws only when its tail
                 // frame changes: six frames every 8 s.
-                let fox_tick = self.runs.is_empty()
-                    && self.screen == Screen::ControlRoom
-                    && !self.help_open
-                    && crate::fox::changes_at(next);
+                let fox_tick = self.fox_on_screen() && crate::fox::changes_at(next);
                 self.motion && (spinner_tick || flash_active || fox_tick)
             }
             other => other.is_redraw_worthy(),
