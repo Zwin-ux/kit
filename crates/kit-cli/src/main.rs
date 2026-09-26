@@ -3,12 +3,15 @@
 //! Default surface is the ratatui Control Room (PRD §4.2). `kit run` is the M1
 //! headless path: worktree → dry-run stream → gate → receipt.
 
+mod cli;
 mod engine;
 mod init;
 mod land;
 
 use anyhow::{Context, Result};
-use engine::{RunOptions, execute, parse_agent, spawn_production};
+use clap::{CommandFactory, Parser};
+use cli::{Cli, Command, ReceiptAction};
+use engine::{RunOptions, execute, spawn_production};
 use kit_core::{AgentKind, Bounds, RunDelta, RunId, RunState};
 use kit_tui::{EngineCommand, LaunchConfig, run_configured};
 use std::collections::HashSet;
@@ -20,98 +23,70 @@ use tokio::sync::mpsc;
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Err(err) = dispatch(&args).await {
-        // Under --json, stdout carries exactly one envelope, failures included.
-        if args.iter().any(|a| a == "--json") {
-            let envelope = json_envelope(
-                &command_name(&args),
-                false,
-                serde_json::Value::Null,
-                Some(format!("{err:#}")),
-            );
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&envelope).unwrap_or_default()
-            );
-        } else {
-            eprintln!("kit: {err:#}");
+    let json = args.iter().any(|a| a == "--json");
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        // --help and --version print and exit 0; usage errors exit 2.
+        Err(err) if !json || !err.use_stderr() => err.exit(),
+        Err(err) => {
+            let text = err.render().to_string();
+            let first = text.lines().next().unwrap_or_default();
+            fail(&args, true, first.trim_start_matches("error: "));
         }
-        std::process::exit(2);
+    };
+    if let Err(err) = dispatch(cli).await {
+        fail(&args, json, &format!("{err:#}"));
     }
 }
 
-/// The `command` field of a JSON envelope for this argv.
-fn command_name(args: &[String]) -> String {
-    match args.first().map(String::as_str) {
-        Some("receipt") | Some("receipts") => {
-            let sub = match args.get(1).map(String::as_str) {
-                Some("show") | Some("get") => "show",
-                _ => "list",
-            };
-            format!("receipt.{sub}")
-        }
-        Some(first) if !first.starts_with('-') => first.to_string(),
-        _ => "kit".to_string(),
+/// Print a could-not-run error (one envelope under --json) and exit 2.
+fn fail(args: &[String], json: bool, message: &str) -> ! {
+    if json {
+        let envelope = json_envelope(
+            &cli::command_name(args),
+            false,
+            serde_json::Value::Null,
+            Some(message.to_string()),
+        );
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&envelope).unwrap_or_default()
+        );
+    } else {
+        eprintln!("kit: {message}");
     }
+    std::process::exit(2);
 }
 
-async fn dispatch(args: &[String]) -> Result<()> {
-    let version = env!("CARGO_PKG_VERSION");
-
-    if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("kit {version}");
-        return Ok(());
+async fn dispatch(cli: Cli) -> Result<()> {
+    let json = cli.global.json;
+    if let Some(dir) = &cli.global.dir {
+        // Like `git -C`: every command below resolves "." against DIR.
+        std::env::set_current_dir(dir)
+            .with_context(|| format!("cannot use -C {}: no such folder", dir.display()))?;
     }
-
-    if args
-        .iter()
-        .any(|a| a == "--help" || a == "-h" || a == "help")
-    {
-        print_help(version);
-        return Ok(());
+    if cli.demo && cli.command.is_some() {
+        anyhow::bail!("--demo opens the Control Room. Use `kit --demo` on its own");
     }
-
-    let first = args.first().map(String::as_str);
-    if is_tui_invocation(first) {
-        let demo =
-            wants_demo(args) || first == Some("demo") || std::env::var_os("KIT_DEMO").is_some();
-        return launch_tui(demo).await;
-    }
-
-    match first {
-        Some("run") => cmd_run(&args[1..]).await,
-        Some("init") => init::cmd_init(&args[1..]).await,
-        Some("land") => land::cmd_land(&args[1..]),
-        Some("doctor") => {
-            let json = args.iter().any(|a| a == "--json");
-            print_doctor(version, json);
+    match cli.command {
+        None => launch_tui(cli.demo).await,
+        Some(Command::Run(args)) => cmd_run(args, json).await,
+        Some(Command::Init(args)) => init::cmd_init(args, json).await,
+        Some(Command::Land(args)) => land::cmd_land(args, json),
+        Some(Command::Doctor) => {
+            print_doctor(env!("CARGO_PKG_VERSION"), json);
             Ok(())
         }
-        Some("receipt") | Some("receipts") => cmd_receipt(&args[1..]),
-        Some("version") => {
-            println!("kit {version}");
+        Some(Command::Receipt(args)) => match args.action {
+            None => cmd_receipt_list(args.list.limit, json),
+            Some(ReceiptAction::List(list)) => cmd_receipt_list(list.limit, json),
+            Some(ReceiptAction::Show(show)) => cmd_receipt_show(&show.id, show.output, json),
+        },
+        Some(Command::Completions { shell }) => {
+            clap_complete::generate(shell, &mut Cli::command(), "kit", &mut std::io::stdout());
             Ok(())
         }
-        Some(other) => anyhow::bail!("unknown command: {other}. Run `kit --help`"),
-        None => unreachable!("empty argv is a TUI launch"),
     }
-}
-
-fn wants_demo(args: &[String]) -> bool {
-    args.iter().any(|a| a == "--demo" || a == "-d")
-}
-
-/// `kit`, `kit --demo`, `kit -d`, `kit demo`, and `kit tui` all open the Control Room.
-fn is_tui_invocation(first: Option<&str>) -> bool {
-    matches!(
-        first,
-        None | Some("tui")
-            | Some("ui")
-            | Some("control-room")
-            | Some("demo")
-            | Some("--demo")
-            | Some("-d")
-    )
 }
 
 async fn launch_tui(demo: bool) -> Result<()> {
@@ -120,7 +95,7 @@ async fn launch_tui(demo: bool) -> Result<()> {
     // that never come.
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         anyhow::bail!(
-            "the Control Room needs an interactive terminal. In scripts, use `kit run --task \"…\" --json`"
+            "the Control Room needs an interactive terminal. In scripts, use `kit run \"…\" --json`"
         );
     }
     let (delta_tx, delta_rx) = mpsc::channel::<(RunId, RunDelta)>(256);
@@ -140,48 +115,19 @@ async fn launch_tui(demo: bool) -> Result<()> {
     .await
 }
 
-async fn cmd_run(args: &[String]) -> Result<()> {
-    let mut repo = ".".to_string();
-    let mut agent = "codex".to_string();
-    let mut task = String::new();
-    // None = auto (live if installed). --dry-run forces offline.
-    let mut dry_run: Option<bool> = None;
-    let mut json = false;
-    let mut allow_vacuous = false;
-
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--repo" | "-C" => {
-                i += 1;
-                repo = args.get(i).context("--repo needs a path")?.clone();
-            }
-            "--agent" | "-a" => {
-                i += 1;
-                agent = args.get(i).context("--agent needs a name")?.clone();
-            }
-            "--task" | "-t" => {
-                i += 1;
-                task = args.get(i).context("--task needs text")?.clone();
-            }
-            "--dry-run" => dry_run = Some(true),
-            "--live" | "--no-dry-run" => dry_run = Some(false),
-            "--json" => json = true,
-            "--allow-vacuous" => allow_vacuous = true,
-            other if !other.starts_with('-') && task.is_empty() => {
-                // Positional task fallback: kit run "do the thing"
-                task = other.to_string();
-            }
-            other => anyhow::bail!("unknown kit run flag: {other}"),
-        }
-        i += 1;
-    }
-
+async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
+    let task = args.task().to_string();
     if task.trim().is_empty() {
-        anyhow::bail!("missing task — use --task \"…\" or a positional string");
+        anyhow::bail!(
+            "the task is empty. Say what the agent should do: kit run \"add a test for X\""
+        );
     }
-
-    let kind = parse_agent(&agent)?;
+    let repo = ".".to_string();
+    let allow_vacuous = args.allow_vacuous;
+    // None = live with the chosen agent. --dry-run runs no agent.
+    let dry_run = args.dry_run.then_some(true);
+    let agent = args.agent.map(AgentKind::from);
+    let kind = agent.unwrap_or(AgentKind::Codex);
     // Stderr only: under --json, stdout holds one envelope.
     if let Some(hint) = init_hint(Path::new(&repo)) {
         eprintln!("kit: {hint}");
@@ -369,245 +315,145 @@ pub(crate) fn envelope(
     })
 }
 
-fn print_help(version: &str) {
-    println!("kit {version} — control room for parallel agent work");
-    println!();
-    println!("Usage:");
-    println!("  kit                      Open the Control Room");
-    println!("  kit init                 Write kit.toml: a gate for this repo");
-    println!("  kit --demo               Control Room with sample runs");
-    println!("  kit run --task \"…\"       One isolated run: agent, then gate, then receipt");
-    println!("  kit run --agent codex --task \"…\" [--dry-run] [--json]");
-    println!("  kit land <id>            Put a passed run's changes on a new branch kit/<id>");
-    println!("  kit doctor [--json]      Environment / readiness");
-    println!("  kit receipt list [--limit N] [--json]");
-    println!("  kit receipt show <id> [--json] [--output]");
-    println!("  kit --version            Print version");
-    println!();
-    println!("Init flags:");
-    println!("  --print / -p             Print the proposal only. Write nothing");
-    println!("  --force / -f             Replace an existing kit.toml");
-    println!("  --check                  Run each command once first. Stop if one fails");
-    println!("  --drop-failing           With --check: write the gate without the failing checks");
-    println!("  --timeout <5m>           Limit for each command under --check");
-    println!("  --repo / -C <path>       Target repo (default .)");
-    println!("  --json                   One JSON result on stdout");
-    println!();
-    println!("Run flags:");
-    println!("  --repo / -C <path>       Target git repo (default .)");
-    println!("  --agent / -a <name>      codex|claude|grok|ollama");
-    println!("  --task / -t <text>       Prompt / task");
-    println!("  --dry-run                Test the pipeline without an agent (proves nothing)");
-    println!("  --allow-vacuous          Exit 0 when kit.toml has no gate checks");
-    println!("  --json                   One JSON result on stdout (errors too)");
-    println!("  KIT_HOME=…               Data root (default ~/.kit)");
-    println!("  KIT_FULL_AUTO=1          Bypass agent approval prompts (dangerous)");
-    println!("  KIT_SKILLS_DIR=…         Override skills pack path");
-    println!();
-    println!("Land flags:");
-    println!(
-        "  (default)                Commit the diff on a new branch. Your branch and files do not change"
-    );
-    println!(
-        "  --branch / -b <name>     Name of the new branch (default kit/<first 12 chars of id>)"
-    );
-    println!("  --apply                  Apply the diff to your working tree. No commit");
-    println!(
-        "  --force / -f             Land a run the gate did not prove, or apply to a dirty tree"
-    );
-    println!("  --json                   One JSON result on stdout (errors too)");
-    println!();
-    println!("Keys (Control Room):");
-    println!("  ↑↓ select   f filter   Enter open   g gate   d dispatch   b board");
-    println!("  k kill      r retry (fail only)   ? help   q quit");
-    println!();
-    println!(
-        "Gate: run `kit init` in your repo to write kit.toml. Docs: https://github.com/Zwin-ux/kit#readme"
-    );
+/// `kit receipt [list]` — runs under `~/.kit/runs/`, newest first.
+fn cmd_receipt_list(limit: usize, json: bool) -> Result<()> {
+    let rows = engine::store::list_receipts(limit)?;
+    if json {
+        let items: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "id": r.id,
+                    "state": r.state,
+                    "agent": r.agent,
+                    "repo": r.repo,
+                    "task": r.task,
+                    "gatePassed": r.gate_passed,
+                    "dir": r.dir,
+                })
+            })
+            .collect();
+        let data = serde_json::json!({
+            "kitHome": engine::paths::kit_home(),
+            "runsDir": engine::paths::runs_dir(),
+            "count": items.len(),
+            "receipts": items,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json_envelope("receipt.list", true, data, None))?
+        );
+    } else if rows.is_empty() {
+        println!(
+            "no receipts under {} — run `kit run --dry-run --task smoke` first",
+            engine::paths::runs_dir().display()
+        );
+    } else {
+        println!(
+            "{:<28} {:<8} {:<8} {:<12} TASK",
+            "ID", "STATE", "AGENT", "REPO"
+        );
+        for r in &rows {
+            let short = if r.id.len() > 26 {
+                format!("{}…", &r.id[..25])
+            } else {
+                r.id.clone()
+            };
+            println!(
+                "{:<28} {:<8} {:<8} {:<12} {}",
+                short, r.state, r.agent, r.repo, r.task
+            );
+        }
+        println!();
+        println!(
+            "{} receipt(s) in {}  ·  kit receipt show <id>",
+            rows.len(),
+            engine::paths::runs_dir().display()
+        );
+    }
+    Ok(())
 }
 
-/// `kit receipt list|show …` — proof browser for `~/.kit/runs/<id>/`.
-fn cmd_receipt(args: &[String]) -> Result<()> {
-    let sub = args.first().map(String::as_str).unwrap_or("list");
-    match sub {
-        "list" | "ls" => {
-            let mut limit = 50usize;
-            let mut json = false;
-            let mut i = 1;
-            while i < args.len() {
-                match args[i].as_str() {
-                    "--json" => json = true,
-                    "--limit" | "-n" => {
-                        i += 1;
-                        limit = args
-                            .get(i)
-                            .context("--limit needs a number")?
-                            .parse()
-                            .context("--limit must be an integer")?;
-                    }
-                    other => anyhow::bail!("unknown kit receipt list flag: {other}"),
-                }
-                i += 1;
-            }
-            let rows = engine::store::list_receipts(limit)?;
-            if json {
-                let items: Vec<serde_json::Value> = rows
-                    .iter()
-                    .map(|r| {
-                        serde_json::json!({
-                            "id": r.id,
-                            "state": r.state,
-                            "agent": r.agent,
-                            "repo": r.repo,
-                            "task": r.task,
-                            "gatePassed": r.gate_passed,
-                            "dir": r.dir,
-                        })
-                    })
-                    .collect();
-                let data = serde_json::json!({
-                    "kitHome": engine::paths::kit_home(),
-                    "runsDir": engine::paths::runs_dir(),
-                    "count": items.len(),
-                    "receipts": items,
-                });
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&json_envelope("receipt.list", true, data, None))?
-                );
-            } else if rows.is_empty() {
-                println!(
-                    "no receipts under {} — run `kit run --dry-run --task smoke` first",
-                    engine::paths::runs_dir().display()
-                );
-            } else {
-                println!(
-                    "{:<28} {:<8} {:<8} {:<12} TASK",
-                    "ID", "STATE", "AGENT", "REPO"
-                );
-                for r in &rows {
-                    let short = if r.id.len() > 26 {
-                        format!("{}…", &r.id[..25])
-                    } else {
-                        r.id.clone()
-                    };
-                    println!(
-                        "{:<28} {:<8} {:<8} {:<12} {}",
-                        short, r.state, r.agent, r.repo, r.task
-                    );
-                }
-                println!();
-                println!(
-                    "{} receipt(s) in {}  ·  kit receipt show <id>",
-                    rows.len(),
-                    engine::paths::runs_dir().display()
-                );
-            }
-            Ok(())
+/// `kit receipt show <id>` — one run's proof.
+fn cmd_receipt_show(id: &str, show_output: bool, json: bool) -> Result<()> {
+    let Some(receipt) = engine::store::read_receipt(id)? else {
+        anyhow::bail!("receipt not found for `{id}`");
+    };
+    let dir = engine::store::resolve_run_dir(id)?;
+    if json {
+        let mut data = serde_json::to_value(&receipt)?;
+        if let Some(obj) = data.as_object_mut() {
+            obj.insert(
+                "dir".into(),
+                serde_json::Value::String(dir.display().to_string()),
+            );
         }
-        "show" | "get" => {
-            let id = args
-                .get(1)
-                .context("usage: kit receipt show <id-or-prefix>")?;
-            let mut json = false;
-            let mut show_output = false;
-            for a in &args[2..] {
-                match a.as_str() {
-                    "--json" => json = true,
-                    "--output" | "-o" => show_output = true,
-                    other => anyhow::bail!("unknown kit receipt show flag: {other}"),
-                }
+        if show_output {
+            let tail = engine::store::read_output_tail(id, 64 * 1024)?;
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("outputTail".into(), serde_json::Value::String(tail));
             }
-            let Some(receipt) = engine::store::read_receipt(id)? else {
-                anyhow::bail!("receipt not found for `{id}`");
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json_envelope("receipt.show", true, data, None))?
+        );
+    } else {
+        println!("receipt {}", receipt.id);
+        println!("  dir       {}", dir.display());
+        println!("  state     {}", state_label(receipt.state));
+        println!("  agent     {}", receipt.spec.agent.label());
+        println!("  repo      {}", receipt.spec.repo.display());
+        println!(
+            "  task      {}",
+            receipt.spec.task.lines().next().unwrap_or("")
+        );
+        if let Some(g) = &receipt.gate {
+            // Same labels as `kit run`: zero checks proves nothing.
+            let label = if engine::infer::is_vacuous(g) {
+                "UNCONFIGURED"
+            } else if g.passed {
+                "PASS"
+            } else {
+                "FAIL"
             };
-            let dir = engine::store::resolve_run_dir(id)?;
-            if json {
-                let mut data = serde_json::to_value(&receipt)?;
-                if let Some(obj) = data.as_object_mut() {
-                    obj.insert(
-                        "dir".into(),
-                        serde_json::Value::String(dir.display().to_string()),
-                    );
-                }
-                if show_output {
-                    let tail = engine::store::read_output_tail(id, 64 * 1024)?;
-                    if let Some(obj) = data.as_object_mut() {
-                        obj.insert("outputTail".into(), serde_json::Value::String(tail));
-                    }
-                }
+            println!("  gate      {label}  ({} checks)", g.checks.len());
+            for c in &g.checks {
                 println!(
-                    "{}",
-                    serde_json::to_string_pretty(&json_envelope("receipt.show", true, data, None))?
+                    "            {:?}  {}  {}",
+                    c.status,
+                    c.label,
+                    c.summary.as_deref().unwrap_or("")
                 );
-            } else {
-                println!("receipt {}", receipt.id);
-                println!("  dir       {}", dir.display());
-                println!("  state     {}", state_label(receipt.state));
-                println!("  agent     {}", receipt.spec.agent.label());
-                println!("  repo      {}", receipt.spec.repo.display());
-                println!(
-                    "  task      {}",
-                    receipt.spec.task.lines().next().unwrap_or("")
-                );
-                if let Some(g) = &receipt.gate {
-                    // Same labels as `kit run`: zero checks proves nothing.
-                    let label = if engine::infer::is_vacuous(g) {
-                        "UNCONFIGURED"
-                    } else if g.passed {
-                        "PASS"
-                    } else {
-                        "FAIL"
-                    };
-                    println!("  gate      {label}  ({} checks)", g.checks.len());
-                    for c in &g.checks {
-                        println!(
-                            "            {:?}  {}  {}",
-                            c.status,
-                            c.label,
-                            c.summary.as_deref().unwrap_or("")
-                        );
-                    }
-                } else {
-                    println!("  gate      (none)");
-                }
-                if !receipt.diff.is_empty() {
-                    println!(
-                        "  diff      {} bytes (see {}/diff.patch)",
-                        receipt.diff.len(),
-                        dir.display()
-                    );
-                }
-                if show_output {
-                    let tail = engine::store::read_output_tail(id, 8 * 1024)?;
-                    println!();
-                    println!("--- output.log (tail) ---");
-                    print!("{tail}");
-                    if !tail.ends_with('\n') {
-                        println!();
-                    }
-                } else {
-                    println!();
-                    println!("  tip  kit receipt show {} --output", receipt.id);
-                }
-                let vacuous = receipt.gate.as_ref().is_none_or(engine::infer::is_vacuous);
-                if let Some(step) = land_hint(receipt.state, vacuous, &dir, &receipt.id.0) {
-                    println!("{step}");
-                }
             }
-            Ok(())
+        } else {
+            println!("  gate      (none)");
         }
-        "help" | "--help" | "-h" => {
-            println!("kit receipt — browse proof under ~/.kit/runs/");
+        if !receipt.diff.is_empty() {
+            println!(
+                "  diff      {} bytes (see {}/diff.patch)",
+                receipt.diff.len(),
+                dir.display()
+            );
+        }
+        if show_output {
+            let tail = engine::store::read_output_tail(id, 8 * 1024)?;
             println!();
-            println!("  kit receipt list [--limit N] [--json]");
-            println!("  kit receipt show <id-or-prefix> [--json] [--output]");
-            Ok(())
+            println!("--- output.log (tail) ---");
+            print!("{tail}");
+            if !tail.ends_with('\n') {
+                println!();
+            }
+        } else {
+            println!();
+            println!("  tip  kit receipt show {} --output", receipt.id);
         }
-        other => {
-            anyhow::bail!("unknown kit receipt subcommand: {other} (try list|show)");
+        let vacuous = receipt.gate.as_ref().is_none_or(engine::infer::is_vacuous);
+        if let Some(step) = land_hint(receipt.state, vacuous, &dir, &receipt.id.0) {
+            println!("{step}");
         }
     }
+    Ok(())
 }
 
 /// Names that collide with this binary on PATH (npm 0.1 ships `kit` + `kit.cmd`).
@@ -913,19 +759,6 @@ mod tests {
         assert_eq!(classify_shim_text("/usr/local/bin/kit"), PathKit::Other);
     }
 
-    #[test]
-    fn json_error_envelopes_name_the_command() {
-        let argv = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
-        assert_eq!(command_name(&argv("run --task x --json")), "run");
-        assert_eq!(command_name(&argv("doctor --json")), "doctor");
-        assert_eq!(
-            command_name(&argv("receipt show 01M --json")),
-            "receipt.show"
-        );
-        assert_eq!(command_name(&argv("receipt --json")), "receipt.list");
-        assert_eq!(command_name(&argv("--json")), "kit");
-    }
-
     fn scratch(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "kit-doctor-path-{}-{}-{}",
@@ -957,18 +790,6 @@ mod tests {
         );
         assert_eq!(land_hint(RunState::Pass, true, &dir, "01X"), None);
         assert_eq!(land_hint(RunState::Fail, false, &dir, "01X"), None);
-    }
-
-    #[test]
-    fn demo_flag_is_tui_not_unknown_command() {
-        assert!(is_tui_invocation(None));
-        assert!(is_tui_invocation(Some("--demo")));
-        assert!(is_tui_invocation(Some("-d")));
-        assert!(is_tui_invocation(Some("demo")));
-        assert!(is_tui_invocation(Some("tui")));
-        assert!(!is_tui_invocation(Some("run")));
-        assert!(!is_tui_invocation(Some("unify")));
-        assert!(wants_demo(&["--demo".into()]));
     }
 
     fn write_kit(dir: &Path, name: &str) -> PathBuf {

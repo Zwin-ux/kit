@@ -16,6 +16,8 @@ use std::time::Duration;
 
 const EXAMPLE: &str = "[gate]\ntest    = \"make test\"\ntimeout = \"10m\"";
 
+pub use check::parse_duration;
+
 struct Opts {
     repo: PathBuf,
     force: bool,
@@ -26,43 +28,23 @@ struct Opts {
     timeout: Duration,
 }
 
-fn parse(args: &[String]) -> Result<Opts> {
-    let mut o = Opts {
-        repo: PathBuf::from("."),
-        force: false,
-        print: false,
-        check: false,
-        drop_failing: false,
-        json: false,
-        timeout: Duration::from_secs(300),
-    };
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--repo" | "-C" => {
-                i += 1;
-                o.repo = args.get(i).context("--repo needs a path")?.into();
-            }
-            "--force" | "-f" => o.force = true,
-            "--print" | "-p" => o.print = true,
-            "--check" => o.check = true,
-            "--drop-failing" => o.drop_failing = true,
-            "--json" => o.json = true,
-            "--timeout" => {
-                i += 1;
-                let raw = args.get(i).context("--timeout needs a value, e.g. 5m")?;
-                o.timeout = check::parse_duration(raw)
-                    .with_context(|| format!("--timeout {raw} is not valid. Use 90s, 5m or 1h"))?;
-            }
-            other => bail!("unknown kit init flag: {other}. Run `kit --help`"),
+impl Opts {
+    fn new(args: crate::cli::InitArgs, json: bool) -> Self {
+        Self {
+            repo: PathBuf::from("."),
+            force: args.force,
+            print: args.print,
+            // Checking is the default: an untested gate fails every later run.
+            check: !args.no_check && !args.print,
+            drop_failing: args.drop_failing,
+            json,
+            timeout: args.timeout,
         }
-        i += 1;
     }
-    Ok(o)
 }
 
-pub async fn cmd_init(args: &[String]) -> Result<()> {
-    let o = parse(args)?;
+pub async fn cmd_init(args: crate::cli::InitArgs, json: bool) -> Result<()> {
+    let o = Opts::new(args, json);
     let repo = std::path::absolute(&o.repo)
         .map(crate::engine::worktree::strip_verbatim)
         .unwrap_or(o.repo.clone());
@@ -127,13 +109,13 @@ pub async fn cmd_init(args: &[String]) -> Result<()> {
     if !left_out.is_empty() && !o.drop_failing && !o.print {
         let names: Vec<&str> = left_out.iter().map(|(label, _)| label.as_str()).collect();
         bail!(
-            "these checks fail today: {}. kit.toml was not written. Fix them and run `kit init --check` again, or run `kit init --check --drop-failing` to write a gate without them",
+            "these checks fail today: {}. kit.toml was not written. Fix them and run `kit init` again, or run `kit init --drop-failing` to write a gate without them",
             names.join(", ")
         );
     }
     if gate.is_empty() {
         bail!(
-            "no proposed check passed, so kit.toml was not written. Fix the failures above, or run `kit init` without --check to write the proposal as it is"
+            "no proposed check passed, so kit.toml was not written. Fix the failures above, or run `kit init --no-check` to write the proposal as it is"
         );
     }
     let text = render::render(&det, &gate, &left_out);

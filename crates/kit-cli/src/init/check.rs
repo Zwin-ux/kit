@@ -1,4 +1,4 @@
-//! `kit init --check`: run each proposed command once, before anything is
+//! `kit init` checks: run each proposed command once, before anything is
 //! written, so the gate starts true today. Writers are never run.
 
 use crate::engine::infer::is_writer;
