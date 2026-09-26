@@ -44,6 +44,18 @@ Every publishing job stops if the tag does not match the Cargo version. A rerun 
 
 To try the pipeline without publishing: run **Release npm** from the Actions tab with `publish` unchecked. The run packs the npm packages (`npm publish --dry-run`), the release archives (artifact `release-archives`) and the release notes, runs `cargo publish --dry-run`, and publishes nothing.
 
+## Ship day
+
+In this order. Steps marked **owner** need Mazen; nothing is tagged, bumped or published without his go-ahead.
+
+1. **owner** Merge the release stack to `main` in order. `main` must be green on Linux, macOS and Windows.
+2. **owner** Repo secrets exist: `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (see [Requirements](#requirements-owner)).
+3. **owner** Create the empty public repo `Zwin-ux/kits` (no README, licence or .gitignore).
+4. Regenerate the kit index folder and git bundle from the release commit (`index.toml` pins every kit to the bundle's first commit), push the bundle's history to `Zwin-ux/kits`, then check that `kit search --refresh` no longer says "not published yet" and exits 0.
+5. On a branch from `main`: `node scripts/version.mjs --set 2.0.0`, `cargo update -w`, rename `## Unreleased` in `CHANGELOG.md` to `## 2.0.0 — Kits`, check `node scripts/release-notes.mjs 2.0.0`, merge.
+6. **owner** Push the tag `v2.0.0` on that `main` commit. `release-npm.yml` does the rest; watch it to green, including `install-check` and `npm-check`.
+7. Record the visuals from the released binary (`scripts/record-media.sh --kit <installed kit>`), attach the hero GIF to the GitHub Release, and run [`docs/SMOKE-TEST.md`](../SMOKE-TEST.md) on a clean machine.
+
 ## npm
 
 `@mzwin/kit` 1.x is a Node launcher (`npm/kit/bin/kit.js`) plus one binary package per platform (`npm/platforms.json`). npm installs only the platform package that matches the host's `os`, `cpu` and `libc`.
