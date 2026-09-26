@@ -22,6 +22,7 @@ pub mod app;
 pub mod event;
 #[path = "loop.rs"]
 pub mod event_loop;
+pub mod past;
 pub mod persona;
 pub mod theme;
 pub mod ui;

@@ -374,7 +374,7 @@ async fn agent_and_gate(
     let agent_diff = worktree::worktree_diff(wt_path, base).ok();
     let gate = if config.gate.is_empty() {
         // Still empty after inference → vacuous (TUI: UNCONFIGURED, never PASS).
-        let line = "gate: no checks configured and none inferred (vacuous — UNCONFIGURED)\n";
+        let line = "gate: no checks configured and none inferred, so nothing proves this run (UNCONFIGURED)\n";
         append_capped(output, truncated, cap, line);
         send(tx, id, RunDelta::Output(line.into())).await;
         GateOutcome::vacuous()

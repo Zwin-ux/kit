@@ -2,15 +2,15 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / ATTACHED  trenchwire · codex·eng · fix red CI  · PTY not conne…  PTY 1.0.1"
+"KIT / ATTACHED  trenchwire · codex·eng · fix red CI  · enter open · r retry     "
 "                                                                                "
 "┌ attach ──────────────────────────────────────────────────────────────────────┐"
-"│PTY attach ships in 1.0.1                                                     │"
+"│Attach is not available.                                                      │"
 "│                                                                              │"
-"│Esc detaches without killing the run.                                         │"
-"│q is disabled while attached.                                                 │"
+"│Esc goes back without stopping the run.                                       │"
 "│                                                                              │"
-"│PTY not connected yet — Esc detaches                                          │"
+"│                                                                              │"
+"│                                                                              │"
 "│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
 " [esc] detach  [?] help                                                         "

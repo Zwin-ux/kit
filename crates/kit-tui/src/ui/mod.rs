@@ -65,7 +65,7 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
         Line::from("Global"),
         Line::from("  ?          toggle this help"),
         Line::from("  Esc        back / close help"),
-        Line::from("  q          quit (Control Room only; disabled while attached)"),
+        Line::from("  q          quit (from the Control Room)"),
     ];
     match app.screen {
         Screen::ControlRoom => {
@@ -75,8 +75,8 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
                 Line::from("  Enter      open run detail (stream)"),
                 Line::from("  g          open gate log"),
                 Line::from("  d          dispatch fan-out"),
-                Line::from("  k          kill selected run"),
-                Line::from("  r          retry FAIL only"),
+                Line::from("  k / r      kill · retry (FAIL, or run a past run again)"),
+                Line::from("  l          show the kit land command (PASS with changes)"),
                 Line::from("  b / f      board · filter ALL → FAIL → RUN → DONE"),
             ]);
         }
@@ -84,8 +84,8 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
             lines.extend([
                 Line::from("Run detail"),
                 Line::from("  Tab / 1 2 3   stream · gate · diff"),
-                Line::from("  a             attach (PTY stub → 1.0.1)"),
                 Line::from("  k / r         kill / retry"),
+                Line::from("  l             show the kit land command"),
                 Line::from("  End           follow stream tail"),
             ]);
         }
@@ -108,9 +108,9 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
         }
         Screen::Board => {
             lines.extend([
-                Line::from("Board (prefill-only in 1.0)"),
+                Line::from("Board"),
                 Line::from("  n          new task"),
-                Line::from("  Enter      prefill Dispatch"),
+                Line::from("  Enter      send the task to Dispatch"),
                 Line::from("  Space      toggle done"),
                 Line::from("  x          remove"),
             ]);
@@ -382,6 +382,8 @@ mod tests {
     fn header_keeps_counts_beside_the_agent_strip() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
+        // The strip describes this machine; the demo hides it (D1).
+        app.demo = false;
         app.set_agents_probe(vec![
             ("codex".into(), false),
             ("claude".into(), true),
@@ -409,7 +411,393 @@ mod tests {
         let header = frame.lines().next().unwrap_or("");
         let counts = header.find("1 RUNNING").or(header.find("1R")).unwrap();
         let strip = header.find("claude").unwrap_or_else(|| panic!("{header}"));
-        assert!(counts < strip, "{header}");
+        assert!(
+            strip < counts,
+            "counts sit right-aligned, where a flash never moves them: {header}"
+        );
+    }
+
+    fn col(line: &str, needle: &str) -> Option<usize> {
+        line.find(needle).map(|i| line[..i].chars().count())
+    }
+
+    /// D1: the demo header does not describe this machine's agents beside
+    /// fixture rows, and its counts stay put when the opening flash goes.
+    #[test]
+    fn demo_header_counts_do_not_move_when_the_flash_clears() {
+        let mut app = App::with_motion(false);
+        app.set_agents_probe(vec![("claude".into(), true), ("codex".into(), false)]);
+        app.load_prd_fixture();
+        for width in [80u16, 120] {
+            let mut app = app.clone();
+            let before = render_to_string(&app, width, 14);
+            let before = before.lines().next().unwrap().to_string();
+            for _ in 0..=crate::event::TICK_HZ * 2 {
+                app.update(crate::event::AppEvent::AnimationTick);
+            }
+            assert_eq!(app.flash_message(), None);
+            let after = render_to_string(&app, width, 14);
+            let after = after.lines().next().unwrap().to_string();
+            assert!(before.contains("r retry"), "{width}: {before}");
+            for header in [&before, &after] {
+                assert!(
+                    !header.contains("missing") && !header.contains("ready"),
+                    "{width}: {header}"
+                );
+            }
+            let needle = if after.contains("1 RUNNING") {
+                "1 RUNNING"
+            } else {
+                "1R"
+            };
+            assert_eq!(
+                col(&before, needle),
+                col(&after, needle),
+                "{width}:\n{before}\n{after}"
+            );
+            assert!(col(&after, needle).is_some(), "{after}");
+        }
+    }
+
+    fn past_app() -> (crate::past::tests::TempRuns, App) {
+        use crate::past::tests::{DIFF, TempRuns, gate, write_receipt};
+        use kit_core::{AgentKind, RunState};
+        use std::time::Duration;
+        let tmp = TempRuns::new("ui");
+        let receipts = [
+            (
+                "01PASTA0000000000000000000",
+                AgentKind::Claude,
+                "add a greeting file",
+                RunState::Pass,
+                Some(gate(true)),
+                DIFF,
+                3 * 86_400,
+            ),
+            (
+                "01PASTB0000000000000000000",
+                AgentKind::Codex,
+                "fix the failing test",
+                RunState::Pass,
+                Some(gate(true)),
+                "",
+                2 * 3600 + 30,
+            ),
+            (
+                "01PASTC0000000000000000000",
+                AgentKind::Claude,
+                "make the parser strict",
+                RunState::Fail,
+                Some(gate(false)),
+                DIFF,
+                5 * 60 + 30,
+            ),
+        ];
+        for (id, agent, task, state, gate, diff, ago) in receipts {
+            write_receipt(
+                &tmp.0,
+                id,
+                agent,
+                task,
+                state,
+                gate,
+                diff,
+                Duration::from_secs(ago),
+            );
+        }
+        let mut app = App::with_motion(false);
+        app.runs_dir = Some(tmp.0.clone());
+        app.load_past_runs(&tmp.0);
+        app.past_total = 14; // eleven more on disk than the table lists
+        (tmp, app)
+    }
+
+    /// P1: with only past runs, the room lists them under a divider that
+    /// says where they came from and what to do next.
+    #[test]
+    fn room_with_only_past_runs_snapshot() {
+        let (_tmp, app) = past_app();
+        let frame = render_to_string(&app, 80, 16);
+        assert!(!frame.contains("No runs yet"), "{frame}");
+        assert!(frame.contains("earlier · from receipts"), "{frame}");
+        assert!(frame.contains("d  give your agents a task"), "{frame}");
+        assert!(
+            frame.contains("5m ago") && frame.contains("3d ago"),
+            "{frame}"
+        );
+        // The age gives way before the state word does.
+        assert!(
+            frame.contains("NO CHANGES ") && !frame.contains("2h ago"),
+            "{frame}"
+        );
+        assert!(render_to_string(&app, 120, 16).contains("NO CHANGES 2h ago"));
+        assert!(frame.contains("^ npm test: 2 failing"), "{frame}");
+        assert!(frame.contains("↓ 11 more · kit receipt"), "{frame}");
+        let header = frame.lines().next().unwrap();
+        assert!(
+            header.contains("0 FAIL") || header.contains("0F"),
+            "{header}"
+        );
+        assert!(header.contains("14 past"), "{header}");
+        let footer = snapshot_footer(&frame);
+        assert!(
+            !footer.contains("[k]ill"),
+            "no kill on a past run: {footer}"
+        );
+        insta::assert_snapshot!(frame);
+    }
+
+    /// Live runs sit above the divider; the header counts only them.
+    #[test]
+    fn room_with_live_and_past_runs_snapshot() {
+        use crate::app::RunRow;
+        use kit_core::{RunId, RunState};
+        let (_tmp, mut app) = past_app();
+        let mut live = RunRow::new(
+            RunId("01LIVE00000000000000000000".into()),
+            "kit",
+            "codex",
+            "port guard.js",
+        );
+        live.state = RunState::Running;
+        live.active_since_tick = Some(0);
+        app.upsert_run(live);
+        let frame = render_to_string(&app, 120, 16);
+        let lines: Vec<&str> = frame.lines().collect();
+        let live_y = lines
+            .iter()
+            .position(|l| l.contains("port guard.js"))
+            .unwrap();
+        let divider_y = lines
+            .iter()
+            .position(|l| l.contains("earlier · from receipts"))
+            .unwrap();
+        assert!(live_y < divider_y, "{frame}");
+        assert!(!lines[divider_y].contains("give your agents"), "{frame}");
+        assert!(
+            lines[0].contains("1 RUNNING") && lines[0].contains("0 FAIL"),
+            "{frame}"
+        );
+        insta::assert_snapshot!(frame);
+    }
+
+    /// A past FAIL keeps its red words but not the wash; the rest is muted.
+    #[test]
+    fn past_fail_row_has_no_wash() {
+        let theme = crate::theme::Theme::resolve();
+        let (_tmp, mut app) = past_app();
+        app.selected_id = None;
+        let (w, h) = (80, 16);
+        let buf = render_to_buffer(&app, w, h);
+        let text = |y: u16| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>();
+        let y = (0..h)
+            .find(|&y| text(y).contains("make the parser"))
+            .unwrap();
+        for x in 1..w - 1 {
+            assert_ne!(buf[(x, y)].bg, theme.fail_wash, "wash at ({x},{y})");
+            assert_ne!(
+                buf[(x, y + 1)].bg,
+                theme.fail_wash,
+                "wash at ({x},{})",
+                y + 1
+            );
+        }
+        let gate_x = text(y)
+            .find("FAIL")
+            .map(|i| text(y)[..i].chars().count())
+            .unwrap() as u16;
+        assert_eq!(
+            buf[(gate_x, y)].style(),
+            buf[(gate_x, y)].style().patch(theme.danger())
+        );
+    }
+
+    /// P2 (design): NO CHANGES fits STATE whole at every width, in amber,
+    /// and GATE still reads PASS. Under NO_COLOR the words carry it.
+    #[test]
+    fn no_changes_fits_state_at_every_width() {
+        let (_tmp, app) = past_app();
+        for w in [60u16, 80, 120] {
+            let frame = render_to_string(&app, w, 16);
+            let row = frame
+                .lines()
+                .find(|l| l.contains("NO CHANGES"))
+                .unwrap_or_else(|| panic!("{w}: {frame}"));
+            assert!(row.contains("PASS"), "{w}: {row}");
+        }
+        let theme = crate::theme::Theme::resolve();
+        let buf = render_to_buffer(&app, 80, 16);
+        let (x, y) = (0..16u16)
+            .flat_map(|y| (0..80u16).map(move |x| (x, y)))
+            .find(|&(x, y)| {
+                buf[(x, y)].symbol() == "N"
+                    && buf[(x + 1, y)].symbol() == "O"
+                    && buf[(x + 3, y)].symbol() == "C"
+            })
+            .unwrap();
+        assert_eq!(
+            buf[(x, y)].fg,
+            theme.warn().fg.unwrap_or(ratatui::style::Color::Reset)
+        );
+    }
+
+    #[test]
+    fn past_run_detail_snapshot() {
+        let (_tmp, mut app) = past_app();
+        // A fixed path for the snapshot; the rows are already loaded.
+        app.runs_dir = Some("/home/you/.kit/runs".into());
+        app.update(code(KeyCode::Enter));
+        // Windows joins the run id with `\`; the snapshot is the same screen.
+        let frame = render_to_string(&app, 80, 16).replace('\\', "/");
+        assert!(
+            frame.contains("receipt   /home/you/.kit/runs/01PASTC"),
+            "{frame}"
+        );
+        assert!(
+            frame.contains("working on make the parser strict"),
+            "{frame}"
+        );
+        let footer = snapshot_footer(&frame);
+        assert!(
+            !footer.contains("[k]ill") && footer.contains("[r]etry"),
+            "{footer}"
+        );
+        insta::assert_snapshot!(frame);
+    }
+
+    /// D12: a PASS run with changes offers `[l]and` and names the command.
+    #[test]
+    fn pass_with_changes_offers_land() {
+        let (_tmp, mut app) = past_app();
+        let idx = app
+            .runs
+            .iter()
+            .position(|r| r.task == "add a greeting file")
+            .unwrap();
+        app.selected_id = Some(app.runs[idx].id.clone());
+        let frame = render_to_string(&app, 100, 16);
+        assert!(snapshot_footer(&frame).contains("[l]and"), "{frame}");
+        app.update(AppEvent::Key(KeyEvent::new(
+            KeyCode::Char('g'),
+            KeyModifiers::NONE,
+        )));
+        let frame = render_to_string(&app, 100, 16);
+        assert!(frame.contains("next  kit land 01PASTA00000"), "{frame}");
+        assert!(snapshot_footer(&frame).contains("[l]and"), "{frame}");
+        app.update(AppEvent::Key(KeyEvent::new(
+            KeyCode::Char('l'),
+            KeyModifiers::NONE,
+        )));
+        let frame = render_to_string(&app, 100, 16);
+        assert!(
+            frame
+                .lines()
+                .nth(1)
+                .unwrap()
+                .contains("land it: kit land 01PASTA00000"),
+            "{frame}"
+        );
+    }
+
+    /// D3/P4: no unfinished feature or version number on any screen.
+    #[test]
+    fn no_stub_or_version_copy_anywhere() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let mut frames = vec![render_to_string(&app, 120, 30)];
+        for screen in [
+            Screen::RunDetail {
+                pane: DetailPane::Stream,
+            },
+            Screen::Attached,
+            Screen::Dispatch,
+            Screen::Board,
+        ] {
+            app.screen = screen;
+            frames.push(render_to_string(&app, 120, 30));
+            app.help_open = true;
+            frames.push(render_to_string(&app, 120, 30));
+            app.help_open = false;
+        }
+        app.board.clear();
+        app.screen = Screen::Board;
+        frames.push(render_to_string(&app, 120, 30));
+        for frame in frames {
+            for stub in [
+                "1.0",
+                "PTY",
+                "[a]ttach",
+                "prefill-only",
+                "pull-queue",
+                "stub",
+            ] {
+                assert!(!frame.contains(stub), "{stub}: {frame}");
+            }
+        }
+    }
+
+    /// P3 (design): a refused Grok start is the row's first-error line.
+    #[test]
+    fn refused_grok_start_is_the_row_error_line() {
+        use crate::app::RunRow;
+        use kit_core::{RunId, RunState};
+        let mut app = App::with_motion(false);
+        let mut row = RunRow::new(
+            RunId("01GROK00000000000000000000".into()),
+            "kit",
+            "grok",
+            "x",
+        );
+        row.state = RunState::Error;
+        row.output = "kit: run failed: grok runs without approval prompts (its headless mode has no edit-only setting), so Kit starts it only with KIT_FULL_AUTO=1\n".into();
+        app.upsert_run(row);
+        let frame = render_to_string(&app, 80, 12);
+        assert!(
+            frame.contains("^ grok runs without approval prompts"),
+            "{frame}"
+        );
+    }
+
+    #[test]
+    fn dispatch_marks_grok_until_full_auto() {
+        let mut app = App::with_motion(false);
+        app.full_auto = false;
+        app.dispatch.repos = vec![("/repos/kit".into(), true)];
+        app.set_agents_probe(vec![("claude".into(), true), ("grok".into(), true)]);
+        app.screen = Screen::Dispatch;
+        let frame = render_to_string(&app, 120, 16);
+        assert!(frame.contains("[ ] grok  needs KIT_FULL_AUTO"), "{frame}");
+        let frame = render_to_string(&app, 80, 16);
+        assert!(frame.contains("[ ] grok  needs"), "{frame}");
+        app.full_auto = true;
+        let frame = render_to_string(&app, 120, 16);
+        assert!(frame.contains("grok  ready"), "{frame}");
+    }
+
+    /// A filter that hides every run says so, instead of an empty table.
+    #[test]
+    fn filter_hiding_everything_says_so() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.run_filter = crate::app::RunFilter::Done;
+        app.runs.retain(|r| r.state.is_active());
+        let frame = render_to_string(&app, 80, 14);
+        assert!(frame.contains("No finished runs"), "{frame}");
+        assert!(frame.contains("press f to change the filter"), "{frame}");
+    }
+
+    /// D10: the empty room says what to press, and its hint never clips.
+    #[test]
+    fn empty_room_hint_wraps_instead_of_clipping() {
+        let mut app = App::with_motion(false);
+        app.set_agents_probe(vec![("claude".into(), true)]);
+        let frame = render_to_string(&app, 60, 12);
+        assert!(
+            frame.contains("press d to give your agents a task"),
+            "{frame}"
+        );
+        assert!(frame.contains("? help"), "{frame}");
+        assert!(frame.contains("or try kit --demo"), "{frame}");
     }
 
     /// A live row's REPO cell is the folder name, as Dispatch shows it, not
@@ -681,16 +1069,14 @@ mod tests {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
         app.update(code(KeyCode::Enter));
-        app.update(AppEvent::Key(KeyEvent::new(
-            KeyCode::Char('a'),
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(app.screen, Screen::Attached);
+        // No key opens it yet; drawn only to keep the frame honest.
+        app.screen = Screen::Attached;
         let frame = render_to_string(&app, 80, 12);
         assert!(
             frame.contains("codex·eng"),
             "attach header must use vendor·role: {frame}"
         );
+        assert!(!frame.contains("PTY") && !frame.contains("1.0"), "{frame}");
         insta::assert_snapshot!(frame);
     }
 
