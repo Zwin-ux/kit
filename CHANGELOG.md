@@ -21,6 +21,12 @@ Kit 2.0.0 is the first release of the Rust `kit` as the default install everywhe
 - From 1.0.0-alpha.1: run `npm install -g @mzwin/kit@latest` (the `alpha` tag stays on alpha.1), or rerun the installer. Receipts under `~/.kit/runs/` are kept.
 - `cargo install kit-cli` installs someone else's project. The crate is `kitctl`; the command is still `kit`.
 
+### Breaking changes
+
+- `kit doctor --json` no longer has the `skillsPack` field.
+- `KIT_SKILLS_DIR` is removed. `kit run` no longer copies skill packs or writes `AGENTS.md` into the run's worktree; the agent uses the skills your kits installed.
+- A run sees only committed files. If a kit is installed into the repo (not `--global`) and the agent should use it, commit the kit's files before `kit run`.
+
 ### Details
 
 #### Added
