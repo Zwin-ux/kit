@@ -335,18 +335,17 @@ fn setup_with_flags_needs_no_terminal_and_later_adds_use_its_agents() {
         text(&out.stderr)
     );
 
-    let out = env.kit(
-        &repo,
-        &[
-            "setup",
-            "--agent",
-            "codex",
-            "--kit",
-            spec,
-            "--this-repo",
-            "--yes",
-        ],
+    let flags = ["setup", "--agent", "codex", "--kit", spec, "--this-repo"];
+    let out = env.kit(&repo, &flags);
+    assert!(!out.status.success());
+    let err = text(&out.stderr);
+    assert!(
+        err.contains("kit setup asks before") && err.contains("--yes"),
+        "{err}"
     );
+    assert!(!repo.join(".agents").exists(), "nothing written");
+
+    let out = env.kit(&repo, &[&flags[..], &["--yes"]].concat());
     assert!(out.status.success(), "{}", text(&out.stderr));
     let config = read(&env.home.join(".kit/config.toml"));
     assert!(config.contains(r#"agents = ["codex"]"#), "{config}");
