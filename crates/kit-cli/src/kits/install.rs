@@ -1181,7 +1181,7 @@ fn proposed_here(scope: &Scope, lock: &Lock) -> Vec<String> {
         .collect()
 }
 
-fn skill_names(e: &Entry) -> BTreeSet<String> {
+pub(crate) fn skill_names(e: &Entry) -> BTreeSet<String> {
     e.applied
         .iter()
         .filter_map(|a| match a {

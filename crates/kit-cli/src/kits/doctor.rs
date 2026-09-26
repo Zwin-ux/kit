@@ -5,11 +5,12 @@
 //! `--start-mcp`: starting one can leave helpers running and send the
 //! server's own usage data.
 
+use super::install::skill_names;
 use super::install::{home_dir, repo_root};
 use super::lock::{Entry, Lock};
 use super::manifest::McpServer;
 use super::plan::{self, Applied, tilde};
-use super::writers::Scope;
+use super::writers::{Agent, Scope};
 use anyhow::Result;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
@@ -26,6 +27,9 @@ pub struct KitReport {
     pub agents: Vec<String>,
     /// (what, passed, detail)
     pub checks: Vec<(String, bool, String)>,
+    /// (what, detail): worth knowing, never a failure (a skill the user
+    /// edited is theirs).
+    pub notes: Vec<(String, String)>,
 }
 
 impl KitReport {
@@ -51,28 +55,64 @@ pub fn check_installed(start_mcp: bool) -> Result<Vec<KitReport>> {
 
 fn check(scope: &Scope, e: &Entry, start_mcp: bool) -> KitReport {
     let mut checks = Vec::new();
-    let skills: Vec<&Applied> = e
-        .applied
+    let mut notes = Vec::new();
+    let titles: Vec<&str> = e
+        .agents
         .iter()
-        .filter(|a| matches!(a, Applied::Skill { .. }))
+        .filter_map(|id| Agent::ALL.into_iter().find(|a| a.id() == id))
+        .map(Agent::title)
         .collect();
-    if !skills.is_empty() {
-        let drift: Vec<String> = skills
-            .iter()
-            .filter_map(|a| plan::drifted(a).ok().flatten())
-            .collect();
-        checks.push(match drift.first() {
-            None => (
-                format!("{} skills as installed", skills.len()),
-                true,
-                String::new(),
+    // Skills are counted by name, as `kit list` counts them, however many
+    // agents' folders hold a copy.
+    let names = skill_names(e);
+    let (mut missing, mut edited) = (Vec::new(), Vec::new());
+    for a in &e.applied {
+        let Applied::Skill { dir, hash } = a else {
+            continue;
+        };
+        let name = dir.file_name().map(|n| n.to_string_lossy().into_owned());
+        match plan::is_installed(dir, hash) {
+            Ok(Some(true)) => {}
+            Ok(Some(false)) => edited.push((name, format!("{} was changed by hand", tilde(dir)))),
+            Ok(None) => missing.push((name, format!("{} is missing", tilde(dir)))),
+            Err(err) => missing.push((name, format!("{}: {err:#}", tilde(dir)))),
+        }
+    }
+    let count = |list: &[(Option<String>, String)]| {
+        list.iter()
+            .filter_map(|(n, _)| n.as_ref())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+    };
+    if let Some((_, first)) = missing.first() {
+        checks.push((
+            format!("{} of {} skills missing", count(&missing), names.len()),
+            false,
+            format!("{first}. Run kit add {} again", e.name),
+        ));
+    } else if !names.is_empty() {
+        checks.push((
+            format!(
+                "{} skills as installed for {}",
+                names.len(),
+                super::setup::and_list(&titles)
             ),
-            Some(first) => (
-                format!("{} of {} skills changed", drift.len(), skills.len()),
-                false,
-                first.clone(),
+            true,
+            String::new(),
+        ));
+    }
+    if let Some((_, first)) = edited.first() {
+        notes.push((
+            format!(
+                "{} of {} skills changed by hand",
+                count(&edited),
+                names.len()
             ),
-        });
+            format!(
+                "{first}; kept as yours. `kit add {} --force` puts Kit's copy back",
+                e.name
+            ),
+        ));
     }
     for a in &e.applied {
         if let Applied::Rules { file, kit, .. } = a {
@@ -94,16 +134,24 @@ fn check(scope: &Scope, e: &Entry, start_mcp: bool) -> KitReport {
     // record. Never re-read from a KIT.toml or a repo's kit.lock.
     let mut started: Vec<&str> = Vec::new();
     for a in &e.applied {
-        let (name, present, place) = match a {
-            Applied::McpJson { file, name, .. } => (name, mcp_in_json(file, name), tilde(file)),
-            Applied::McpToml { file, name, .. } => (name, mcp_in_toml(file, name), tilde(file)),
-            Applied::ClaudeMcp { name, .. } => {
-                (name, claude_has_mcp(name), "Claude Code (user)".to_string())
+        let (name, present, place, agent) = match a {
+            Applied::McpJson { file, name, .. } => {
+                (name, mcp_in_json(file, name), tilde(file), Agent::Claude)
             }
+            Applied::McpToml { file, name, .. } => {
+                (name, mcp_in_toml(file, name), tilde(file), Agent::Codex)
+            }
+            Applied::ClaudeMcp { name, .. } => (
+                name,
+                claude_has_mcp(name),
+                "~/.claude.json".to_string(),
+                Agent::Claude,
+            ),
             _ => continue,
         };
+        let what = format!("{name} MCP configured for {}", agent.title());
         if let Err(why) = present {
-            checks.push((format!("{name} MCP configured"), false, why));
+            checks.push((what, false, why));
             continue;
         }
         let server = e.checks.mcp.get(name);
@@ -112,11 +160,7 @@ fn check(scope: &Scope, e: &Entry, start_mcp: bool) -> KitReport {
         } else {
             ""
         };
-        checks.push((
-            format!("{name} MCP configured"),
-            true,
-            format!("in {place}{hint}"),
-        ));
+        checks.push((what, true, format!("in {place}{hint}")));
         // One start per server, whichever agents it was added for.
         let Some(server) = server else {
             continue;
@@ -131,6 +175,15 @@ fn check(scope: &Scope, e: &Entry, start_mcp: bool) -> KitReport {
             Err(why) => (what, false, why),
         });
     }
+    // Grok gets no files of its own when Claude Code is there: it reads
+    // Claude Code's, which the lines above checked.
+    if e.agents.iter().any(|a| a == "grok") && e.agents.iter().any(|a| a == "claude") {
+        let what = "Grok reads the Claude Code files above".to_string();
+        match plan::find_program("grok") {
+            Some(_) => checks.push((what, true, String::new())),
+            None => notes.push((what, "grok is not on PATH".into())),
+        }
+    }
     for cmd in &e.checks.commands {
         checks.push(match run_check(cmd) {
             Ok(()) => (format!("`{cmd}` runs"), true, String::new()),
@@ -143,6 +196,7 @@ fn check(scope: &Scope, e: &Entry, start_mcp: bool) -> KitReport {
         version: e.version.clone(),
         agents: e.agents.clone(),
         checks,
+        notes,
     }
 }
 
@@ -359,6 +413,9 @@ pub fn print(reports: &[KitReport]) {
             };
             println!("    {mark}  {what}{detail}");
         }
+        for (what, detail) in &r.notes {
+            println!("    note  {what}   {detail}");
+        }
     }
 }
 
@@ -371,6 +428,9 @@ pub fn to_json(reports: &[KitReport]) -> serde_json::Value {
                 "agents": r.agents, "ok": r.ok(),
                 "checks": r.checks.iter().map(|(what, ok, detail)| serde_json::json!({
                     "check": what, "ok": ok, "detail": detail,
+                })).collect::<Vec<_>>(),
+                "notes": r.notes.iter().map(|(what, detail)| serde_json::json!({
+                    "note": what, "detail": detail,
                 })).collect::<Vec<_>>(),
             })
         })

@@ -301,9 +301,7 @@ fn delta_line(delta: &RunDelta) -> Option<String> {
         RunDelta::Output(chunk) if chunk.ends_with('\n') => Some(chunk.clone()),
         RunDelta::Output(chunk) => Some(format!("{chunk}\n")),
         RunDelta::State(RunState::Running) => Some("kit: agent running in its worktree\n".into()),
-        RunDelta::State(RunState::Gating) => {
-            Some("kit: agent done. Running the checks in kit.toml\n".into())
-        }
+        RunDelta::State(RunState::Gating) => Some("kit: agent done. Running the gate\n".into()),
         // Queued is instant; the end state is the verdict line on stdout.
         RunDelta::State(_) => None,
         RunDelta::Worktree(_) | RunDelta::Gate(_) => None,
@@ -413,10 +411,18 @@ fn land_hint(state: RunState, vacuous: bool, receipt_dir: &Path, id: &str) -> Op
         .then(|| format!("next      kit land {}", short_id(id)))
 }
 
-/// One line that points to `kit init` when `repo` is a folder with no kit.toml.
+/// One line for a folder with no kit.toml: `kit init` when it finds a
+/// project there, else a kit.toml to write by hand.
 fn init_hint(repo: &Path) -> Option<String> {
-    (repo.is_dir() && !repo.join("kit.toml").exists())
-        .then(|| "no kit.toml in this repo. Run `kit init` to write a gate.".to_string())
+    if !repo.is_dir() || repo.join("kit.toml").exists() {
+        return None;
+    }
+    Some(if engine::infer::detect(repo).gate.is_empty() {
+        "no kit.toml in this repo, and no project Kit can infer checks for. Write kit.toml by hand, for example: [gate] test = \"make test\"".to_string()
+    } else {
+        "no kit.toml in this repo, so Kit infers the checks. Run `kit init` to write them down."
+            .to_string()
+    })
 }
 
 fn state_label(state: RunState) -> String {
@@ -1110,7 +1116,7 @@ mod tests {
         );
         assert_eq!(
             delta_line(&RunDelta::State(RunState::Gating)).as_deref(),
-            Some("kit: agent done. Running the checks in kit.toml\n")
+            Some("kit: agent done. Running the gate\n")
         );
         assert_eq!(delta_line(&RunDelta::State(RunState::Pass)), None);
         assert_eq!(delta_line(&RunDelta::Worktree(PathBuf::from("wt"))), None);

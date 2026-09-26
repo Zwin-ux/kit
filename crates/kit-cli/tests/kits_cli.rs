@@ -770,6 +770,37 @@ fn doctor_fails_when_a_check_fails_or_config_is_gone() {
     write(&repo.join("ok.txt"), "");
     let out = env.kit(&repo, &["doctor"]);
     assert!(out.status.success(), "{}", text(&out.stdout));
+    let stdout = text(&out.stdout);
+    assert!(
+        stdout.contains("ok    1 skills as installed for Claude Code"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("local MCP configured for Claude Code"),
+        "{stdout}"
+    );
+
+    // A hand edit is the user's, not breakage: a note, and exit 0.
+    let skill = repo.join(".claude/skills/hello/SKILL.md");
+    write(&skill, &(read(&skill) + "mine\n"));
+    let out = env.kit(&repo, &["doctor"]);
+    let stdout = text(&out.stdout);
+    assert!(out.status.success(), "{stdout}");
+    assert!(
+        stdout.contains("note  1 of 1 skills changed by hand") && stdout.contains("kept as yours"),
+        "{stdout}"
+    );
+    // A missing one is broken.
+    std::fs::remove_dir_all(repo.join(".claude/skills/hello")).unwrap();
+    let out = env.kit(&repo, &["doctor"]);
+    let stdout = text(&out.stdout);
+    assert!(!out.status.success(), "{stdout}");
+    assert!(stdout.contains("FAIL  1 of 1 skills missing"), "{stdout}");
+    let out = env.kit(
+        &repo,
+        &["add", kit.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
 
     std::fs::remove_file(repo.join("ok.txt")).unwrap();
     write(
