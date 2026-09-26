@@ -169,7 +169,10 @@ impl RunFilter {
                 state,
                 RunState::Running | RunState::Gating | RunState::Queued
             ),
-            Self::Done => matches!(state, RunState::Pass | RunState::Killed),
+            Self::Done => matches!(
+                state,
+                RunState::Pass | RunState::Unconfigured | RunState::Killed
+            ),
         }
     }
 }
@@ -493,7 +496,7 @@ impl RunRow {
     /// First failure summary for the Control Room annotation line (`^ tsc: …`).
     pub fn gate_summary(&self) -> Option<String> {
         let gate = self.gate.as_ref()?;
-        if gate.passed {
+        if gate.passed || gate.is_vacuous() {
             return None;
         }
         if let Some(check) = gate.first_failure() {
@@ -1809,8 +1812,9 @@ fn state_rank(state: RunState) -> u8 {
         RunState::Fail => 2,
         RunState::Error => 3,
         RunState::Queued => 4,
-        RunState::Pass => 5,
-        RunState::Killed => 6,
+        RunState::Unconfigured => 5,
+        RunState::Pass => 6,
+        RunState::Killed => 7,
     }
 }
 
@@ -1855,6 +1859,7 @@ pub fn format_state_label(run: &RunRow, clock: &Clock, motion: bool) -> String {
         RunState::Gating => "GATING",
         RunState::Pass => "DONE",
         RunState::Fail => "DONE",
+        RunState::Unconfigured => "DONE",
         RunState::Killed => "KILLED",
         RunState::Error => "ERROR",
     };
@@ -1877,6 +1882,7 @@ pub fn format_state_label(run: &RunRow, clock: &Clock, motion: bool) -> String {
 pub fn format_gate_label(run: &RunRow) -> String {
     match (&run.state, &run.gate) {
         (_, Some(g)) if is_vacuous_gate(g) => "UNCONFIGURED".into(),
+        (RunState::Unconfigured, _) => "UNCONFIGURED".into(),
         (_, Some(g)) if g.passed => "PASS".into(),
         (_, Some(_)) => "FAIL".into(),
         (RunState::Pass, None) => "PASS".into(),
@@ -1885,9 +1891,9 @@ pub fn format_gate_label(run: &RunRow) -> String {
     }
 }
 
-/// Vacuous pass: no checks and no violations (CEO stamp P2 → UNCONFIGURED).
+/// Vacuous: no checks and no violations (CEO stamp P2 → UNCONFIGURED).
 pub fn is_vacuous_gate(g: &GateOutcome) -> bool {
-    g.passed && g.checks.is_empty() && g.scope_violations.is_empty() && g.firewall_blocks.is_empty()
+    g.is_vacuous()
 }
 
 /// `850ms`, `12.0s`: the gate log reads in seconds once it takes one.

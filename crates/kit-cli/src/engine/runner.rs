@@ -389,6 +389,8 @@ async fn agent_and_gate(
 
     let state = if phase == AgentPhase::Failed {
         RunState::Error
+    } else if gate.is_vacuous() {
+        RunState::Unconfigured
     } else if gate.passed {
         RunState::Pass
     } else {
@@ -837,7 +839,8 @@ mod tests {
         })
         .await;
 
-        assert_eq!(result.state, RunState::Pass);
+        // The fixture has no gate: nothing proved the run, so it is not a pass.
+        assert_eq!(result.state, RunState::Unconfigured);
         assert!(result.receipt_dir.join("receipt.json").exists());
         assert!(result.receipt_dir.join("output.log").exists());
         assert!(

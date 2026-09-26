@@ -1,7 +1,7 @@
 //! Receipt store under `~/.kit/runs/<id>/` (PRD principle 2: proof or it didn't happen).
 
 use anyhow::{Context, Result, bail};
-use kit_core::Receipt;
+use kit_core::{Receipt, RunState};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -89,7 +89,20 @@ pub fn read_receipt(id: &str) -> Result<Option<Receipt>> {
     }
     let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
     let receipt: Receipt = serde_json::from_str(&raw).context("parse receipt")?;
-    Ok(Some(receipt))
+    Ok(Some(settled(receipt)))
+}
+
+/// Receipts written before 2.0.0 recorded a run with no gate checks as
+/// `pass` with `passed: true`. Read them as what they were: unconfigured.
+fn settled(mut receipt: Receipt) -> Receipt {
+    if receipt.state == RunState::Pass
+        && let Some(gate) = receipt.gate.as_mut()
+        && gate.is_vacuous()
+    {
+        receipt.state = RunState::Unconfigured;
+        gate.passed = false;
+    }
+    receipt
 }
 
 /// Run directory for an id or unique prefix.
@@ -163,7 +176,7 @@ pub fn list_receipts(limit: usize) -> Result<Vec<ReceiptSummary>> {
             Err(_) => continue,
         };
         let receipt: Receipt = match serde_json::from_str(&raw) {
-            Ok(r) => r,
+            Ok(r) => settled(r),
             Err(_) => continue,
         };
         let modified = entry.metadata().ok().and_then(|m| m.modified().ok());

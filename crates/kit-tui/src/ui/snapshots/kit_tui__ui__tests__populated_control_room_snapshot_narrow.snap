@@ -1,15 +1,16 @@
 ---
 source: crates/kit-tui/src/ui/mod.rs
+assertion_line: 612
 expression: frame
 ---
 "KIT / CONTROL ROOM  · FAIL · enter open · r retry           "
 "┌ runs ────────────────────────────────────────────────────┐"
-"│REPO      AGENT    TASK             STATE     GATE        │"
-"│  kit     codex·e… port guard.js    RUN 2m    --          │"
-"│  kit     grok·eng frame clock      GATING 2m --          │"
-"│▶ trench… codex·e… fix red CI       DONE      FAIL        │"
+"│REPO    AGENT     TASK           STATE        GATE        │"
+"│  kit   codex·eng port guard.js  RUN 2m       --          │"
+"│  kit   grok·eng  frame clock    GATING 2m    --          │"
+"│▶ tren… codex·eng fix red CI     DONE         FAIL        │"
 "│^ tsc: 3 errors — Type 'string' is not assignable         │"
-"│  guardi… claude·… 855-case suite   DONE      PASS        │"
+"│  guar… claude·e… 855-case suite DONE         PASS        │"
 "│                                                          │"
 "│                                                          │"
 "└──────────────────────────────────────────────────────────┘"
