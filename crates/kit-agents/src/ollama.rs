@@ -68,7 +68,7 @@ impl Agent for OllamaAgent {
         let _ = tx
             .send(RunDelta::Output(format!(
                 "kit: spawning ollama run {model} (cwd {})\n",
-                worktree.display()
+                crate::process::tilde(worktree)
             )))
             .await;
 

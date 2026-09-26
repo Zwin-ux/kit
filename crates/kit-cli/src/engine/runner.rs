@@ -591,9 +591,12 @@ async fn live_agent(
                                 let _ = ui.send((id_tee.clone(), delta)).await;
                             }
                         }
-                        let line = format!("kit: {} exited with code {code}\n", opts.agent);
-                        append_capped(output, truncated, cap, &line);
-                        send(tx, id, RunDelta::Output(line)).await;
+                        // A clean exit needs no line: "agent done" follows.
+                        if code != 0 {
+                            let line = format!("kit: {} exited with code {code}\n", opts.agent);
+                            append_capped(output, truncated, cap, &line);
+                            send(tx, id, RunDelta::Output(line)).await;
+                        }
                         break if code == 0 {
                             AgentPhase::Ok
                         } else {
@@ -1317,6 +1320,6 @@ mod tests {
             .expect("exit poll starved: live_agent never saw the agent exit")
             .expect("live_agent");
         assert_eq!(phase, AgentPhase::Ok);
-        assert!(output.contains("kit: codex exited with code 0"), "{output}");
+        assert!(!output.contains("exited with code"), "{output}");
     }
 }
