@@ -8,7 +8,7 @@ mod init;
 mod land;
 
 use anyhow::{Context, Result};
-use engine::{RunOptions, execute, parse_agent, spawn_production};
+use engine::{RunOptions, execute_headless, parse_agent, spawn_production};
 use kit_core::{AgentKind, Bounds, RunDelta, RunId, RunState};
 use kit_tui::{EngineCommand, LaunchConfig, run_configured};
 use std::collections::HashSet;
@@ -182,8 +182,10 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     }
 
     let kind = parse_agent(&agent)?;
+    // Not a git repo: nothing can run, so say it once and write no receipt.
+    let root = engine::worktree::resolve_repo(&repo)?;
     // Stderr only: under --json, stdout holds one envelope.
-    if let Some(hint) = init_hint(Path::new(&repo)) {
+    if let Some(hint) = init_hint(&root) {
         eprintln!("kit: {hint}");
     }
     let opts = RunOptions {
@@ -200,9 +202,11 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     let echo = tokio::spawn(echo_deltas(delta_rx, kind, QUIET_NOTICE, |line| {
         eprint!("{line}")
     }));
-    let result = execute(opts, None, Some(delta_tx)).await;
+    let outcome = execute_headless(opts, Some(delta_tx)).await;
     let _ = echo.await;
-    let result = result?;
+    // A run that failed still has its receipt; the error rides along.
+    // The error already went out in the stream as `kit: run failed: …`.
+    let (result, run_error) = outcome?;
 
     let gate_vacuous = result
         .gate
@@ -228,7 +232,7 @@ async fn cmd_run(args: &[String]) -> Result<()> {
             "gateVacuous": gate_vacuous,
         });
         let ok = !exit_nonzero;
-        let envelope = json_envelope("run", ok, data, None);
+        let envelope = json_envelope("run", ok, data, run_error);
         println!("{}", serde_json::to_string_pretty(&envelope)?);
     } else {
         println!("run {}", result.id);
