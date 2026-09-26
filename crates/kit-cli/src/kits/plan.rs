@@ -468,6 +468,12 @@ fn save(action: &Action) -> Result<Saved> {
                 .path()
                 .expect("file actions have a path")
                 .to_path_buf();
+            if std::fs::metadata(&path).is_ok_and(|m| !m.is_file()) {
+                bail!(
+                    "{} is not a regular file. Kit will not touch it",
+                    path.display()
+                );
+            }
             let bytes = match std::fs::read(&path) {
                 Ok(b) => Some(b),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -516,16 +522,43 @@ impl Saved {
     }
 }
 
+/// Copy a folder for rollback. Links are copied as links, never read
+/// through, and a pipe, device or socket stops the install untouched.
 fn copy_dir(from: &Path, to: &Path) -> Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
         let (src, dst) = (entry.path(), to.join(entry.file_name()));
-        if entry.file_type()?.is_dir() {
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            copy_link(&src, &dst)?;
+        } else if kind.is_dir() {
             copy_dir(&src, &dst)?;
-        } else {
+        } else if kind.is_file() {
             std::fs::copy(&src, &dst)?;
+        } else {
+            bail!(
+                "{} is not a regular file. Kit will not touch that folder",
+                src.display()
+            );
         }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn copy_link(src: &Path, dst: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(std::fs::read_link(src)?, dst)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn copy_link(src: &Path, dst: &Path) -> Result<()> {
+    let target = std::fs::read_link(src)?;
+    if std::fs::metadata(src).is_ok_and(|m| m.is_dir()) {
+        std::os::windows::fs::symlink_dir(target, dst)?;
+    } else {
+        std::os::windows::fs::symlink_file(target, dst)?;
     }
     Ok(())
 }
@@ -886,18 +919,47 @@ fn disk_hash(dir: &Path) -> Result<Option<String>> {
     Ok(Some(super::fetch::content_hash(&files)))
 }
 
+/// Every entry of a skill folder as hashed. Links are never followed (a
+/// link counts as its target's name), and anything Kit never writes (a
+/// link, an empty folder, a file named like the marker below the top)
+/// shows up as a change. A pipe, device or socket is refused, not read.
 fn collect(root: &Path, dir: &Path, out: &mut Vec<super::fetch::SkillFile>) -> Result<()> {
+    let rel = |p: &Path| p.strip_prefix(root).unwrap_or(p).to_path_buf();
+    let mut empty = true;
     for entry in std::fs::read_dir(dir)? {
-        let path = entry?.path();
-        if path.is_dir() {
+        let entry = entry?;
+        let (path, kind) = (entry.path(), entry.file_type()?);
+        empty = false;
+        let bytes = if kind.is_dir() {
             collect(root, &path, out)?;
-        } else if path.file_name().is_some_and(|n| n != OWNED) {
-            out.push(super::fetch::SkillFile {
-                path: path.strip_prefix(root).unwrap_or(&path).to_path_buf(),
-                bytes: std::fs::read(&path)?,
-                executable: false,
-            });
-        }
+            continue;
+        } else if kind.is_symlink() {
+            let mut b = b"\0link\0".to_vec();
+            b.extend(std::fs::read_link(&path)?.to_string_lossy().as_bytes());
+            b
+        } else if kind.is_file() {
+            if dir == root && entry.file_name() == OWNED {
+                continue;
+            }
+            std::fs::read(&path)?
+        } else {
+            bail!(
+                "{} is not a regular file. Kit will not touch that folder",
+                path.display()
+            );
+        };
+        out.push(super::fetch::SkillFile {
+            path: rel(&path),
+            bytes,
+            executable: false,
+        });
+    }
+    if empty && dir != root {
+        out.push(super::fetch::SkillFile {
+            path: rel(dir).join("."),
+            bytes: Vec::new(),
+            executable: false,
+        });
     }
     Ok(())
 }

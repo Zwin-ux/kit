@@ -1194,3 +1194,57 @@ fn links_that_stay_inside_the_scope_are_followed() {
     assert!(out.status.success(), "{}", text(&out.stderr));
     assert_eq!(read(&dotfiles), "# Mine\n");
 }
+
+/// A rollback copy keeps links as links, and a pipe in a skill folder
+/// stops Kit before it reads it (no hang, nothing changed).
+#[cfg(unix)]
+#[test]
+fn links_and_pipes_in_a_skill_folder_are_never_read_through() {
+    let root = scratch("special");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let spec = kit.to_str().unwrap();
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let skill = repo.join(".claude/skills/hello");
+    std::os::unix::fs::symlink("SKILL.md", skill.join("alias.md")).unwrap();
+    std::os::unix::fs::symlink("loop", skill.join("loop")).unwrap();
+
+    // An upgrade that must stop: the edit (the links) survives as links.
+    let toml = read(&kit.join("KIT.toml")).replace("version = \"0.1.0\"", "version = \"0.2.0\"");
+    write(&kit.join("KIT.toml"), &toml);
+    write(
+        &kit.join("skills/hello/SKILL.md"),
+        "---\nname: hello\n---\nHi.\n",
+    );
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(!out.status.success());
+    assert!(
+        !text(&out.stderr).contains("os error"),
+        "{}",
+        text(&out.stderr)
+    );
+    let meta = std::fs::symlink_metadata(skill.join("alias.md")).unwrap();
+    assert!(meta.file_type().is_symlink(), "still a link");
+
+    // A pipe is refused before anything reads it.
+    std::fs::remove_file(skill.join("loop")).unwrap();
+    let ok = Command::new("mkfifo")
+        .arg(skill.join("pipe"))
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok, "mkfifo");
+    let out = env.kit(
+        &repo,
+        &["add", spec, "-a", "claude", "--no-code", "--print"],
+    );
+    assert!(!out.status.success());
+    assert!(
+        text(&out.stderr).contains("not a regular file"),
+        "{}",
+        text(&out.stderr)
+    );
+}
