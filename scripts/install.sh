@@ -7,7 +7,7 @@ set -eu
 
 error() { printf 'kit-install: error: %s\n' "$*" >&2; exit 1; }
 note() { printf 'kit-install: %s\n' "$*"; }
-fallback() { error "no prebuilt kit for $1. Build it from source: cargo install --git https://github.com/Zwin-ux/kit kit-cli --locked"; }
+fallback() { error "no prebuilt kit for $1. Build it from source: cargo install --git https://github.com/Zwin-ux/kit kitctl --locked"; }
 
 download() {
     case $1 in

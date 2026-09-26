@@ -17,18 +17,22 @@ repository = "https://github.com/Zwin-ux/kit"
 homepage = "https://github.com/Zwin-ux/kit#readme"
 
 [workspace.dependencies]
-kit-core = { path = "crates/kit-core" }
-kit-agents = { path = "crates/kit-agents" }
-kit-gate = { path = "crates/kit-gate" }
-kit-tui = { path = "crates/kit-tui" }
+kit-core = { path = "crates/kit-core", package = "kitctl-core", version = "1.0.0-alpha.1" }
+kit-agents = { path = "crates/kit-agents", package = "kitctl-agents", version = "1.0.0-alpha.1" }
+kit-gate = { path = "crates/kit-gate", package = "kitctl-gate", version = "1.0.0-alpha.1" }
+kit-tui = { path = "crates/kit-tui", package = "kitctl-tui", version = "1.0.0-alpha.1" }
 
 anyhow = "1"
+clap = { version = "4.5", features = ["derive"] }
+clap_complete = "4.5"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "sync", "time", "io-util", "fs"] }
 toml = "0.9"
+toml_edit = "0.23"
+inquire = { version = "0.9", default-features = false, features = ["crossterm"] }
 ulid = { version = "1", features = ["serde"] }
 
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }

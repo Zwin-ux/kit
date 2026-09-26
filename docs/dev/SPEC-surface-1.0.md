@@ -19,11 +19,11 @@ Ship a **production-grade** terminal control room: one glance shows every parall
 ## Commands
 
 ```text
-cargo run -p kit-cli -- --demo
-cargo test -p kit-tui
-cargo clippy -p kit-tui --all-targets -- -D warnings
+cargo run -p kitctl -- --demo
+cargo test -p kitctl-tui
+cargo clippy -p kitctl-tui --all-targets -- -D warnings
 # Windows PowerShell monochrome:
-$env:NO_COLOR=1; cargo run -p kit-cli -- --demo
+$env:NO_COLOR=1; cargo run -p kitctl -- --demo
 ```
 
 ---
@@ -129,7 +129,7 @@ CLI (`kit doctor`) for 1.0; TUI screens optional later.
 - [ ] Control Room empty + populated match design density
 - [ ] FAIL wash + annotation visible in demo fixture
 - [ ] All screens use shared chrome
-- [ ] `cargo test -p kit-tui` green
+- [ ] `cargo test -p kitctl-tui` green
 - [ ] SPEC + DESIGN committed
 
 ---

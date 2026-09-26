@@ -8,7 +8,7 @@
 Windows: `.\kit.cmd doctor` (or `.\kit.ps1 doctor`). To make the `kit` verb Rust for this session: `. .\scripts\use-rust-kit.ps1`. Bare `kit` on this Windows PATH is still npm `@mzwin/kit@0.1.3` until you dot-source `scripts/use-rust-kit.ps1` or put `target\release` on PATH.
 
 ```bash
-cargo build -p kit-cli --release
+cargo build -p kitctl --release
 .\kit.cmd doctor                 # Windows shim → Rust binary
 ./target/release/kit doctor      # explicit binary (any OS)
 ./target/release/kit receipt list --limit 5

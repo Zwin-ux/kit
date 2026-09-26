@@ -1,0 +1,61 @@
+schema = 1
+
+[kit]
+name        = "frontend-design"
+title       = "Frontend Design"
+version     = "0.1.0"
+description = "UI, design systems, accessibility, browser testing"
+extends     = ["essentials"]
+agents      = ["claude", "codex", "grok"]
+licence     = "MIT"
+example     = "build a pricing page with three tiers"
+
+[rules]
+file = "RULES.md"
+
+[[skill]]
+name    = "frontend-design"
+source  = "github:anthropics/skills"
+path    = "skills/frontend-design"
+rev     = "33375500bcea98d610eb30ce10ac4e59b89c390d"
+licence = "Apache-2.0"
+
+[[skill]]
+name    = "accessibility"
+source  = "github:addyosmani/web-quality-skills"
+path    = "skills/accessibility"
+rev     = "afa8da942115f2961fdbfa80807ea0b232ff6c00"
+licence = "MIT"
+
+[[skill]]
+name    = "core-web-vitals"
+source  = "github:addyosmani/web-quality-skills"
+path    = "skills/core-web-vitals"
+rev     = "afa8da942115f2961fdbfa80807ea0b232ff6c00"
+licence = "MIT"
+
+[[skill]]
+name    = "frontend-ui-engineering"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/frontend-ui-engineering"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "browser-testing-with-devtools"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/browser-testing-with-devtools"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[mcp.chrome-devtools]
+command = "npx"
+args    = ["-y", "chrome-devtools-mcp@1.10.1", "--no-usage-statistics"]
+
+[[hook]]
+on   = "after_edit"
+glob = "*.{js,jsx,ts,tsx,css,scss,html,md}"
+run  = "npx --no-install prettier --write \"$FILE\""
+
+[check]
+mcp_starts = ["chrome-devtools"]

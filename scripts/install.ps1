@@ -33,7 +33,7 @@ function Install-Kit {
         if ($arch -eq 'ARM64') {
             Write-Host 'kit-install: ARM64 detected; the x64 build runs under emulation'
         } elseif ($arch -ne 'AMD64') {
-            throw "unsupported platform Windows/$arch; try: cargo install --git https://github.com/Zwin-ux/kit kit-cli --locked"
+            throw "unsupported platform Windows/$arch; try: cargo install --git https://github.com/Zwin-ux/kit kitctl --locked"
         }
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 

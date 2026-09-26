@@ -1,11 +1,15 @@
 [package]
-name = "kit-core"
+name = "kitctl-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Shared contracts for Kit: runs, receipts, gates, and configuration"
+
+[lib]
+# Package renamed for crates.io (kit-cli is taken); code keeps `kit_core`.
+name = "kit_core"
 
 [dependencies]
 async-trait.workspace = true

@@ -102,7 +102,7 @@ S1 alpha.2 only after Phase I checkpoint. S3–S4 after that.
 
 **Acceptance:**
 - [ ] Snapshots at 80×14 and 60×12 show the why, not `^ tsc: 3`
-- [ ] `cargo test -p kit-tui`
+- [ ] `cargo test -p kitctl-tui`
 
 **Files:** `crates/kit-tui/src/ui/control_room.rs`  
 **Scope:** S  

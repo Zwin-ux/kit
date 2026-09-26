@@ -11,7 +11,7 @@ Kit 1.x ships one Rust binary (`kit`, `kit.exe`) through four channels. One tag 
 Until 1.0.0 there is no stable 1.x release, so the installer lines need `--prerelease` / `-Prerelease` (or a version). After 1.0.0 the plain forms work: `curl -fsSL …/install.sh | sh` and `irm …/install.ps1 | iex`.
 
 **No 1.x GitHub Release exists yet.** `v1.0.0-alpha.1` went to npm before `github-release` existed. The installers work from the first tag pushed after this job lands. Do not backfill alpha.1 with a manual run: a manual run uses the workflow and the code of the branch it runs on, so its archives would not be the published alpha.1 binaries.
-| Cargo | `cargo install --git https://github.com/Zwin-ux/kit kit-cli --locked` | the git repo (not crates.io, see below) |
+| Cargo | `cargo install --git https://github.com/Zwin-ux/kit kitctl --locked` | the git repo (not crates.io, see below) |
 
 Targets: Windows x64 (static CRT), macOS arm64/x64, Linux x64/arm64 with glibc 2.17 or newer. There is no musl build. On musl (Alpine) use the cargo line.
 
@@ -44,7 +44,7 @@ To try the pipeline without publishing: run **Release npm** from the Actions tab
 Check locally:
 
 ```bash
-cargo build --release -p kit-cli
+cargo build --release -p kitctl
 node scripts/npm-smoke.mjs
 ```
 
@@ -92,7 +92,7 @@ Test locally with a fake release.
 Linux or macOS (`t` is your target, for example `x86_64-unknown-linux-gnu` or `aarch64-apple-darwin`):
 
 ```bash
-cargo build --release -p kit-cli
+cargo build --release -p kitctl
 v=1.0.0-alpha.1; t=x86_64-unknown-linux-gnu
 mkdir -p /tmp/rel/v$v /tmp/stage/kit-$v-$t
 cp target/release/kit LICENSE README.md /tmp/stage/kit-$v-$t/
@@ -105,7 +105,7 @@ KIT_DOWNLOAD_BASE=http://127.0.0.1:8765 KIT_INSTALL_DIR=/tmp/kitbin sh scripts/i
 Windows (PowerShell):
 
 ```powershell
-cargo build --release -p kit-cli
+cargo build --release -p kitctl
 $v = '1.0.0-alpha.1'; $n = "kit-$v-x86_64-pc-windows-msvc"
 $stage = "$env:TEMP\kitrel\stage\$n"; $rel = "$env:TEMP\kitrel\srv\v$v"
 New-Item -ItemType Directory -Force $stage, $rel | Out-Null
@@ -135,11 +135,10 @@ Result: `cargo install kit-cli`, as PRD §6 says, installs the other project's `
 
 `cargo install <name>` from crates.io also needs every path dependency on crates.io. `kit-cli` depends on `kit-core`, `kit-agents`, `kit-gate` and `kit-tui`, so all five crates must be published, and in dependency order.
 
-Recommendation:
+Decision (2026-09-26): the packages are renamed to the free `kitctl` prefix. The binary crate is `kitctl`, the libraries are `kitctl-core`, `kitctl-agents`, `kitctl-gate` and `kitctl-tui`, and each library keeps its Rust crate name (`kit_core`, …) through `[lib] name`, so no code changed. The binary is still `kit`.
 
-1. For 1.0 alpha, keep `cargo install --git https://github.com/Zwin-ux/kit kit-cli --locked` as the Rust channel. It needs no names and no publish step.
-2. Before 1.0.0, if crates.io is still wanted: rename the packages to one free prefix, `kitctl` (binary crate) plus `kitctl-core`, `kitctl-agents`, `kitctl-gate` and `kitctl-tui`, and keep `[[bin]] name = "kit"`. The user line becomes `cargo install kitctl`. Do not take the free `kit-core` / `kit-gate` names; they sit next to the other project's `kit-cli` and read as part of it. The rename touches `crates/**` and needs the crate owners' approval.
-3. The PRD line `cargo install kit-cli` must change to one of the lines above.
+- Today: `cargo install --git https://github.com/Zwin-ux/kit kitctl --locked`.
+- After a crates.io publish (not done; needs the owner): `cargo install kitctl`. Publish in dependency order: `kitctl-core`, then `kitctl-agents` and `kitctl-gate`, then `kitctl-tui`, then `kitctl`. The library crates are implementation detail with no semver promise of their own; their docs say so.
 
 ## Requirements (owner)
 

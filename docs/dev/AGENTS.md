@@ -43,9 +43,9 @@ Surface work queue: `tasks/plan.md`, `tasks/todo.md`.
 ## Commands
 
 ```text
-cargo run -p kit-cli -- --demo
-cargo test -p kit-tui
-cargo clippy -p kit-cli -p kit-tui --all-targets -- -D warnings
+cargo run -p kitctl -- --demo
+cargo test -p kitctl-tui
+cargo clippy -p kitctl -p kitctl-tui --all-targets -- -D warnings
 cargo test --workspace
 ```
 

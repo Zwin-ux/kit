@@ -227,7 +227,7 @@ fn land_makes_a_branch_with_new_and_binary_files_and_leaves_the_user_alone() {
     let msg = git(&fx.repo, &["log", "-1", "--format=%B", &branch]);
     assert!(msg.starts_with("Add greeting\n"), "{msg}");
     assert!(msg.contains(&format!("Kit-Receipt: {id}")), "{msg}");
-    assert!(msg.contains("Gate: PASS (test pass)"), "{msg}");
+    assert!(msg.contains("Gate: PASS · test"), "{msg}");
 
     // The user's branch, HEAD and files did not change.
     assert_eq!(git(&fx.repo, &["branch", "--show-current"]), "main");

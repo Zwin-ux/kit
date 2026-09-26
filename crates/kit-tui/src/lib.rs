@@ -1,5 +1,8 @@
 //! Kit Control Room — the terminal surface.
 //!
+//! Part of the `kit` command (crate `kitctl`), published only because
+//! `cargo install` needs it. Not a stable library API: no semver promise.
+//!
 //! Owned by Grok Build. Reference implementation for the architecture is
 //! `C:/Users/mzwin/Documents/fennec/crates/fennec-tui`, which already runs
 //! ratatui + crossterm with a single animation tick.

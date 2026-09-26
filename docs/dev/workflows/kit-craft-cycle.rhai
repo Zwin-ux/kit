@@ -247,7 +247,7 @@ if auto_implement && slices.len() > 0 {
         ip += "Do NOT edit crates/kit-tui/src/event.rs, crates/kit-core, crates/kit-gate, crates/kit-cli.\n";
         ip += "Slice id: " + sl.id + " title: " + sl.title + "\n";
         ip += "Why: " + sl.why + "\nAcceptance: " + sl.acceptance + "\nVerify: " + sl.verify + "\n";
-        ip += "Cwd is the Kit repo. Use tests first when changing behavior. cargo test -p kit-tui after edits.\n";
+        ip += "Cwd is the Kit repo. Use tests first when changing behavior. cargo test -p kitctl-tui after edits.\n";
         ip += "If the slice is already shipped, set done=true and say so. Do not invent mascot or extra timers.\n";
         let impl_r = agent(ip, #{
             label: "craft-impl:" + sl.id,

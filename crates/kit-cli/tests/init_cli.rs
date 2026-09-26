@@ -45,7 +45,7 @@ const NODE: &str =
 #[test]
 fn writes_a_kit_toml_that_kit_core_accepts() {
     let dir = repo(&[("package.json", NODE), ("pnpm-lock.yaml", "")]);
-    let out = kit(&dir, &[]);
+    let out = kit(&dir, &["--no-check"]);
     assert!(out.status.success(), "{}", text(&out.stderr));
     let stdout = text(&out.stdout);
     assert!(stdout.contains("Wrote "), "{stdout}");
@@ -66,7 +66,7 @@ fn refuses_to_overwrite_without_force() {
         ("go.mod", "module x\n"),
         ("kit.toml", "[gate]\ntest = \"mine\"\n"),
     ]);
-    let out = kit(&dir, &[]);
+    let out = kit(&dir, &["--no-check"]);
     assert_eq!(out.status.code(), Some(2));
     let err = text(&out.stderr);
     assert!(
@@ -76,7 +76,7 @@ fn refuses_to_overwrite_without_force() {
     let kept = std::fs::read_to_string(dir.join("kit.toml")).unwrap();
     assert!(kept.contains("mine"), "file must be unchanged");
 
-    let out = kit(&dir, &["--force"]);
+    let out = kit(&dir, &["--force", "--no-check"]);
     assert!(out.status.success(), "{}", text(&out.stderr));
     assert!(text(&out.stdout).contains("Replaced "));
     let new = std::fs::read_to_string(dir.join("kit.toml")).unwrap();
@@ -132,7 +132,7 @@ fn json_envelope_shape() {
     assert_eq!(d["marker"], "package.json");
     assert_eq!(d["written"], false);
     assert_eq!(d["existed"], false);
-    assert!(d["checks"].is_null(), "no --check, no results");
+    assert!(d["checks"].is_null(), "--print runs nothing");
     assert!(
         d["notes"]
             .as_array()
@@ -144,7 +144,8 @@ fn json_envelope_shape() {
     assert_eq!(cfg.gate.test.as_deref(), Some("yarn run test"));
 }
 
-/// `--check` keeps the checks that pass and comments out the ones that fail.
+/// `kit init` checks by default: it refuses a red baseline, and
+/// `--drop-failing` comments out the checks that fail.
 #[test]
 fn check_comments_out_a_failing_command() {
     if Command::new("cargo").arg("--version").output().is_err() {
@@ -162,7 +163,7 @@ fn check_comments_out_a_failing_command() {
     ]);
     // A failing check must not be dropped in silence: a gate without `test`
     // could later PASS on format alone.
-    let refused = kit(&dir, &["--check", "--json", "--timeout", "5m"]);
+    let refused = kit(&dir, &["--json", "--timeout", "5m"]);
     assert_eq!(refused.status.code(), Some(2), "{}", text(&refused.stderr));
     let err = json(&refused);
     assert_eq!(err["ok"], false);
@@ -178,6 +179,7 @@ fn check_comments_out_a_failing_command() {
 
     let out = kit(
         &dir,
+        // --check is the old spelling of the default; it must still parse.
         &["--check", "--drop-failing", "--json", "--timeout", "5m"],
     );
     assert!(out.status.success(), "{}", text(&out.stderr));

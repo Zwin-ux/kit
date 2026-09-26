@@ -13,49 +13,6 @@ use anyhow::{Context, Result, bail};
 use kit_core::{Receipt, RunState};
 use std::path::{Path, PathBuf};
 
-/// Parsed `kit land` arguments.
-#[derive(Debug)]
-struct LandArgs {
-    id: String,
-    branch: Option<String>,
-    apply: bool,
-    force: bool,
-    json: bool,
-}
-
-fn parse(args: &[String]) -> Result<LandArgs> {
-    let mut out = LandArgs {
-        id: String::new(),
-        branch: None,
-        apply: false,
-        force: false,
-        json: false,
-    };
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--branch" | "-b" => {
-                i += 1;
-                let name = args.get(i).context("--branch needs a name")?;
-                out.branch = Some(name.clone());
-            }
-            "--apply" => out.apply = true,
-            "--force" | "-f" => out.force = true,
-            "--json" => out.json = true,
-            other if !other.starts_with('-') && out.id.is_empty() => out.id = other.into(),
-            other => bail!("unknown kit land flag: {other}. Run `kit --help`"),
-        }
-        i += 1;
-    }
-    if out.id.is_empty() {
-        bail!("missing run id. Use `kit land <id>`; `kit receipt list` shows the ids");
-    }
-    if out.apply && out.branch.is_some() {
-        bail!("use --branch or --apply, not both");
-    }
-    Ok(out)
-}
-
 /// What a land did, for the text and JSON printers.
 pub(crate) struct Landed {
     pub mode: &'static str,
@@ -68,8 +25,7 @@ pub(crate) struct Landed {
     pub files: Vec<String>,
 }
 
-pub fn cmd_land(args: &[String]) -> Result<()> {
-    let a = parse(args)?;
+pub fn cmd_land(a: crate::cli::LandArgs, json: bool) -> Result<()> {
     let dir = store::resolve_run_dir(&a.id)?;
     let receipt =
         store::read_receipt(&a.id)?.with_context(|| format!("no receipt for `{}`", a.id))?;
@@ -104,7 +60,7 @@ pub fn cmd_land(args: &[String]) -> Result<()> {
         &landed,
         a.force,
         worktree_removed,
-        a.json,
+        json,
         warnings,
     )
 }
@@ -252,26 +208,8 @@ fn next_step(l: &Landed) -> String {
 mod tests {
     use super::*;
 
-    fn argv(s: &str) -> Vec<String> {
-        s.split_whitespace().map(String::from).collect()
-    }
-
     #[test]
-    fn parses_flags_and_refuses_bad_mixes() {
-        let a = parse(&argv("01ABC --branch feat/x --force --json")).unwrap();
-        assert_eq!(a.id, "01ABC");
-        assert_eq!(a.branch.as_deref(), Some("feat/x"));
-        assert!(a.force && a.json && !a.apply);
-        assert!(
-            parse(&argv(""))
-                .unwrap_err()
-                .to_string()
-                .contains("kit receipt list")
-        );
-        let both = parse(&argv("01 --apply --branch x"))
-            .unwrap_err()
-            .to_string();
-        assert!(both.contains("not both"), "{both}");
+    fn default_branch_is_kit_slash_twelve_chars() {
         assert_eq!(
             default_branch("01M06A2PXBBH43ZFF3GJ9VQW94"),
             "kit/01M06A2PXBBH"

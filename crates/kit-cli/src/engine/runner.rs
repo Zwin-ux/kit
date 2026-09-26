@@ -170,11 +170,16 @@ async fn execute_reporting(
     let started_at = SystemTime::now();
 
     send(&tx, &id, RunDelta::State(RunState::Running)).await;
+    if super::store::declares_firewall(&repo) {
+        let notice = super::store::FIREWALL_NOTICE.to_string();
+        send(&tx, &id, RunDelta::Output(notice)).await;
+    }
 
     let wt_path = worktrees_dir().join(&id.0);
     let branch = branch_name(&id.0);
-    let base = create_worktree(&repo, &wt_path, &branch)
-        .with_context(|| format!("create worktree at {}", wt_path.display()))?;
+    // Its errors already name the repo or path and the fix; a wrapper
+    // would push the fix into the middle of the line.
+    let base = create_worktree(&repo, &wt_path, &branch)?;
     send(&tx, &id, RunDelta::Worktree(wt_path.clone())).await;
 
     let mut output = String::new();

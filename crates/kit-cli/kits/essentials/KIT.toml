@@ -1,0 +1,69 @@
+schema = 1
+
+[kit]
+name        = "essentials"
+title       = "Essentials"
+version     = "0.1.0"
+description = "Spec, plan, build in small steps, test, review, ship"
+agents      = ["claude", "codex", "grok"]
+licence     = "MIT"
+example     = "fix the failing test and show me it passes"
+
+[rules]
+file = "RULES.md"
+
+[[skill]]
+name    = "spec-driven-development"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/spec-driven-development"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "planning-and-task-breakdown"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/planning-and-task-breakdown"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "incremental-implementation"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/incremental-implementation"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "test-driven-development"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/test-driven-development"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "code-review-and-quality"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/code-review-and-quality"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "debugging-and-error-recovery"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/debugging-and-error-recovery"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "git-workflow-and-versioning"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/git-workflow-and-versioning"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "shipping-and-launch"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/shipping-and-launch"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
