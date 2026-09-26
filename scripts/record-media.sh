@@ -45,7 +45,7 @@ reset_home() {
   fi
   mkdir -p "$demo/.cargo/bin" "$demo/agents" "$demo/code/shop"
   touch "$marker"
-  ln -s "$kit" "$demo/.cargo/bin/kit"
+  cp "$kit" "$demo/.cargo/bin/kit"  # a copy: doctor shows ~/.cargo/bin, not the build folder
   (
     cd "$demo/code/shop"
     git init -q -b main
@@ -106,7 +106,13 @@ record() {
   mkdir -p "$work/out"
   # Keep the recorder's identity out of what a real agent can see.
   (cd "$work" && env -u CLAUDE_CODE_USER_EMAIL -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_EMAIL vhs "$name.tape")
-  cp "$work"/out/"$name"*.gif "$work"/out/"$name"*.png "$out/" 2>/dev/null || true
+  # A tape that asks for a screenshot must produce it; a stale one would ship.
+  local want
+  for want in $(sed -n 's/^Screenshot "out\/\(.*\)"/\1/p' "$tapes/$name.tape"); do
+    [ -s "$work/out/$want" ] || { echo "record-media: $name did not write $want" >&2; exit 1; }
+  done
+  cp "$work"/out/"$name"*.gif "$out/"
+  cp "$work"/out/"$name"*.png "$out/" 2>/dev/null || true
 }
 
 all=(setup add doctor control-room run fleet)

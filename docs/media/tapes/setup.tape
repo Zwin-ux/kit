@@ -23,6 +23,6 @@ Wait+Screen@120s /Continue/
 Sleep 3.5s
 Screenshot "out/setup-plan.png"
 Type "y" Sleep 300ms Enter
-Wait+Screen@120s /Try it/
+Wait+Screen@120s /undo +kit remove/
 Sleep 4s
 Screenshot "out/setup-done.png"
