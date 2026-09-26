@@ -35,7 +35,7 @@ Looking for agents on this machine…
   [ ] Full-stack Design    Frontend Design plus APIs, data, security, end-to-end tests
   [ ] Backend Engineer     APIs, databases, security, performance, observability
   [ ] LLM Engineer         Prompts, evals, RAG, model APIs, cost and latency
-  [ ] iOS / Apple Design   Native iOS apps that look and feel like Apple's: SwiftUI, HIG, Liquid Glass, accessibility
+  [ ] iOS / Apple Design   Native iOS apps that feel like Apple's: SwiftUI, HIG, Liquid Glass
   [ ] Essentials           Spec, plan, build in small steps, test, review, ship
 > Install for All my projects   your agents use it everywhere
 
@@ -223,7 +223,7 @@ kit                                       # the Control Room: every run, in one 
 
 `kit init` reads `Cargo.toml`, `go.mod`, `package.json` or `pyproject.toml`,
 proposes checks that do not change files, and runs each once before writing
-them (`--drop-failing` leaves out the ones that fail today). A run with no checks is `UNCONFIGURED`, never a silent pass, and a run whose agent changed nothing reads `NO CHANGES`. Every run
+them (a check that fails today stops it: `--no-check` keeps it, so a run passes only once it fixes it; `--drop-failing` leaves it out). A run with no checks is `UNCONFIGURED`, never a silent pass, and a run whose agent changed nothing reads `NO CHANGES`. Every run
 writes a receipt to `~/.kit/runs/<id>/` (`kit receipt list`, `kit receipt show <id>`).
 
 <p align="center"><img src="docs/media/control-room-empty.png" width="880" alt="Bare kit before the first run: the empty Control Room with the Kit fox and the keys to dispatch a run" /></p>
@@ -232,11 +232,11 @@ writes a receipt to `~/.kit/runs/<id>/` (`kit receipt list`, `kit receipt show <
 
 <sub>Recorded with a scripted stand-in for Claude Code ([docs/media/fakeagent.sh](docs/media/fakeagent.sh)); the worktree, checks, receipt and branch are Kit's own.</sub>
 
-<p align="center"><img src="docs/media/control-room.gif" width="880" alt="The Control Room: every run in one table, with running, gating, passed and failed rows and a failure's first error line" /></p>
+<p align="center"><img src="docs/media/control-room.gif" width="880" alt="kit --demo: sample runs in one table, with running, gating, passed and failed rows and a failure's first error line" /></p>
 
 `kit --demo` opens it with sample runs. Keys: `↑↓` select · `f` filter ·
 `Enter` open · `g` gate · `d` dispatch · `b` board · `k` kill · `r` retry
-with the failure · `?` help · `q` quit.
+with the failure · `l` land · `?` help · `q` quit.
 
 Dispatch (`d`) sends one task to several agents and roles at once. Kit runs
 eight at a time, queues the rest, and gives each its own worktree, checks and
