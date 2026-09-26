@@ -1,11 +1,12 @@
 //! Claude Code adapter — `claude -p` non-interactive.
 
 use crate::auth;
-use crate::process::{command_for, full_auto, probe_binary, spawn_streaming};
+use crate::process::{command_for, full_auto, probe_binary, spawn_streaming_with_stdin};
 use crate::skills;
 use crate::{Agent, AgentHandle, AgentStatus, SpawnError};
 use kit_core::{AgentKind, RunDelta, RunSpec};
 use std::path::Path;
+use tokio::process::Command;
 use tokio::sync::mpsc;
 
 pub struct ClaudeAgent;
@@ -44,20 +45,34 @@ impl Agent for ClaudeAgent {
             )))
             .await;
 
-        let mut cmd = command_for("claude");
-        cmd.arg("-p").arg(&prompt);
-        if full_auto() {
-            cmd.arg("--dangerously-skip-permissions");
+        let bypass = full_auto();
+        if bypass {
             let _ = tx
                 .send(RunDelta::Output(
                     "kit: KIT_FULL_AUTO=1 — claude permission checks skipped\n".into(),
                 ))
                 .await;
         }
-        cmd.current_dir(worktree);
 
-        spawn_streaming(AgentKind::Claude, cmd, tx).await
+        let cmd = claude_command("claude", worktree, bypass);
+        spawn_streaming_with_stdin(AgentKind::Claude, cmd, prompt, tx).await
     }
+}
+
+/// `claude -p` with the prompt on stdin, never on the command line.
+///
+/// On Windows `command_for` runs the npm shim through `cmd /C`, and cmd.exe
+/// honours no escapes: a `"` in the prompt (the retry task quotes gate output)
+/// would end the quoted argument and let `&` run a host command. Only fixed
+/// flags go on that line.
+fn claude_command(binary: &str, worktree: &Path, bypass: bool) -> Command {
+    let mut cmd = command_for(binary);
+    cmd.arg("-p");
+    if bypass {
+        cmd.arg("--dangerously-skip-permissions");
+    }
+    cmd.current_dir(worktree);
+    cmd
 }
 
 async fn install_skills(
@@ -77,5 +92,43 @@ async fn install_skills(
             Some(src)
         }
         Err(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    /// A prompt that closes cmd.exe's quoting and chains a host command.
+    const HOSTILE: &str = "# Kit\n\nfix \"a\" & echo KIT_INJECTED & \"b\"\n";
+
+    #[test]
+    fn claude_argv_carries_no_prompt_text() {
+        let plain = claude_command("claude", Path::new("wt"), false);
+        let args: Vec<&OsStr> = plain.as_std().get_args().collect();
+        assert_eq!(args, [OsStr::new("-p")]);
+        let bypass = claude_command("claude", Path::new("wt"), true);
+        let args: Vec<&OsStr> = bypass.as_std().get_args().collect();
+        assert_eq!(
+            args,
+            ["-p", "--dangerously-skip-permissions"].map(OsStr::new)
+        );
+        assert_eq!(bypass.as_std().get_current_dir(), Some(Path::new("wt")));
+    }
+
+    /// End to end through the real spawn path: a stand-in `claude` echoes its
+    /// argv and stdin. The prompt must arrive on stdin, byte for byte.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn claude_gets_the_prompt_on_stdin_not_argv() {
+        let prompt = format!("{HOSTILE}{}", "x".repeat(256 * 1024));
+        let out = crate::process::test_support::run_fake_agent(
+            |fake, wt| claude_command(fake, wt, false),
+            &prompt,
+        )
+        .await;
+        assert!(!out.argv.contains("KIT_INJECTED"), "argv: {}", out.argv);
+        assert_eq!(out.stdin, prompt);
     }
 }
