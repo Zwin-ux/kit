@@ -1712,6 +1712,27 @@ fn a_gate_command_two_kits_need_stays_until_both_are_gone() {
     let out = env.kit(&repo, &["remove", "ga", "--yes"]);
     assert!(out.status.success(), "{}", text(&out.stderr));
     assert_eq!(read(&repo.join("kit.toml")), ours);
+
+    // Two kits with nothing in common, removed in install order: the one
+    // that stays deletes the kit.toml the first one created.
+    std::fs::remove_file(repo.join("kit.toml")).unwrap();
+    let gc = root.join("gc-kit");
+    write(
+        &gc.join("KIT.toml"),
+        "schema = 1\n[kit]\nname = \"gc\"\ntitle = \"gc\"\nversion = \"0.1.0\"\ndescription = \"d\"\n[gate]\nextra = [\"make lint\"]\n",
+    );
+    for kit in [&ga, &gc] {
+        let out = env.kit(
+            &repo,
+            &["add", kit.to_str().unwrap(), "-a", "codex", "--yes"],
+        );
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    for name in ["ga", "gc"] {
+        let out = env.kit(&repo, &["remove", name, "--yes"]);
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    assert!(!repo.join("kit.toml").exists());
 }
 
 /// Upgrading a kit whose gate changed takes out the commands the new

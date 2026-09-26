@@ -264,13 +264,15 @@ impl Applied {
             Self::Rules { created, .. }
             | Self::McpJson { created, .. }
             | Self::McpToml { created, .. }
-            | Self::HookJson { created, .. } => *created,
+            | Self::HookJson { created, .. }
+            | Self::GateToml { created, .. } => *created,
             _ => false,
         }
     }
 
     /// Whether Kit created the file, and its text before Kit, to hand over.
-    fn file_state(&mut self) -> Option<(&mut bool, &mut Option<String>)> {
+    /// A gate record keeps no text: its undo takes out lines, not bytes.
+    fn file_state(&mut self) -> Option<(&mut bool, Option<&mut Option<String>>)> {
         match self {
             Self::Rules {
                 created, original, ..
@@ -283,7 +285,8 @@ impl Applied {
             }
             | Self::HookJson {
                 created, original, ..
-            } => Some((created, original)),
+            } => Some((created, Some(original))),
+            Self::GateToml { created, .. } => Some((created, None)),
             _ => None,
         }
     }
@@ -433,8 +436,10 @@ pub fn hand_over(gone: &Applied, kept: &mut Applied) {
     };
     if gone.created_file() {
         *created = true;
-        *original = None;
-    } else if let (Some(go), Some(ko)) = (gone.original(), original.as_mut())
+        if let Some(original) = original {
+            *original = None;
+        }
+    } else if let (Some(go), Some(Some(ko))) = (gone.original(), original)
         && only_difference(gone, ko, go)
     {
         *ko = go.to_string();
