@@ -190,12 +190,11 @@ impl Default for DispatchForm {
     fn default() -> Self {
         Self {
             repos: seed_dispatch_repos(),
-            agents: vec![
-                ("codex".into(), true),
-                ("claude".into(), false),
-                ("grok".into(), false),
-                ("ollama".into(), false),
-            ],
+            // Kit's preference order, as `kit run` picks its default agent.
+            agents: AGENT_ORDER
+                .iter()
+                .map(|a| ((*a).to_string(), *a == AGENT_ORDER[0]))
+                .collect(),
             personas: default_persona_toggles(),
             task: String::new(),
             focus: DispatchFocus::Repos,
@@ -203,6 +202,9 @@ impl Default for DispatchForm {
         }
     }
 }
+
+/// Agent preference order: Dispatch lists and the header strip follow it.
+pub const AGENT_ORDER: [&str; 4] = ["claude", "codex", "grok", "ollama"];
 
 /// Seed Dispatch repos: cwd first (selected), then parent git siblings.
 ///
@@ -605,14 +607,21 @@ impl App {
     }
 
     /// Seed launch-time agent readiness (from `kit_agents::probe_all`).
-    pub fn set_agents_probe(&mut self, probe: Vec<(String, bool)>) {
+    pub fn set_agents_probe(&mut self, mut probe: Vec<(String, bool)>) {
+        let rank = |name: &str| {
+            AGENT_ORDER
+                .iter()
+                .position(|a| *a == name)
+                .unwrap_or(AGENT_ORDER.len())
+        };
+        probe.sort_by_key(|(name, _)| rank(name));
         self.agents_probe = probe;
         self.apply_dispatch_agent_defaults();
         self.dirty = true;
     }
 
     /// When a probe is present, select the first ready agent and deselect the rest.
-    /// Empty probe (tests / `--demo` without probe) keeps the form default (codex on).
+    /// Empty probe (tests / `--demo` without probe) keeps the form default (claude on).
     pub fn apply_dispatch_agent_defaults(&mut self) {
         if self.agents_probe.is_empty() {
             return;
@@ -1015,12 +1024,23 @@ impl App {
             .map(str::to_string)
             .collect::<Vec<_>>();
         let personas = self.dispatch.selected_personas();
-        if repos.is_empty() || agents.is_empty() {
-            self.set_flash("select at least one repo and one agent");
-            return Action::None;
-        }
-        if personas.is_empty() {
-            self.set_flash("select at least one persona — eng / product / design / qa");
+        // Fan-out 0 says which list is empty and how to fill it.
+        let empty = if repos.is_empty() {
+            Some("no repo ticked — Tab to repos, Space to tick one")
+        } else if agents.is_empty()
+            && self.agents_ready_count() == 0
+            && !self.agents_probe.is_empty()
+        {
+            Some("no coding agent installed — run kit doctor")
+        } else if agents.is_empty() {
+            Some("no agent ticked — Tab to agents, Space to tick one")
+        } else if personas.is_empty() {
+            Some("no persona ticked — Tab to personas, Space to tick one")
+        } else {
+            None
+        };
+        if let Some(why) = empty {
+            self.set_flash(format!("fan-out 0: {why}"));
             return Action::None;
         }
         let n = repos.len() * agents.len() * personas.len();
@@ -1057,6 +1077,8 @@ impl App {
             self.selected_id = Some(id);
         }
         self.screen = Screen::ControlRoom;
+        // The next dispatch starts from an empty prompt, never this one.
+        self.dispatch.task.clear();
         self.set_flash(format!("{n} run(s) queued — starting engine"));
         Action::DispatchSubmitted { jobs }
     }
@@ -2590,6 +2612,73 @@ mod tests {
         assert_eq!(format_repo_label("/tmp/guardian", Some(&cwd)), "guardian");
     }
 
+    /// Agents read in Kit's preference order, whatever order the probe used.
+    #[test]
+    fn agents_follow_the_preference_order() {
+        let mut app = App::with_motion(false);
+        let names = |app: &App| {
+            app.dispatch
+                .agents
+                .iter()
+                .map(|(n, _)| n.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(&app), AGENT_ORDER);
+        app.set_agents_probe(vec![
+            ("codex".into(), true),
+            ("claude".into(), true),
+            ("grok".into(), false),
+            ("ollama".into(), false),
+        ]);
+        assert!(app.agents_strip().starts_with("claude·codex ready"));
+        assert!(
+            app.dispatch
+                .agents
+                .iter()
+                .any(|(n, on)| n == "claude" && *on)
+        );
+    }
+
+    /// After a dispatch the task field is empty: typing never appends to the
+    /// last prompt.
+    #[test]
+    fn dispatch_clears_the_task_after_submit() {
+        let mut app = App::with_motion(false);
+        app.update(key('d'));
+        app.dispatch.task = "add sub()".into();
+        assert!(matches!(
+            app.update(code(KeyCode::Enter)),
+            Action::DispatchSubmitted { .. }
+        ));
+        app.update(key('d'));
+        assert_eq!(app.dispatch.task, "");
+    }
+
+    /// Enter at fan-out 0 says which list is empty.
+    #[test]
+    fn fanout_zero_says_why() {
+        let mut app = App::with_motion(false);
+        app.update(key('d'));
+        for (_, on) in &mut app.dispatch.agents {
+            *on = false;
+        }
+        app.dispatch.task = "x".into();
+        assert_eq!(app.update(code(KeyCode::Enter)), Action::None);
+        assert_eq!(
+            app.flash_message(),
+            Some("fan-out 0: no agent ticked — Tab to agents, Space to tick one")
+        );
+        app.set_agents_probe(vec![("claude".into(), false)]);
+        for (_, on) in &mut app.dispatch.agents {
+            *on = false;
+        }
+        app.update(code(KeyCode::Enter));
+        assert_eq!(
+            app.flash_message(),
+            Some("fan-out 0: no coding agent installed — run kit doctor")
+        );
+    }
+
     #[test]
     fn dispatch_agent_defaults_select_first_ready() {
         let mut app = App::with_motion(false);
@@ -2597,8 +2686,8 @@ mod tests {
             app.dispatch
                 .agents
                 .iter()
-                .any(|(n, on)| n == "codex" && *on),
-            "empty probe keeps the codex default"
+                .any(|(n, on)| n == "claude" && *on),
+            "empty probe keeps the claude default"
         );
         app.set_agents_probe(vec![("codex".into(), false), ("claude".into(), true)]);
         app.apply_dispatch_agent_defaults();
