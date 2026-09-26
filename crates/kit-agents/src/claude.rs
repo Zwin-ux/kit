@@ -4,7 +4,7 @@ use crate::auth;
 use crate::process::{command_for, full_auto, probe_binary, spawn_streaming_with_stdin};
 use crate::skills;
 use crate::{Agent, AgentHandle, AgentStatus, SpawnError};
-use kit_core::{AgentKind, RunDelta, RunSpec};
+use kit_core::{AgentKind, KitConfig, RunDelta, RunSpec};
 use std::path::Path;
 use tokio::process::Command;
 use tokio::sync::mpsc;
@@ -36,7 +36,7 @@ impl Agent for ClaudeAgent {
         tx: mpsc::Sender<RunDelta>,
     ) -> Result<Box<dyn AgentHandle>, SpawnError> {
         let skills_src = install_skills(worktree, &spec.repo, &tx).await;
-        let prompt = skills::build_prompt(&spec.task, skills_src.as_deref());
+        let mut prompt = skills::build_prompt(&spec.task, skills_src.as_deref());
 
         let _ = tx
             .send(RunDelta::Output(format!(
@@ -54,7 +54,31 @@ impl Agent for ClaudeAgent {
                 .await;
         }
 
-        let cmd = claude_command("claude", worktree, bypass);
+        let checks = if bypass {
+            Vec::new()
+        } else {
+            gate_checks(&spec.repo)
+        };
+        if !checks.is_empty() {
+            // Said in the stream, so it lands in the receipt's output.log.
+            let _ = tx
+                .send(RunDelta::Output(format!(
+                    "kit: claude may run the gate's checks without asking: {}\n",
+                    checks.join(", ")
+                )))
+                .await;
+            prompt.push_str(&format!(
+                "\n\nTo check your work, run the same checks Kit runs after you finish \
+                 (allowed without asking): {}\n",
+                checks
+                    .iter()
+                    .map(|c| format!("`{c}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+
+        let cmd = claude_command("claude", worktree, bypass, &checks);
         spawn_streaming_with_stdin(AgentKind::Claude, cmd, prompt, tx).await
     }
 }
@@ -65,7 +89,11 @@ impl Agent for ClaudeAgent {
 /// honours no escapes: a `"` in the prompt (the retry task quotes gate output)
 /// would end the quoted argument and let `&` run a host command. Only fixed
 /// flags go on that line.
-fn claude_command(binary: &str, worktree: &Path, bypass: bool) -> Command {
+///
+/// `checks` are the gate's own commands. Each is allowed as an exact
+/// `Bash(<command>)` rule and nothing broader, so claude can verify its work
+/// with what the gate will run. Every other shell command still asks.
+fn claude_command(binary: &str, worktree: &Path, bypass: bool, checks: &[String]) -> Command {
     let mut cmd = command_for(binary);
     cmd.arg("-p");
     if bypass {
@@ -75,9 +103,44 @@ fn claude_command(binary: &str, worktree: &Path, bypass: bool) -> Command {
         // Same bar as codex's `-s workspace-write`; shell commands still ask
         // unless KIT_FULL_AUTO=1. Without this, `-p` can read but not write.
         cmd.arg("--permission-mode").arg("acceptEdits");
+        if !checks.is_empty() {
+            cmd.arg("--allowedTools");
+            for check in checks {
+                cmd.arg(format!("Bash({check})"));
+            }
+        }
     }
     cmd.current_dir(worktree);
     cmd
+}
+
+/// The gate commands from the repo's `kit.toml` that can go on claude's
+/// command line. The engine reads the same file before the agent starts, so
+/// these are exactly the checks the run is held to.
+///
+/// A command with a character cmd.exe treats specially is left out: on
+/// Windows the argument passes through `cmd /C` (see [`claude_command`]),
+/// where a `"` or `&` would end the argument. Leaving it out only means
+/// claude asks before running it, as it did before.
+fn gate_checks(repo: &Path) -> Vec<String> {
+    let Ok(raw) = std::fs::read_to_string(repo.join("kit.toml")) else {
+        return Vec::new();
+    };
+    let Ok(config) = toml::from_str::<KitConfig>(&raw) else {
+        return Vec::new();
+    };
+    config
+        .gate
+        .checks()
+        .into_iter()
+        .map(|(_, command)| command.trim())
+        .filter(|command| !command.is_empty() && command.chars().all(safe_on_command_line))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn safe_on_command_line(c: char) -> bool {
+    c.is_ascii_alphanumeric() || " -_./:=,+@~".contains(c)
 }
 
 async fn install_skills(
@@ -112,7 +175,7 @@ mod tests {
     #[test]
     fn claude_argv_carries_no_prompt_text() {
         // On Windows `command_for` prefixes `/C claude`; the tail is ours.
-        let plain = claude_command("claude", Path::new("wt"), false);
+        let plain = claude_command("claude", Path::new("wt"), false, &[]);
         let args: Vec<&OsStr> = plain.as_std().get_args().collect();
         // Without a permission mode, `-p` can read the worktree but every
         // edit waits for an approval nobody can give (live smoke
@@ -121,7 +184,7 @@ mod tests {
             args.ends_with(&["-p", "--permission-mode", "acceptEdits"].map(OsStr::new)),
             "{args:?}"
         );
-        let bypass = claude_command("claude", Path::new("wt"), true);
+        let bypass = claude_command("claude", Path::new("wt"), true, &[]);
         let args: Vec<&OsStr> = bypass.as_std().get_args().collect();
         assert!(
             args.ends_with(&["-p", "--dangerously-skip-permissions"].map(OsStr::new)),
@@ -138,6 +201,61 @@ mod tests {
         assert_eq!(bypass.as_std().get_current_dir(), Some(Path::new("wt")));
     }
 
+    /// Claude may run exactly the gate's commands without asking, one exact
+    /// `Bash(…)` rule each; full auto needs none.
+    #[test]
+    fn gate_checks_become_exact_allowed_tools() {
+        let checks = ["npm run test".to_owned(), "cargo fmt --check".to_owned()];
+        let cmd = claude_command("claude", Path::new("wt"), false, &checks);
+        let args: Vec<&OsStr> = cmd.as_std().get_args().collect();
+        assert!(
+            args.ends_with(
+                &[
+                    "--permission-mode",
+                    "acceptEdits",
+                    "--allowedTools",
+                    "Bash(npm run test)",
+                    "Bash(cargo fmt --check)",
+                ]
+                .map(OsStr::new)
+            ),
+            "{args:?}"
+        );
+        let bypass = claude_command("claude", Path::new("wt"), true, &checks);
+        let args: Vec<&OsStr> = bypass.as_std().get_args().collect();
+        assert!(!args.contains(&OsStr::new("--allowedTools")), "{args:?}");
+    }
+
+    #[test]
+    fn gate_checks_come_from_kit_toml_and_skip_cmd_metacharacters() {
+        let repo = std::env::temp_dir().join(format!("kit-claude-gate-{}", std::process::id()));
+        std::fs::create_dir_all(&repo).unwrap();
+        assert!(
+            gate_checks(&repo).is_empty(),
+            "no kit.toml, nothing allowed"
+        );
+        std::fs::write(
+            repo.join("kit.toml"),
+            "[gate]\nformat = \"cargo fmt --check\"\ntest = \"npm run test\"\n\
+             extra = [\"npm run lint && echo x\", \"make \\\"all\\\"\", \"cargo clippy -- -D warnings\"]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            gate_checks(&repo),
+            [
+                "cargo fmt --check",
+                "npm run test",
+                "cargo clippy -- -D warnings"
+            ]
+        );
+        std::fs::write(repo.join("kit.toml"), "[gate]\nlint = \"x\"\n").unwrap();
+        assert!(
+            gate_checks(&repo).is_empty(),
+            "a broken kit.toml allows nothing"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
     /// End to end through the real spawn path: a stand-in `claude` echoes its
     /// argv and stdin. The prompt must arrive on stdin, byte for byte.
     #[cfg(unix)]
@@ -145,7 +263,7 @@ mod tests {
     async fn claude_gets_the_prompt_on_stdin_not_argv() {
         let prompt = format!("{HOSTILE}{}", "x".repeat(256 * 1024));
         let out = crate::process::test_support::run_fake_agent(
-            |fake, wt| claude_command(fake, wt, false),
+            |fake, wt| claude_command(fake, wt, false, &[]),
             &prompt,
         )
         .await;
