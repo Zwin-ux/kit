@@ -35,8 +35,7 @@ impl Agent for ClaudeAgent {
         worktree: &Path,
         tx: mpsc::Sender<RunDelta>,
     ) -> Result<Box<dyn AgentHandle>, SpawnError> {
-        let skills_src = install_skills(worktree, &spec.repo, &tx).await;
-        let mut prompt = skills::build_prompt(&spec.task, skills_src.as_deref());
+        let mut prompt = skills::build_prompt(&spec.task);
 
         let _ = tx
             .send(RunDelta::Output(format!(
@@ -141,26 +140,6 @@ fn gate_checks(repo: &Path) -> Vec<String> {
 
 fn safe_on_command_line(c: char) -> bool {
     c.is_ascii_alphanumeric() || " -_./:=,+@~".contains(c)
-}
-
-async fn install_skills(
-    worktree: &Path,
-    repo: &Path,
-    tx: &mpsc::Sender<RunDelta>,
-) -> Option<std::path::PathBuf> {
-    let src = skills::resolve_skills_dir(repo)?;
-    match skills::install_into_worktree(worktree, &src) {
-        Ok(n) => {
-            let _ = skills::ensure_agents_md(worktree);
-            let _ = tx
-                .send(RunDelta::Output(format!(
-                    "kit: installed {n} skills for claude\n"
-                )))
-                .await;
-            Some(src)
-        }
-        Err(_) => None,
-    }
 }
 
 #[cfg(test)]
