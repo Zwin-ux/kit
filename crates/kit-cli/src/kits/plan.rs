@@ -605,13 +605,16 @@ pub fn find_program(program: &str) -> Option<PathBuf> {
 
 /// For display: relative inside the current folder, `~/…` under home.
 pub fn tilde(path: &Path) -> String {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
     if let Ok(cwd) = std::env::current_dir()
+        && !home
+            .as_ref()
+            .is_some_and(|h| Path::new(h).starts_with(&cwd))
         && let Ok(rest) = path.strip_prefix(&cwd)
         && !rest.as_os_str().is_empty()
     {
         return rest.display().to_string();
     }
-    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
     if let Some(home) = home
         && let Ok(rest) = path.strip_prefix(&home)
     {

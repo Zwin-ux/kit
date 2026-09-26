@@ -8,6 +8,7 @@ description = "UI, design systems, accessibility, browser testing"
 extends     = ["essentials"]
 agents      = ["claude", "codex", "grok"]
 licence     = "MIT"
+example     = "build a pricing page with three tiers"
 
 [rules]
 file = "RULES.md"

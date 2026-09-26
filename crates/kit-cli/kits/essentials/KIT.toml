@@ -7,6 +7,7 @@ version     = "0.1.0"
 description = "Spec, plan, build in small steps, test, review, ship"
 agents      = ["claude", "codex", "grok"]
 licence     = "MIT"
+example     = "fix the failing test and show me it passes"
 
 [rules]
 file = "RULES.md"

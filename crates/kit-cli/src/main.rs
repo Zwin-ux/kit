@@ -70,7 +70,11 @@ async fn dispatch(cli: Cli) -> Result<()> {
         anyhow::bail!("--demo opens the Control Room. Use `kit --demo` on its own");
     }
     match cli.command {
+        None if !cli.demo && kits::setup::first_run() => {
+            kits::setup::cmd_setup(cli::SetupArgs::default(), json).await
+        }
         None => launch_tui(cli.demo).await,
+        Some(Command::Setup(args)) => kits::setup::cmd_setup(args, json).await,
         Some(Command::Show { kit }) => kits::cmd_show(kit.as_deref(), json),
         Some(Command::Add(args)) => kits::install::cmd_add(args, json),
         Some(Command::Remove(args)) => kits::install::cmd_remove(args, json),
@@ -771,6 +775,10 @@ fn print_doctor(version: &str, json: bool) {
         .iter()
         .map(|(p, _)| p.display().to_string())
         .collect();
+    let kits = kits::doctor::check_installed().unwrap_or_else(|e| {
+        eprintln!("kit: cannot check installed kits: {e:#}");
+        Vec::new()
+    });
 
     if json {
         let agents: Vec<serde_json::Value> = statuses
@@ -798,6 +806,7 @@ fn print_doctor(version: &str, json: bool) {
             "skillsPack": skills.as_ref().map(|p| p.display().to_string()),
             "agents": agents,
             "kitToml": kit_toml.as_ref().map(|p| p.display().to_string()),
+            "kits": kits::doctor::to_json(&kits),
         });
         let envelope = json_envelope("doctor", true, data, None);
         println!(
@@ -858,8 +867,12 @@ fn print_doctor(version: &str, json: bool) {
             println!("            → {r}");
         }
     }
+    kits::doctor::print(&kits);
     println!();
     println!("try:");
+    if kits.is_empty() {
+        println!("  kit setup");
+    }
     if kit_toml.is_none() {
         println!("  kit init");
     }

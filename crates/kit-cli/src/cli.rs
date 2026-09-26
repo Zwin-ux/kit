@@ -61,6 +61,12 @@ pub enum Command {
         kit: Option<String>,
     },
 
+    /// Set your coding agents up for a job: pick agents, focus and scope
+    #[command(
+        after_help = "Bare `kit` runs this the first time. Every question is also a flag.\n\nExample:\n  kit setup\n  kit setup --agent claude --kit frontend-design --global --yes"
+    )]
+    Setup(SetupArgs),
+
     /// Install kits into your coding agents
     #[command(
         after_help = "Shows every file, key and command first, and asks before writing.\n\nExample:\n  kit add frontend-design --global           every project, every agent found\n  kit add llm-engineer --agent codex         this repo, Codex only\n  kit add backend-engineer --print           show the plan, write nothing"
@@ -460,4 +466,26 @@ pub struct ListKitsArgs {
 pub enum HookCommand {
     /// Run a kit's after-edit hooks for the file in the hook payload (stdin)
     AfterEdit { kit: String },
+}
+
+#[derive(Debug, Default, Args)]
+pub struct SetupArgs {
+    /// Agent to set up; repeat for more (skips the question)
+    #[arg(short, long, value_enum)]
+    pub agent: Vec<crate::kits::writers::Agent>,
+    /// Kit to install; repeat for more (skips the question)
+    #[arg(short, long, value_name = "KIT")]
+    pub kit: Vec<String>,
+    /// Install for all your projects (skips the question)
+    #[arg(short, long, conflicts_with = "this_repo")]
+    pub global: bool,
+    /// Install into this repo only (skips the question)
+    #[arg(long)]
+    pub this_repo: bool,
+    /// Skills and rules only: no MCP servers, no hooks
+    #[arg(long)]
+    pub no_code: bool,
+    /// Do not ask before installing
+    #[arg(short, long)]
+    pub yes: bool,
 }

@@ -39,6 +39,8 @@ pub struct KitMeta {
     #[serde(default)]
     pub agents: Vec<String>,
     pub licence: Option<String>,
+    /// A first task to try once the kit is installed.
+    pub example: Option<String>,
 }
 
 /// A skill: upstream (`source` + `rev`) or shipped inside the kit.

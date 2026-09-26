@@ -8,6 +8,7 @@ description = "Frontend Design plus APIs, data, security, end-to-end tests"
 extends     = ["frontend-design"]
 agents      = ["claude", "codex", "grok"]
 licence     = "MIT"
+example     = "add a sign-up form that saves to the database"
 
 [rules]
 file = "RULES.md"

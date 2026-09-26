@@ -8,6 +8,7 @@ description = "APIs, databases, security, performance, observability"
 extends     = ["essentials"]
 agents      = ["claude", "codex", "grok"]
 licence     = "MIT"
+example     = "add rate limiting to the login endpoint"
 
 [rules]
 file = "RULES.md"

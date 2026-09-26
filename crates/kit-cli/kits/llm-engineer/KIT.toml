@@ -8,6 +8,7 @@ description = "Prompts, evals, RAG, model APIs, cost and latency"
 extends     = ["essentials"]
 agents      = ["claude", "codex", "grok"]
 licence     = "MIT"
+example     = "write an eval for the summarizer prompt"
 
 [rules]
 file = "RULES.md"

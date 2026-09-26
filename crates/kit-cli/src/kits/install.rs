@@ -32,6 +32,15 @@ pub fn scope(global: bool) -> Result<Scope> {
     }
 }
 
+/// A repo root for display: `~/code/shop`.
+pub fn display_root(root: &Path) -> String {
+    let home = home_dir().ok();
+    match home.as_deref().and_then(|h| root.strip_prefix(h).ok()) {
+        Some(rest) => format!("~/{}", rest.display()),
+        None => root.display().to_string(),
+    }
+}
+
 pub fn repo_root(dir: &Path) -> Option<PathBuf> {
     let out = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
@@ -44,12 +53,14 @@ pub fn repo_root(dir: &Path) -> Option<PathBuf> {
         .then(|| PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
 }
 
-/// Agents named with `--agent`, else every agent installed here.
+/// Agents named with `--agent`, else the ones `kit setup` saved, else
+/// every agent installed here.
 fn agents(chosen: &[Agent]) -> Result<Vec<Agent>> {
-    let mut agents: Vec<Agent> = if chosen.is_empty() {
-        Agent::ALL.into_iter().filter(|a| a.installed()).collect()
-    } else {
-        chosen.to_vec()
+    let saved = super::config::Config::load()?.map(|c| c.agents());
+    let mut agents: Vec<Agent> = match saved {
+        _ if !chosen.is_empty() => chosen.to_vec(),
+        Some(saved) if !saved.is_empty() => saved,
+        _ => Agent::ALL.into_iter().filter(|a| a.installed()).collect(),
     };
     agents.sort();
     agents.dedup();
@@ -166,11 +177,42 @@ fn prepare(
     Ok(p)
 }
 
+/// One `kit add`, from the command line or from `kit setup`.
+pub struct Request {
+    pub kits: Vec<String>,
+    pub agents: Vec<Agent>,
+    pub scope: Scope,
+    pub no_code: bool,
+    pub yes: bool,
+    pub print: bool,
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    Installed,
+    AlreadyInstalled,
+    Cancelled,
+    Printed,
+}
+
 pub fn cmd_add(args: AddArgs, json: bool) -> Result<()> {
-    let scope = scope(args.global)?;
-    let agents = agents(&args.agent)?;
-    let chosen = choose(&args.kits)?;
-    let mut lock = Lock::load(&scope)?;
+    let req = Request {
+        scope: scope(args.global)?,
+        agents: agents(&args.agent)?,
+        kits: args.kits,
+        no_code: args.no_code,
+        yes: args.yes,
+        print: args.print,
+        force: args.force,
+    };
+    add(&req, json).map(|_| ())
+}
+
+pub fn add(req: &Request, json: bool) -> Result<Outcome> {
+    let (scope, agents) = (&req.scope, req.agents.as_slice());
+    let chosen = choose(&req.kits)?;
+    let mut lock = Lock::load(scope)?;
 
     if !json
         && chosen
@@ -187,13 +229,14 @@ pub fn cmd_add(args: AddArgs, json: bool) -> Result<()> {
         .collect::<Result<_>>()?;
 
     let mut opts = Options {
-        no_code: args.no_code,
+        no_code: req.no_code,
     };
-    let mut prepared = prepare(&resolved, &agents, &scope, opts, &lock)?;
-    let text = render_plan(&chosen, &agents, &scope, &prepared);
+    let mut prepared = prepare(&resolved, agents, scope, opts, &lock)?;
+    let text = render_plan(&chosen, agents, scope, &prepared);
 
-    if args.print || json && !args.yes {
-        return finish_print(&chosen, &agents, &scope, &prepared, &text, json);
+    if req.print || json && !req.yes {
+        finish_print(&chosen, agents, scope, &prepared, &text, json)?;
+        return Ok(Outcome::Printed);
     }
     let work = prepared
         .todo
@@ -206,31 +249,32 @@ pub fn cmd_add(args: AddArgs, json: bool) -> Result<()> {
         record(
             &mut lock,
             &chosen,
-            &agents,
+            agents,
             opts,
             Vec::new(),
             &prepared.shared,
         );
-        lock.save(&scope)?;
+        lock.save(scope)?;
         if !json {
             println!("Already installed. Nothing to do.");
         } else {
-            print_json("add", &chosen, &agents, &scope, &prepared, true)?;
+            print_json("add", &chosen, agents, scope, &prepared, true)?;
         }
-        return Ok(());
+        return Ok(Outcome::AlreadyInstalled);
     }
 
-    if !args.yes {
+    if !req.yes {
         let code = prepared.todo.iter().any(|(_, a)| a.runs_code());
         match ask(code)? {
             Answer::Yes => {}
             Answer::No => {
                 println!("Nothing was changed.");
-                return Ok(());
+                return Ok(Outcome::Cancelled);
             }
             Answer::NoCode => {
+                println!("Leaving out MCP servers and hooks. Skills and rules only.");
                 opts.no_code = true;
-                prepared = prepare(&resolved, &agents, &scope, opts, &lock)?;
+                prepared = prepare(&resolved, agents, scope, opts, &lock)?;
             }
         }
     }
@@ -248,24 +292,31 @@ pub fn cmd_add(args: AddArgs, json: bool) -> Result<()> {
         .map(|(k, _)| k.clone())
         .collect();
     let owned: Vec<Action> = actions.into_iter().cloned().collect();
-    let applied = plan::apply_all(&owned, args.force)?;
+    let applied = plan::apply_all(&owned, req.force)?;
     let pairs: Vec<(String, Applied)> = owners.into_iter().zip(applied).collect();
-    record(&mut lock, &chosen, &agents, opts, pairs, &prepared.shared);
-    lock.save(&scope)?;
+    record(&mut lock, &chosen, agents, opts, pairs, &prepared.shared);
+    lock.save(scope)?;
 
     if json {
-        return print_json("add", &chosen, &agents, &scope, &prepared, true);
+        print_json("add", &chosen, agents, scope, &prepared, true)?;
+        return Ok(Outcome::Installed);
     }
     let names: Vec<&str> = chosen.requested.iter().map(|(n, _)| n.as_str()).collect();
+    let titles: Vec<&str> = chosen
+        .kits
+        .iter()
+        .filter(|k| names.contains(&k.name()))
+        .map(|k| k.manifest.kit.title.as_str())
+        .collect();
     let who: Vec<&str> = agents.iter().map(|a| a.title()).collect();
     println!(
         "Done. {} {} {} in {}.",
         who.join(" and "),
         if who.len() == 1 { "has" } else { "have" },
-        names.join(" and "),
+        titles.join(" and "),
         scope.label()
     );
-    println!("Recorded in {}.", tilde(&super::lock::path(&scope)));
+    println!("Recorded in {}.", tilde(&super::lock::path(scope)));
     let flag = if matches!(scope, Scope::Global { .. }) {
         " --global"
     } else {
@@ -273,7 +324,7 @@ pub fn cmd_add(args: AddArgs, json: bool) -> Result<()> {
     };
     println!("check     kit list{flag}");
     println!("undo      kit remove {}{flag}", names.join(" "));
-    Ok(())
+    Ok(Outcome::Installed)
 }
 
 /// Write what was installed into the lock.
@@ -484,6 +535,7 @@ fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -
             s,
             "Runs code on your machine: {code} (MCP servers and hooks)."
         );
+        let _ = writeln!(s);
     }
     s
 }

@@ -312,3 +312,59 @@ fn global_install_uses_claudes_own_cli_for_mcp() {
     assert!(!env.home.join(".claude/skills/hello").exists());
     assert!(!env.home.join(".kit/kit.lock").exists());
 }
+
+#[test]
+fn setup_with_flags_needs_no_terminal_and_later_adds_use_its_agents() {
+    let root = scratch("setup");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let spec = kit.to_str().unwrap();
+
+    let out = env.kit(&repo, &["setup"]);
+    assert!(!out.status.success());
+    assert!(
+        text(&out.stderr).contains("kit setup --agent claude --kit frontend-design --global --yes"),
+        "{}",
+        text(&out.stderr)
+    );
+
+    let out = env.kit(
+        &repo,
+        &[
+            "setup",
+            "--agent",
+            "codex",
+            "--kit",
+            spec,
+            "--this-repo",
+            "--yes",
+        ],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let config = read(&env.home.join(".kit/config.toml"));
+    assert!(config.contains(r#"agents = ["codex"]"#), "{config}");
+    assert!(repo.join(".agents/skills/hello/SKILL.md").is_file());
+    assert!(
+        !repo.join(".claude").exists(),
+        "only the agent chosen in setup"
+    );
+
+    // A later add with no --agent uses the saved agents.
+    let other = root.join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    git_repo(&other);
+    let out = env.kit(&other, &["add", spec, "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(other.join("AGENTS.md").is_file());
+    assert!(!other.join("CLAUDE.md").exists());
+
+    let out = env.kit(&repo, &["doctor", "--json"]);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let kits = v["data"]["kits"].as_array().unwrap();
+    assert!(
+        kits.iter().any(|k| k["name"] == "demo" && k["ok"] == true),
+        "{v}"
+    );
+}
