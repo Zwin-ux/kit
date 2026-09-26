@@ -38,8 +38,7 @@ impl Agent for CodexAgent {
         worktree: &Path,
         tx: mpsc::Sender<RunDelta>,
     ) -> Result<Box<dyn AgentHandle>, SpawnError> {
-        let skills_src = prepare_skills(worktree, &spec.repo, &tx).await;
-        let prompt = skills::build_prompt(&spec.task, skills_src.as_deref());
+        let prompt = skills::build_prompt(&spec.task);
 
         let _ = tx
             .send(RunDelta::Output(format!(
@@ -84,42 +83,6 @@ fn codex_command(binary: &str, worktree: &Path, bypass: bool) -> Command {
     cmd.arg("-");
     cmd.current_dir(worktree);
     cmd
-}
-
-async fn prepare_skills(
-    worktree: &Path,
-    repo: &Path,
-    tx: &mpsc::Sender<RunDelta>,
-) -> Option<std::path::PathBuf> {
-    let Some(src) = skills::resolve_skills_dir(repo) else {
-        let _ = tx
-            .send(RunDelta::Output(
-                "kit: no skill pack found (.agents/skills or skills/) — running without pack\n"
-                    .into(),
-            ))
-            .await;
-        return None;
-    };
-    match skills::install_into_worktree(worktree, &src) {
-        Ok(n) => {
-            let _ = skills::ensure_agents_md(worktree);
-            let _ = tx
-                .send(RunDelta::Output(format!(
-                    "kit: installed {n} skills into worktree from {}\n",
-                    src.display()
-                )))
-                .await;
-            Some(src)
-        }
-        Err(e) => {
-            let _ = tx
-                .send(RunDelta::Output(format!(
-                    "kit: skill install failed: {e}\n"
-                )))
-                .await;
-            None
-        }
-    }
 }
 
 #[cfg(test)]

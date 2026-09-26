@@ -286,15 +286,51 @@ async fn agent_and_gate(
         return Ok(Ending::Killed("kit: cancelled before agent start\n".into()));
     }
 
-    // --- agent phase ---
     // Only an explicit --dry-run is offline; a missing agent was refused
     // before the worktree was made (see `require_agent`).
     let use_dry = opts.dry_run == Some(true);
+    // CEO stamp P2: infer defaults on live runs only. Dry-run stays offline-fast
+    // and is exempt from vacuous non-zero exit. Inferred from the repo before
+    // the agent starts, so the agent is told the checks it will be held to.
+    if config.gate.is_empty() && !use_dry {
+        let inferred = super::infer::infer_gate(repo);
+        if !inferred.is_empty() {
+            let line = format!(
+                "gate: inferred checks (no kit.toml gate) — {}\n",
+                inferred
+                    .checks()
+                    .iter()
+                    .map(|(l, c)| format!("{l}:{c}"))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            );
+            append_capped(output, truncated, opts.bounds.output_cap_bytes, &line);
+            send(tx, id, RunDelta::Output(line)).await;
+            config.gate = inferred;
+        }
+    }
+    let gate_checks: Vec<String> = config
+        .gate
+        .checks()
+        .into_iter()
+        .map(|(_, command)| command.to_owned())
+        .collect();
+
+    // --- agent phase ---
     let phase = if use_dry {
         dry_run_agent(opts, id, wt_path, tx, output, truncated, cancel).await?
     } else {
         live_agent(
-            agent_impl, opts, id, repo, wt_path, tx, output, truncated, cancel,
+            agent_impl,
+            opts,
+            id,
+            repo,
+            wt_path,
+            gate_checks,
+            tx,
+            output,
+            truncated,
+            cancel,
         )
         .await?
     };
@@ -317,25 +353,6 @@ async fn agent_and_gate(
     // --- gate phase ---
     send(tx, id, RunDelta::State(RunState::Gating)).await;
     let cap = opts.bounds.output_cap_bytes;
-    // CEO stamp P2: infer defaults on live runs only. Dry-run stays offline-fast
-    // and is exempt from vacuous non-zero exit.
-    if config.gate.is_empty() && !use_dry {
-        let inferred = super::infer::infer_gate(repo);
-        if !inferred.is_empty() {
-            let line = format!(
-                "gate: inferred checks (no kit.toml gate) — {}\n",
-                inferred
-                    .checks()
-                    .iter()
-                    .map(|(l, c)| format!("{l}:{c}"))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            );
-            append_capped(output, truncated, cap, &line);
-            send(tx, id, RunDelta::Output(line)).await;
-            config.gate = inferred;
-        }
-    }
     // The receipt records what the agent made. Files the gate writes
     // (coverage, reports, build output) are not the run's work.
     let agent_diff = worktree::worktree_diff(wt_path, base).ok();
@@ -504,6 +521,7 @@ async fn write_terminal(
             task: opts.task.clone(),
             branch,
             bounds: opts.bounds.clone(),
+            gate_checks: Vec::new(),
         },
         state,
         started_at,
@@ -592,6 +610,7 @@ async fn live_agent(
     id: &RunId,
     repo: &std::path::Path,
     worktree: &std::path::Path,
+    gate_checks: Vec<String>,
     tx: &Option<mpsc::Sender<(RunId, RunDelta)>>,
     output: &mut String,
     truncated: &mut bool,
@@ -608,6 +627,7 @@ async fn live_agent(
         task: opts.task.clone(),
         branch: None,
         bounds: opts.bounds.clone(),
+        gate_checks,
     };
 
     let mut handle = agent
@@ -1458,6 +1478,7 @@ mod tests {
             &id,
             &dir,
             &dir,
+            Vec::new(),
             &None,
             &mut output,
             &mut truncated,

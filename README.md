@@ -107,6 +107,10 @@ writes a copy to `kit.lock` in the repo for your team to commit. Kit never acts
 on that copy: a repo you clone cannot choose what Kit runs or deletes. `kit list`
 names any kit it lists that you have not installed.
 
+`kit run` works in a clean checkout of your last commit, so the agent sees only
+committed files. Commit the repo-scope files `kit add` wrote before `kit run` if
+the agent should use them there.
+
 ## What Kit promises
 
 - **Nothing is written before you see it.** The plan lists every folder, file
@@ -253,6 +257,7 @@ cargo run -p kitctl -- --demo
 |-----|--------|
 | `KIT_HOME` | Where Kit keeps its records, config, cache and receipts (default `~/.kit`) |
 | `KIT_FULL_AUTO=1` | Skip agent approval prompts in `kit run` (sandboxes only) |
+| `KIT_AGENT_RUNS_CHECKS=1` | Let Claude Code run the gate's own commands during `kit run` (they run code the agent wrote; edits to `kit.toml`, `.git` and `.claude` stay denied). Off by default: Kit runs the gate after the agent finishes |
 | `KIT_OLLAMA_MODEL` | Model for the Ollama adapter (default `llama3.2`) |
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
 | `KIT_THEME=high` | High-contrast palette |

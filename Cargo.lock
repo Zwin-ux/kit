@@ -713,7 +713,6 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
- "toml",
  "windows-sys 0.59.0",
 ]
 
