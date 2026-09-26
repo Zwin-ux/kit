@@ -296,10 +296,10 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
     };
     let mut prepared = prepare(&resolved, agents, scope, opts, &lock)?;
     confine(&prepared, scope)?;
-    let text = render_plan(&chosen, agents, scope, &prepared);
+    let text = render_plan(&chosen, agents, scope, &prepared, opts);
 
     if req.print || json && !req.yes {
-        finish_print(&chosen, agents, scope, &prepared, &text, json)?;
+        finish_print(&chosen, agents, scope, &prepared, opts, &text, json)?;
         return Ok(Outcome::Printed);
     }
     let work = prepared
@@ -322,7 +322,7 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         if !json {
             println!("Already installed. Nothing to do.");
         } else {
-            print_json("add", &chosen, agents, scope, &prepared, true)?;
+            print_json("add", &chosen, agents, scope, &prepared, opts, true)?;
         }
         return Ok(Outcome::AlreadyInstalled);
     }
@@ -363,7 +363,7 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
     lock.save(scope)?;
 
     if json {
-        print_json("add", &chosen, agents, scope, &prepared, true)?;
+        print_json("add", &chosen, agents, scope, &prepared, opts, true)?;
         return Ok(Outcome::Installed);
     }
     let names: Vec<&str> = chosen.requested.iter().map(|(n, _)| n.as_str()).collect();
@@ -428,11 +428,7 @@ fn record(
         entry.version.clone_from(&kit.manifest.kit.version);
         if let Some((_, spec)) = chosen.requested.iter().find(|(n, _)| *n == name) {
             entry.requested = true;
-            // A folder is recorded by its absolute path; anything else as typed.
-            entry.source = match kit.pin.as_deref() {
-                Some(pin) if !pin.starts_with("github:") => pin.to_string(),
-                _ => spec.clone(),
-            };
+            entry.source.clone_from(spec);
         }
         entry.pin.clone_from(&kit.pin);
         for (base, top) in &chosen.edges {
@@ -514,7 +510,50 @@ fn ask(code: bool) -> Result<Answer> {
     })
 }
 
-fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -> String {
+/// Exactly what an action will run: the MCP server's command line, or for
+/// the hook, each of the kit's hook commands with the files it runs on.
+fn runs(chosen: &Chosen, kit: &str, a: &Action) -> Vec<String> {
+    match a {
+        Action::HookJson { .. } => chosen
+            .kits
+            .iter()
+            .filter(|k| k.name() == kit)
+            .flat_map(|k| &k.manifest.hook)
+            .map(|h| match &h.glob {
+                Some(g) => format!("{}   (after each edit of {g})", h.run),
+                None => format!("{}   (after each edit)", h.run),
+            })
+            .collect(),
+        _ => a.command().into_iter().collect(),
+    }
+}
+
+/// `[check]` commands `kit doctor` will run later, per kit (none with no code).
+fn doctor_commands(chosen: &Chosen, p: &Prepared, opts: Options) -> Vec<(String, String)> {
+    if opts.no_code {
+        return Vec::new();
+    }
+    chosen
+        .kits
+        .iter()
+        .filter(|k| p.todo.iter().any(|(n, _)| n == k.name()))
+        .flat_map(|k| {
+            k.manifest
+                .check
+                .commands
+                .iter()
+                .map(|c| (k.name().to_string(), c.clone()))
+        })
+        .collect()
+}
+
+fn render_plan(
+    chosen: &Chosen,
+    agents: &[Agent],
+    scope: &Scope,
+    p: &Prepared,
+    opts: Options,
+) -> String {
     let mut s = String::new();
     let who: Vec<&str> = agents.iter().map(|a| a.title()).collect();
     for (name, _) in &chosen.requested {
@@ -613,7 +652,7 @@ fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -
             let _ = writeln!(s, "            {name:width$}  {origin:owidth$}  {licence}");
         }
     }
-    for (_, a) in &p.todo {
+    for (kit, a) in &p.todo {
         match a {
             Action::Skill { .. } => {}
             Action::Rules { text, .. } => {
@@ -621,6 +660,9 @@ fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -
             }
             _ if a.runs_code() => {
                 let _ = writeln!(s, "{}   RUNS CODE", a.describe());
+                for cmd in runs(chosen, kit, a) {
+                    let _ = writeln!(s, "            runs  {cmd}");
+                }
             }
             _ => {
                 let _ = writeln!(s, "{}", a.describe());
@@ -634,12 +676,16 @@ fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -
             p.shared.len()
         );
     }
-    let code = p.todo.iter().filter(|(_, a)| a.runs_code()).count();
+    let checks = doctor_commands(chosen, p, opts);
+    for (_, cmd) in &checks {
+        let _ = writeln!(s, "check     kit doctor runs `{cmd}`   RUNS CODE");
+    }
+    let code = p.todo.iter().filter(|(_, a)| a.runs_code()).count() + checks.len();
     let _ = writeln!(s);
     if code > 0 {
         let _ = writeln!(
             s,
-            "Runs code on your machine: {code} (MCP servers and hooks)."
+            "Runs code on your machine: {code} (MCP servers, hooks and checks, each shown above)."
         );
         let _ = writeln!(s);
     }
@@ -651,11 +697,12 @@ fn finish_print(
     agents: &[Agent],
     scope: &Scope,
     p: &Prepared,
+    opts: Options,
     text: &str,
     json: bool,
 ) -> Result<()> {
     if json {
-        return print_json("add", chosen, agents, scope, p, false);
+        return print_json("add", chosen, agents, scope, p, opts, false);
     }
     print!("{text}");
     println!("Nothing was written (--print).");
@@ -668,6 +715,7 @@ fn print_json(
     agents: &[Agent],
     scope: &Scope,
     p: &Prepared,
+    opts: Options,
     applied: bool,
 ) -> Result<()> {
     let actions: Vec<_> = p
@@ -676,7 +724,8 @@ fn print_json(
         .map(|(kit, a)| {
             serde_json::json!({
                 "kit": kit, "change": a.describe(), "key": a.key(),
-                "runsCode": a.runs_code(), "skipped": matches!(a, Action::Skip { .. }),
+                "runsCode": a.runs_code(), "runs": runs(chosen, kit, a),
+                "skipped": matches!(a, Action::Skip { .. }),
             })
         })
         .collect();
@@ -686,6 +735,10 @@ fn print_json(
         "agents": agents.iter().map(|a| a.id()).collect::<Vec<_>>(),
         "scope": scope_json(scope),
         "actions": actions,
+        "doctorChecks": doctor_commands(chosen, p, opts)
+            .into_iter()
+            .map(|(kit, run)| serde_json::json!({ "kit": kit, "runs": run }))
+            .collect::<Vec<_>>(),
         "shared": p.shared.len(),
         "applied": applied,
     });
