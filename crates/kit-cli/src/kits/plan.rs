@@ -793,8 +793,20 @@ fn write_skill(dir: &Path, payload: &SkillPayload, force: bool) -> Result<()> {
                 tilde(dir)
             );
         }
-        if disk_hash(dir)?.as_deref() == Some(payload.hash.as_str()) {
+        let on_disk = disk_hash(dir)?;
+        if on_disk.as_deref() == Some(payload.hash.as_str()) {
             return Ok(());
+        }
+        // The marker holds the hash Kit wrote. A folder that no longer
+        // matches it was edited by hand: never replace that silently.
+        if owned && !force {
+            let wrote = std::fs::read_to_string(dir.join(OWNED)).unwrap_or_default();
+            if on_disk.as_deref() != Some(wrote.trim()) {
+                bail!(
+                    "{} was changed by hand since Kit installed it. Copy your changes, or use --force",
+                    tilde(dir)
+                );
+            }
         }
         std::fs::remove_dir_all(dir)?;
     }

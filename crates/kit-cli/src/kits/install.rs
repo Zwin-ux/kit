@@ -136,6 +136,8 @@ struct Prepared {
     /// (kit, record) an older version of the kit installed that the new
     /// one no longer has: undone after the new version is in place.
     stale: Vec<(String, Applied)>,
+    /// Skill folders changed by hand that this upgrade would replace.
+    edited: Vec<String>,
 }
 
 fn prepare(
@@ -150,6 +152,7 @@ fn prepare(
         todo: Vec::new(),
         shared: Vec::new(),
         stale: Vec::new(),
+        edited: Vec::new(),
     };
     for r in resolved {
         let name = r.kit.name().to_string();
@@ -195,8 +198,17 @@ fn prepare(
                         .collect::<Vec<_>>()
                         .join(" ")
                 ),
-                // An older version of this kit: replace it.
-                None => p.todo.push((name.clone(), action.clone())),
+                // An older version of this kit: replace it, unless the
+                // user changed what Kit installed; that needs --force.
+                None => {
+                    if let Applied::Skill { dir, .. } = done
+                        && dir.exists()
+                        && let Some(msg) = plan::drifted(done)?
+                    {
+                        p.edited.push(msg);
+                    }
+                    p.todo.push((name.clone(), action.clone()));
+                }
             }
         }
         // What an older version installed that this one no longer has. Only
@@ -309,6 +321,14 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
             .any(|(_, a)| !matches!(a, Action::Skip { .. }));
     if !json {
         print!("{text}");
+    }
+    if let Some(first) = prepared.edited.first()
+        && !req.force
+    {
+        bail!(
+            "{first} since Kit installed it, and the upgrade would replace your edit. \
+             Copy your changes somewhere safe, then run again with --force"
+        );
     }
     if !work {
         record(
@@ -674,6 +694,12 @@ fn render_plan(
     for (kit, old) in &p.stale {
         let _ = writeln!(s, "remove    {}   (no longer in {kit})", old.describe());
     }
+    for msg in &p.edited {
+        let _ = writeln!(
+            s,
+            "edited    {msg}; the upgrade replaces it (needs --force)"
+        );
+    }
     if !p.shared.is_empty() {
         let _ = writeln!(
             s,
@@ -745,6 +771,7 @@ fn print_json(
             .map(|(kit, run)| serde_json::json!({ "kit": kit, "runs": run }))
             .collect::<Vec<_>>(),
         "shared": p.shared.len(),
+        "edited": p.edited,
         "applied": applied,
     });
     let warnings = if applied {

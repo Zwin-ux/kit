@@ -978,6 +978,56 @@ fn an_upgrade_replaces_old_config_and_removes_dropped_pieces() {
     }
 }
 
+#[test]
+fn an_upgrade_never_silently_replaces_a_hand_edited_skill() {
+    let root = scratch("upgrade-edited");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let spec = kit.to_str().unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let skill = repo.join(".claude/skills/hello/SKILL.md");
+    let edited = format!("{}USER EDIT\n", read(&skill));
+    write(&skill, &edited);
+
+    let toml = read(&kit.join("KIT.toml")).replace("version = \"0.1.0\"", "version = \"0.2.0\"");
+    write(&kit.join("KIT.toml"), &toml);
+    write(
+        &kit.join("skills/hello/SKILL.md"),
+        "---\nname: hello\n---\nSay hi.\n",
+    );
+
+    let out = env.kit(
+        &repo,
+        &["add", spec, "-a", "claude", "--no-code", "--print"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let plan = text(&out.stdout);
+    assert!(
+        plan.contains("edited    ") && plan.contains("hello was changed by hand"),
+        "{plan}"
+    );
+
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(!out.status.success(), "the upgrade must stop");
+    assert!(
+        text(&out.stderr).contains("--force"),
+        "{}",
+        text(&out.stderr)
+    );
+    assert_eq!(read(&skill), edited, "the edit must survive");
+    assert!(read(&repo.join("CLAUDE.md")).contains("kit:demo 0.1.0"));
+
+    let out = env.kit(
+        &repo,
+        &["add", spec, "-a", "claude", "--no-code", "--yes", "--force"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(read(&skill).contains("Say hi."), "{}", read(&skill));
+}
+
 /// Two kits that define an MCP server of the same name differently.
 #[test]
 fn two_kits_cannot_share_an_mcp_name_with_different_servers() {
