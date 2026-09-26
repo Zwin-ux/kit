@@ -576,6 +576,21 @@ mod tests {
         insta::assert_snapshot!(frame);
     }
 
+    /// At 60 columns, with the spinner on, no STATE or GATE word is clipped
+    /// (`GATING…` was): AGENT gives way first.
+    #[test]
+    fn narrow_control_room_never_clips_state_or_gate() {
+        let mut app = App::with_motion(true);
+        app.load_prd_fixture();
+        let frame = render_to_string(&app, 60, 16);
+        for run in &app.runs {
+            let state = crate::app::format_state_label(run, &app.clock, true);
+            let gate = crate::app::format_gate_label(run);
+            assert!(frame.contains(&state), "{state} clipped: {frame}");
+            assert!(frame.contains(&gate), "{gate} clipped: {frame}");
+        }
+    }
+
     #[test]
     fn populated_control_room_snapshot_narrow() {
         let mut app = App::with_motion(false);

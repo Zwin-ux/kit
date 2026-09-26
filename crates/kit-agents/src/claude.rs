@@ -40,7 +40,7 @@ impl Agent for ClaudeAgent {
         let _ = tx
             .send(RunDelta::Output(format!(
                 "kit: spawning claude -p in {}\n",
-                worktree.display()
+                crate::process::tilde(worktree)
             )))
             .await;
 

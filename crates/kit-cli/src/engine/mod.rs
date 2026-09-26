@@ -17,6 +17,6 @@ pub use cancel::CancelHandle;
 #[allow(unused_imports)]
 pub use registry::{MAX_CONCURRENT_RUNS, RunRegistry, concurrency_limiter};
 #[allow(unused_imports)]
-pub use runner::{RunOptions, execute, execute_cancellable, parse_agent};
+pub use runner::{RunOptions, execute_cancellable, execute_headless, parse_agent};
 #[allow(unused_imports)]
 pub use supervisor::{run_supervisor, spawn_production};

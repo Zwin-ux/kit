@@ -4,8 +4,8 @@ expression: frame
 ---
 "KIT / DISPATCH  · FAIL · enter open · r retry                          fan-out 1"
 "┌ repos (space) ─────┐┌ agents (space) ───────────┐┌ personas (space) ─────────┐"
-"│▶ [x] kit-tui · this││  [x] codex                ││  [x] eng                  │"
-"│                    ││  [ ] claude               ││  [ ] product              │"
+"│▶ [x] kit-tui · this││  [x] claude               ││  [x] eng                  │"
+"│                    ││  [ ] codex                ││  [ ] product              │"
 "│                    ││  [ ] grok                 ││  [ ] design               │"
 "│                    ││  [ ] ollama               ││  [ ] qa                   │"
 "│                    ││                           ││                           │"

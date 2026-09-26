@@ -38,7 +38,7 @@ impl Agent for GrokAgent {
         let _ = tx
             .send(RunDelta::Output(format!(
                 "kit: spawning grok -p --cwd {} --always-approve\n",
-                worktree.display()
+                crate::process::tilde(worktree)
             )))
             .await;
 
