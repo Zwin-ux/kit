@@ -86,7 +86,7 @@ pub enum Command {
 
     /// Install exactly what kit.lock pins: a new teammate, a new machine, CI
     #[command(
-        after_help = "Example:\n  kit sync                                      this repo, from its kit.lock\n  kit sync --check                              exit 1 if anything is missing; writes nothing\n  kit sync --global --from ~/dotfiles/kit.lock  a new machine"
+        after_help = "Example:\n  kit sync                                      this repo, from its kit.lock\n  kit sync --check                              exit 1 if anything is missing; runs nothing\n  kit sync --global --from ~/dotfiles/kit.lock  a new machine"
     )]
     Sync(SyncArgs),
 
@@ -551,7 +551,7 @@ pub struct SyncArgs {
     /// Agent to set up; repeat for more. Default: the agents kit.lock names
     #[arg(short, long, value_enum)]
     pub agent: Vec<crate::kits::writers::Agent>,
-    /// Report what is missing and exit 1 if anything is; write nothing
+    /// Report what is missing and exit 1 if anything is; never writes to the repo
     #[arg(long, conflicts_with_all = ["from", "yes", "print"])]
     pub check: bool,
     /// Skills and rules only: no MCP servers, no hooks
