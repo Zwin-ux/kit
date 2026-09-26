@@ -213,11 +213,13 @@ async fn cmd_run(args: &[String]) -> Result<()> {
     // Dry-run has no proof claim (CEO stamp); live vacuous fails unless allowed.
     let dry = dry_run == Some(true);
 
-    let exit_nonzero = matches!(
-        result.state,
-        RunState::Pass if gate_vacuous && !allow_vacuous && !dry
-    ) || matches!(result.state, RunState::Fail)
-        || !matches!(result.state, RunState::Pass | RunState::Fail);
+    let code = match result.state {
+        RunState::Pass => 0,
+        RunState::Unconfigured if allow_vacuous || dry => 0,
+        RunState::Fail | RunState::Unconfigured => 1,
+        _ => 2,
+    };
+    let exit_nonzero = code != 0;
 
     if json {
         let data = serde_json::json!({
@@ -264,12 +266,6 @@ async fn cmd_run(args: &[String]) -> Result<()> {
         }
     }
 
-    let code = match result.state {
-        RunState::Pass if gate_vacuous && !allow_vacuous && !dry => 1,
-        RunState::Pass => 0,
-        RunState::Fail => 1,
-        _ => 2,
-    };
     if code != 0 {
         std::process::exit(code);
     }
@@ -483,7 +479,7 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
                 );
             } else {
                 println!(
-                    "{:<28} {:<8} {:<8} {:<12} TASK",
+                    "{:<28} {:<12} {:<8} {:<12} TASK",
                     "ID", "STATE", "AGENT", "REPO"
                 );
                 for r in &rows {
@@ -493,7 +489,7 @@ fn cmd_receipt(args: &[String]) -> Result<()> {
                         r.id.clone()
                     };
                     println!(
-                        "{:<28} {:<8} {:<8} {:<12} {}",
+                        "{:<28} {:<12} {:<8} {:<12} {}",
                         short, r.state, r.agent, r.repo, r.task
                     );
                 }

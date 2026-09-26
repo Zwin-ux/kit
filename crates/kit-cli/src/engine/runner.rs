@@ -283,6 +283,8 @@ async fn agent_and_gate(
 
     let state = if phase == AgentPhase::Failed {
         RunState::Error
+    } else if gate.is_vacuous() {
+        RunState::Unconfigured
     } else if gate.passed {
         RunState::Pass
     } else {
