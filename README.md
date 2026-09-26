@@ -26,11 +26,12 @@ Looking for agents on this machine…
 
 > Which agents should Kit set up? Claude Code
 ? What should your agents focus on?
-  [ ] Backend Engineer    APIs, databases, security, performance, observability
-> [x] Frontend Design     UI, design systems, accessibility, browser testing
-  [ ] Full-stack Design   Frontend Design plus APIs, data, security, end-to-end tests
-  [ ] LLM Engineer        Prompts, evals, RAG, model APIs, cost and latency
-  [ ] Essentials          Spec, plan, build in small steps, test, review, ship
+> [x] Frontend Design      UI, design systems, accessibility, browser testing
+  [ ] Full-stack Design    Frontend Design plus APIs, data, security, end-to-end tests
+  [ ] Backend Engineer     APIs, databases, security, performance, observability
+  [ ] LLM Engineer         Prompts, evals, RAG, model APIs, cost and latency
+  [ ] iOS / Apple Design   Native iOS apps that look and feel like Apple's: SwiftUI, HIG, Liquid Glass, accessibility
+  [ ] Essentials           Spec, plan, build in small steps, test, review, ship
 > Install for All my projects   your agents use it everywhere
 
 Frontend Design 0.1.0  (extends essentials)  →  Claude Code, all projects
@@ -45,7 +46,7 @@ rules     ~/.claude/CLAUDE.md  (block kit:frontend-design)  + 7 lines
 mcp       chrome-devtools → claude mcp add-json --scope user   RUNS CODE
 hook      PostToolUse → ~/.claude/settings.json   RUNS CODE
 
-Runs code on your machine: 2 (MCP servers and hooks).
+Runs code on your machine: 2 (MCP servers, hooks and checks, each shown above).
 
 Continue? [y/N], or s for skills and rules only (no code): y
 Done. Claude Code has Frontend Design in all projects.
