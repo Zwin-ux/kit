@@ -468,6 +468,7 @@ mod tests {
             file: md.clone(),
             kit: "demo".into(),
             created: true,
+            original: None,
         };
         assert!(!present(&rules));
         std::fs::write(&md, "<!-- kit:demo 0.1.0 -->\nx\n<!-- /kit:demo -->\n").unwrap();
@@ -492,6 +493,7 @@ mod tests {
             name: "docs".into(),
             created: true,
             previous: None,
+            original: None,
         };
         std::fs::write(&toml, "[mcp_servers.docs]\nurl = \"https://x\"\n").unwrap();
         assert!(present(&a));
