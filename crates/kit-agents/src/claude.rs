@@ -70,6 +70,11 @@ fn claude_command(binary: &str, worktree: &Path, bypass: bool) -> Command {
     cmd.arg("-p");
     if bypass {
         cmd.arg("--dangerously-skip-permissions");
+    } else {
+        // The worktree is Kit's isolation, so edits inside it need no prompt.
+        // Same bar as codex's `-s workspace-write`; shell commands still ask
+        // unless KIT_FULL_AUTO=1. Without this, `-p` can read but not write.
+        cmd.arg("--permission-mode").arg("acceptEdits");
     }
     cmd.current_dir(worktree);
     cmd
@@ -109,12 +114,22 @@ mod tests {
         // On Windows `command_for` prefixes `/C claude`; the tail is ours.
         let plain = claude_command("claude", Path::new("wt"), false);
         let args: Vec<&OsStr> = plain.as_std().get_args().collect();
-        assert!(args.ends_with(&[OsStr::new("-p")]), "{args:?}");
+        // Without a permission mode, `-p` can read the worktree but every
+        // edit waits for an approval nobody can give (live smoke
+        // 01M3F7N9N2VNT7FMWJ3208T9ZX ended FAIL that way).
+        assert!(
+            args.ends_with(&["-p", "--permission-mode", "acceptEdits"].map(OsStr::new)),
+            "{args:?}"
+        );
         let bypass = claude_command("claude", Path::new("wt"), true);
         let args: Vec<&OsStr> = bypass.as_std().get_args().collect();
         assert!(
             args.ends_with(&["-p", "--dangerously-skip-permissions"].map(OsStr::new)),
             "{args:?}"
+        );
+        assert!(
+            !args.contains(&OsStr::new("acceptEdits")),
+            "full auto already skips every check: {args:?}"
         );
         assert!(
             args.len() <= 4,
