@@ -37,6 +37,8 @@ pub struct LaunchConfig {
     pub engine_tx: Option<mpsc::Sender<crate::app::EngineCommand>>,
     /// When true (default for interactive launch), probe coding agents for the header strip.
     pub probe_agents: bool,
+    /// Where the engine writes receipts; the Diff pane reads finished runs from it.
+    pub runs_dir: Option<std::path::PathBuf>,
 }
 
 /// Run the Control Room until quit. Restores the terminal on every exit path.
@@ -60,6 +62,7 @@ pub async fn run_configured(
                 .collect(),
         );
     }
+    app.runs_dir = config.runs_dir;
     if config.demo {
         app.load_prd_fixture();
     }

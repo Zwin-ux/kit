@@ -134,6 +134,7 @@ async fn launch_tui(demo: bool) -> Result<()> {
             demo,
             engine_tx: Some(cmd_tx),
             probe_agents: true,
+            runs_dir: Some(engine::paths::runs_dir()),
         },
         delta_rx,
     )
