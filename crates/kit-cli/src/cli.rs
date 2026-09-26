@@ -458,7 +458,9 @@ pub struct AddArgs {
     /// Do not ask; install the plan as shown
     #[arg(short, long)]
     pub yes: bool,
-    /// Replace skill folders and config entries Kit did not write
+    /// Replace skill folders and config entries Kit did not write, or that
+    /// were changed by hand; with an upgrade, also remove edited skills the
+    /// new version dropped
     #[arg(long)]
     pub force: bool,
 }
@@ -522,6 +524,10 @@ pub struct SetupArgs {
     /// Do not ask before installing
     #[arg(short, long)]
     pub yes: bool,
+    /// Replace skill folders and config entries Kit did not write, or that
+    /// were changed by hand
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Debug, Args)]

@@ -52,6 +52,14 @@ pub enum Scope {
 }
 
 impl Scope {
+    /// The folder everything this scope writes stays inside.
+    pub fn root(&self) -> &Path {
+        match self {
+            Self::Global { home } => home,
+            Self::Repo(root) => root,
+        }
+    }
+
     pub fn label(&self) -> String {
         match self {
             Self::Global { .. } => "all projects".into(),

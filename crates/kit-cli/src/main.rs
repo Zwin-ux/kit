@@ -402,12 +402,12 @@ impl RunSummary<'_> {
         out.push(format!(
             "run       {}  (receipt {})",
             short_id(self.id),
-            self.receipt_dir.display()
+            kits::plan::tilde(self.receipt_dir)
         ));
         if let Some(wt) = self.worktree {
             out.push(format!(
                 "worktree  {} (kept: it has the run's changes)",
-                wt.display()
+                kits::plan::tilde(wt)
             ));
         }
         out.push(format!("next      {}", self.next()));
@@ -544,10 +544,10 @@ fn cmd_receipt_show(id: &str, show_output: bool, json: bool) -> Result<()> {
         );
     } else {
         println!("receipt {}", receipt.id);
-        println!("  dir       {}", dir.display());
+        println!("  dir       {}", kits::plan::tilde(&dir));
         println!("  state     {}", state_label(receipt.state));
         println!("  agent     {}", receipt.spec.agent.label());
-        println!("  repo      {}", receipt.spec.repo.display());
+        println!("  repo      {}", kits::plan::tilde(&receipt.spec.repo));
         println!(
             "  task      {}",
             receipt.spec.task.lines().next().unwrap_or("")
@@ -561,23 +561,28 @@ fn cmd_receipt_show(id: &str, show_output: bool, json: bool) -> Result<()> {
             } else {
                 "FAIL"
             };
-            println!("  gate      {label}  ({} checks)", g.checks.len());
+            let n = g.checks.len();
+            println!(
+                "  gate      {label}  ({n} check{})",
+                if n == 1 { "" } else { "s" }
+            );
+            let width = g.checks.iter().map(|c| c.label.len()).max().unwrap_or(0);
             for c in &g.checks {
-                println!(
-                    "            {:?}  {}  {}",
-                    c.status,
-                    c.label,
-                    c.summary.as_deref().unwrap_or("")
-                );
+                let status = format!("{:?}", c.status).to_ascii_uppercase();
+                let row = format!("            {status:4}  {:width$}  {}", c.label, c.command);
+                println!("{}", row.trim_end());
+                if let Some(first) = c.summary.as_deref().filter(|s| !s.is_empty()) {
+                    println!("                  {first}");
+                }
             }
         } else {
             println!("  gate      (none)");
         }
         if !receipt.diff.is_empty() {
             println!(
-                "  diff      {} bytes (see {}/diff.patch)",
+                "  diff      {} bytes (see {})",
                 receipt.diff.len(),
-                dir.display()
+                kits::plan::tilde(&dir.join("diff.patch"))
             );
         }
         if show_output {
@@ -590,7 +595,7 @@ fn cmd_receipt_show(id: &str, show_output: bool, json: bool) -> Result<()> {
             }
         } else {
             println!();
-            println!("  tip  kit receipt show {} --output", receipt.id);
+            println!("tip       kit receipt show {} --output", receipt.id);
         }
         let vacuous = receipt.gate.as_ref().is_none_or(engine::infer::is_vacuous);
         if let Some(step) = land_hint(receipt.state, vacuous, &dir, &receipt.id.0) {
@@ -842,9 +847,9 @@ fn print_doctor(version: &str, json: bool) {
     println!("  control room    ok (kit-tui)");
     println!("  gate engine     ok (kit-gate)");
     println!("  run engine      ok (worktree + adapters + receipt)");
-    println!("  kit home        {}", kit_home.display());
+    println!("  kit home        {}", kits::plan::tilde(&kit_home));
     if let Some(s) = skills {
-        println!("  skills pack     {}", s.display());
+        println!("  skills pack     {}", kits::plan::tilde(&s));
     } else {
         println!("  skills pack     none here (optional; `kit add <kit>` installs skills)");
     }

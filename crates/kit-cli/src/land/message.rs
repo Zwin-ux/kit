@@ -29,7 +29,7 @@ pub fn commit_message(r: &Receipt, forced: bool) -> String {
     format!("{subject}\n\n{}\n\nKit-Receipt: {id}\n", body.join("\n"))
 }
 
-/// `PASS (format pass, test pass)`; `UNCONFIGURED`; `FAIL (test fail)`.
+/// `PASS · format, test`; `UNCONFIGURED`; `FAIL · format, test failed`.
 pub fn gate_summary(r: &Receipt) -> String {
     let Some(g) = &r.gate else {
         return "none".into();
@@ -38,23 +38,21 @@ pub fn gate_summary(r: &Receipt) -> String {
         return "UNCONFIGURED (no checks)".into();
     }
     let verdict = if g.passed { "PASS" } else { "FAIL" };
+    // Name each check once; say its result only when it did not pass.
     let checks: Vec<String> = g
         .checks
         .iter()
-        .map(|c| {
-            let s = match c.status {
-                CheckStatus::Pass => "pass",
-                CheckStatus::Fail => "fail",
-                CheckStatus::Skipped => "skipped",
-                CheckStatus::TimedOut => "timed out",
-            };
-            format!("{} {s}", c.label)
+        .map(|c| match c.status {
+            CheckStatus::Pass => c.label.clone(),
+            CheckStatus::Fail => format!("{} failed", c.label),
+            CheckStatus::Skipped => format!("{} skipped", c.label),
+            CheckStatus::TimedOut => format!("{} timed out", c.label),
         })
         .collect();
     if checks.is_empty() {
         verdict.into()
     } else {
-        format!("{verdict} ({})", checks.join(", "))
+        format!("{verdict} · {}", checks.join(", "))
     }
 }
 
@@ -98,9 +96,9 @@ pub fn print_text(r: &Receipt, repo: &Path, l: &Landed, worktree_removed: bool, 
         println!("  worktree  removed");
     }
     println!();
-    println!("Next: {next}");
+    println!("next      {next}");
     if let (Some(b), false) = (&l.branch, l.already) {
-        println!("  or:  git switch {b}");
+        println!("  or      git switch {b}");
     }
 }
 
