@@ -46,7 +46,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     if app.runs.is_empty() {
         let (message, hint) = empty_room_copy(app);
-        draw_empty_state(frame, chunks[1], &theme, message, hint);
+        let fox = crate::fox::lines(crate::fox::frame_at(&app.clock, app.motion_enabled()));
+        draw_empty_state(frame, chunks[1], &theme, &fox, message, hint);
     } else {
         draw_table(frame, app, chunks[1], &theme);
     }

@@ -298,6 +298,14 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
     if json {
         return Ok(());
     }
+    if tty {
+        // The fox, resting: setup is done. Terminals only; never in pipes.
+        println!();
+        for line in kit_tui::fox::lines(0) {
+            println!("  {}", line.trim_end());
+        }
+        println!();
+    }
     println!(
         "Saved your choices to {}.",
         super::plan::tilde(&super::config::path())

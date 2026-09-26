@@ -199,19 +199,43 @@ fn drop_footer_index(tokens: &[String]) -> Option<usize> {
     None
 }
 
-/// Empty-state body: one primary message + one action hint.
-pub fn draw_empty_state(frame: &mut Frame, area: Rect, theme: &Theme, message: &str, hint: &str) {
+/// Empty-state body: one primary message + one action hint, under `art`
+/// (every line the same width) when the panel has room for all of it.
+pub fn draw_empty_state(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    art: &[String],
+    message: &str,
+    hint: &str,
+) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(theme.border(false));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let lines = vec![
-        Line::from(""),
-        Line::from(Span::styled(message, theme.body())),
-        Line::from(Span::styled(hint, theme.dim().add_modifier(Modifier::BOLD))),
-    ];
+    let art_width = art.first().map_or(0, |l| l.chars().count());
+    let text_rows = 3; // gap, message, hint
+    let need = art.len() + text_rows;
+    let fits = !art.is_empty()
+        && usize::from(inner.height) >= need
+        && usize::from(inner.width) >= art_width;
+    let mut lines = Vec::new();
+    if fits {
+        let pad = (usize::from(inner.height) - need) / 2;
+        lines.extend(std::iter::repeat_n(Line::from(""), pad));
+        lines.extend(
+            art.iter()
+                .map(|l| Line::from(Span::styled(l.clone(), theme.body()))),
+        );
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(message, theme.body())));
+    lines.push(Line::from(Span::styled(
+        hint,
+        theme.dim().add_modifier(Modifier::BOLD),
+    )));
     frame.render_widget(Paragraph::new(lines).centered(), inner);
 }
 

@@ -739,10 +739,16 @@ impl App {
                     .runs
                     .iter()
                     .any(|r| matches!(r.state, RunState::Running | RunState::Gating));
-                // Spinner advances every 2 ticks (10 Hz at TICK_HZ=20). Idle rooms
-                // still skip redraw. KIT_MOTION=off keeps the resting label.
+                // Spinner advances every 2 ticks (10 Hz at TICK_HZ=20). Other idle
+                // ticks skip redraw. KIT_MOTION=off keeps the resting label.
                 let spinner_tick = live && next.is_multiple_of(2);
-                self.motion && (spinner_tick || flash_active)
+                // The fox in the empty Control Room redraws only when its tail
+                // frame changes: six frames every 8 s.
+                let fox_tick = self.runs.is_empty()
+                    && self.screen == Screen::ControlRoom
+                    && !self.help_open
+                    && crate::fox::changes_at(next);
+                self.motion && (spinner_tick || flash_active || fox_tick)
             }
             other => other.is_redraw_worthy(),
         };
@@ -2005,6 +2011,25 @@ mod tests {
         app.clear_dirty();
         app.update(AppEvent::AnimationTick);
         assert!(!app.is_dirty());
+    }
+
+    #[test]
+    fn idle_room_redraws_only_when_the_fox_moves() {
+        let mut app = App::with_motion(true);
+        let mut redraws = 0;
+        for _ in 0..crate::fox::WAG_PERIOD {
+            app.clear_dirty();
+            app.update(AppEvent::AnimationTick);
+            redraws += usize::from(app.is_dirty());
+        }
+        assert_eq!(redraws, crate::fox::FRAMES, "one redraw per tail frame");
+
+        let mut still = App::with_motion(false);
+        for _ in 0..crate::fox::WAG_PERIOD {
+            still.clear_dirty();
+            still.update(AppEvent::AnimationTick);
+            assert!(!still.is_dirty(), "KIT_MOTION=off: the fox never redraws");
+        }
     }
 
     #[test]
