@@ -210,9 +210,37 @@ pub fn cmd_add(args: AddArgs, json: bool) -> Result<()> {
 }
 
 pub fn add(req: &Request, json: bool) -> Result<Outcome> {
+    add_to(req, json, Lock::load(&req.scope)?, &Expect::default())
+}
+
+/// What `kit sync` holds an install to: the versions and skill content
+/// hashes a `kit.lock` recorded. Empty for `kit add`.
+#[derive(Debug, Default)]
+pub struct Expect {
+    /// Kit name → version.
+    pub versions: std::collections::BTreeMap<String, String>,
+    /// Skill folder name → content hash.
+    pub skills: std::collections::BTreeMap<String, String>,
+}
+
+/// `kit add` against `lock` (what is already in place), refusing anything
+/// that differs from `expect`.
+pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Result<Outcome> {
     let (scope, agents) = (&req.scope, req.agents.as_slice());
     let chosen = choose(&req.kits)?;
-    let mut lock = Lock::load(scope)?;
+    for kit in &chosen.kits {
+        let have = &kit.manifest.kit.version;
+        if let Some(want) = expect.versions.get(kit.name())
+            && want != have
+        {
+            bail!(
+                "kit.lock pins {} {want}, but {} gives {have}. Kit will not guess. Run kit add {} to move to {have}",
+                kit.name(),
+                kit.pin.as_deref().unwrap_or("this kit"),
+                kit.name()
+            );
+        }
+    }
 
     if !json
         && chosen
@@ -227,6 +255,20 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
         .iter()
         .map(Resolved::load)
         .collect::<Result<_>>()?;
+    for r in &resolved {
+        for p in &r.skills {
+            if let Some(want) = expect.skills.get(&p.name)
+                && *want != p.hash
+            {
+                bail!(
+                    "{}: skill {} is not what kit.lock pins (its content changed at the source). Kit will not guess. Run kit add {} to take the new content",
+                    r.kit.name(),
+                    p.name,
+                    r.kit.name()
+                );
+            }
+        }
+    }
 
     let mut opts = Options {
         no_code: req.no_code,
@@ -343,6 +385,7 @@ fn record(
                 name: name.clone(),
                 version: String::new(),
                 source: name.clone(),
+                pin: None,
                 requested: false,
                 required_by: Vec::new(),
                 agents: Vec::new(),
@@ -354,14 +397,13 @@ fn record(
         entry.version.clone_from(&kit.manifest.kit.version);
         if let Some((_, spec)) = chosen.requested.iter().find(|(n, _)| *n == name) {
             entry.requested = true;
-            entry.source = if catalog::find(spec).is_ok_and(|k| k.level == catalog::Level::Direct) {
-                std::fs::canonicalize(spec)
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|_| spec.clone())
-            } else {
-                spec.clone()
+            // A folder is recorded by its absolute path; anything else as typed.
+            entry.source = match kit.pin.as_deref() {
+                Some(pin) if !pin.starts_with("github:") => pin.to_string(),
+                _ => spec.clone(),
             };
         }
+        entry.pin.clone_from(&kit.pin);
         for (base, top) in &chosen.edges {
             if *base == name && !entry.required_by.contains(top) {
                 entry.required_by.push(top.clone());
@@ -449,7 +491,17 @@ fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -
             who.join(" and "),
             scope.label()
         );
-        let _ = writeln!(s, "{}", kit.level.label());
+        match kit.pin.as_deref().filter(|p| p.starts_with("github:")) {
+            Some(pin) => {
+                let short = pin.rsplit_once('@').map_or(pin.to_string(), |(src, sha)| {
+                    format!("{src}@{}", sha.get(..7).unwrap_or(sha))
+                });
+                let _ = writeln!(s, "{}  ({short})", kit.level.label());
+            }
+            None => {
+                let _ = writeln!(s, "{}", kit.level.label());
+            }
+        }
     }
     let _ = writeln!(s);
 

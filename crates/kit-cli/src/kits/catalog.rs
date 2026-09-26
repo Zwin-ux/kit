@@ -1,5 +1,6 @@
-//! Where kits come from: the starter kits bundled in the binary, or a
-//! folder on disk. The Git index comes later (DESIGN-KITS.md §6).
+//! Where kits come from: the starter kits bundled in the binary, a folder
+//! on disk, a GitHub repo (`github:owner/repo`), or the kit index
+//! (DESIGN-KITS.md §6, DESIGN-MARKETPLACE.md).
 
 use super::manifest::KitManifest;
 use anyhow::{Context, Result, bail};
@@ -13,6 +14,8 @@ static BUNDLED: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/kits");
 pub enum Level {
     /// Ships with Kit, reviewed by its maintainers.
     Official,
+    /// Listed in the kit index by pull request, reviewed at listing.
+    Index,
     /// A folder or repo the user named. Not reviewed by Kit.
     Direct,
 }
@@ -21,6 +24,7 @@ impl Level {
     pub fn label(self) -> &'static str {
         match self {
             Self::Official => "Official",
+            Self::Index => "Index: listed in the kit index, reviewed at listing",
             Self::Direct => "Direct source, not reviewed by Kit",
         }
     }
@@ -99,6 +103,9 @@ pub struct Kit {
     pub manifest: KitManifest,
     pub files: KitFiles,
     pub level: Level,
+    /// A spec that fetches exactly this kit again (`github:o/r@sha`, or a
+    /// folder). `None` for a bundled kit, which is pinned by Kit's version.
+    pub pin: Option<String>,
 }
 
 impl Kit {
@@ -120,34 +127,59 @@ pub fn bundled() -> Result<Vec<Kit>> {
             manifest,
             files: KitFiles::Bundled(dir),
             level: Level::Official,
+            pin: None,
         });
     }
     kits.sort_by(|a, b| a.name().cmp(b.name()));
     Ok(kits)
 }
 
-/// A kit by name (bundled) or by folder path (`./my-kit`, `/abs/kit`).
+/// A kit by name (bundled, then the index), by `github:owner/repo[/path][@rev]`,
+/// or by folder path (`./my-kit`, `/abs/kit`).
 pub fn find(spec: &str) -> Result<Kit> {
+    if let Some(gh) = super::remote::parse(spec)? {
+        return super::remote::fetch(&gh);
+    }
     if looks_like_path(spec) {
         let root = PathBuf::from(spec);
         let toml = root.join("KIT.toml");
         let raw = std::fs::read_to_string(&toml)
             .with_context(|| format!("no KIT.toml in {}", root.display()))?;
         let manifest = KitManifest::parse(&raw, &toml.display().to_string())?;
+        let pin = std::fs::canonicalize(&root)
+            .map_or_else(|_| spec.to_string(), |p| p.display().to_string());
         return Ok(Kit {
             manifest,
             files: KitFiles::Path(root),
             level: Level::Direct,
+            pin: Some(pin),
         });
     }
     let kits = bundled()?;
     if let Some(k) = kits.iter().find(|k| k.name() == spec) {
         return Ok(k.clone());
     }
-    let names: Vec<&str> = kits.iter().map(Kit::name).collect();
+    let index = super::index::load(false);
+    if let Ok(index) = &index
+        && let Some(entry) = index.get(spec)
+    {
+        return index.fetch(entry);
+    }
+    let mut names: Vec<&str> = kits.iter().map(Kit::name).collect();
+    if let Ok(index) = &index {
+        names.extend(index.entries.iter().map(|e| e.name.as_str()));
+    }
+    let unreachable = match &index {
+        Err(e) => format!(" (the kit index could not be read: {e:#})"),
+        Ok(_) => String::new(),
+    };
     match closest(spec, &names) {
-        Some(near) => bail!("no kit named '{spec}'. Did you mean '{near}'? See kit show"),
-        None => bail!("no kit named '{spec}'. Kits: {}", names.join(", ")),
+        Some(near) => {
+            bail!("no kit named '{spec}'. Did you mean '{near}'? See kit search{unreachable}")
+        }
+        None => bail!(
+            "no kit named '{spec}'{unreachable}. Find one with kit search, or name a folder or github:owner/repo"
+        ),
     }
 }
 
@@ -277,7 +309,7 @@ mod tests {
         let err = find("frontend-desing").unwrap_err().to_string();
         assert!(err.contains("Did you mean 'frontend-design'"), "{err}");
         let err = find("zzz").unwrap_err().to_string();
-        assert!(err.contains("Kits: backend-engineer"), "{err}");
+        assert!(err.contains("kit search"), "{err}");
     }
 
     #[test]

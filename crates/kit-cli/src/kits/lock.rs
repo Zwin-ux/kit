@@ -25,6 +25,10 @@ pub struct Entry {
     pub version: String,
     /// What was typed: a bundled name or a folder.
     pub source: String,
+    /// What fetches exactly this kit again (`github:o/r/path@sha`, or a
+    /// folder); `kit sync` installs from it. Absent for bundled kits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pin: Option<String>,
     /// Asked for by name, not only pulled in as a base.
     pub requested: bool,
     /// Installed kits that extend this one.
