@@ -1,12 +1,15 @@
 name: Release npm
 
-# Tag push (v1.0.0-alpha.2, v1.0.0, …) builds every platform, publishes to
-# npm and creates the GitHub Release (archives + SHA256SUMS).
+# Tag push (v2.0.0, …) builds every platform, creates the GitHub Release
+# (archives, SHA256SUMS, build attestations), then publishes to npm and
+# crates.io, then installs the release on each OS the way users will.
+# Each step waits for the one before it, so a failure never leaves npm or
+# crates.io pointing at a release that does not exist.
 # Manual runs build and pack everything, run `npm publish --dry-run` and
 # create no release, unless `publish` is checked.
 #
 # Prerelease versions publish under their prerelease word (alpha, beta, rc),
-# never `latest`, so `npm i -g @mzwin/kit` keeps serving 0.1.x until 1.0.0.
+# never `latest`; a plain version (2.0.0) moves `latest`.
 
 on:
   push:
@@ -55,7 +58,7 @@ jobs:
             bin: kit
             zig: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -110,7 +113,7 @@ jobs:
           - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, bin: kit }
           - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm, bin: kit }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -129,16 +132,24 @@ jobs:
           docker run --rm -v "$PWD/bins:/b:ro" amazonlinux:2 /b/${{ matrix.target }}/kit --version
 
   # Archives + SHA256SUMS for scripts/install.sh and scripts/install.ps1.
-  # Runs next to `publish`. A dry run packs and checksums but creates no
-  # release. A real run needs the tag v<version> to exist on GitHub.
+  # A dry run packs, checksums and writes the notes but creates no release.
+  # A real run needs the tag v<version> to exist on GitHub.
   github-release:
     name: github release
     needs: [build, verify]
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the release and upload assets
+      id-token: write # sign the build attestations
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Version copies agree
+        run: node scripts/version.mjs --check
 
       - uses: actions/download-artifact@v4
         with:
@@ -183,6 +194,18 @@ jobs:
           [ "$count" -eq 5 ] || { echo "expected 5 targets, got $count" >&2; exit 1; }
           (cd dist/release && sha256sum -- kit-* > SHA256SUMS && cat SHA256SUMS)
 
+      # Fails when CHANGELOG.md has no section for this version.
+      - name: Release notes
+        run: |
+          node scripts/release-notes.mjs "$VERSION" --repo "$GITHUB_REPOSITORY" > dist/notes.md
+          cat dist/notes.md
+
+      - name: Attest build provenance
+        if: github.event_name == 'push' || inputs.publish
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/release/kit-*
+
       - uses: actions/upload-artifact@v4
         with:
           name: release-archives
@@ -198,22 +221,20 @@ jobs:
           set -euo pipefail
           tag="v$VERSION"
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "release $tag exists: replacing assets"
+            # A rerun after a partial create: replace the assets and make
+            # sure the release is published with the current notes.
+            echo "release $tag exists: replacing assets and notes"
             gh release upload "$tag" dist/release/* --clobber
+            gh release edit "$tag" --draft=false --notes-file dist/notes.md
             exit 0
           fi
           flags=(--verify-tag --title "Kit $VERSION")
           case "$VERSION" in *-*) flags+=(--prerelease) ;; esac
-          cat > notes.md <<EOF
-          Changes: [CHANGELOG.md](https://github.com/$GH_REPO/blob/$tag/CHANGELOG.md)
-
-          Install: \`npm install -g @mzwin/kit@$VERSION\`, or \`scripts/install.sh\` / \`scripts/install.ps1\` with version $VERSION. Check the archives against \`SHA256SUMS\`.
-          EOF
-          gh release create "$tag" "${flags[@]}" --notes-file notes.md dist/release/*
+          gh release create "$tag" "${flags[@]}" --notes-file dist/notes.md dist/release/*
 
   publish:
     name: publish
-    needs: [build, verify]
+    needs: [build, verify, github-release]
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.publish.outputs.version }}
@@ -221,7 +242,7 @@ jobs:
       contents: read
       id-token: write # npm provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -376,3 +397,97 @@ jobs:
           $out = & "$env:RUNNER_TEMP\npm-check\node_modules\.bin\kit.cmd" --version
           if ($out -ne "kit $env:VERSION") { throw "expected 'kit $env:VERSION', got '$out'" }
           $out
+
+  # kitctl and its four library crates, in dependency order. Needs the
+  # CARGO_REGISTRY_TOKEN secret; without it the job says so and fails, so a
+  # release is never reported green with crates.io missing. A rerun skips
+  # every crate already on crates.io at this version.
+  crates-io:
+    name: crates.io
+    needs: [github-release, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && !inputs.publish }}
+        run: |
+          set -euo pipefail
+          node scripts/version.mjs --check
+          version=$(node scripts/version.mjs)
+          if [ "$DRY_RUN" = "true" ]; then
+            cargo publish --workspace --dry-run --locked
+            exit 0
+          fi
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::error::CARGO_REGISTRY_TOKEN is not set; kitctl $version was not published to crates.io"
+            exit 1
+          fi
+          for crate in kitctl-core kitctl-gate kitctl-agents kitctl-tui kitctl; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -A "kit-release (github.com/$GITHUB_REPOSITORY)" \
+              "https://crates.io/api/v1/crates/$crate/$version")
+            if [ "$code" = 200 ]; then
+              echo "skip $crate@$version (already published)"
+              continue
+            fi
+            # cargo waits until the crate is in the index before returning,
+            # so the next crate can depend on it.
+            cargo publish -p "$crate" --locked
+          done
+
+  # Install the published GitHub Release with the one-line installers on
+  # each OS, from the tag's own scripts, and run it.
+  install-check:
+    name: install (${{ matrix.os }})
+    needs: github-release
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-22.04-arm, macos-14, macos-15-intel, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Version
+        shell: bash
+        run: echo "VERSION=$(node scripts/version.mjs)" >> "$GITHUB_ENV"
+
+      - name: install.sh
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/kitbin"
+          KIT_INSTALL_DIR="$dir" sh scripts/install.sh --version "$VERSION"
+          out=$("$dir/kit" --version)
+          echo "$out"
+          [ "$out" = "kit $VERSION" ] || { echo "::error::expected 'kit $VERSION', got '$out'"; exit 1; }
+          HOME="$RUNNER_TEMP/home" NO_COLOR=1 "$dir/kit" doctor
+          HOME="$RUNNER_TEMP/home" NO_COLOR=1 "$dir/kit" show
+
+      - name: install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\kitbin"
+          & .\scripts\install.ps1 -Version $env:VERSION -InstallDir $dir
+          $out = & "$dir\kit.exe" --version
+          if ($out -ne "kit $env:VERSION") { throw "expected 'kit $env:VERSION', got '$out'" }
+          $out
+          $env:NO_COLOR = '1'
+          & "$dir\kit.exe" doctor
+          if ($LASTEXITCODE -ne 0) { throw "kit doctor exited $LASTEXITCODE" }
+          & "$dir\kit.exe" show
+          if ($LASTEXITCODE -ne 0) { throw "kit show exited $LASTEXITCODE" }
