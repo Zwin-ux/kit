@@ -2351,7 +2351,7 @@ mod tests {
                 assert_eq!(source_id, fail_id);
                 assert!(job.task.contains("Previous gate failure"));
                 assert_eq!(
-                    job.task.matches("# Kit persona:").count(),
+                    job.task.matches("\n---\nRole (").count(),
                     1,
                     "retry must wrap the persona brief once: {}",
                     job.task
@@ -2551,13 +2551,14 @@ mod tests {
             Action::DispatchSubmitted { jobs } => {
                 assert_eq!(jobs.len(), 3);
                 assert!(jobs.iter().all(|j| j.agent == "grok"));
-                assert!(jobs.iter().all(|j| j.task.contains("# Kit persona:")));
-                assert!(jobs.iter().any(|j| j.task.contains("persona: product")));
-                assert!(jobs.iter().any(|j| j.task.contains("persona: design")));
-                assert!(jobs.iter().any(|j| j.task.contains("persona: eng")));
+                assert!(jobs.iter().all(|j| j.task.contains("\n---\nRole (")));
+                assert!(jobs.iter().any(|j| j.task.contains("Role (product)")));
+                assert!(jobs.iter().any(|j| j.task.contains("Role (design)")));
+                assert!(jobs.iter().any(|j| j.task.contains("Role (eng)")));
+                // The user's task leads: it titles the receipt and the land commit.
                 assert!(
                     jobs.iter()
-                        .all(|j| j.task.contains("## Task\nempty room first paint"))
+                        .all(|j| j.task.lines().next() == Some("empty room first paint"))
                 );
             }
             other => panic!("expected DispatchSubmitted, got {other:?}"),
