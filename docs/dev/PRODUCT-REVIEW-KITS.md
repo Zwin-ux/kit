@@ -58,7 +58,69 @@ that carries its own definition of done is the thing only Kit offers.
    hole.
 5. The kit's gate proves the agent's work, which no other bundle does.
 
-### Primary workflow
+### First run: Kit asks two questions
+
+Added after Mazen's second message: installing Kit should ask which agents
+you use and what you want them to focus on, then set them up.
+
+```console
+$ npm i -g @mzwin/kit        # or curl | sh, or cargo install kitctl
+$ kit
+Kit sets your coding agents up for a job.
+
+Which agents should Kit set up?          (found on this machine)
+  [x] Claude Code   2.1.283
+  [ ] Codex         not installed
+  [ ] Grok          not installed
+
+What should they focus on?               (space to pick, one or more)
+  [x] Frontend Design     UI, design systems, accessibility, browser testing
+  [ ] Full-stack Design   Frontend Design plus APIs, data, end-to-end tests
+  [ ] Backend Engineer    APIs, databases, security, performance
+  [ ] LLM Engineer        prompts, evals, RAG, model APIs
+
+Install for:  (•) all my projects   ( ) this repo only
+
+Frontend Design 0.1.0 for Claude Code:
+  skills   9   → ~/.claude/skills
+  rules        → ~/.claude/CLAUDE.md (marked block)
+  mcp      playwright (runs npx @playwright/mcp@x.y.z)   → Claude Code user config
+  hooks    prettier after each edit                      → ~/.claude/settings.json
+Runs code on your machine: 1 MCP server, 1 hook. Continue? [y/N] y
+
+Done. Claude Code now has the Frontend Design kit in every project.
+next      open Claude Code in any repo and ask for a component,
+          or: kit run "build a pricing page"
+```
+
+- The questions appear the first time bare `kit` runs in a terminal and
+  nothing is set up yet. Afterwards bare `kit` opens the Control Room, and
+  `kit setup` asks again.
+- Detected agents are pre-ticked; missing ones say how to install them.
+- The same flow without prompts, for scripts and dotfiles:
+  `kit setup --agent claude --kit frontend-design --global --yes`.
+- Choices are saved in `~/.kit/config.toml`, so `kit sync --global` on a
+  new machine reproduces the setup.
+- Prompts are plain terminal questions (a small prompt crate such as
+  `dialoguer`), not the Control Room TUI, so they work in any terminal.
+
+### The four starter kits
+
+Proposals from the skills already pinned in `skills-lock.json`
+(addyosmani/agent-skills) and well-known open-source tools. The research
+thread's catalogue replaces the *candidate* entries with verified sources.
+
+| Kit | Skills | MCP / hooks | Gate (repo installs) |
+|-----|--------|-------------|----------------------|
+| **Frontend Design** | frontend-ui-engineering, browser-testing-with-devtools, a11y-pass; *candidates:* a frontend/visual design skill, a design-tokens skill | Playwright MCP for seeing the page; format-on-edit hook (prettier) | format, typecheck, lint, test from `package.json` |
+| **Full-stack Design** | extends Frontend Design; api-and-interface-design, security-and-hardening, *candidate:* database migrations | Playwright MCP; *candidate:* a Postgres MCP (read-only) | Frontend's gate plus the backend tests |
+| **Backend Engineer** | api-and-interface-design, security-and-hardening, performance-optimization, debugging-and-error-recovery, test-driven-development | *candidate:* read-only database MCP; format-on-edit hook for the detected language | format, lint, test for the detected toolchain (as `kit init` does today) |
+| **LLM Engineer** | *candidates:* prompt and eval design, model API usage (e.g. an open-source Claude/OpenAI API skill), RAG patterns, cost and latency budgeting | *candidate:* a docs-fetch MCP for current SDK docs | test, plus an eval command when the repo has one |
+
+Every kit also extends `essentials` (spec, plan, review, tests,
+shipping), so the base workflow is the same whatever the focus.
+
+### Primary workflow in a repo
 
 ```console
 $ cd MyApp
@@ -87,11 +149,14 @@ one, you push it, and anyone can run `kit add github:you/my-ios`.
 
 ### Scope for v0.1
 
-1. **Kit format** (`KIT.toml`, §2) and the seven existing packs
-   converted to kits, plus the first job kit (`ios`) from the research
-   thread's catalogue.
+1. **First-run setup** (`kit setup`, shown on first bare `kit`) and the
+   four starter kits: Frontend Design, Full-stack Design, Backend
+   Engineer, LLM Engineer. `essentials` becomes their shared base; the
+   other 0.1 packs retire or become kits later.
+1. **Kit format** (`KIT.toml`, §2). Job kits like `ios` follow the
+   starter four.
 2. **`kit add | remove | list | sync | search | new`**, project scope.
-3. **Writers for Claude Code and Codex**: skills and rules for both;
+3. **Writers for Claude Code, Codex and Grok**: skills and rules for all three;
    MCP and hooks for Claude Code first (its formats are documented);
    Codex MCP and hooks when the research thread confirms the formats.
 4. **Index as a Git repo**: `search` and bare names like `ios` resolve
@@ -108,8 +173,8 @@ one, you push it, and anyone can run `kit add github:you/my-ios`.
 - **Copying other people's skills into our repo.** Kits reference
   upstream skills by repo, path and commit (as `skills-lock.json` does),
   so authors keep credit and licence, and updates are a pin bump.
-- **Global (per-user) install.** Project scope is committed and
-  shareable; `--global` comes after project scope is solid.
+- ~~Global install~~ (moved into v0.1: the first-run questions set up
+  the person's agents for every project, which is per-user).
 - **Running unreviewed code.** No kit installs a hook or MCP server
   without the confirmation above; `--yes` exists for CI only.
 - **Paid kits, auto-update, dependency solving beyond `extends`.**
@@ -141,7 +206,8 @@ one, you push it, and anyone can run `kit add github:you/my-ios`.
 ### Commands
 
 ```text
-kit add <KIT>...        Install kits into this repo (name, github:owner/repo, or path)
+kit setup               The first-run questions: agents, focus, scope
+kit add <KIT>...        Install kits into this repo (--global: all projects) (name, github:owner/repo, or path)
 kit remove <KIT>...     Remove what add wrote
 kit list                Kits in this repo, versions, drift
 kit sync                Install exactly what kit.lock pins
@@ -204,13 +270,14 @@ and `kit.lock` records each resolved source, commit and content hash.
 
 ### Where things go (to verify)
 
-| Piece | Claude Code | Codex |
-|-------|-------------|-------|
-| skills | `.claude/skills/<name>/` | `.agents/skills/<name>/` |
-| rules | `CLAUDE.md` block | `AGENTS.md` block |
-| mcp | `.mcp.json` entry | `~/.codex/config.toml` (user-level only, so v0.1 prints the snippet) |
-| hooks | `.claude/settings.json` `PostToolUse` | none known; skipped with a notice |
-| gate | `kit.toml` | `kit.toml` |
+| Piece | Claude Code | Codex | Grok |
+|-------|-------------|-------|------|
+| skills, this repo | `.claude/skills/<name>/` | `.agents/skills/<name>/` | `.grok/skills/<name>/` (Kit 0.1 convention) |
+| skills, all projects | `~/.claude/skills/<name>/` | `~/.codex/skills/<name>/` | `~/.grok/skills/<name>/` |
+| rules | `CLAUDE.md` / `~/.claude/CLAUDE.md` block | `AGENTS.md` / `~/.codex/AGENTS.md` block | `AGENTS.md` block |
+| mcp | `.mcp.json` / user config | `~/.codex/config.toml` `[mcp_servers]` | unknown; skipped with a notice |
+| hooks | `settings.json` `PostToolUse` | none known; skipped with a notice | unknown; skipped |
+| gate | `kit.toml` (repo installs only) | same | same |
 
 ### Type review (inside kit-cli)
 
