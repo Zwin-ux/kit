@@ -1,34 +1,70 @@
 # Releasing Kit
 
-Kit 1.x ships one Rust binary (`kit`, `kit.exe`) through four channels. One tag push feeds the first three.
+Kit ships one Rust binary (`kit`, `kit.exe`) through five channels. One tag push feeds all of them.
 
 | Channel | Command for users | Source |
 |---------|-------------------|--------|
-| npm (primary) | `npm install -g @mzwin/kit@alpha` | `release-npm.yml`, job `publish` |
-| Shell installer | `curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh \| sh -s -- --prerelease` | GitHub Release, job `github-release` |
-| PowerShell installer | `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.ps1))) -Prerelease` | GitHub Release, job `github-release` |
+| Shell installer | `curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh \| sh` | GitHub Release, job `github-release` |
+| PowerShell installer | `irm https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.ps1 \| iex` | GitHub Release, job `github-release` |
+| npm | `npm install -g @mzwin/kit` | job `publish` |
+| crates.io | `cargo install kitctl --locked` | job `crates-io` |
+| Cargo from git | `cargo install --git https://github.com/Zwin-ux/kit kitctl --locked` | the repo |
 
-Until 1.0.0 there is no stable 1.x release, so the installer lines need `--prerelease` / `-Prerelease` (or a version). After 1.0.0 the plain forms work: `curl -fsSL …/install.sh | sh` and `irm …/install.ps1 | iex`.
+The plain installer lines install the newest stable release. A prerelease needs `--prerelease` / `-Prerelease` or a version.
 
-**No 1.x GitHub Release exists yet.** `v1.0.0-alpha.1` went to npm before `github-release` existed. The installers work from the first tag pushed after this job lands. Do not backfill alpha.1 with a manual run: a manual run uses the workflow and the code of the branch it runs on, so its archives would not be the published alpha.1 binaries.
-| Cargo | `cargo install --git https://github.com/Zwin-ux/kit kitctl --locked` | the git repo (not crates.io, see below) |
+**No 1.x or 2.x GitHub Release exists yet.** `v1.0.0-alpha.1` went to npm before `github-release` existed, so the installer lines fail until the first release after it. Do not backfill alpha.1 with a manual run: a manual run uses the workflow and the code of the branch it runs on, so its archives would not be the published alpha.1 binaries.
 
-Targets: Windows x64 (static CRT), macOS arm64/x64, Linux x64/arm64 with glibc 2.17 or newer. There is no musl build. On musl (Alpine) use the cargo line.
+Targets: Windows x64 (static CRT), macOS arm64/x64, Linux x64/arm64 with glibc 2.17 or newer. There is no musl build. On musl (Alpine) use a cargo line.
 
 ## Version and tag
 
-1. Set `version` in `[workspace.package]` of `Cargo.toml`. It is the only version source.
-2. Add the changes to `CHANGELOG.md`. The release notes link to it.
-3. Push the tag `v<version>`.
+The version lives in `[workspace.package]` of `Cargo.toml`. The internal crate pins in `[workspace.dependencies]` repeat it as exact versions (`=2.0.0`), because crates.io needs them. Never edit either by hand:
 
-`release-npm.yml` then builds all five targets, runs the release binaries on each OS (`verify`), and after that runs two jobs in parallel:
+```sh
+node scripts/version.mjs --set 2.0.0   # rewrites every copy
+cargo update -w                        # Cargo.lock
+node scripts/version.mjs --check       # CI runs this too
+```
 
-- `publish`: npm packages, then `npm-check` (below).
-- `github-release`: archives, `SHA256SUMS` and the GitHub Release (below).
+npm package versions are generated from the Cargo version at publish time; nothing else holds it.
 
-Both jobs stop if the tag does not match the Cargo version.
+1. Set the version as above.
+2. Rename `## Unreleased` in `CHANGELOG.md` to `## <version> — <title>`. The GitHub Release notes are that section plus install and verify instructions (`node scripts/release-notes.mjs <version>` prints them). The release fails if the section is missing.
+3. Merge to `main`, then push the tag `v<version>` on that `main` commit. The one-line installer commands fetch `scripts/install.sh` / `install.ps1` from `main`, so they must be there before the release is announced.
 
-To try the pipeline without publishing: run **Release npm** from the Actions tab with `publish` unchecked. The run packs the npm packages (`npm publish --dry-run`) and the release archives (artifact `release-archives`), but publishes nothing and creates no release.
+`release-npm.yml` then runs, each step only after the one before it passed:
+
+1. `build`: all five targets. `verify`: runs the release binaries on each OS.
+2. `github-release`: archives, `SHA256SUMS`, build attestations, the GitHub Release with the notes.
+3. `publish`: npm packages. Then `npm-check` installs them from the registry on Linux, macOS and Windows.
+4. `crates-io`: `kitctl-core`, `kitctl-gate`, `kitctl-agents`, `kitctl-tui`, `kitctl`.
+5. `install-check` (after `github-release`): `install.sh` / `install.ps1` from the real release on Linux x64 and arm64, macOS arm64 and x64, and Windows, then `kit --version`, `kit doctor`, `kit show`.
+
+Every publishing job stops if the tag does not match the Cargo version. A rerun skips what is already published.
+
+To try the pipeline without publishing: run **Release npm** from the Actions tab with `publish` unchecked. The run packs the npm packages (`npm publish --dry-run`), the release archives (artifact `release-archives`) and the release notes, runs `cargo publish --dry-run`, and publishes nothing.
+
+## Ship day
+
+In this order. Steps marked **owner** need Mazen; nothing is tagged, bumped or published without his go-ahead.
+
+1. **owner** Merge the release stack to `main` in order. `main` must be green on Linux, macOS and Windows.
+2. **owner** Repo secrets exist: `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (see [Requirements](#requirements-owner)).
+3. **owner** Create the empty public repo `Zwin-ux/kits` (no README, licence or .gitignore).
+4. Build the kit index from the merged `main` and push it to `Zwin-ux/kits`:
+
+   ```sh
+   git fetch origin main
+   rm -rf ../kits-out ../kits   # makes the step safe to repeat
+   python3 scripts/kits-index-generate.py . origin/main ../kits-out
+   git clone ../kits-out/kits-index.bundle ../kits && cd ../kits
+   git remote set-url origin https://github.com/Zwin-ux/kits.git && git push -u origin main
+   ```
+
+   The generator lists every kit in `crates/kit-cli/kits/` at that commit, with its search tags from `TAGS` in the script (a kit missing there is listed without tags and a warning). The same commit always gives the same bundle and pins. `index.toml` pins every kit to the bundle's first commit, so push the bundle's history, never the loose `kits-index/` folder. Then check that `kit search --refresh` no longer says "not published yet" and exits 0.
+5. On a branch from `main`: `node scripts/version.mjs --set 2.0.0`, `cargo update -w`, rename `## Unreleased` in `CHANGELOG.md` to `## 2.0.0 — Kits`, check `node scripts/release-notes.mjs 2.0.0`, merge.
+6. **owner** Push the tag `v2.0.0` on that `main` commit. `release-npm.yml` does the rest; watch it to green, including `install-check` and `npm-check`.
+7. Record the visuals from the released binary (`scripts/record-media.sh --kit <installed kit>`), attach the hero GIF to the GitHub Release, and run [`docs/SMOKE-TEST.md`](../SMOKE-TEST.md) on a clean machine.
 
 ## npm
 
@@ -122,26 +158,23 @@ CI: `installers.yml` runs shellcheck, then both installers against a fake releas
 
 ## crates.io
 
-Nothing is published to crates.io. Status on 2026-09-23:
+`kit-cli` and `kit` are taken on crates.io by other projects (`kit-cli` also installs a binary called `kit`), so the packages use the `kitctl` prefix: the binary crate `kitctl` and the libraries `kitctl-core`, `kitctl-agents`, `kitctl-gate`, `kitctl-tui`. Each library keeps its Rust crate name (`kit_core`, …) through `[lib] name`. The binary is still `kit`. Never tell users to `cargo install kit-cli`.
 
-| Name | Status |
-|------|--------|
-| `kit-cli` | **Taken.** Another project (`dayemsiddiqui/kit`, "CLI for scaffolding Kit web applications", 0.1.67). It also installs a binary called `kit`. |
-| `kit` | Taken (`weshardee/kit`, 0.0.2, 2020). |
-| `kit-core`, `kit-agents`, `kit-gate`, `kit-tui` | Free. |
-| `kitctl`, `kitctl-core`, `kitctl-agents`, `kitctl-gate`, `kitctl-tui`, `kit-control-room` | Free. |
+`cargo install kitctl` needs every library on crates.io too, so job `crates-io` publishes all five in dependency order. The libraries are implementation detail with no semver promise of their own; the exact pins mean each `kitctl` version installs the libraries it was released with. CI checks the packages on every pull request (`rust.yml`, job `crates.io package`: `cargo package --workspace --locked`).
 
-Result: `cargo install kit-cli`, as PRD §6 says, installs the other project's `kit` today. Do not tell users to run it.
+## Signing
 
-`cargo install <name>` from crates.io also needs every path dependency on crates.io. `kit-cli` depends on `kit-core`, `kit-agents`, `kit-gate` and `kit-tui`, so all five crates must be published, and in dependency order.
+The binaries are not code-signed (Windows Authenticode) or notarized (macOS). That needs paid certificates and is not set up. What users can check instead:
 
-Decision (2026-09-26): the packages are renamed to the free `kitctl` prefix. The binary crate is `kitctl`, the libraries are `kitctl-core`, `kitctl-agents`, `kitctl-gate` and `kitctl-tui`, and each library keeps its Rust crate name (`kit_core`, …) through `[lib] name`, so no code changed. The binary is still `kit`.
+- `SHA256SUMS`: the installers compare every archive against it and refuse a mismatch.
+- Build attestations: `gh attestation verify <archive> --repo Zwin-ux/kit --signer-workflow Zwin-ux/kit/.github/workflows/release-npm.yml --source-ref refs/tags/v<version>` proves the archive was built by `release-npm.yml` from that tag. Without the last two flags it only proves some workflow in this repo built it (a manual run from any branch would pass).
+- npm packages carry npm provenance.
 
-- Today: `cargo install --git https://github.com/Zwin-ux/kit kitctl --locked`.
-- After a crates.io publish (not done; needs the owner): `cargo install kitctl`. Publish in dependency order: `kitctl-core`, then `kitctl-agents` and `kitctl-gate`, then `kitctl-tui`, then `kitctl`. The library crates are implementation detail with no semver promise of their own; their docs say so.
+Effect on users: `curl`, PowerShell's `irm`, npm and Cargo do not mark downloads as quarantined, so those installs run without a prompt. An archive downloaded with a browser does get marked: macOS refuses to run it until `xattr -d com.apple.quarantine ./kit`, and Windows SmartScreen may warn. The release notes say so.
 
 ## Requirements (owner)
 
 - Repo secret `NPM_TOKEN`: an npm automation token with publish rights on the `@mzwin` scope.
 - Provenance needs a public repo and the `id-token: write` permission (set in the workflow).
-- The GitHub Release uses the built-in `GITHUB_TOKEN`. No secret is needed.
+- Repo secret `CARGO_REGISTRY_TOKEN`: a crates.io API token with the `publish-new` and `publish-update` scopes. Without it job `crates-io` fails and says so.
+- The GitHub Release and attestations use the built-in `GITHUB_TOKEN`. No secret is needed.

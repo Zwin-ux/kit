@@ -36,14 +36,11 @@ When `KIT_FULL_AUTO=1`:
 
 Default sandbox for Codex remains `workspace-write` (production-safer).
 
-### Skills injection
+### Skills injection (removed)
 
-1. Resolve skills root: `KIT_SKILLS_DIR` → `<repo>/.agents/skills` → `<cwd>/.agents/skills`
-2. Copy (or junction) into worktree `.agents/skills` when missing
-3. Ensure worktree has a short `AGENTS.md` pointer if absent
-4. Prepend **skills preamble** to the user task (see `kit-agents::skills`)
-
-Never ship secrets. Skills are markdown workflows only.
+Adapters no longer copy a skill pack or write `AGENTS.md` into the worktree
+(F10: those files leaked into run diffs). The prompt is the task plus a short
+delivery note (`kit-agents::skills::build_prompt`). See `docs/skills-packs.md`.
 
 ### Engine defaults
 

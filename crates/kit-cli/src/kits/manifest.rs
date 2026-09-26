@@ -306,6 +306,12 @@ pub fn is_slug(s: &str) -> bool {
         && !s.starts_with('-')
 }
 
+/// Any control character: the same rule KIT.toml strings follow, for
+/// text that comes from the kit index.
+pub fn has_control(s: &str) -> bool {
+    s.chars().any(char::is_control)
+}
+
 /// A relative path with no `..`: it cannot leave the kit or its source.
 /// Kits come from other people, so an absolute path or `../` would read
 /// files on the user's machine into their agent's instructions.

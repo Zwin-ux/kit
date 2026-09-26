@@ -7,12 +7,17 @@ pub mod doctor;
 pub mod fetch;
 mod fmt;
 pub mod hook;
+pub mod index;
 pub mod install;
 pub mod lock;
 pub mod manifest;
+pub mod new;
 pub mod plan;
+pub mod remote;
+pub mod search;
 pub mod setup;
 mod show;
+pub mod sync;
 pub mod writers;
 
 pub use show::cmd_show;

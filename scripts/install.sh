@@ -109,9 +109,9 @@ HELP
             awk '!/^v?0\./ { print; exit }')
         if [ -z "$version" ]; then
             if [ "$prerelease" -eq 0 ]; then
-                error 'no stable 1.x release yet; use --prerelease or --version'
+                error 'no stable release of kit yet; use --prerelease or --version'
             fi
-            error 'no 1.x release found; use --version'
+            error 'no kit release found; use --version'
         fi
     fi
     version=${version#v}
