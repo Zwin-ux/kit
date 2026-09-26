@@ -17,7 +17,7 @@ every file first, and can take it all out again.
 ```console
 $ npm install -g @mzwin/kit
 $ kit
-Kit sets your coding agents up for a job, and proves what they do.
+Kit sets your coding agents up for one job, then proves what they do.
 
 Looking for agents on this machine…
   Claude Code   2.1.283
@@ -214,7 +214,7 @@ kit                                       # the Control Room: every run, in one 
 
 `kit init` reads `Cargo.toml`, `go.mod`, `package.json` or `pyproject.toml`,
 proposes checks that do not change files, and runs each once before writing
-them (`--drop-failing` leaves out the ones that fail today). A run with no checks is `UNCONFIGURED`, never a silent pass. Every run
+them (`--drop-failing` leaves out the ones that fail today). A run with no checks is `UNCONFIGURED`, never a silent pass, and a run whose agent changed nothing reads `NO CHANGES`. Every run
 writes a receipt to `~/.kit/runs/<id>/` (`kit receipt list`, `kit receipt show <id>`).
 
 ```
@@ -266,7 +266,7 @@ cargo run -p kitctl -- --demo
 | Env | Effect |
 |-----|--------|
 | `KIT_HOME` | Where Kit keeps its records, config, cache and receipts (default `~/.kit`) |
-| `KIT_FULL_AUTO=1` | Skip agent approval prompts in `kit run` (sandboxes only) |
+| `KIT_FULL_AUTO=1` | Skip agent approval prompts in `kit run` (sandboxes only). Grok runs only with it: `grok -p` has no edit-only mode, so without it `kit run` does not start Grok |
 | `KIT_AGENT_RUNS_CHECKS=1` | Let Claude Code run the gate's own commands during `kit run` (they run code the agent wrote, with your permissions). Claude's file tools may never edit `kit.toml`, `.git` or `.claude`, with or without this; the checks themselves are not bound by that. Off by default: Kit runs the gate after the agent finishes |
 | `KIT_OLLAMA_MODEL` | Model for the Ollama adapter (default `llama3.2`) |
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
