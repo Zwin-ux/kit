@@ -55,6 +55,7 @@ In this order. Steps marked **owner** need Mazen; nothing is tagged, bumped or p
 
    ```sh
    git fetch origin main
+   rm -rf ../kits-out ../kits   # makes the step safe to repeat
    python3 scripts/kits-index-generate.py . origin/main ../kits-out
    git clone ../kits-out/kits-index.bundle ../kits && cd ../kits
    git remote set-url origin https://github.com/Zwin-ux/kits.git && git push -u origin main
