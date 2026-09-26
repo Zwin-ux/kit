@@ -173,7 +173,7 @@ impl KitManifest {
                     s.name
                 );
             }
-            if s.path.split(['/', '\\']).any(|part| part == "..") {
+            if !is_inside(&s.path) {
                 bail!(
                     "kit {name}: skill {} path must stay inside its source",
                     s.name
@@ -206,6 +206,14 @@ impl KitManifest {
                 (None, Some(_)) => bail!("kit {name}: skill {} has a rev but no source", s.name),
                 (None, None) => {}
             }
+        }
+        if let Some(r) = &self.rules
+            && !is_inside(&r.file)
+        {
+            bail!(
+                "kit {name}: rules file '{}' must be a path inside the kit",
+                r.file
+            );
         }
         for (server, mcp) in &self.mcp {
             for (key, value) in &mcp.env {
@@ -243,6 +251,16 @@ fn is_slug(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         && !s.starts_with('-')
+}
+
+/// A relative path with no `..`: it cannot leave the kit or its source.
+/// Kits come from other people, so an absolute path or `../` would read
+/// files on the user's machine into their agent's instructions.
+fn is_inside(path: &str) -> bool {
+    !path.is_empty()
+        && !path.starts_with(['/', '\\'])
+        && !path.contains(':')
+        && path.split(['/', '\\']).all(|part| part != "..")
 }
 
 /// The package after npx's flags carries an exact version.
@@ -302,6 +320,18 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("inside"), "{err}");
+        for bad in ["/etc", "C:\\\\x", "\\\\server\\\\x", ""] {
+            let err = parse(&format!("[[skill]]\nname = \"s\"\npath = \"{bad}\"\n"))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("inside"), "{bad}: {err}");
+        }
+        for bad in ["../../.ssh/id_rsa", "/home/me/.ssh/id_rsa"] {
+            let err = parse(&format!("[rules]\nfile = \"{bad}\"\n"))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("inside the kit"), "{bad}: {err}");
+        }
     }
 
     #[test]
