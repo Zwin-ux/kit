@@ -925,6 +925,10 @@ fn build_command(command: &str, worktree: &Path) -> Option<Command> {
     };
     process.current_dir(worktree);
     isolate_cargo_target_dir(&mut process, worktree);
+    // Plain output reads cleanly in the receipt and the failure summary.
+    // Tools that ignore these are handled by `strip_ansi`.
+    process.env("NO_COLOR", "1");
+    process.env("CARGO_TERM_COLOR", "never");
     // A whole-gate timeout must also stop the timed-out child rather than leave
     // a check running after its verdict has been recorded.
     process.kill_on_drop(true);
@@ -1016,19 +1020,21 @@ fn summarize_failure(command: &str, output: &str) -> String {
     }
     // The first line that reads as the failure, else the first line at all.
     // Build tools print progress first ("Checking x v0.1.0"), and that line
-    // is what the Control Room would show as the reason.
-    // npm, pnpm and yarn echo the script first (`> app@1.0.0 test`); that
-    // banner is never the reason.
-    let lines = || {
-        output
+    // is what the Control Room would show as the reason. Colour codes are
+    // stripped first: they break matching and the table's fixed widths.
+    let clean = strip_ansi(output);
+    let lines = without_tap_todos(without_script_banners(
+        clean
             .lines()
             .map(str::trim)
-            .filter(|line| !line.is_empty() && !line.starts_with("> ") && !is_npm_notice(line))
-    };
-    let first = lines()
+            .filter(|line| !line.is_empty() && !is_npm_notice(line)),
+    ));
+    let first = lines
+        .iter()
         .find(|line| looks_like_failure(line))
-        .or_else(|| lines().next())
-        .unwrap_or("(no output)");
+        .or_else(|| lines.first())
+        .map_or("(no output)", |line| line);
+    let first = capped(first, SUMMARY_MAX_CHARS);
     let program = tokenize(command)
         .and_then(|argv| argv.first().cloned())
         .and_then(|program| program.rsplit(['/', '\\']).next().map(ToOwned::to_owned))
@@ -1043,12 +1049,16 @@ fn summarize_failure(command: &str, output: &str) -> String {
 fn looks_like_failure(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     lower.starts_with("error")
-        || lower.starts_with("fail")
+        // `FAIL`, `FAILED`, `failures:`, but not TAP's `failureType: …` field.
+        || matches!(
+            lower.split(|c: char| !c.is_ascii_alphanumeric()).next(),
+            Some("fail" | "failed" | "failure" | "failures" | "failing")
+        )
         || lower.starts_with("diff in ")
         || lower.starts_with("npm err!")
         || lower.starts_with("npm error")
         || lower.starts_with("e   ")
-        || lower.starts_with("not ok ")
+        || (lower.starts_with("not ok ") && !is_tap_todo(line))
         || ["✕", "✖", "✗", "●"]
             .iter()
             .any(|mark| line.starts_with(mark))
@@ -1073,6 +1083,120 @@ fn is_error_class_line(line: &str) -> bool {
 /// npm's update nag and warnings, printed after the real failure.
 fn is_npm_notice(line: &str) -> bool {
     line.starts_with("npm notice") || line.starts_with("npm warn")
+}
+
+/// A summary longer than this is cut with `…`: receipts and `kit run` print it whole.
+const SUMMARY_MAX_CHARS: usize = 200;
+
+fn capped(line: &str, max: usize) -> std::borrow::Cow<'_, str> {
+    if line.chars().count() <= max {
+        return line.into();
+    }
+    let mut cut: String = line.chars().take(max - 1).collect();
+    cut.push('…');
+    cut.into()
+}
+
+/// `not ok 1 - x # TODO …` or `# SKIP`: a TAP test that never fails the run.
+fn is_tap_todo(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.starts_with("not ok ") && (lower.contains(" # todo") || lower.contains(" # skip"))
+}
+
+/// Drop a TAP `# TODO` / `# SKIP` failure and its YAML block (`---` … `...`),
+/// whose `error: …` line would otherwise read as the run's failure.
+fn without_tap_todos(lines: Vec<&str>) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut skipping = false;
+    for line in lines {
+        if is_tap_todo(line) {
+            skipping = true;
+            continue;
+        }
+        if skipping {
+            if line == "..." {
+                skipping = false;
+                continue;
+            }
+            let lower = line.to_ascii_lowercase();
+            if !(lower.starts_with("ok ") || lower.starts_with("not ok ") || lower.starts_with('#'))
+            {
+                continue;
+            }
+            skipping = false;
+        }
+        out.push(line);
+    }
+    out
+}
+
+/// Drop the banner npm and pnpm print before a script (`> app@1.0.0 test`,
+/// then `> node test.js`, the command). Any other `> ` line is output and
+/// stays: a script may print `> expected 3, got 2` as its only line.
+fn without_script_banners<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    let mut after_banner = false;
+    for line in lines {
+        if std::mem::take(&mut after_banner) && line.starts_with("> ") {
+            continue;
+        }
+        if is_script_banner(line) {
+            after_banner = true;
+            continue;
+        }
+        out.push(line);
+    }
+    out
+}
+
+/// `> app@1.0.0 test` or `> @scope/app@1.0.0 test /path` (pnpm).
+fn is_script_banner(line: &str) -> bool {
+    let Some(rest) = line.strip_prefix("> ") else {
+        return false;
+    };
+    let mut words = rest.split_whitespace();
+    match (words.next(), words.next()) {
+        (Some(package), Some(_script)) => package.get(1..).is_some_and(|p| p.contains('@')),
+        _ => false,
+    }
+}
+
+/// Remove terminal escape sequences: CSI (`ESC [ … final`), OSC
+/// (`ESC ] … BEL` or `ESC ] … ESC \`), and two-byte escapes.
+fn strip_ansi(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains('\u{1b}') {
+        return text.into();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' {
+                        break;
+                    }
+                    if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out.into()
 }
 
 fn scope_violations(worktree: &Path, allow: &[String], deny: &[String]) -> Result<Vec<String>, ()> {
@@ -1287,10 +1411,65 @@ mod tests {
                 include_str!("fixtures/npm10-silent-exit.txt"),
                 "npm: (no output)",
             ),
+            (
+                include_str!("fixtures/npm-quote-only.txt"),
+                "npm: > expected 3, got 2",
+            ),
+            (
+                include_str!("fixtures/npm-missing-color.txt"),
+                "npm: npm error Missing script: \"missing-xyz\"",
+            ),
         ];
         for (output, want) in cases {
             assert_eq!(summarize_failure("npm run test", output), want);
         }
+    }
+
+    /// Real captures from the #29 review (kit-2.0/pr29-review.md).
+    #[test]
+    fn other_runners_summarise_to_their_failure_line() {
+        let cases = [
+            (
+                "node --test",
+                include_str!("fixtures/node-test-todo-first.txt"),
+                "node: not ok 2 - real",
+            ),
+            (
+                "sh quote.sh",
+                include_str!("fixtures/quote-only.txt"),
+                "sh: > expected 3, got 2",
+            ),
+            (
+                "npx jest",
+                include_str!("fixtures/jest-color.txt"),
+                "npx: FAIL  jt/sum.test.js",
+            ),
+            (
+                "npx mocha",
+                include_str!("fixtures/mocha.txt"),
+                "npx: AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:",
+            ),
+            (
+                "python boom.py",
+                include_str!("fixtures/python-traceback.txt"),
+                "python: json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+            ),
+        ];
+        for (command, output, want) in cases {
+            assert_eq!(summarize_failure(command, output), want, "{command}");
+        }
+    }
+
+    #[test]
+    fn long_summaries_are_cut_and_escapes_removed() {
+        let long = format!("error: {}", "x".repeat(5000));
+        let got = summarize_failure("make", &long);
+        assert_eq!(got.chars().count(), "make: ".len() + SUMMARY_MAX_CHARS);
+        assert!(got.ends_with('…'), "{got}");
+        assert_eq!(
+            strip_ansi("\u{1b}[1mnpm\u{1b}[22m \u{1b}]8;;http://x\u{7}error\u{1b}]8;;\u{1b}\\ ok"),
+            "npm error ok"
+        );
     }
 
     #[test]
@@ -1303,7 +1482,12 @@ mod tests {
             ("java.lang.IllegalStateException: boom", true),
             ("throw new AssertionError(obj);", false),
             ("Tests: 1 passed, 1 total", false),
+            ("FAIL  src/sum.test.js", true),
+            ("failures:", true),
+            ("failureType: 'testCodeFailure'", false),
             ("ok 1 - adds numbers", false),
+            ("not ok 1 - todo first # TODO not yet", false),
+            ("not ok 3 - later # skip on windows", false),
         ] {
             assert_eq!(looks_like_failure(line), failure, "{line}");
         }
