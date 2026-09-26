@@ -124,6 +124,7 @@ fn vacuous_run_receipt_is_unconfigured_not_pass() {
     let show = String::from_utf8(kit(&["receipt", "show", id]).stdout).unwrap();
     assert!(show.contains("state     unconfigured"), "{show}");
     assert!(show.contains("gate      UNCONFIGURED"), "{show}");
+    assert!(show.contains("\n  took      "), "{show}");
     assert!(!show.contains("pass"), "{show}");
     let list = String::from_utf8(kit(&["receipt", "list"]).stdout).unwrap();
     assert!(list.contains("unconfigured"), "{list}");
