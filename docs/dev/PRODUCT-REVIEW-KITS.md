@@ -153,16 +153,16 @@ one, you push it, and anyone can run `kit add github:you/my-ios`.
    four starter kits: Frontend Design, Full-stack Design, Backend
    Engineer, LLM Engineer. `essentials` becomes their shared base; the
    other 0.1 packs retire or become kits later.
-1. **Kit format** (`KIT.toml`, §2). Job kits like `ios` follow the
+2. **Kit format** (`KIT.toml`, §2). Job kits like `ios` follow the
    starter four.
-2. **`kit add | remove | list | sync | search | new`**, project scope.
-3. **Writers for Claude Code, Codex and Grok**: skills and rules for all three;
+3. **`kit add | remove | list | sync | search | new`**, for this repo or `--global`.
+4. **Writers for Claude Code, Codex and Grok**: skills and rules for all three;
    MCP and hooks for Claude Code first (its formats are documented);
    Codex MCP and hooks when the research thread confirms the formats.
-4. **Index as a Git repo**: `search` and bare names like `ios` resolve
+5. **Index as a Git repo**: `search` and bare names like `ios` resolve
    through `index.toml` in a public repo (`Zwin-ux/kits`), fetched over
    HTTPS and cached. That is the "server" for v0.1, at zero hosting cost.
-5. **Kit gate feeds `kit run`**, which otherwise stays as it is.
+6. **Kit gate feeds `kit run`**, which otherwise stays as it is.
 
 ### Non-goals for v0.1 (argued)
 
