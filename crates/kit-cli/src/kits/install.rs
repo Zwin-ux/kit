@@ -538,9 +538,9 @@ fn ask(code: bool) -> Result<Answer> {
         );
     }
     let prompt = if code {
-        "Continue?  [y] install  [n] cancel  [s] skills and rules only (no code): "
+        "Continue? [y/N], or s for skills and rules only (no code): "
     } else {
-        "Continue?  [y] install  [n] cancel: "
+        "Continue? [y/N] "
     };
     print!("{prompt}");
     std::io::stdout().flush()?;

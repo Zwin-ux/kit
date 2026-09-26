@@ -112,6 +112,9 @@ pub enum Command {
     Receipt(ReceiptArgs),
 
     /// Check which agents are ready and whether this repo has a gate
+    #[command(
+        after_help = "Checks every kit installed for all your projects and in this repo, so it has no --global.\n\nExample:\n  kit doctor\n  kit doctor --start-mcp"
+    )]
     Doctor(DoctorArgs),
 
     /// Print a shell completion script

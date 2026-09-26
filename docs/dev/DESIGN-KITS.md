@@ -73,7 +73,7 @@ for a machine that will have it), and says so.
 ### Screen 3: focus
 
 ```text
-What should your agents focus on?   space toggle · enter confirm · ? details
+What should your agents focus on?   ↑↓ move · space toggle · enter confirm
 > [x] Frontend Design     UI, design systems, accessibility, browser testing
   [ ] Full-stack Design   Frontend Design plus APIs, data, end-to-end tests
   [ ] Backend Engineer    APIs, databases, security, performance
@@ -113,7 +113,7 @@ Frontend Design 0.1.0  (extends Essentials 0.1.0)  → Claude Code, all projects
   check        kit doctor: skills present, playwright MCP starts
 
 Runs code on your machine: 1 MCP server, 1 hook.
-Continue?  [y] install  [n] cancel  [s] install without code (skills and rules only)
+Continue? [y/N], or s for skills and rules only (no code)
 ```
 
 `[s]` is the trust escape hatch: everything that only steers the agent,
