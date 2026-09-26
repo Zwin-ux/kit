@@ -55,7 +55,7 @@ args    = ["-y", "chrome-devtools-mcp@1.10.1"]
 [[hook]]
 on   = "after_edit"
 glob = "*.{js,jsx,ts,tsx,css,scss,html,md}"
-run  = "npx --no-install prettier --write \"$FILE\""
+use  = "format-and-lint"
 
 [check]
 mcp_starts = ["chrome-devtools"]

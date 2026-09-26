@@ -380,6 +380,7 @@ fn record(
                 .map(|h| LockedHook {
                     glob: h.glob.clone(),
                     run: h.run.clone(),
+                    builtin: h.builtin,
                 })
                 .collect();
         }

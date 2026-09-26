@@ -40,7 +40,10 @@ pub struct Entry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LockedHook {
     pub glob: Option<String>,
-    pub run: String,
+    #[serde(default)]
+    pub run: Option<String>,
+    #[serde(default, rename = "use")]
+    pub builtin: Option<super::manifest::Builtin>,
 }
 
 pub fn path(scope: &Scope) -> PathBuf {

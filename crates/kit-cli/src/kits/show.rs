@@ -86,6 +86,16 @@ pub fn render(chain: &[Kit]) -> Result<String> {
         .map(|sk| sk.name.len())
         .max()
         .unwrap_or(0);
+    let owidth = chain
+        .iter()
+        .flat_map(|k| {
+            k.manifest
+                .skill
+                .iter()
+                .map(move |sk| sk.origin().map_or(k.name().len() + 12, |o| o.len()))
+        })
+        .max()
+        .unwrap_or(0);
     for kit in chain {
         if kit.manifest.skill.is_empty() {
             continue;
@@ -98,7 +108,7 @@ pub fn render(chain: &[Kit]) -> Result<String> {
                 .origin()
                 .unwrap_or_else(|| format!("{} (in the kit)", kit.name()));
             let licence = sk.licence.as_deref().unwrap_or("no licence");
-            writeln!(s, "    {:width$}  {origin:32}  {licence}", sk.name)?;
+            writeln!(s, "    {:width$}  {origin:owidth$}  {licence}", sk.name)?;
         }
     }
 
@@ -132,7 +142,7 @@ pub fn render(chain: &[Kit]) -> Result<String> {
                 s,
                 "hook      {}{only}   {}   RUNS CODE",
                 hook.on.label(),
-                hook.run
+                hook.describe()
             )?;
         }
         if let Some(gate) = &kit.manifest.gate {
@@ -192,7 +202,7 @@ fn to_json(chain: &[Kit]) -> serde_json::Value {
             k.manifest
                 .hook
                 .iter()
-                .map(|h| serde_json::json!({ "on": "after_edit", "glob": h.glob, "run": h.run }))
+                .map(|h| serde_json::json!({ "on": "after_edit", "glob": h.glob, "run": h.run, "use": h.builtin }))
         })
         .collect();
     serde_json::json!({
@@ -221,7 +231,7 @@ mod tests {
         assert!(text.contains("extends   essentials"), "{text}");
         assert!(text.contains("  from essentials\n"), "{text}");
         assert!(
-            text.contains("anthropics/skills@3337550         Apache-2.0"),
+            text.contains("anthropics/skills@3337550              Apache-2.0"),
             "{text}"
         );
         assert!(text.contains("core-web-vitals"), "{text}");
