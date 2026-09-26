@@ -698,7 +698,7 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             if !dir.exists() {
                 return Ok(None);
             }
-            if !force && disk_hash(dir)?.as_deref() != Some(hash.as_str()) {
+            if !force && is_installed(dir, hash)? != Some(true) {
                 // It is the user's now: a later `kit add` must not treat it
                 // as Kit's and overwrite it.
                 let _ = std::fs::remove_file(dir.join(OWNED));
@@ -807,10 +807,10 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
 /// Is what Kit installed still as installed? `None` when it is gone.
 pub fn drifted(applied: &Applied) -> Result<Option<String>> {
     if let Applied::Skill { dir, hash } = applied {
-        return Ok(match disk_hash(dir)? {
+        return Ok(match is_installed(dir, hash)? {
             None => Some(format!("{} is missing", tilde(dir))),
-            Some(h) if &h != hash => Some(format!("{} was changed by hand", tilde(dir))),
-            Some(_) => None,
+            Some(false) => Some(format!("{} was changed by hand", tilde(dir))),
+            Some(true) => None,
         });
     }
     Ok(None)
@@ -894,15 +894,14 @@ fn write_skill(dir: &Path, payload: &SkillPayload, force: bool) -> Result<()> {
                 tilde(dir)
             );
         }
-        let on_disk = disk_hash(dir)?;
-        if on_disk.as_deref() == Some(payload.hash.as_str()) {
+        if disk_hash(dir)?.as_deref() == Some(payload.hash.as_str()) {
             return Ok(());
         }
         // The marker holds the hash Kit wrote. A folder that no longer
         // matches it was edited by hand: never replace that silently.
         if owned && !force {
             let wrote = std::fs::read_to_string(dir.join(OWNED)).unwrap_or_default();
-            if on_disk.as_deref() != Some(wrote.trim()) {
+            if is_installed(dir, wrote.trim())? != Some(true) {
                 bail!(
                     "{} was changed by hand since Kit installed it. Copy your changes, or use --force",
                     tilde(dir)
@@ -937,11 +936,44 @@ fn disk_hash(dir: &Path) -> Result<Option<String>> {
     Ok(Some(super::fetch::content_hash(&files)))
 }
 
+/// Is the skill folder at `dir` what Kit installed with `hash`? `None` when
+/// it is gone. Git on Windows (`core.autocrlf`) checks a committed skill
+/// out with CRLF line endings; that alone is not an edit.
+fn is_installed(dir: &Path, hash: &str) -> Result<Option<bool>> {
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let mut files = Vec::new();
+    collect(dir, dir, &mut files)?;
+    if super::fetch::content_hash(&files) == hash {
+        return Ok(Some(true));
+    }
+    for f in &mut files {
+        f.bytes = lf_only(&f.bytes);
+    }
+    Ok(Some(super::fetch::content_hash(&files) == hash))
+}
+
+/// `bytes` with every CRLF turned into LF.
+fn lf_only(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for (i, b) in bytes.iter().enumerate() {
+        if !(*b == b'\r' && bytes.get(i + 1) == Some(&b'\n')) {
+            out.push(*b);
+        }
+    }
+    out
+}
+
 /// Every entry of a skill folder as hashed. Links are never followed (a
 /// link counts as its target's name), and anything Kit never writes (a
 /// link, an empty folder, a file named like the marker below the top)
 /// shows up as a change. A pipe, device or socket is refused, not read.
-fn collect(root: &Path, dir: &Path, out: &mut Vec<super::fetch::SkillFile>) -> Result<()> {
+pub(crate) fn collect(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<super::fetch::SkillFile>,
+) -> Result<()> {
     let rel = |p: &Path| p.strip_prefix(root).unwrap_or(p).to_path_buf();
     let mut empty = true;
     for entry in std::fs::read_dir(dir)? {
@@ -1349,7 +1381,7 @@ mod tests {
         let applied = apply_all(
             &[Action::Skill {
                 dir: dir.clone(),
-                payload: payload("v1"),
+                payload: payload("v1\nline two\n"),
             }],
             false,
             &Default::default(),
@@ -1359,6 +1391,9 @@ mod tests {
         .flatten()
         .collect::<Vec<_>>();
         assert!(dir.join(OWNED).is_file());
+        assert_eq!(drifted(&applied[0]).unwrap(), None);
+        // A Windows checkout (CRLF) of the same skill is not an edit.
+        std::fs::write(dir.join("SKILL.md"), "v1\r\nline two\r\n").unwrap();
         assert_eq!(drifted(&applied[0]).unwrap(), None);
         std::fs::write(dir.join("SKILL.md"), "edited").unwrap();
         assert!(
