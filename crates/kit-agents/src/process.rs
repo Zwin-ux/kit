@@ -12,6 +12,19 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 
+/// A path as Kit prints it: `~/…` under the home folder, else as is.
+pub fn tilde(path: &std::path::Path) -> String {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    match home.map(std::path::PathBuf::from) {
+        Some(home) if !home.as_os_str().is_empty() => match path.strip_prefix(&home) {
+            Ok(rest) if rest.as_os_str().is_empty() => "~".into(),
+            Ok(rest) => format!("~{}{}", std::path::MAIN_SEPARATOR, rest.display()),
+            Err(_) => path.display().to_string(),
+        },
+        _ => path.display().to_string(),
+    }
+}
+
 /// Build a command that works for npm/cmd shims on Windows.
 pub fn command_for(binary: &str) -> Command {
     #[cfg(windows)]
@@ -521,6 +534,23 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
+
+    /// Spawn lines show the worktree as `~/.kit/worktrees/…`, like the
+    /// run summary, never the full home path.
+    #[test]
+    fn tilde_shortens_paths_under_home_only() {
+        let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
+        else {
+            return;
+        };
+        let home = std::path::PathBuf::from(home);
+        let wt = home.join(".kit").join("worktrees").join("01X");
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(tilde(&wt), format!("~{sep}.kit{sep}worktrees{sep}01X"));
+        assert_eq!(tilde(&home), "~");
+        let elsewhere = std::path::Path::new("/opt/kit-elsewhere");
+        assert_eq!(tilde(elsewhere), elsewhere.display().to_string());
+    }
     use super::*;
     use std::time::{Duration, Instant};
 
