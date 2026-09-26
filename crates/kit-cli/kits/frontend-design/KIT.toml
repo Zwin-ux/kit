@@ -1,0 +1,51 @@
+schema = 1
+
+[kit]
+name        = "frontend-design"
+title       = "Frontend Design"
+version     = "0.1.0"
+description = "UI, design systems, accessibility, browser testing"
+extends     = ["essentials"]
+agents      = ["claude", "codex", "grok"]
+licence     = "MIT"
+
+[rules]
+file = "RULES.md"
+
+[[skill]]
+name    = "accessibility-pass"
+path    = "skills/accessibility-pass"
+licence = "MIT"
+
+[[skill]]
+name    = "frontend-ui-engineering"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/frontend-ui-engineering"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "browser-testing-with-devtools"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/browser-testing-with-devtools"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "performance-optimization"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/performance-optimization"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[mcp.playwright]
+command = "npx"
+args    = ["-y", "@playwright/mcp@0.0.82"]
+
+[[hook]]
+on   = "after_edit"
+glob = "*.{js,jsx,ts,tsx,css,scss,html,md}"
+run  = "npx --no-install prettier --write \"$FILE\""
+
+[check]
+mcp_starts = ["playwright"]

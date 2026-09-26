@@ -51,6 +51,16 @@ pub struct GlobalArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// List kits, or show what one kit installs
+    #[command(
+        after_help = "Example:\n  kit show                   list the kits\n  kit show frontend-design   skills, rules, MCP servers and hooks it brings"
+    )]
+    Show {
+        /// Kit name, or a folder with a KIT.toml
+        #[arg(value_name = "KIT")]
+        kit: Option<String>,
+    },
+
     /// Write kit.toml: the checks every run must pass
     #[command(
         after_help = "Example:\n  kit init            detect, check and write\n  kit init --print    show the proposal, write nothing"

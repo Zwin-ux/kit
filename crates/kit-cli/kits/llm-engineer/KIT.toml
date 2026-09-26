@@ -1,0 +1,44 @@
+schema = 1
+
+[kit]
+name        = "llm-engineer"
+title       = "LLM Engineer"
+version     = "0.1.0"
+description = "Prompts, evals, RAG, model APIs, cost and latency"
+extends     = ["essentials"]
+agents      = ["claude", "codex", "grok"]
+licence     = "MIT"
+
+[rules]
+file = "RULES.md"
+
+[[skill]]
+name    = "llm-evals"
+path    = "skills/llm-evals"
+licence = "MIT"
+
+[[skill]]
+name    = "llm-cost-latency"
+path    = "skills/llm-cost-latency"
+licence = "MIT"
+
+[[skill]]
+name    = "context-engineering"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/context-engineering"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "source-driven-development"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/source-driven-development"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "doubt-driven-development"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/doubt-driven-development"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"

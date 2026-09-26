@@ -1,0 +1,55 @@
+schema = 1
+
+[kit]
+name        = "backend-engineer"
+title       = "Backend Engineer"
+version     = "0.1.0"
+description = "APIs, databases, security, performance, observability"
+extends     = ["essentials"]
+agents      = ["claude", "codex", "grok"]
+licence     = "MIT"
+
+[rules]
+file = "RULES.md"
+
+[[skill]]
+name    = "api-and-interface-design"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/api-and-interface-design"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "security-and-hardening"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/security-and-hardening"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "performance-optimization"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/performance-optimization"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "observability-and-instrumentation"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/observability-and-instrumentation"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "deprecation-and-migration"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/deprecation-and-migration"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"
+
+[[skill]]
+name    = "ci-cd-and-automation"
+source  = "github:addyosmani/agent-skills"
+path    = "skills/ci-cd-and-automation"
+rev     = "2686b620fc1fed2e8f60c704839c766b8594c6b6"
+licence = "MIT"

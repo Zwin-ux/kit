@@ -6,6 +6,7 @@
 mod cli;
 mod engine;
 mod init;
+mod kits;
 mod land;
 
 use anyhow::{Context, Result};
@@ -70,6 +71,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
     }
     match cli.command {
         None => launch_tui(cli.demo).await,
+        Some(Command::Show { kit }) => kits::cmd_show(kit.as_deref(), json),
         Some(Command::Run(args)) => cmd_run(args, json).await,
         Some(Command::Init(args)) => init::cmd_init(args, json).await,
         Some(Command::Land(args)) => land::cmd_land(args, json),
