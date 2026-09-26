@@ -101,7 +101,7 @@ impl Agent for ClaudeAgent {
 /// (a test file, a package.json script), so this is the user's call, never
 /// the repo's.
 ///
-/// Under `acceptEdits` claude's file tools may never edit `kit.toml`, `.git`
+/// On every run, full auto included, claude's file tools may never edit `kit.toml`, `.git`
 /// or `.claude`, opt-in or not. That binds only claude's own tools: an
 /// allowed check runs code the agent wrote, with the user's permissions.
 fn claude_command(binary: &str, worktree: &Path, bypass: bool, checks: &[String]) -> Command {
@@ -114,16 +114,18 @@ fn claude_command(binary: &str, worktree: &Path, bypass: bool, checks: &[String]
         // Same bar as codex's `-s workspace-write`; shell commands still ask
         // unless KIT_FULL_AUTO=1. Without this, `-p` can read but not write.
         cmd.arg("--permission-mode").arg("acceptEdits");
-        // Both flags take several values; nothing else follows them.
-        cmd.arg("--disallowedTools");
-        for path in PROTECTED {
-            rule_arg(&mut cmd, &format!("Edit({path})"));
-        }
-        if !checks.is_empty() {
-            cmd.arg("--allowedTools");
-            for check in checks {
-                rule_arg(&mut cmd, &format!("Bash({check})"));
-            }
+    }
+    // Both flags take several values; nothing else follows them. The deny
+    // list goes on in full auto too: where claude honours it there, it still
+    // guards the gate, git and claude's settings.
+    cmd.arg("--disallowedTools");
+    for path in PROTECTED {
+        rule_arg(&mut cmd, &format!("Edit({path})"));
+    }
+    if !bypass && !checks.is_empty() {
+        cmd.arg("--allowedTools");
+        for check in checks {
+            rule_arg(&mut cmd, &format!("Bash({check})"));
         }
     }
     cmd.current_dir(worktree);
@@ -263,18 +265,31 @@ mod tests {
         );
         assert!(!args.iter().any(|a| a == "--allowedTools"), "{args:?}");
         let bypass = claude_command("claude", Path::new("wt"), true, &[]);
-        let args: Vec<&OsStr> = bypass.as_std().get_args().collect();
+        let args = rule_args(&bypass);
+        // Full auto keeps the deny list: where claude honours it there, the
+        // gate, git and claude's settings stay out of reach.
         assert!(
-            args.ends_with(&["-p", "--dangerously-skip-permissions"].map(OsStr::new)),
+            args.ends_with(
+                &[
+                    "-p",
+                    "--dangerously-skip-permissions",
+                    "--disallowedTools",
+                    "Edit(./kit.toml)",
+                    "Edit(./.git)",
+                    "Edit(./.git/**)",
+                    "Edit(./.claude/**)",
+                ]
+                .map(String::from)
+            ),
             "{args:?}"
         );
         assert!(
-            !args.contains(&OsStr::new("acceptEdits")),
+            !args.iter().any(|a| a == "acceptEdits"),
             "full auto already skips every check: {args:?}"
         );
         assert!(
-            args.len() <= 4,
-            "nothing but the shim and fixed flags: {args:?}"
+            args.len() <= 10,
+            "nothing but the shim, fixed flags and the deny list: {args:?}"
         );
         assert_eq!(bypass.as_std().get_current_dir(), Some(Path::new("wt")));
     }
