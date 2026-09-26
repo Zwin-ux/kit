@@ -468,10 +468,7 @@ pub(crate) mod test_support {
     }
 
     /// Spawn `build(fake_binary, worktree)` through the real stdin spawn path.
-    pub async fn run_fake_agent(
-        build: impl FnOnce(&str, &Path) -> Command,
-        prompt: &str,
-    ) -> FakeRun {
+    pub async fn run_fake_agent(build: impl Fn(&str, &Path) -> Command, prompt: &str) -> FakeRun {
         use std::os::unix::fs::PermissionsExt;
 
         let nanos = std::time::SystemTime::now()
@@ -491,11 +488,25 @@ pub(crate) mod test_support {
         std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755))
             .expect("chmod fake agent");
 
-        let cmd = build(fake.to_str().expect("utf-8 temp path"), &worktree);
-        let (tx, _rx) = mpsc::channel(64);
-        let mut handle = spawn_streaming_with_stdin(AgentKind::Codex, cmd, prompt.to_owned(), tx)
-            .await
-            .expect("spawn fake agent");
+        // A test running in parallel can fork while our write fd to the fresh
+        // script is still open in its child, so exec fails with ETXTBSY until
+        // that child execs. Retry that one error briefly.
+        let fake = fake.to_str().expect("utf-8 temp path");
+        let mut attempts = 0;
+        let mut handle = loop {
+            let (tx, _rx) = mpsc::channel(64);
+            let cmd = build(fake, &worktree);
+            match spawn_streaming_with_stdin(AgentKind::Codex, cmd, prompt.to_owned(), tx).await {
+                Ok(handle) => break handle,
+                Err(SpawnError::Io { source, .. })
+                    if source.raw_os_error() == Some(libc::ETXTBSY) && attempts < 50 =>
+                {
+                    attempts += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+                Err(err) => panic!("spawn fake agent: {err}"),
+            }
+        };
         let code = handle.wait().await.expect("fake agent exit");
         assert_eq!(code, 0, "fake agent failed");
 
