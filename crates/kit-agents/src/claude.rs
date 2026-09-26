@@ -113,13 +113,31 @@ fn claude_command(binary: &str, worktree: &Path, bypass: bool, checks: &[String]
         if !checks.is_empty() {
             // Both flags take several values; nothing else follows them.
             cmd.arg("--disallowedTools");
-            cmd.args(PROTECTED.map(|path| format!("Edit({path})")));
+            for path in PROTECTED {
+                rule_arg(&mut cmd, &format!("Edit({path})"));
+            }
             cmd.arg("--allowedTools");
-            cmd.args(checks.iter().map(|check| format!("Bash({check})")));
+            for check in checks {
+                rule_arg(&mut cmd, &format!("Bash({check})"));
+            }
         }
     }
     cmd.current_dir(worktree);
     cmd
+}
+
+/// One permission rule as one argument. On Windows the line goes through
+/// `cmd /C`, where a bare `(` or `)` is command syntax, so every rule is
+/// quoted there, with or without spaces. Rules hold no `"` (see
+/// [`allowed_checks`]), so the quotes cannot be closed early.
+fn rule_arg(cmd: &mut Command, rule: &str) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.as_std_mut().raw_arg(format!("\"{rule}\""));
+    }
+    #[cfg(not(windows))]
+    cmd.arg(rule);
 }
 
 /// Paths claude may not edit while it can run the gate's checks: the gate
@@ -245,7 +263,12 @@ mod tests {
     fn opted_in_checks_become_exact_allowed_tools() {
         let checks = ["npm run test".to_owned(), "cargo fmt --check".to_owned()];
         let cmd = claude_command("claude", Path::new("wt"), false, &checks);
-        let args: Vec<&OsStr> = cmd.as_std().get_args().collect();
+        // On Windows each rule is quoted for cmd.exe; the rule inside is the same.
+        let args: Vec<String> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_string_lossy().trim_matches('"').to_owned())
+            .collect();
         assert!(
             args.ends_with(
                 &[
@@ -259,7 +282,7 @@ mod tests {
                     "Bash(npm run test)",
                     "Bash(cargo fmt --check)",
                 ]
-                .map(OsStr::new)
+                .map(String::from)
             ),
             "{args:?}"
         );
