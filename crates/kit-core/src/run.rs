@@ -137,6 +137,12 @@ pub struct RunSpec {
     /// Branch name for the isolated worktree. Derived from the task when absent.
     pub branch: Option<String>,
     pub bounds: Bounds,
+    /// The gate commands the run is held to, as the engine loaded or inferred
+    /// them before the agent started. Adapters name them to the agent; they
+    /// never re-read `kit.toml`. Receipts leave this empty: the gate outcome
+    /// records what ran.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gate_checks: Vec<String>,
 }
 
 /// A run in flight or at rest.
