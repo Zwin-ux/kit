@@ -78,6 +78,24 @@ pub enum Command {
     )]
     Add(AddArgs),
 
+    /// Find kits for a job: the starter kits and the kit index
+    #[command(
+        after_help = "Example:\n  kit search            every kit\n  kit search ios design kits matching all the words\n  kit search --refresh  fetch the index again first"
+    )]
+    Search(SearchArgs),
+
+    /// Install exactly what kit.lock pins: a new teammate, a new machine, CI
+    #[command(
+        after_help = "Example:\n  kit sync                                      this repo, from its kit.lock\n  kit sync --check                              exit 1 if anything is missing; writes nothing\n  kit sync --global --from ~/dotfiles/kit.lock  a new machine"
+    )]
+    Sync(SyncArgs),
+
+    /// Start your own kit: a folder with a KIT.toml, ready to share
+    #[command(
+        after_help = "Example:\n  kit new ios-team\n  kit new ios-team --from frontend-design   start from a copy of a kit\n  kit new ios-team --extends essentials     build on a kit"
+    )]
+    New(NewArgs),
+
     /// Remove installed kits, exactly as they were added
     #[command(after_help = "Example:\n  kit remove frontend-design --global")]
     Remove(RemoveArgs),
@@ -504,4 +522,61 @@ pub struct SetupArgs {
     /// Do not ask before installing
     #[arg(short, long)]
     pub yes: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SearchArgs {
+    /// Words to match against kit names, titles, tags and descriptions
+    #[arg(value_name = "WORDS")]
+    pub words: Vec<String>,
+    /// Fetch the kit index again, even if the cached copy is fresh
+    #[arg(long)]
+    pub refresh: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SyncArgs {
+    /// Use ~/.kit/kit.lock (all projects) instead of this repo's kit.lock
+    #[arg(short, long)]
+    pub global: bool,
+    /// Install what another kit.lock pins (a copy from your old machine)
+    #[arg(long, value_name = "FILE")]
+    pub from: Option<PathBuf>,
+    /// Agent to set up; repeat for more. Default: the agents kit.lock names
+    #[arg(short, long, value_enum)]
+    pub agent: Vec<crate::kits::writers::Agent>,
+    /// Report what is missing and exit 1 if anything is; write nothing
+    #[arg(long, conflicts_with_all = ["from", "yes", "print"])]
+    pub check: bool,
+    /// Skills and rules only: no MCP servers, no hooks
+    #[arg(long)]
+    pub no_code: bool,
+    /// Show the plan and write nothing
+    #[arg(long)]
+    pub print: bool,
+    /// Do not ask; install the plan as shown
+    #[arg(short, long)]
+    pub yes: bool,
+    /// Replace skill folders and config entries Kit did not write
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct NewArgs {
+    /// Kit name: lowercase letters, digits and dashes
+    #[arg(value_name = "NAME")]
+    pub name: String,
+    /// Folder to create [default: ./NAME]
+    #[arg(long, value_name = "DIR")]
+    pub dir: Option<PathBuf>,
+    /// Start from a copy of this kit (a name, folder or github:owner/repo)
+    #[arg(long, value_name = "KIT", conflicts_with = "extends")]
+    pub from: Option<String>,
+    /// Build on these kits; repeat for more
+    #[arg(long, value_name = "KIT")]
+    pub extends: Vec<String>,
+    /// One line: what the kit sets agents up to do
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
 }
