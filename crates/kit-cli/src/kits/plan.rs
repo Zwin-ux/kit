@@ -1211,6 +1211,9 @@ fn write_with_mode(file: &Path, bytes: &[u8], private: bool) -> Result<()> {
             .open(&tmp)?;
         f.write_all(bytes)?;
         f.sync_all()?;
+        // Windows has no 0600: a private file keeps the folder's default.
+        #[cfg(not(unix))]
+        let _ = private;
         #[cfg(unix)]
         if private {
             use std::os::unix::fs::PermissionsExt;
