@@ -188,6 +188,11 @@ pub enum Applied {
         kit: String,
         /// Kit created the file, so remove deletes it once empty.
         created: bool,
+        /// The file's text before Kit added this block, so remove gives
+        /// back its exact bytes (line endings, final newline) when nothing
+        /// outside the block changed. Never in the repo's shared kit.lock.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original: Option<String>,
     },
     McpJson {
         file: PathBuf,
@@ -209,6 +214,9 @@ pub enum Applied {
         /// As for `McpJson`, the table's TOML text.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         previous: Option<String>,
+        /// As for `McpJson`: the file's text before Kit touched it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original: Option<String>,
     },
     ClaudeMcp {
         name: String,
@@ -239,9 +247,43 @@ pub enum Applied {
 }
 
 impl Applied {
+    /// Kit created this record's file (a skill folder does not count).
+    fn created_file(&self) -> bool {
+        match self {
+            Self::Rules { created, .. }
+            | Self::McpJson { created, .. }
+            | Self::McpToml { created, .. }
+            | Self::HookJson { created, .. } => *created,
+            _ => false,
+        }
+    }
+
+    /// Whether Kit created the file, and its text before Kit, to hand over.
+    fn file_state(&mut self) -> Option<(&mut bool, &mut Option<String>)> {
+        match self {
+            Self::Rules {
+                created, original, ..
+            }
+            | Self::McpJson {
+                created, original, ..
+            }
+            | Self::McpToml {
+                created, original, ..
+            }
+            | Self::HookJson {
+                created, original, ..
+            } => Some((created, original)),
+            _ => None,
+        }
+    }
+
     /// Drop the copy of the user's file text (for the repo's shared kit.lock).
     pub fn forget_original(&mut self) {
-        if let Self::McpJson { original, .. } | Self::HookJson { original, .. } = self {
+        if let Self::McpJson { original, .. }
+        | Self::McpToml { original, .. }
+        | Self::HookJson { original, .. }
+        | Self::Rules { original, .. } = self
+        {
             *original = None;
         }
     }
@@ -319,7 +361,7 @@ pub fn in_place(action: &Action, record: &Applied) -> bool {
             Applied::Rules { .. },
         ) => {
             let block = set_block("", kit, version, text);
-            read_or_empty(file).is_ok_and(|t| t.contains(block.trim_end()))
+            read_or_empty(file).is_ok_and(|t| t.replace("\r\n", "\n").contains(block.trim_end()))
         }
         (Action::McpJson { file, name, value }, Applied::McpJson { .. }) => read_json(file)
             .is_ok_and(|d| d.get("mcpServers").and_then(|s| s.get(name)) == Some(value)),
@@ -360,17 +402,65 @@ pub fn same_content(a: &Action, b: &Action) -> bool {
     }
 }
 
+/// After `gone` is undone, a kit stacked on the same file after it takes
+/// over what only `gone` knew about that file, so removing kits in install
+/// order ends where removing them in reverse does:
+/// - `gone` created the file: the kit that stays now deletes it once empty.
+/// - `gone`'s rules block is all that differs between the two originals:
+///   the kit that stays takes `gone`'s, final newline included.
+pub fn hand_over(gone: &Applied, kept: &mut Applied) {
+    let (Some(gf), Some(kf)) = (gone.path(), kept.path()) else {
+        return;
+    };
+    if gf != kf {
+        return;
+    }
+    if gone.created_file() {
+        if let Some((created, original)) = kept.file_state() {
+            *created = true;
+            *original = None;
+        }
+        return;
+    }
+    if let (
+        Applied::Rules {
+            kit: gk,
+            original: Some(go),
+            ..
+        },
+        Applied::Rules {
+            original: Some(ko), ..
+        },
+    ) = (gone, kept)
+        && ko.contains(&open_marker(gk))
+        && remove_block(ko, gk) == remove_block(&set_block(go, gk, "", ""), gk)
+    {
+        *ko = go.clone();
+    }
+}
+
 /// A record replaced by a newer apply keeps what only the first knew:
 /// that Kit created the file, and the user's server it replaced.
 pub fn merge(old: &Applied, new: Applied) -> Applied {
     match (old, new) {
-        (Applied::Rules { created: c, .. }, Applied::Rules { file, kit, created }) => {
+        (
+            Applied::Rules {
+                created: c,
+                original: o,
+                ..
+            },
             Applied::Rules {
                 file,
                 kit,
-                created: created || *c,
-            }
-        }
+                created,
+                original,
+            },
+        ) => Applied::Rules {
+            file,
+            kit,
+            created: created || *c,
+            original: o.clone().or(original),
+        },
         (
             Applied::McpJson {
                 created: c,
@@ -396,6 +486,7 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
             Applied::McpToml {
                 created: c,
                 previous: p,
+                original: o,
                 ..
             },
             Applied::McpToml {
@@ -403,12 +494,14 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
                 name,
                 created,
                 previous,
+                original,
             },
         ) => Applied::McpToml {
             file,
             name,
             created: created || *c,
             previous: previous.or_else(|| p.clone()),
+            original: o.clone().or(original),
         },
         (
             Applied::HookJson {
@@ -645,10 +738,14 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
             let created = !file.exists();
             let old = read_or_empty(file)?;
             write(file, &set_block(&old, kit, version, text))?;
+            // Text from before any block of this kit: the bytes remove
+            // gives back.
+            let original = (!created && !old.contains(&open_marker(kit))).then_some(old);
             Applied::Rules {
                 file: file.clone(),
                 kit: kit.clone(),
                 created,
+                original,
             }
         }
         Action::McpJson { file, name, value } => {
@@ -705,12 +802,13 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                 None => None,
             };
             servers.insert(name, toml_edit::Item::Table(value.clone()));
-            write(file, &doc.to_string())?;
+            write(file, &same_eol(&raw, doc.to_string()))?;
             Applied::McpToml {
                 file: file.clone(),
                 name: name.clone(),
                 created,
                 previous,
+                original: (!created).then_some(raw),
             }
         }
         Action::ClaudeMcp { name, value } => {
@@ -864,9 +962,20 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 .with_context(|| format!("cannot remove {}", dir.display()))?;
             prune(dir, 2);
         }
-        Applied::Rules { file, kit, created } => {
+        Applied::Rules {
+            file,
+            kit,
+            created,
+            original,
+        } => {
             if file.exists() {
                 let text = remove_block(&read_or_empty(file)?, kit);
+                // Nothing outside the block changed: the exact bytes the
+                // user had, final newline and line endings included.
+                let text = match original {
+                    Some(o) if remove_block(&set_block(o, kit, "", ""), kit) == text => o.clone(),
+                    _ => text,
+                };
                 if *created && text.trim().is_empty() {
                     std::fs::remove_file(file)?;
                     prune(file, 1);
@@ -898,9 +1007,11 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             name,
             created,
             previous,
+            original,
         } => {
             if file.exists() {
-                let mut doc: toml_edit::DocumentMut = read_or_empty(file)?.parse()?;
+                let raw = read_or_empty(file)?;
+                let mut doc: toml_edit::DocumentMut = raw.parse()?;
                 let empty = match doc.get_mut("mcp_servers").and_then(|t| t.as_table_mut()) {
                     Some(servers) => {
                         match previous
@@ -922,11 +1033,19 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 if empty {
                     doc.remove("mcp_servers");
                 }
+                let lf = |t: &str| t.replace("\r\n", "\n");
+                // Back to what the user had: their exact bytes.
+                let unchanged = original.as_deref().is_some_and(|o| {
+                    o.parse::<toml_edit::DocumentMut>()
+                        .is_ok_and(|before| lf(&before.to_string()) == lf(&doc.to_string()))
+                });
                 if *created && doc.to_string().trim().is_empty() {
                     std::fs::remove_file(file)?;
                     prune(file, 1);
+                } else if let (true, Some(o)) = (unchanged, original) {
+                    write(file, o)?;
                 } else {
-                    write(file, &doc.to_string())?;
+                    write(file, &same_eol(&raw, doc.to_string()))?;
                 }
             }
         }
@@ -1313,12 +1432,19 @@ fn close_marker(kit: &str) -> String {
     format!("<!-- /kit:{kit} -->")
 }
 
-/// `text` with this kit's block added, or replaced if present.
+/// The file's line ending: CRLF when it has any, else LF.
+fn eol_of(text: &str) -> &'static str {
+    if text.contains("\r\n") { "\r\n" } else { "\n" }
+}
+
+/// `text` with this kit's block added, or replaced if present. The block
+/// uses the file's own line ending, so a CRLF file stays all CRLF.
 pub fn set_block(text: &str, kit: &str, version: &str, body: &str) -> String {
+    let eol = eol_of(text);
+    let body = body.trim_end().replace("\r\n", "\n").replace('\n', eol);
     let block = format!(
-        "{}{version} (managed by kit; edits inside are replaced) -->\n{}\n{}\n",
+        "{}{version} (managed by kit; edits inside are replaced) -->{eol}{body}{eol}{}{eol}",
         open_marker(kit),
-        body.trim_end(),
         close_marker(kit)
     );
     let stripped = remove_block(text, kit);
@@ -1326,12 +1452,13 @@ pub fn set_block(text: &str, kit: &str, version: &str, body: &str) -> String {
     if base.is_empty() {
         block
     } else {
-        format!("{base}\n\n{block}")
+        format!("{base}{eol}{eol}{block}")
     }
 }
 
 /// `text` without this kit's block. Text outside the markers is untouched.
 pub fn remove_block(text: &str, kit: &str) -> String {
+    let eol = eol_of(text);
     let (open, close) = (open_marker(kit), close_marker(kit));
     let Some(start) = text.find(&open) else {
         return text.to_string();
@@ -1340,15 +1467,17 @@ pub fn remove_block(text: &str, kit: &str) -> String {
         return text.to_string();
     };
     let mut end = start + rel_end + close.len();
-    if text[end..].starts_with('\n') {
+    if text[end..].starts_with("\r\n") {
+        end += 2;
+    } else if text[end..].starts_with('\n') {
         end += 1;
     }
-    let before = text[..start].trim_end_matches('\n');
-    let after = text[end..].trim_start_matches('\n');
+    let before = text[..start].trim_end_matches(['\r', '\n']);
+    let after = text[end..].trim_start_matches(['\r', '\n']);
     match (before.is_empty(), after.is_empty()) {
         (true, _) => after.to_string(),
-        (false, true) => format!("{before}\n"),
-        (false, false) => format!("{before}\n\n{after}"),
+        (false, true) => format!("{before}{eol}"),
+        (false, false) => format!("{before}{eol}{eol}{after}"),
     }
 }
 
