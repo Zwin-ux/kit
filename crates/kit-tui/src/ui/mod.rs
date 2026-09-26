@@ -647,7 +647,8 @@ mod tests {
         // A fixed path for the snapshot; the rows are already loaded.
         app.runs_dir = Some("/home/you/.kit/runs".into());
         app.update(code(KeyCode::Enter));
-        let frame = render_to_string(&app, 80, 16);
+        // Windows joins the run id with `\`; the snapshot is the same screen.
+        let frame = render_to_string(&app, 80, 16).replace('\\', "/");
         assert!(
             frame.contains("receipt   /home/you/.kit/runs/01PASTC"),
             "{frame}"
