@@ -106,14 +106,19 @@ mod tests {
 
     #[test]
     fn claude_argv_carries_no_prompt_text() {
+        // On Windows `command_for` prefixes `/C claude`; the tail is ours.
         let plain = claude_command("claude", Path::new("wt"), false);
         let args: Vec<&OsStr> = plain.as_std().get_args().collect();
-        assert_eq!(args, [OsStr::new("-p")]);
+        assert!(args.ends_with(&[OsStr::new("-p")]), "{args:?}");
         let bypass = claude_command("claude", Path::new("wt"), true);
         let args: Vec<&OsStr> = bypass.as_std().get_args().collect();
-        assert_eq!(
-            args,
-            ["-p", "--dangerously-skip-permissions"].map(OsStr::new)
+        assert!(
+            args.ends_with(&["-p", "--dangerously-skip-permissions"].map(OsStr::new)),
+            "{args:?}"
+        );
+        assert!(
+            args.len() <= 4,
+            "nothing but the shim and fixed flags: {args:?}"
         );
         assert_eq!(bypass.as_std().get_current_dir(), Some(Path::new("wt")));
     }
