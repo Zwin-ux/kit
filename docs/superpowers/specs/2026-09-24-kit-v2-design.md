@@ -1,9 +1,17 @@
 # Kit V2 — design
 
 - **Date:** 2026-09-24
-- **Status:** Draft for owner review
+- **Status:** Revised 2026-09-26. The release named 2.0.0 is the kits release (see below). The pillars in this document are the roadmap after it.
 - **Owner:** Mazen Zwin (Zwin-ux)
 - **Pitch:** *Dispatch any agent. Trust none. Land only what's proven.*
+
+> **Revision, 2026-09-26 (owner decision).** Two days after this draft, the owner made kits the lead: a kit is a bundle that sets coding agents up for one job (skills, rules, MCP servers, hooks), installed from a starter set, from GitHub, or later from a hosted index. Kit **2.0.0 ships kits plus the proof engine that exists today** (`kit run`, `kit.toml` checks, receipts, `kit land`, the Control Room) and the launch bar of §11 (one-line install on three OSes, crates.io as `kitctl`, checksums and build attestations). See `docs/dev/DESIGN-KITS.md` and `CHANGELOG.md`.
+>
+> What changes in this document:
+> - The non-goal "a skill marketplace or registry service" is withdrawn. Kits and a kit index are the product's front door. A hosted server comes later; the first index is a public GitHub repo.
+> - Pillars M1–M4 (drivers and `kit verify`, policy engine and sandbox, merge queue and best-of-N, `kitd` and `kit mcp`) are **not** in 2.0.0. They are the roadmap for 2.x and later, each shipped behind its own minor version when ready.
+> - §11's tooling choices (`dist`, `release-plz`) are not adopted for 2.0.0; the existing `release-npm.yml` pipeline covers the same channels. Homebrew and `cargo binstall` follow after 2.0.0.
+> - The rest (architecture, contracts, quality bar) stands as the direction for that roadmap.
 
 This is the umbrella design for Kit 2.0. It is split into six sub-projects (M0–M5). Each sub-project gets its own implementation plan; this document fixes the architecture, contracts, and decisions they share.
 
@@ -25,7 +33,7 @@ This is the umbrella design for Kit 2.0. It is split into six sub-projects (M0�
 - A web or mobile dashboard (2.0 ships the local API it would use, not the UI).
 - Cloud-hosted runners or remote execution.
 - An OS sandbox tier on Windows (Windows gets approval-time policy and the agents' native sandboxes).
-- A skill marketplace or registry service (the legacy registry API is archived).
+- ~~A skill marketplace or registry service (the legacy registry API is archived).~~ Withdrawn 2026-09-26: kits and a kit index are in scope (see the revision note above).
 - Storing model API keys. Kit keeps using each agent CLI's own login ("no credential custody").
 
 ---
