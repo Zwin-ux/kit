@@ -219,8 +219,8 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
 pub struct Expect {
     /// Kit name → version.
     pub versions: std::collections::BTreeMap<String, String>,
-    /// Skill folder name → content hash.
-    pub skills: std::collections::BTreeMap<String, String>,
+    /// (kit, skill folder name) → content hash.
+    pub skills: std::collections::BTreeMap<(String, String), String>,
 }
 
 /// `kit add` against `lock` (what is already in place), refusing anything
@@ -257,7 +257,9 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         .collect::<Result<_>>()?;
     for r in &resolved {
         for p in &r.skills {
-            if let Some(want) = expect.skills.get(&p.name)
+            if let Some(want) = expect
+                .skills
+                .get(&(r.kit.name().to_string(), p.name.clone()))
                 && *want != p.hash
             {
                 bail!(
@@ -501,6 +503,14 @@ fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -
             None => {
                 let _ = writeln!(s, "{}", kit.level.label());
             }
+        }
+    }
+    // Bases come from wherever their kit says; show any not reviewed by Kit.
+    for kit in &chosen.kits {
+        if kit.level != catalog::Level::Official
+            && !chosen.requested.iter().any(|(n, _)| n == kit.name())
+        {
+            let _ = writeln!(s, "base {}: {}", kit.name(), kit.level.label());
         }
     }
     let _ = writeln!(s);

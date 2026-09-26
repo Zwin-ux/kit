@@ -73,8 +73,10 @@ fn expect(source: &Lock) -> Expect {
             if let Applied::Skill { dir, hash } = a
                 && let Some(name) = dir.file_name()
             {
-                e.skills
-                    .insert(name.to_string_lossy().into_owned(), hash.clone());
+                e.skills.insert(
+                    (entry.name.clone(), name.to_string_lossy().into_owned()),
+                    hash.clone(),
+                );
             }
         }
     }
@@ -121,16 +123,36 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
 
     // What the target already has, minus anything no longer on disk.
     let mut target = Lock::load(&target_scope)?;
+    // A skill edited by hand is kept (and its record, so nothing rewrites
+    // it) unless --force; only kits in the source lock are looked at.
     let mut missing: Vec<Applied> = Vec::new();
+    let mut edited: Vec<String> = Vec::new();
     for e in &mut target.kits {
+        if !source.kits.iter().any(|s| s.name == e.name) {
+            continue;
+        }
         e.applied.retain(|a| {
-            let here = present(a);
-            if !here {
-                missing.push(a.clone());
+            if present(a) {
+                return true;
             }
-            here
+            let changed = matches!(a, Applied::Skill { dir, .. } if dir.is_dir());
+            if changed && !args.force {
+                if let Applied::Skill { dir, .. } = a {
+                    edited.push(tilde(dir));
+                }
+                return true;
+            }
+            missing.push(a.clone());
+            false
         });
     }
+    let kept_note = |edited: &[String]| {
+        for d in edited {
+            println!(
+                "kept      {d} was changed by hand (kit sync --force puts back the pinned copy)"
+            );
+        }
+    };
     let total: usize = source.kits.iter().map(|e| e.applied.len()).sum();
     let names: Vec<String> = requested
         .iter()
@@ -143,10 +165,18 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
             let env = crate::envelope("sync", true, data, None, vec![]);
             println!("{}", serde_json::to_string_pretty(&env)?);
         } else {
-            println!(
-                "In sync: kit.lock pins {} and everything is in place.",
-                plural(requested.len(), "kit")
-            );
+            if edited.is_empty() {
+                println!(
+                    "In sync: kit.lock pins {} and everything is in place.",
+                    plural(requested.len(), "kit")
+                );
+            } else {
+                println!(
+                    "In sync, apart from hand edits: kit.lock pins {}.",
+                    plural(requested.len(), "kit")
+                );
+                kept_note(&edited);
+            }
         }
         return Ok(());
     }
@@ -173,6 +203,7 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
         for l in &lines {
             println!("  {l}");
         }
+        kept_note(&edited);
         println!("Fix it: kit sync{flag}");
         std::process::exit(1);
     }
@@ -228,6 +259,9 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
         print: args.print,
         force: args.force,
     };
+    if !json {
+        kept_note(&edited);
+    }
     let outcome = install::add_to(&req, json, target, &expect(&source))?;
     if !json && outcome == install::Outcome::Installed {
         println!(

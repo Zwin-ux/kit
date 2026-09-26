@@ -132,6 +132,13 @@ pub fn fetch_at(spec: &GithubSpec, sha: &str, level: Level) -> Result<Kit> {
     let raw =
         std::fs::read_to_string(&toml).with_context(|| format!("{pinned} has no KIT.toml"))?;
     let manifest = KitManifest::parse(&raw, &pinned)?;
+    for base in &manifest.kit.extends {
+        if !is_pinned_base(base)? {
+            bail!(
+                "{pinned} extends '{base}', which is not pinned. A kit from GitHub or the index may extend a kit that ships with Kit or github:owner/repo@<full commit sha>, so what installs is exactly what was reviewed"
+            );
+        }
+    }
     let level = match level {
         Level::Direct => super::index::listed_level(spec, sha).unwrap_or(Level::Direct),
         other => other,
@@ -142,6 +149,15 @@ pub fn fetch_at(spec: &GithubSpec, sha: &str, level: Level) -> Result<Kit> {
         level,
         pin: Some(pinned),
     })
+}
+
+/// A base a pinned kit may extend: bundled (pinned by Kit's version), or
+/// a `github:` spec at a full commit sha.
+fn is_pinned_base(base: &str) -> Result<bool> {
+    if let Some(spec) = parse(base)? {
+        return Ok(spec.rev.as_deref().is_some_and(is_sha));
+    }
+    Ok(super::catalog::bundled()?.iter().any(|k| k.name() == base))
 }
 
 /// Unpack the kit folder at `sha` once; later calls reuse it.
@@ -189,6 +205,11 @@ fn unpack(spec: &GithubSpec, sha: &str) -> Result<PathBuf> {
         }
         std::fs::write(&path, &f.bytes)
             .with_context(|| format!("cannot write {}", path.display()))?;
+        #[cfg(unix)]
+        if f.executable {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+        }
     }
     std::fs::write(&done, format!("{}\n", spec.pinned(sha)))?;
     Ok(root)

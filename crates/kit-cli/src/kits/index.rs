@@ -82,6 +82,14 @@ impl Entry {
         if !slug(&self.name) {
             bail!("name must be lowercase letters, digits and dashes");
         }
+        let texts = [&self.summary, self.title.as_ref().unwrap_or(&self.summary)];
+        if texts
+            .into_iter()
+            .chain(&self.tags)
+            .any(|t| super::manifest::has_control(t))
+        {
+            bail!("title, summary and tags may not hold control characters");
+        }
         let spec = format!(
             "{}/{}@{}",
             self.source,
@@ -195,6 +203,9 @@ pub fn load(refresh: bool) -> Result<Index> {
     }
     let trusted = src == DEFAULT;
     match remote::parse(&src)? {
+        Some(spec) if spec.rev.is_some() => {
+            bail!("KIT_INDEX={src}: an index is followed at its default branch; leave off the @rev")
+        }
         Some(spec) => load_github(&spec, &src, refresh, trusted),
         None => {
             let path = PathBuf::from(&src);
@@ -210,10 +221,13 @@ pub fn load(refresh: bool) -> Result<Index> {
     }
 }
 
+/// One cache per index source (repo and path), so a second index never
+/// reads as, or overwrites, Kit's own trusted one.
 fn cache_file(spec: &GithubSpec) -> PathBuf {
+    let key = format!("{}/{}", spec.repo, spec.path).replace('/', "--");
     kit_home()
         .join("index")
-        .join(spec.repo.replace('/', "--"))
+        .join(key.trim_end_matches('-'))
         .join("index.toml")
 }
 

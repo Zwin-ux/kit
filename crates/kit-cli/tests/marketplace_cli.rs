@@ -345,3 +345,70 @@ fn a_new_kit_is_valid_shows_plans_and_can_start_from_another() {
     let out = env.ok(&dir, &["show", "./web-plus"]);
     assert!(out.contains("chrome-devtools"), "{out}");
 }
+
+#[test]
+fn sync_keeps_hand_edits_and_pinned_kits_cannot_float() {
+    let env = Env::new("edits");
+    let repo = env.repo();
+    env.ok(&repo, &["add", "tipper", "-a", "claude", "--yes"]);
+    let skill = repo.join(".claude/skills/tip/SKILL.md");
+    std::fs::write(&skill, "my own notes\n").unwrap();
+    let out = env.ok(&repo, &["sync", "--yes"]);
+    assert!(out.contains("changed by hand"), "{out}");
+    assert_eq!(std::fs::read_to_string(&skill).unwrap(), "my own notes\n");
+    let out = env.ok(&repo, &["sync", "--yes", "--force"]);
+    assert!(out.contains("This repo matches"), "{out}");
+    assert!(std::fs::read_to_string(&skill).unwrap().contains("Tip."));
+
+    // A second kit at the same commit of the same repo installs too.
+    let kits = env.base.join("owner/kits");
+    write(
+        &kits.join("kits/other/KIT.toml"),
+        &kit_toml("other", "other-tip"),
+    );
+    write(&kits.join("kits/other/RULES.md"), "Other.\n");
+    write(
+        &kits.join("kits/other/skills/other-tip/SKILL.md"),
+        "---\nname: other-tip\n---\nO.\n",
+    );
+    // A kit whose base floats on a branch is refused.
+    write(
+        &kits.join("kits/floaty/KIT.toml"),
+        &kit_toml("floaty", "tip").replace(
+            "[rules]",
+            "extends = [\"github:owner/kits/kits/tipper@main\"]\n[rules]",
+        ),
+    );
+    write(&kits.join("kits/floaty/RULES.md"), "F.\n");
+    write(&kits.join("kits/floaty/skills/tip/SKILL.md"), "x\n");
+    git(&kits, &["add", "."]);
+    git(&kits, &["commit", "-q", "-m", "more"]);
+    let sha = git(&kits, &["rev-parse", "HEAD"]);
+    for path in ["kits/tipper", "kits/other"] {
+        env.ok(
+            &repo,
+            &[
+                "add",
+                &format!("github:owner/kits/{path}@{sha}"),
+                "--print",
+                "-a",
+                "claude",
+            ],
+        );
+    }
+    let out = env.kit(
+        &repo,
+        &[
+            "add",
+            &format!("github:owner/kits/kits/floaty@{sha}"),
+            "--print",
+            "-a",
+            "claude",
+        ],
+    );
+    assert!(
+        text(&out.stderr).contains("which is not pinned"),
+        "{}",
+        text(&out.stderr)
+    );
+}

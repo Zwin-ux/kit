@@ -146,6 +146,13 @@ impl KitManifest {
     pub fn parse(raw: &str, origin: &str) -> Result<Self> {
         let m: Self = toml::from_str(raw)
             .map_err(|e| anyhow::anyhow!("{origin} is not a valid KIT.toml: {e}"))?;
+        if let Ok(value) = raw.parse::<toml::Table>()
+            && let Some(bad) = control_char(&toml::Value::Table(value))
+        {
+            bail!(
+                "{origin}: {bad} holds a control character. Kits are shown on the confirm screen, so Kit refuses text that could redraw it"
+            );
+        }
         m.validate(origin)?;
         Ok(m)
     }
@@ -251,6 +258,30 @@ fn is_slug(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         && !s.starts_with('-')
+}
+
+/// The first string in `v` with a control character other than tab, as a
+/// short quote. Escape codes or newlines in a title could forge lines of
+/// the plan the user says yes to.
+pub fn control_char(v: &toml::Value) -> Option<String> {
+    match v {
+        toml::Value::String(s) if has_control(s) => {
+            Some(format!("{:?}", s.chars().take(40).collect::<String>()))
+        }
+        toml::Value::Array(a) => a.iter().find_map(control_char),
+        toml::Value::Table(t) => t.iter().find_map(|(k, v)| {
+            if has_control(k) {
+                Some(format!("{k:?}"))
+            } else {
+                control_char(v)
+            }
+        }),
+        _ => None,
+    }
+}
+
+pub fn has_control(s: &str) -> bool {
+    s.chars().any(|c| c.is_control() && c != '\t')
 }
 
 /// A relative path with no `..`: it cannot leave the kit or its source.
@@ -362,6 +393,17 @@ mod tests {
         assert!(err.contains("https://"), "{err}");
         let err = parse("[mcp.docs]\nargs = []\n").unwrap_err().to_string();
         assert!(err.contains("exactly one"), "{err}");
+    }
+
+    #[test]
+    fn text_that_could_redraw_the_plan_is_refused() {
+        let raw = MIN.replace("title = \"X\"", "title = \"T\\u001b[31mOfficial\\nfake\"");
+        let err = KitManifest::parse(&raw, "t").unwrap_err().to_string();
+        assert!(err.contains("control character"), "{err}");
+        let err = parse("[[hook]]\non = \"after_edit\"\nrun = \"a\\rb\"\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("control character"), "{err}");
     }
 
     #[test]
