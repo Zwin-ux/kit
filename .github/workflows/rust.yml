@@ -3,9 +3,9 @@ name: Rust
 on:
   push:
     branches: [main]
-    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', 'npm/**', 'scripts/npm-*.mjs', '.github/workflows/rust.yml']
+    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', 'npm/**', 'scripts/npm-*.mjs', 'scripts/version.mjs', '.github/workflows/rust.yml']
   pull_request:
-    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', 'npm/**', 'scripts/npm-*.mjs', '.github/workflows/rust.yml']
+    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', 'npm/**', 'scripts/npm-*.mjs', 'scripts/version.mjs', '.github/workflows/rust.yml']
 
 env:
   CARGO_TERM_COLOR: always
@@ -38,6 +38,27 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+
+  # `cargo install kitctl` must work the day the tag lands. Package and
+  # build every crate the way crates.io will see it (no path deps, only
+  # the files `cargo package` ships), and check that the product version
+  # and the internal crate pins agree.
+  crates-io:
+    name: crates.io package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Version copies agree
+        run: node scripts/version.mjs --check
+
+      - name: cargo publish --dry-run
+        run: cargo publish --workspace --dry-run --locked
 
   # M0 kill criterion: cold start under budget. If this fails, the stack choice
   # is wrong and we stop rather than push through. See docs/dev/PRD-1.0.md §8.
