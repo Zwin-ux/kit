@@ -340,7 +340,22 @@ async fn agent_and_gate(
         send(tx, id, RunDelta::Output(line.into())).await;
         GateOutcome::vacuous()
     } else {
-        KitGate::new().evaluate(wt_path, &config.gate).await
+        // A kill during the gate stops it: dropping the evaluation drops its
+        // children (`kill_on_drop`). A check the user interrupted is not a
+        // verdict, so the run ends Killed, never a FAIL it did not earn.
+        let kit_gate = KitGate::new();
+        let evaluate = kit_gate.evaluate(wt_path, &config.gate);
+        let gate = match cancel {
+            Some(c) => tokio::select! {
+                gate = evaluate => Some(gate),
+                () = c.cancelled() => None,
+            },
+            None => Some(evaluate.await),
+        };
+        match gate {
+            Some(gate) if !cancelled(cancel) => gate,
+            _ => return Ok(Ending::Killed("kit: run killed during the gate\n".into())),
+        }
     };
     send(tx, id, RunDelta::Gate(gate.clone())).await;
     if agent_diff.is_some() && worktree::worktree_diff(wt_path, base).ok() != agent_diff {
@@ -977,6 +992,68 @@ mod tests {
         assert!(result.receipt_dir.join("receipt.json").exists());
         let raw = std::fs::read_to_string(result.receipt_dir.join("receipt.json")).unwrap();
         assert!(raw.contains("\"killed\"") || raw.contains("killed"));
+
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Ctrl-C (or Control Room `k`) while the gate runs stops the gate and
+    /// ends the run Killed. Before, the gate ran on and its verdict stood: a
+    /// PASS the user had cancelled, or a FAIL for a check the SIGINT killed.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancel_during_gate_stops_it_and_yields_killed() {
+        let root = crate::engine::paths::bare_git_fixture();
+        std::fs::write(
+            root.join("kit.toml"),
+            "[gate]\ntest = 'touch gate-started; exec sleep 30'\n",
+        )
+        .unwrap();
+        let home = std::env::temp_dir().join(format!(
+            "kit-test-gatekill-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        let cancel = CancelHandle::new();
+        let id = RunId("01TESTGATEKILL000000000001".into());
+
+        let started = std::time::Instant::now();
+        let result = with_kit_home(&home, || async {
+            let marker = worktrees_dir().join(&id.0).join("gate-started");
+            let killer = tokio::spawn({
+                let cancel = cancel.clone();
+                async move {
+                    while !marker.exists() {
+                        sleep(Duration::from_millis(20)).await;
+                    }
+                    cancel.cancel();
+                }
+            });
+            let opts = RunOptions {
+                repo: root.to_string_lossy().into_owned(),
+                agent: AgentKind::Codex,
+                task: "gate is slow".into(),
+                dry_run: Some(true),
+                bounds: Bounds::default(),
+            };
+            let result = execute_cancellable(opts, Some(id.clone()), None, Some(cancel)).await;
+            killer.abort();
+            result.expect("execute")
+        })
+        .await;
+
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "the gate ran on after the kill"
+        );
+        assert_eq!(result.state, RunState::Killed);
+        assert!(result.gate.is_none(), "an interrupted gate is no verdict");
+        let log = std::fs::read_to_string(result.receipt_dir.join("output.log")).unwrap();
+        assert!(log.contains("killed during the gate"), "{log}");
 
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&root);
