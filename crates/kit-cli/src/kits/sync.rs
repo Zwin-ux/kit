@@ -103,16 +103,18 @@ fn load_from(file: &Path) -> Result<Lock> {
 fn spec_of(e: &Entry, root: Option<&Path>) -> Result<String> {
     let s = e.pin.as_deref().unwrap_or(&e.source);
     if let Some(rel) = s.strip_prefix("./") {
-        let plain = Path::new(rel)
-            .components()
-            .all(|c| matches!(c, std::path::Component::Normal(_)));
-        let Some(root) = root.filter(|_| plain) else {
+        // No `..` and no link on the way, down to KIT.toml itself.
+        let folder = root.and_then(|r| {
+            inside(r, &Path::new(rel).join("KIT.toml"))?;
+            inside(r, Path::new(rel))
+        });
+        let Some(folder) = folder else {
             bail!(
                 "kit.lock names {} at {s}, which is not a folder in this repo",
                 e.name
             );
         };
-        return Ok(root.join(rel).display().to_string());
+        return Ok(folder.display().to_string());
     }
     if let Some(folder) = s.strip_prefix("folder ") {
         bail!(
@@ -143,10 +145,30 @@ fn inside(root: &Path, path: &Path) -> Option<std::path::PathBuf> {
     Some(at)
 }
 
+/// A committed skill that git checked out with CRLF line endings (its
+/// `core.autocrlf` default on Windows) is the same skill once they are LF.
+fn same_but_line_endings(dir: &Path, hash: &str) -> bool {
+    let mut files = Vec::new();
+    if super::plan::collect(dir, dir, &mut files).is_err() {
+        return false;
+    }
+    for f in &mut files {
+        let mut lf = Vec::with_capacity(f.bytes.len());
+        for (i, b) in f.bytes.iter().enumerate() {
+            if !(*b == b'\r' && f.bytes.get(i + 1) == Some(&b'\n')) {
+                lf.push(*b);
+            }
+        }
+        f.bytes = lf;
+    }
+    super::fetch::content_hash(&files) == hash
+}
+
 /// `kit sync --check` in a repo this machine has no Kit record for (a
 /// fresh CI runner): the repo's kit.lock against the files committed with
-/// it and against each kit's own `KIT.toml`. Reads only; runs nothing.
-/// Exit 1 on any drift.
+/// it and against each kit's own `KIT.toml`. Runs nothing and writes
+/// nothing in the repo; a `github:` kit is fetched at its pin into Kit's
+/// cache under ~/.kit, as any install would. Exit 1 on any drift.
 fn check_committed(
     source: &Lock,
     requested: &[&Entry],
@@ -172,7 +194,9 @@ fn check_committed(
         {
             skills.insert(name.to_string_lossy().into_owned());
         }
-        if !present(&here) {
+        let crlf_only =
+            matches!(&here, Applied::Skill { dir, hash } if same_but_line_endings(dir, hash));
+        if !present(&here) && !crlf_only {
             gone.push(match (a, &here) {
                 (Applied::Skill { dir, .. }, Applied::Skill { dir: full, .. }) if full.is_dir() => {
                     format!("skill {} differs from {label}", dir.display())
@@ -476,6 +500,7 @@ mod tests {
             name: "docs".into(),
             created: true,
             previous: None,
+            original: None,
         };
         std::fs::write(&mcp, r#"{"mcpServers":{"other":{}}}"#).unwrap();
         assert!(!present(&a));
@@ -499,6 +524,7 @@ mod tests {
             event: "PostToolUse".into(),
             entry: entry.clone(),
             created: true,
+            original: None,
         };
         std::fs::write(&settings, r#"{"hooks":{"PostToolUse":[]}}"#).unwrap();
         assert!(!present(&a));
@@ -508,6 +534,58 @@ mod tests {
         )
         .unwrap();
         assert!(present(&a));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_kit_is_never_reached_through_a_link() {
+        let base = std::env::temp_dir().join(format!("kit-sync-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (repo, outside) = (base.join("repo"), base.join("outside"));
+        std::fs::create_dir_all(repo.join("kits/mine")).unwrap();
+        std::fs::create_dir_all(outside.join("mine")).unwrap();
+        std::fs::write(repo.join("kits/mine/KIT.toml"), "").unwrap();
+        std::fs::write(outside.join("mine/KIT.toml"), "").unwrap();
+        let entry = |source: &str| -> Entry {
+            serde_json::from_value(serde_json::json!({
+                "name": "mine", "version": "0.1.0", "source": source,
+                "requested": true, "agents": ["claude"], "applied": [],
+            }))
+            .unwrap()
+        };
+        let ok = spec_of(&entry("./kits/mine"), Some(&repo)).unwrap();
+        assert_eq!(Path::new(&ok), repo.join("kits/mine"));
+        assert!(spec_of(&entry("./../outside/mine"), Some(&repo)).is_err());
+
+        std::os::unix::fs::symlink(&outside, repo.join("linked")).unwrap();
+        assert!(spec_of(&entry("./linked/mine"), Some(&repo)).is_err());
+        std::fs::remove_file(repo.join("kits/mine/KIT.toml")).unwrap();
+        std::os::unix::fs::symlink(
+            outside.join("mine/KIT.toml"),
+            repo.join("kits/mine/KIT.toml"),
+        )
+        .unwrap();
+        assert!(
+            spec_of(&entry("./kits/mine"), Some(&repo)).is_err(),
+            "KIT.toml itself may not be a link"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_skill_checked_out_with_crlf_is_the_same_skill() {
+        let dir = std::env::temp_dir().join(format!("kit-sync-crlf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "a\nb\n").unwrap();
+        let mut files = Vec::new();
+        crate::kits::plan::collect(&dir, &dir, &mut files).unwrap();
+        let hash = crate::kits::fetch::content_hash(&files);
+        std::fs::write(dir.join("SKILL.md"), "a\r\nb\r\n").unwrap();
+        assert!(same_but_line_endings(&dir, &hash));
+        std::fs::write(dir.join("SKILL.md"), "a\r\nc\r\n").unwrap();
+        assert!(!same_but_line_endings(&dir, &hash));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
