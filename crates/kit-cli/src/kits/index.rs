@@ -246,13 +246,13 @@ fn load_github(spec: &GithubSpec, src: &str, refresh: bool, trusted: bool) -> Re
         Ok(raw) => parse(&raw, src, trusted),
         Err(err) => {
             let Ok(raw) = std::fs::read_to_string(&file) else {
-                return Err(err.context(format!("cannot fetch the kit index {src}")));
+                return Err(anyhow::anyhow!(plain(&err, spec, src)));
             };
             let mut index = parse(&raw, src, trusted)?;
             let hours = age.map_or(0, |a| a.as_secs() / 3600);
             index.warnings.push(format!(
-                "could not refresh {src} ({}); using the copy from {} ago",
-                first_line(&err),
+                "could not refresh the kit index: {}; using the copy from {} ago",
+                plain(&err, spec, src),
                 if hours < 48 {
                     format!("{hours}h")
                 } else {
@@ -264,12 +264,38 @@ fn load_github(spec: &GithubSpec, src: &str, refresh: bool, trusted: bool) -> Re
     }
 }
 
-fn first_line(err: &anyhow::Error) -> String {
-    format!("{err:#}")
-        .lines()
-        .next()
-        .unwrap_or_default()
-        .to_string()
+/// A fetch failure in one plain line, without git's own output: a missing
+/// or private repo reads the same to git (it asks for a password), so both
+/// say the index is not published.
+fn plain(err: &anyhow::Error, spec: &GithubSpec, src: &str) -> String {
+    let text = format!("{err:#}").to_lowercase();
+    let url = fetch::remote_url(&spec.repo);
+    if [
+        "could not read username",
+        "repository not found",
+        "authentication",
+        "does not appear to be a git repository",
+        "not found",
+        "403",
+    ]
+    .iter()
+    .any(|m| text.contains(m))
+    {
+        return format!("the kit index {src} is not published yet (no public repo at {url})");
+    }
+    if [
+        "could not resolve",
+        "timed out",
+        "unable to access",
+        "connection",
+        "network",
+    ]
+    .iter()
+    .any(|m| text.contains(m))
+    {
+        return format!("cannot reach {url} to read the kit index");
+    }
+    format!("cannot read the kit index {src}")
 }
 
 /// Fetch the default branch of the index repo and read `index.toml`.
@@ -455,7 +481,7 @@ mod tests {
         std::fs::remove_dir_all(base.join("home/index")).unwrap();
         let err = load(false).unwrap_err();
         assert!(
-            format!("{err:#}").contains("cannot fetch the kit index"),
+            format!("{err:#}").contains("is not published yet"),
             "{err:#}"
         );
         unsafe {

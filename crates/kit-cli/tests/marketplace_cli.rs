@@ -172,14 +172,22 @@ fn search_finds_starter_and_index_kits_best_first() {
     assert_eq!(v["data"]["kits"][0]["name"], "tipper");
     assert_eq!(v["data"]["kits"][0]["installed"], false);
 
-    // Offline with no cache: the starter kits still show, with a note.
+    // Offline with no cache: the starter kits still show, the reason goes to
+    // stderr in one plain line, and the exit is 2.
     std::fs::remove_dir_all(env.base.join("owner")).unwrap();
     let out = env.ok(&dir, &["search", "design", "--refresh"]);
     assert!(out.contains("could not refresh"), "{out}");
     std::fs::remove_dir_all(env.home.join(".kit/index")).unwrap();
-    let out = env.ok(&dir, &["search", "design"]);
-    assert!(out.contains("frontend-design"), "{out}");
-    assert!(out.contains("could not be read"), "{out}");
+    let out = env.kit(&dir, &["search", "design"]);
+    assert_eq!(out.status.code(), Some(2), "{}", text(&out.stderr));
+    assert!(text(&out.stdout).contains("frontend-design"));
+    let err = text(&out.stderr);
+    assert!(err.contains("is not published yet"), "{err}");
+    assert!(err.contains("owner/kits"), "names the repo: {err}");
+    assert!(
+        !err.to_lowercase().contains("fatal"),
+        "no raw git output: {err}"
+    );
 }
 
 #[test]
