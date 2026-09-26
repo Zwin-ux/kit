@@ -153,10 +153,58 @@ async fn run_with_terminal(
         }
 
         if matches!(action, Action::Quit) || app.should_quit {
+            stop_active_runs(
+                terminal,
+                &mut app,
+                &mut run_rx,
+                runs_open,
+                engine_tx.as_ref(),
+            )
+            .await?;
             break;
         }
     }
 
+    Ok(())
+}
+
+/// How long quitting waits for stopped runs to write their receipts.
+const STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Quit never drops a run: each one still in flight is killed, and Kit waits
+/// for its terminal state, which the engine sends only once the receipt is
+/// written and the worktree cleaned up.
+async fn stop_active_runs(
+    terminal: &mut Term,
+    app: &mut App,
+    run_rx: &mut mpsc::Receiver<(RunId, RunDelta)>,
+    runs_open: bool,
+    engine_tx: Option<&mpsc::Sender<crate::app::EngineCommand>>,
+) -> Result<()> {
+    let active = app.active_run_ids();
+    let Some(tx) = engine_tx.filter(|_| !active.is_empty() && runs_open) else {
+        return Ok(());
+    };
+    for id in &active {
+        let _ = tx
+            .send(crate::app::EngineCommand::Kill { id: id.clone() })
+            .await;
+    }
+    app.error = Some(format!(
+        "stopping {} run(s) and writing their receipts…",
+        active.len()
+    ));
+    terminal.draw(|f| ui::draw(f, app))?;
+    let deadline = tokio::time::Instant::now() + STOP_GRACE;
+    while !app.active_run_ids().is_empty() {
+        match tokio::time::timeout_at(deadline, run_rx.recv()).await {
+            Ok(Some((id, delta))) => {
+                app.update(AppEvent::RunUpdate(id, delta));
+            }
+            // Engine gone or out of time: nothing more will arrive.
+            Ok(None) | Err(_) => break,
+        }
+    }
     Ok(())
 }
 

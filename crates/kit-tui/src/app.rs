@@ -385,6 +385,8 @@ pub struct App {
     /// Where receipts live. A run's diff is read from `<id>/diff.patch` here
     /// once its terminal state is out: the engine writes the receipt first.
     pub runs_dir: Option<PathBuf>,
+    /// `q` was pressed once with runs in flight; a second `q` stops them.
+    quit_armed: bool,
 }
 
 /// Shown when `k` / `r` land on a `--demo` fixture row.
@@ -598,6 +600,7 @@ impl App {
             agents_probe: Vec::new(),
             run_filter: RunFilter::All,
             runs_dir: None,
+            quit_armed: false,
         }
     }
 
@@ -808,9 +811,39 @@ impl App {
         }
     }
 
+    /// Real runs not yet ended. Quitting stops these, so it asks first.
+    pub fn active_run_ids(&self) -> Vec<RunId> {
+        self.runs
+            .iter()
+            .filter(|r| {
+                !r.demo
+                    && matches!(
+                        r.state,
+                        RunState::Queued | RunState::Running | RunState::Gating
+                    )
+            })
+            .map(|r| r.id.clone())
+            .collect()
+    }
+
     fn on_control_room_key(&mut self, key: KeyEvent) -> Action {
+        // The second `q` counts only while its warning is still showing.
+        let armed = std::mem::take(&mut self.quit_armed) && self.flash_message().is_some();
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') => {
+                let n = self.active_run_ids().len();
+                if n > 0 && !armed {
+                    self.quit_armed = true;
+                    let (runs, them) = if n == 1 {
+                        ("run", "it")
+                    } else {
+                        ("runs", "them")
+                    };
+                    self.set_flash(format!(
+                        "{n} {runs} still running · q again to stop {them} and quit"
+                    ));
+                    return Action::None;
+                }
                 self.should_quit = true;
                 Action::Quit
             }
@@ -2027,8 +2060,40 @@ mod tests {
         let id = RunId("01TESTRUN00000000000000000".into());
         app.update(AppEvent::RunUpdate(id, RunDelta::State(RunState::Running)));
         assert_eq!(app.running_count(), 1);
+        // A run is live: the first `q` asks, the second quits.
+        assert_eq!(app.update(key('q')), Action::None);
         assert_eq!(app.update(key('q')), Action::Quit);
         assert!(app.should_quit);
+    }
+
+    /// With runs in flight, the first `q` warns; only a second `q` quits.
+    /// Any other key in between disarms it.
+    #[test]
+    fn quit_with_runs_in_flight_asks_first() {
+        let mut app = App::with_motion(false);
+        let id = RunId("01LIVE00000000000000000000".into());
+        app.upsert_run(RunRow::new(id.clone(), "shop", "claude", "edit"));
+        app.update(AppEvent::RunUpdate(
+            id.clone(),
+            RunDelta::State(RunState::Running),
+        ));
+
+        assert_eq!(app.update(key('q')), Action::None);
+        assert!(!app.should_quit);
+        assert_eq!(
+            app.flash_message(),
+            Some("1 run still running · q again to stop it and quit")
+        );
+        app.update(code(KeyCode::Down));
+        assert_eq!(app.update(key('q')), Action::None, "Down disarmed it");
+        assert_eq!(app.update(key('q')), Action::Quit);
+        assert_eq!(app.active_run_ids(), vec![id.clone()]);
+
+        // Nothing in flight: one `q` quits.
+        let mut app = App::with_motion(false);
+        app.upsert_run(RunRow::new(id.clone(), "shop", "claude", "edit"));
+        app.update(AppEvent::RunUpdate(id, RunDelta::State(RunState::Pass)));
+        assert_eq!(app.update(key('q')), Action::Quit);
     }
 
     #[test]
