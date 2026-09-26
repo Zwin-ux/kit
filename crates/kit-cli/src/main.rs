@@ -85,8 +85,8 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Some(Command::Run(args)) => cmd_run(args, json).await,
         Some(Command::Init(args)) => init::cmd_init(args, json).await,
         Some(Command::Land(args)) => land::cmd_land(args, json),
-        Some(Command::Doctor) => {
-            print_doctor(env!("CARGO_PKG_VERSION"), json);
+        Some(Command::Doctor(args)) => {
+            print_doctor(env!("CARGO_PKG_VERSION"), args.start_mcp, json);
             Ok(())
         }
         Some(Command::Receipt(args)) => match args.action {
@@ -301,9 +301,7 @@ fn delta_line(delta: &RunDelta) -> Option<String> {
         RunDelta::Output(chunk) if chunk.ends_with('\n') => Some(chunk.clone()),
         RunDelta::Output(chunk) => Some(format!("{chunk}\n")),
         RunDelta::State(RunState::Running) => Some("kit: agent running in its worktree\n".into()),
-        RunDelta::State(RunState::Gating) => {
-            Some("kit: agent done. Running the checks in kit.toml\n".into())
-        }
+        RunDelta::State(RunState::Gating) => Some("kit: agent done. Running the gate\n".into()),
         // Queued is instant; the end state is the verdict line on stdout.
         RunDelta::State(_) => None,
         RunDelta::Worktree(_) | RunDelta::Gate(_) => None,
@@ -413,10 +411,18 @@ fn land_hint(state: RunState, vacuous: bool, receipt_dir: &Path, id: &str) -> Op
         .then(|| format!("next      kit land {}", short_id(id)))
 }
 
-/// One line that points to `kit init` when `repo` is a folder with no kit.toml.
+/// One line for a folder with no kit.toml: `kit init` when it finds a
+/// project there, else a kit.toml to write by hand.
 fn init_hint(repo: &Path) -> Option<String> {
-    (repo.is_dir() && !repo.join("kit.toml").exists())
-        .then(|| "no kit.toml in this repo. Run `kit init` to write a gate.".to_string())
+    if !repo.is_dir() || repo.join("kit.toml").exists() {
+        return None;
+    }
+    Some(if engine::infer::detect(repo).gate.is_empty() {
+        "no kit.toml in this repo, and no project Kit can infer checks for. Write kit.toml by hand, for example: [gate] test = \"make test\"".to_string()
+    } else {
+        "no kit.toml in this repo, so Kit infers the checks. Run `kit init` to write them down."
+            .to_string()
+    })
 }
 
 fn state_label(state: RunState) -> String {
@@ -744,7 +750,7 @@ fn classify_shim_text(text: &str) -> PathKit {
     }
 }
 
-fn print_doctor(version: &str, json: bool) {
+fn print_doctor(version: &str, start_mcp: bool, json: bool) {
     let kit_home = engine::paths::kit_home();
     let skills = kit_agents::skills::resolve_skills_dir(std::path::Path::new("."));
     let statuses = tokio::task::block_in_place(|| {
@@ -780,7 +786,7 @@ fn print_doctor(version: &str, json: bool) {
         .iter()
         .map(|(p, _)| p.display().to_string())
         .collect();
-    let kits = kits::doctor::check_installed().unwrap_or_else(|e| {
+    let kits = kits::doctor::check_installed(start_mcp).unwrap_or_else(|e| {
         eprintln!("kit: cannot check installed kits: {e:#}");
         Vec::new()
     });
@@ -1110,7 +1116,7 @@ mod tests {
         );
         assert_eq!(
             delta_line(&RunDelta::State(RunState::Gating)).as_deref(),
-            Some("kit: agent done. Running the checks in kit.toml\n")
+            Some("kit: agent done. Running the gate\n")
         );
         assert_eq!(delta_line(&RunDelta::State(RunState::Pass)), None);
         assert_eq!(delta_line(&RunDelta::Worktree(PathBuf::from("wt"))), None);

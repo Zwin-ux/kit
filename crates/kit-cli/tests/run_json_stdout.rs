@@ -78,8 +78,9 @@ fn run_json_stdout_is_exactly_one_json_value() {
     let receipt_dir = envelope["data"]["receiptDir"].as_str().expect("receiptDir");
     assert!(Path::new(receipt_dir).starts_with(&home), "{receipt_dir}");
     assert!(Path::new(receipt_dir).join("receipt.json").is_file());
-    // No kit.toml: one stderr line points to `kit init`; stdout stays one value.
-    assert!(stderr.contains("Run `kit init`"), "{stderr}");
+    // No kit.toml and no project: one stderr line says how to write one;
+    // stdout stays one value.
+    assert!(stderr.contains("Write kit.toml by hand"), "{stderr}");
     assert!(
         out.status.success(),
         "{:?}\n--- stderr:\n{stderr}",
