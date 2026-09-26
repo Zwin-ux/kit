@@ -1017,11 +1017,13 @@ fn summarize_failure(command: &str, output: &str) -> String {
     // The first line that reads as the failure, else the first line at all.
     // Build tools print progress first ("Checking x v0.1.0"), and that line
     // is what the Control Room would show as the reason.
+    // npm, pnpm and yarn echo the script first (`> app@1.0.0 test`); that
+    // banner is never the reason.
     let lines = || {
         output
             .lines()
             .map(str::trim)
-            .filter(|line| !line.is_empty())
+            .filter(|line| !line.is_empty() && !line.starts_with("> ") && !is_npm_notice(line))
     };
     let first = lines()
         .find(|line| looks_like_failure(line))
@@ -1035,15 +1037,42 @@ fn summarize_failure(command: &str, output: &str) -> String {
 }
 
 /// `error: …`, `error[E0425]: …`, `FAILED …`, `thread '…' panicked …`,
-/// `Diff in …` (rustfmt), `npm ERR! …`, `E   AssertionError` (pytest).
+/// `Diff in …` (rustfmt), `npm ERR! …` / `npm error …` (npm 10),
+/// `E   AssertionError` (pytest), `AssertionError [ERR_ASSERTION]: …` and
+/// `ReferenceError: …` (Node), `✕`/`✖`/`●` (Jest, node --test), `not ok` (TAP).
 fn looks_like_failure(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     lower.starts_with("error")
         || lower.starts_with("fail")
         || lower.starts_with("diff in ")
         || lower.starts_with("npm err!")
+        || lower.starts_with("npm error")
         || lower.starts_with("e   ")
+        || lower.starts_with("not ok ")
+        || ["✕", "✖", "✗", "●"]
+            .iter()
+            .any(|mark| line.starts_with(mark))
         || lower.contains(" panicked at ")
+        || is_error_class_line(line)
+}
+
+/// `TypeError: …`, `AssertionError [ERR_ASSERTION]: …`,
+/// `java.lang.IllegalStateException: …`: an error type's name, then `:`.
+fn is_error_class_line(line: &str) -> bool {
+    let Some((head, _)) = line.split_once(':') else {
+        return false;
+    };
+    // Node puts the error code in brackets: `AssertionError [ERR_ASSERTION]`.
+    let name = head.split(" [").next().unwrap_or(head);
+    (name.ends_with("Error") || name.ends_with("Exception"))
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '$')
+}
+
+/// npm's update nag and warnings, printed after the real failure.
+fn is_npm_notice(line: &str) -> bool {
+    line.starts_with("npm notice") || line.starts_with("npm warn")
 }
 
 fn scope_violations(worktree: &Path, allow: &[String], deny: &[String]) -> Result<Vec<String>, ()> {
@@ -1236,6 +1265,48 @@ mod tests {
             summarize_failure("make check", plain),
             "make: something odd"
         );
+    }
+
+    /// Real npm 10.9 / Node 22 output (stdout, then stderr, as the gate joins them).
+    #[test]
+    fn npm_summary_is_the_error_not_the_script_banner() {
+        let cases = [
+            (
+                include_str!("fixtures/npm10-node-assert.txt"),
+                "npm: AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:",
+            ),
+            (
+                include_str!("fixtures/npm10-node-reference-error.txt"),
+                "npm: ReferenceError: foo is not defined",
+            ),
+            (
+                include_str!("fixtures/npm10-missing-script.txt"),
+                "npm: npm error Missing script: \"nope\"",
+            ),
+            (
+                include_str!("fixtures/npm10-silent-exit.txt"),
+                "npm: (no output)",
+            ),
+        ];
+        for (output, want) in cases {
+            assert_eq!(summarize_failure("npm run test", output), want);
+        }
+    }
+
+    #[test]
+    fn test_runner_failure_marks_count_as_failures() {
+        for (line, failure) in [
+            ("✕ adds numbers (3 ms)", true),
+            ("● sum › adds numbers", true),
+            ("not ok 1 - adds numbers", true),
+            ("TypeError: x is not a function", true),
+            ("java.lang.IllegalStateException: boom", true),
+            ("throw new AssertionError(obj);", false),
+            ("Tests: 1 passed, 1 total", false),
+            ("ok 1 - adds numbers", false),
+        ] {
+            assert_eq!(looks_like_failure(line), failure, "{line}");
+        }
     }
 
     #[test]
