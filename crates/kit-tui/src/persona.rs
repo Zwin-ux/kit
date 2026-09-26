@@ -36,40 +36,40 @@ impl Persona {
         }
     }
 
-    /// Short brief prepended to the engine task. Not shown in the table.
+    /// The role in a few lines, added after the user's task. It speaks about
+    /// the user's project only: nothing in it may be about Kit's own code.
     pub fn brief(self) -> &'static str {
         match self {
             Self::Product => {
-                "You are Product for this Kit run. Decide what should exist and why. \
-                 Kill scope. Write acceptance in user terms. Do not implement unless \
-                 the task says so. Skills: spec-driven-development, planning-and-task-breakdown. \
-                 Voice: direct, no SaaS filler."
+                "Act as the product owner. Decide what should exist and why, keep the \
+                 scope small, and write acceptance criteria in the user's terms. Do not \
+                 implement anything unless the task asks for it."
             }
             Self::Design => {
-                "You are Design for this Kit run. Judge hierarchy, density, interaction \
-                 language, empty states, and footer grammar. Do not invent product scope. \
-                 Skills: frontend-ui-engineering. Kit keys: arrows move, k kills — never j/k nav."
+                "Act as the designer. Judge hierarchy, density, interaction and empty \
+                 states against the conventions this project already uses. Do not add \
+                 product scope."
             }
             Self::Eng => {
-                "You are ENG for this Kit run. Smallest correct change. Test after each slice. \
-                 Do not edit frozen contracts (kit-core run/config/gate, kit-agents trait, \
-                 kit-tui event.rs). Skills: incremental-implementation, test-driven-development."
+                "Act as the engineer. Make the smallest correct change, follow this \
+                 project's conventions, and run its tests after each step."
             }
             Self::Qa => {
-                "You are QA for this Kit run. Prove claims with commands and receipts. \
-                 Repro, then evidence. \"Looks right\" is not done. Skills: \
-                 debugging-and-error-recovery, test-driven-development."
+                "Act as QA. Prove each claim with a command and its output: reproduce \
+                 first, then show the evidence. \"Looks right\" is not done."
             }
         }
     }
 
-    /// Engine-facing prompt: persona brief + the human task.
+    /// Engine-facing prompt: the user's task first, then the role. The task
+    /// leads because its first line titles the receipt and the `kit land`
+    /// commit.
     pub fn wrap_task(self, user_task: &str) -> String {
         format!(
-            "# Kit persona: {}\n\n{}\n\n## Task\n{}",
+            "{}\n\n---\nRole ({}): {}",
+            user_task.trim(),
             self.label(),
-            self.brief(),
-            user_task.trim()
+            self.brief()
         )
     }
 }
@@ -87,12 +87,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wrap_keeps_user_task_and_names_role() {
-        let wrapped = Persona::Design.wrap_task("fix the empty room");
-        assert!(wrapped.contains("# Kit persona: design"));
-        assert!(wrapped.contains("## Task\nfix the empty room"));
-        assert!(wrapped.contains("frontend-ui-engineering"));
-        assert!(!wrapped.contains("j/k nav") || wrapped.contains("never j/k"));
+    fn wrap_keeps_user_task_first_and_names_role() {
+        let wrapped = Persona::Design.wrap_task("  fix the empty room\n");
+        assert_eq!(wrapped.lines().next(), Some("fix the empty room"));
+        assert!(wrapped.contains("Role (design): Act as the designer."));
+    }
+
+    /// Briefs go into every user's prompt: none may carry Kit's own dev notes.
+    #[test]
+    fn briefs_say_nothing_about_kit_itself() {
+        for p in Persona::ALL {
+            let b = p.brief().to_ascii_lowercase();
+            for word in ["kit", "contract", "j/k", "skills:"] {
+                assert!(!b.contains(word), "{}: {word}", p.label());
+            }
+        }
     }
 
     #[test]

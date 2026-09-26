@@ -21,24 +21,27 @@ pub fn create_worktree(repo: &Path, dest: &Path, branch: &str) -> Result<String>
     // Pin the sha first: HEAD can move while the worktree is being added.
     let base = head_commit(repo)?;
 
-    // git narrates on stdout ("HEAD is now at …") and kit's stdout carries
-    // `--json`, so git's stdout goes to our stderr, where people still see it.
+    // Nothing from git reaches kit's stdout (it carries `--json`) or the
+    // terminal (the TUI owns it; a post-checkout hook would paint over it).
+    // git's own words come back in the error when the add fails.
     let dest_str = dest.to_str().context("worktree path utf-8")?;
-    let status = git(repo)
+    let out = git(repo)
         .args(["worktree", "add", "--quiet", "--detach", dest_str, &base])
-        .stdout(std::io::stderr())
-        .status()
+        .output()
         .with_context(|| format!("cannot run git worktree add {dest_str}"))?;
 
-    if !status.success() {
+    if !out.status.success() {
         // Fallback: branch-based add when detach is rejected (older git).
-        let status = git(repo)
+        let out = git(repo)
             .args(["worktree", "add", "--quiet", "-B", branch, dest_str, &base])
-            .stdout(std::io::stderr())
-            .status()
+            .output()
             .context("git worktree add -B")?;
-        if !status.success() {
-            bail!("git worktree add failed for {}", dest.display());
+        if !out.status.success() {
+            bail!(
+                "git worktree add failed for {}: {}",
+                dest.display(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
         }
     }
 
@@ -128,12 +131,11 @@ pub fn remove_if_clean(repo: &Path, worktree: &Path, base: &str) -> Result<bool>
 
 /// Remove a run worktree: its registration and its directory. Best effort.
 pub fn remove_worktree(repo: &Path, worktree: &Path) {
-    // Same rule as create_worktree: nothing from git on kit's stdout.
+    // Same rule as create_worktree: nothing from git on the terminal.
     if let Some(path) = worktree.to_str() {
         let _ = git(repo)
             .args(["worktree", "remove", "--force", path])
-            .stdout(std::io::stderr())
-            .status();
+            .output();
     }
     if worktree.exists() {
         let _ = std::fs::remove_dir_all(worktree);

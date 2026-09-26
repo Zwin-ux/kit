@@ -27,7 +27,7 @@ sha2 = "0.10"
 serde.workspace = true
 # Keys stay in the order the user wrote them when Kit edits their JSON.
 serde_json = { workspace = true, features = ["preserve_order"] }
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }
 toml.workspace = true
 toml_edit.workspace = true
 inquire.workspace = true
