@@ -87,6 +87,7 @@ kit add backend-engineer --print      # the plan, nothing written
 kit list                              # what is installed, and anything changed by hand
 kit remove frontend-design --global   # exactly what was added, nothing else
 kit doctor                            # agents found, and each kit's checks
+kit doctor --start-mcp                # also start each kit's MCP servers once
 ```
 
 Kits stack. Frontend Design and LLM Engineer can both be installed, and
@@ -163,7 +164,7 @@ path = "skills/house-style"
 
 [mcp.chrome-devtools]
 command = "npx"
-args    = ["-y", "chrome-devtools-mcp@1.10.1"]
+args    = ["-y", "chrome-devtools-mcp@1.10.1", "--no-usage-statistics"]
 
 [[hook]]
 on   = "after_edit"
@@ -171,7 +172,7 @@ glob = "*.{ts,tsx,css}"
 run  = "npx --no-install prettier --write \"$FILE\""
 
 [check]                                 # what kit doctor proves
-mcp_starts = ["chrome-devtools"]
+mcp_starts = ["chrome-devtools"]        # with --start-mcp only
 ```
 
 ```bash

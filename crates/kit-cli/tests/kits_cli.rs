@@ -786,6 +786,62 @@ fn doctor_fails_when_a_check_fails_or_config_is_gone() {
     assert!(checks.contains("`test -f ok.txt` runs"), "{checks}");
 }
 
+/// By default doctor reads the agents' config files and starts no MCP
+/// server; `--start-mcp` starts each one once, for however many agents.
+#[cfg(unix)]
+#[test]
+fn doctor_starts_mcp_servers_only_when_asked() {
+    let root = scratch("doctor-no-start");
+    let env = Env::new(&root);
+    let started = root.join("started");
+    write(
+        &env.bin.join("mcp-fake"),
+        &format!(
+            "#!/bin/sh\necho x >> {}\nread line\necho '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{}}}}'\nsleep 30\n",
+            started.display()
+        ),
+    );
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let exe = env.bin.join("mcp-fake");
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let kit = root.join("srv-kit");
+    write(
+        &kit.join("KIT.toml"),
+        "schema = 1\n[kit]\nname = \"srv\"\ntitle = \"Srv\"\nversion = \"0.1.0\"\ndescription = \"d\"\n[mcp.srv]\ncommand = \"mcp-fake\"\n[check]\nmcp_starts = [\"srv\"]\n",
+    );
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let out = env.kit(
+        &repo,
+        &[
+            "add",
+            kit.to_str().unwrap(),
+            "-a",
+            "claude",
+            "-a",
+            "codex",
+            "--yes",
+        ],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+
+    let out = env.kit(&repo, &["doctor"]);
+    let stdout = text(&out.stdout);
+    assert!(out.status.success(), "{stdout}");
+    assert!(!started.exists(), "doctor started the server");
+    assert!(stdout.contains("srv MCP configured"), "{stdout}");
+    assert!(stdout.contains("kit doctor --start-mcp"), "{stdout}");
+    assert!(!stdout.contains("MCP starts"), "{stdout}");
+
+    let out = env.kit(&repo, &["doctor", "--start-mcp"]);
+    let stdout = text(&out.stdout);
+    assert!(out.status.success(), "{stdout}");
+    assert_eq!(read(&started), "x\n", "started once for two agents");
+    assert_eq!(stdout.matches("srv MCP starts").count(), 1, "{stdout}");
+}
+
 /// A kit that extends `demo`, from a folder next to it.
 fn top_kit(root: &Path, base: &Path) -> PathBuf {
     let kit = root.join("top-kit");

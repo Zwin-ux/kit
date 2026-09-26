@@ -197,7 +197,7 @@ format = "npx prettier --check ."
 
 # Smoke check: how kit doctor proves the kit is live.
 [check]
-mcp_starts = ["playwright"]          # start it, list tools, stop it
+mcp_starts = ["playwright"]          # kit doctor --start-mcp: start it, stop it
 commands   = ["npx prettier --version"]
 ```
 

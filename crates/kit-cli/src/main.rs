@@ -85,8 +85,8 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Some(Command::Run(args)) => cmd_run(args, json).await,
         Some(Command::Init(args)) => init::cmd_init(args, json).await,
         Some(Command::Land(args)) => land::cmd_land(args, json),
-        Some(Command::Doctor) => {
-            print_doctor(env!("CARGO_PKG_VERSION"), json);
+        Some(Command::Doctor(args)) => {
+            print_doctor(env!("CARGO_PKG_VERSION"), args.start_mcp, json);
             Ok(())
         }
         Some(Command::Receipt(args)) => match args.action {
@@ -744,7 +744,7 @@ fn classify_shim_text(text: &str) -> PathKit {
     }
 }
 
-fn print_doctor(version: &str, json: bool) {
+fn print_doctor(version: &str, start_mcp: bool, json: bool) {
     let kit_home = engine::paths::kit_home();
     let skills = kit_agents::skills::resolve_skills_dir(std::path::Path::new("."));
     let statuses = tokio::task::block_in_place(|| {
@@ -780,7 +780,7 @@ fn print_doctor(version: &str, json: bool) {
         .iter()
         .map(|(p, _)| p.display().to_string())
         .collect();
-    let kits = kits::doctor::check_installed().unwrap_or_else(|e| {
+    let kits = kits::doctor::check_installed(start_mcp).unwrap_or_else(|e| {
         eprintln!("kit: cannot check installed kits: {e:#}");
         Vec::new()
     });

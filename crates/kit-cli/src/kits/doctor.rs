@@ -1,6 +1,9 @@
 //! The kits part of `kit doctor`: is each installed kit still live? Skills
-//! as installed, rules blocks present, and the `[check]` approved at
-//! `kit add`: MCP servers answer an MCP `initialize`, commands exit 0.
+//! as installed, rules blocks present, MCP servers still in the agents'
+//! config files, and the `[check]` commands approved at `kit add` exit 0.
+//! MCP servers are started (to answer an MCP `initialize`) only with
+//! `--start-mcp`: starting one can leave helpers running and send the
+//! server's own usage data.
 
 use super::install::{home_dir, repo_root};
 use super::lock::{Entry, Lock};
@@ -32,7 +35,7 @@ impl KitReport {
 }
 
 /// Every kit installed globally and in the current repo, checked.
-pub fn check_installed() -> Result<Vec<KitReport>> {
+pub fn check_installed(start_mcp: bool) -> Result<Vec<KitReport>> {
     let mut scopes = vec![Scope::Global { home: home_dir()? }];
     if let Some(root) = repo_root(Path::new(".")) {
         scopes.push(Scope::Repo(root));
@@ -40,13 +43,13 @@ pub fn check_installed() -> Result<Vec<KitReport>> {
     let mut out = Vec::new();
     for scope in scopes {
         for e in Lock::load(&scope)?.kits {
-            out.push(check(&scope, &e));
+            out.push(check(&scope, &e, start_mcp));
         }
     }
     Ok(out)
 }
 
-fn check(scope: &Scope, e: &Entry) -> KitReport {
+fn check(scope: &Scope, e: &Entry, start_mcp: bool) -> KitReport {
     let mut checks = Vec::new();
     let skills: Vec<&Applied> = e
         .applied
@@ -89,21 +92,39 @@ fn check(scope: &Scope, e: &Entry) -> KitReport {
 
     // The kit's [check], as approved at `kit add` and kept in Kit's own
     // record. Never re-read from a KIT.toml or a repo's kit.lock.
+    let mut started: Vec<&str> = Vec::new();
     for a in &e.applied {
-        let (name, present) = match a {
-            Applied::McpJson { file, name, .. } => (name, mcp_in_json(file, name)),
-            Applied::McpToml { file, name, .. } => (name, mcp_in_toml(file, name)),
-            Applied::ClaudeMcp { name, .. } => (name, claude_has_mcp(name)),
+        let (name, present, place) = match a {
+            Applied::McpJson { file, name, .. } => (name, mcp_in_json(file, name), tilde(file)),
+            Applied::McpToml { file, name, .. } => (name, mcp_in_toml(file, name), tilde(file)),
+            Applied::ClaudeMcp { name, .. } => {
+                (name, claude_has_mcp(name), "Claude Code (user)".to_string())
+            }
             _ => continue,
         };
         if let Err(why) = present {
             checks.push((format!("{name} MCP configured"), false, why));
             continue;
         }
-        let Some(server) = e.checks.mcp.get(name) else {
-            checks.push((format!("{name} MCP configured"), true, String::new()));
+        let server = e.checks.mcp.get(name);
+        let hint = if server.is_some() && !start_mcp {
+            "; `kit doctor --start-mcp` starts it"
+        } else {
+            ""
+        };
+        checks.push((
+            format!("{name} MCP configured"),
+            true,
+            format!("in {place}{hint}"),
+        ));
+        // One start per server, whichever agents it was added for.
+        let Some(server) = server else {
             continue;
         };
+        if !start_mcp || started.contains(&name.as_str()) {
+            continue;
+        }
+        started.push(name);
         let what = format!("{name} MCP starts");
         checks.push(match mcp_starts(server) {
             Ok(took) => (what, true, format!("{:.1}s", took.as_secs_f64())),
@@ -147,24 +168,15 @@ fn mcp_in_toml(file: &Path, name: &str) -> std::result::Result<(), String> {
         .ok_or_else(|| format!("gone from {}. Run kit add again", tilde(file)))
 }
 
-/// `claude mcp get <name>`: Claude Code owns its user config.
+/// A server `claude mcp add-json --scope user` added, read from Claude
+/// Code's own config file. Never `claude mcp get` or `list`: those start
+/// the server to see that it connects.
 fn claude_has_mcp(name: &str) -> std::result::Result<(), String> {
-    if !super::manifest::is_slug(name) {
-        return Err("not a valid server name".into());
-    }
-    let exe = plan::find_program("claude").ok_or("Claude Code is not on PATH")?;
-    let ok = Command::new(exe)
-        .args(["mcp", "get", name])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success());
-    if ok {
-        Ok(())
-    } else {
-        Err("Claude Code no longer lists it. Run kit add again".into())
-    }
+    let file = match std::env::var_os("CLAUDE_CONFIG_DIR") {
+        Some(dir) => Path::new(&dir).join(".claude.json"),
+        None => home_dir().map_err(|e| e.to_string())?.join(".claude.json"),
+    };
+    mcp_in_json(&file, name).map_err(|_| "Claude Code no longer lists it. Run kit add again".into())
 }
 
 /// Start a local MCP server and wait for its answer to `initialize`.
@@ -226,39 +238,101 @@ pub fn mcp_starts(server: &McpServer) -> std::result::Result<Duration, String> {
     }
 }
 
-/// Stop a server and everything it started.
+/// Stop a process and everything it started: every descendant still
+/// linked to it (so one that left the process group goes too), then its
+/// process group. On Windows `taskkill /T` walks the same tree.
 fn stop_tree(child: &mut std::process::Child) {
-    let pid = child.id().to_string();
+    let pid = child.id();
     let quiet = |c: &mut Command| {
         let _ = c.stdout(Stdio::null()).stderr(Stdio::null()).status();
     };
     if cfg!(unix) {
-        quiet(Command::new("kill").args(["-TERM", &format!("-{pid}")]));
+        let mut targets: Vec<String> = descendants(pid).iter().map(u32::to_string).collect();
+        targets.push(format!("-{pid}"));
+        quiet(Command::new("kill").arg("-KILL").arg("--").args(&targets));
     } else {
-        quiet(Command::new("taskkill").args(["/T", "/F", "/PID", &pid]));
+        quiet(Command::new("taskkill").args(["/T", "/F", "/PID", &pid.to_string()]));
     }
     let _ = child.kill();
     let _ = child.wait();
 }
 
+/// Every process below `root`, from one `ps` listing.
+fn descendants(root: u32) -> Vec<u32> {
+    let Ok(out) = Command::new("ps")
+        .args(["-A", "-o", "pid=", "-o", "ppid="])
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return Vec::new();
+    };
+    let pairs: Vec<(u32, u32)> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace().map(str::parse::<u32>);
+            Some((it.next()?.ok()?, it.next()?.ok()?))
+        })
+        .collect();
+    let mut found = vec![root];
+    let mut i = 0;
+    while i < found.len() {
+        let parent = found[i];
+        for (pid, ppid) in &pairs {
+            if *ppid == parent && !found.contains(pid) {
+                found.push(*pid);
+            }
+        }
+        i += 1;
+    }
+    found.remove(0);
+    found
+}
+
+/// Longest an approved `[check]` command may take.
+const CHECK_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Run an approved `[check]` command in its own process group; whatever it
+/// leaves running is stopped when it is done.
 fn run_check(command: &str) -> std::result::Result<(), String> {
     let shell = if cfg!(windows) { "bash" } else { "sh" };
     let sh = plan::find_program(shell).ok_or_else(|| format!("{shell} is not on PATH"))?;
-    let out = Command::new(sh)
-        .arg("-c")
+    let mut cmd = Command::new(sh);
+    cmd.arg("-c")
         .arg(command)
         .stdin(Stdio::null())
-        .output()
-        .map_err(|e| e.to_string())?;
-    if out.status.success() {
-        return Ok(());
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    let stderr = child.stderr.take().expect("piped");
+    let (tx, rx) = std::sync::mpsc::channel();
+    // The first line that says anything; the reader ends when the pipe
+    // closes, which a helper left running can delay until it is stopped.
+    std::thread::spawn(move || {
+        let first = BufReader::new(stderr)
+            .lines()
+            .map_while(std::result::Result::ok)
+            .find(|l| !l.trim().is_empty());
+        let _ = tx.send(first);
+    });
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) if start.elapsed() < CHECK_TIMEOUT => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            _ => break None,
+        }
+    };
+    stop_tree(&mut child);
+    let first = rx.recv_timeout(Duration::from_secs(1)).ok().flatten();
+    match status {
+        Some(s) if s.success() => Ok(()),
+        Some(_) => Err(first.unwrap_or_else(|| "failed".into())),
+        None => Err(format!("still running after {}s", CHECK_TIMEOUT.as_secs())),
     }
-    let err = String::from_utf8_lossy(&out.stderr);
-    Err(err
-        .lines()
-        .find(|l| !l.trim().is_empty())
-        .unwrap_or("failed")
-        .to_string())
 }
 
 /// The `kits:` section of `kit doctor`.
@@ -320,6 +394,59 @@ mod tests {
     fn a_server_that_answers_initialize_passes() {
         let s = server(r#"read line; echo '{"jsonrpc":"2.0","id":1,"result":{}}'; sleep 5"#);
         assert!(mcp_starts(&s).is_ok());
+    }
+
+    /// A pid that is still running (a zombie waiting for its parent to
+    /// reap it is not).
+    fn alive(pid: &str) -> bool {
+        let out = Command::new("ps")
+            .args(["-o", "stat=", "-p", pid])
+            .output()
+            .unwrap();
+        let stat = String::from_utf8_lossy(&out.stdout);
+        !stat.trim().is_empty() && !stat.trim().starts_with('Z')
+    }
+
+    fn scratch_file(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("kit-doctor-{tag}-{}", std::process::id()))
+    }
+
+    fn read_pids(file: &Path) -> Vec<String> {
+        std::fs::read_to_string(file)
+            .unwrap()
+            .split_whitespace()
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn nothing_a_started_server_leaves_behind_survives() {
+        let pids = scratch_file("mcp-pids");
+        let _ = std::fs::remove_file(&pids);
+        // One helper in the group, one in a new session (as a detached
+        // watchdog would be) when `setsid` exists.
+        let s = server(&format!(
+            r#"sleep 300 & echo $! >> {p}; if command -v setsid >/dev/null; then setsid sleep 300 & echo $! >> {p}; fi; read line; echo '{{"jsonrpc":"2.0","id":1,"result":{{}}}}'; sleep 300"#,
+            p = pids.display()
+        ));
+        assert!(mcp_starts(&s).is_ok());
+        std::thread::sleep(Duration::from_millis(200));
+        for pid in read_pids(&pids) {
+            assert!(!alive(&pid), "{pid} survived");
+        }
+    }
+
+    #[test]
+    fn a_check_command_leaves_nothing_running() {
+        let pids = scratch_file("check-pids");
+        let _ = std::fs::remove_file(&pids);
+        let cmd = format!("sleep 300 & echo $! > {}", pids.display());
+        assert_eq!(run_check(&cmd), Ok(()));
+        std::thread::sleep(Duration::from_millis(200));
+        for pid in read_pids(&pids) {
+            assert!(!alive(&pid), "{pid} survived");
+        }
+        assert_eq!(run_check("echo nope >&2; exit 3"), Err("nope".to_string()));
     }
 
     #[test]

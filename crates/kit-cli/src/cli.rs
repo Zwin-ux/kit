@@ -112,7 +112,7 @@ pub enum Command {
     Receipt(ReceiptArgs),
 
     /// Check which agents are ready and whether this repo has a gate
-    Doctor,
+    Doctor(DoctorArgs),
 
     /// Print a shell completion script
     #[command(after_help = "Example:\n  kit completions zsh > ~/.zfunc/_kit")]
@@ -460,6 +460,14 @@ pub struct RemoveArgs {
     /// Also remove skill folders that were edited by hand
     #[arg(long)]
     pub force: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+    /// Also start each kit's local MCP servers once to see they answer.
+    /// Without it, doctor only reads the agents' config files
+    #[arg(long)]
+    pub start_mcp: bool,
 }
 
 #[derive(Debug, Args)]
