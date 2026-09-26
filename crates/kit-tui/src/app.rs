@@ -467,21 +467,20 @@ impl RunRow {
         repo_basename(&self.repo)
     }
 
-    /// Why a FAIL or ERROR row failed, for its `^ …` line. ERROR runs have no
-    /// gate; their reason is the engine's `kit: …` line in the stream.
+    /// Why a FAIL or ERROR row failed, for its `^ …` line. An ERROR run's
+    /// reason is the engine's last `kit: …` line (`codex exited with code 1`),
+    /// even when a gate ran after the agent failed; the gate comes second.
     pub fn failure_summary(&self) -> Option<String> {
-        if let Some(summary) = self.gate_summary() {
-            return Some(summary);
+        if self.state == RunState::Error
+            && let Some(line) = self
+                .output
+                .lines()
+                .rev()
+                .find_map(|l| l.strip_prefix("kit: "))
+        {
+            return Some(line.strip_prefix("run failed: ").unwrap_or(line).to_owned());
         }
-        if self.state != RunState::Error {
-            return None;
-        }
-        let line = self
-            .output
-            .lines()
-            .rev()
-            .find_map(|l| l.strip_prefix("kit: "))?;
-        Some(line.strip_prefix("run failed: ").unwrap_or(line).to_owned())
+        self.gate_summary()
     }
 
     /// First failure summary for the Control Room annotation line (`^ tsc: …`).

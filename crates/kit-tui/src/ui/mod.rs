@@ -451,6 +451,24 @@ mod tests {
         assert!(frame.contains("^ codex is not installed"), "{frame}");
     }
 
+    /// An agent that exits non-zero ends ERROR with a gate outcome; the row
+    /// still says why the agent failed, not what the gate found.
+    #[test]
+    fn error_row_with_a_gate_shows_the_agent_failure() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        let idx = app
+            .runs
+            .iter()
+            .position(|r| r.gate.as_ref().is_some_and(|g| !g.passed))
+            .expect("fixture has a gated FAIL run");
+        let row = &mut app.runs[idx];
+        row.state = kit_core::RunState::Error;
+        row.output = "kit: codex exited with code 1\ngate: running\n".into();
+        let frame = render_to_string(&app, 80, 14);
+        assert!(frame.contains("^ codex exited with code 1"), "{frame}");
+    }
+
     /// The selection rail on a non-FAIL row is a caret, not a reversed block.
     #[test]
     fn selection_rail_is_a_caret_off_fail_rows() {
