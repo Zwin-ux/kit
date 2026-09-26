@@ -89,23 +89,20 @@ fn check(scope: &Scope, e: &Entry) -> KitReport {
 
     // The kit's [check], as approved at `kit add` and kept in Kit's own
     // record. Never re-read from a KIT.toml or a repo's kit.lock.
-    let installed_mcp = |name: &str| {
-        e.applied.iter().any(|a| match a {
-            Applied::McpJson { name: n, .. }
-            | Applied::McpToml { name: n, .. }
-            | Applied::ClaudeMcp { name: n } => n == name,
-            _ => false,
-        })
-    };
-    for (name, server) in &e.checks.mcp {
-        if !installed_mcp(name) {
-            checks.push((
-                format!("{name} MCP not installed"),
-                true,
-                "skills and rules only".into(),
-            ));
+    for a in &e.applied {
+        let (name, present) = match a {
+            Applied::McpJson { file, name, .. } => (name, mcp_in_json(file, name)),
+            Applied::McpToml { file, name, .. } => (name, mcp_in_toml(file, name)),
+            Applied::ClaudeMcp { name, .. } => (name, claude_has_mcp(name)),
+            _ => continue,
+        };
+        if let Err(why) = present {
+            checks.push((format!("{name} MCP configured"), false, why));
             continue;
         }
+        let Some(server) = e.checks.mcp.get(name) else {
+            continue;
+        };
         let what = format!("{name} MCP starts");
         checks.push(match mcp_starts(server) {
             Ok(took) => (what, true, format!("{:.1}s", took.as_secs_f64())),
@@ -127,6 +124,48 @@ fn check(scope: &Scope, e: &Entry) -> KitReport {
     }
 }
 
+fn mcp_in_json(file: &Path, name: &str) -> std::result::Result<(), String> {
+    let doc: serde_json::Value = std::fs::read_to_string(file)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default();
+    doc["mcpServers"]
+        .get(name)
+        .map(|_| ())
+        .ok_or_else(|| format!("gone from {}. Run kit add again", tilde(file)))
+}
+
+fn mcp_in_toml(file: &Path, name: &str) -> std::result::Result<(), String> {
+    let doc: toml_edit::DocumentMut = std::fs::read_to_string(file)
+        .ok()
+        .and_then(|t| t.parse().ok())
+        .unwrap_or_default();
+    doc.get("mcp_servers")
+        .and_then(|t| t.get(name))
+        .map(|_| ())
+        .ok_or_else(|| format!("gone from {}. Run kit add again", tilde(file)))
+}
+
+/// `claude mcp get <name>`: Claude Code owns its user config.
+fn claude_has_mcp(name: &str) -> std::result::Result<(), String> {
+    if !super::manifest::is_slug(name) {
+        return Err("not a valid server name".into());
+    }
+    let exe = plan::find_program("claude").ok_or("Claude Code is not on PATH")?;
+    let ok = Command::new(exe)
+        .args(["mcp", "get", name])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    if ok {
+        Ok(())
+    } else {
+        Err("Claude Code no longer lists it. Run kit add again".into())
+    }
+}
+
 /// Start a local MCP server and wait for its answer to `initialize`.
 pub fn mcp_starts(server: &McpServer) -> std::result::Result<Duration, String> {
     let Some(command) = &server.command else {
@@ -143,6 +182,9 @@ pub fn mcp_starts(server: &McpServer) -> std::result::Result<Duration, String> {
             cmd.env(key, v);
         }
     }
+    // Its own process group, so `npx` and the server it starts stop together.
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
     let start = Instant::now();
     let mut child = cmd.spawn().map_err(|e| format!("cannot start: {e}"))?;
     let request = serde_json::json!({
@@ -171,8 +213,7 @@ pub fn mcp_starts(server: &McpServer) -> std::result::Result<Duration, String> {
     });
     let answer = rx.recv_timeout(MCP_TIMEOUT);
     drop(stdin);
-    let _ = child.kill();
-    let _ = child.wait();
+    stop_tree(&mut child);
     match answer {
         Ok(true) => Ok(start.elapsed()),
         Ok(false) => Err("answered initialize with an error".into()),
@@ -182,6 +223,21 @@ pub fn mcp_starts(server: &McpServer) -> std::result::Result<Duration, String> {
         )),
         Err(_) => Err("exited without answering initialize".into()),
     }
+}
+
+/// Stop a server and everything it started.
+fn stop_tree(child: &mut std::process::Child) {
+    let pid = child.id().to_string();
+    let quiet = |c: &mut Command| {
+        let _ = c.stdout(Stdio::null()).stderr(Stdio::null()).status();
+    };
+    if cfg!(unix) {
+        quiet(Command::new("kill").args(["-TERM", &format!("-{pid}")]));
+    } else {
+        quiet(Command::new("taskkill").args(["/T", "/F", "/PID", &pid]));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn run_check(command: &str) -> std::result::Result<(), String> {

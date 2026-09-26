@@ -49,7 +49,7 @@ fn describe(a: &Applied) -> String {
             format!("MCP server {name} in {}", tilde(file))
         }
         Applied::HookJson { file, .. } => format!("hook in {}", tilde(file)),
-        Applied::ClaudeMcp { name } => format!("Claude Code MCP server {name}"),
+        Applied::ClaudeMcp { name, .. } => format!("Claude Code MCP server {name}"),
     }
 }
 
@@ -359,6 +359,7 @@ mod tests {
             file: mcp.clone(),
             name: "docs".into(),
             created: true,
+            previous: None,
         };
         std::fs::write(&mcp, r#"{"mcpServers":{"other":{}}}"#).unwrap();
         assert!(!present(&a));
@@ -370,6 +371,7 @@ mod tests {
             file: toml.clone(),
             name: "docs".into(),
             created: true,
+            previous: None,
         };
         std::fs::write(&toml, "[mcp_servers.docs]\nurl = \"https://x\"\n").unwrap();
         assert!(present(&a));

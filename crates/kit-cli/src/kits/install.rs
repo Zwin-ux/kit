@@ -133,6 +133,9 @@ struct Prepared {
     todo: Vec<(String, Action)>,
     /// (kit, record) already installed by another kit, now shared.
     shared: Vec<(String, Applied)>,
+    /// (kit, record) an older version of the kit installed that the new
+    /// one no longer has: undone after the new version is in place.
+    stale: Vec<(String, Applied)>,
 }
 
 fn prepare(
@@ -146,31 +149,72 @@ fn prepare(
     let mut p = Prepared {
         todo: Vec::new(),
         shared: Vec::new(),
+        stale: Vec::new(),
     };
     for r in resolved {
         let name = r.kit.name().to_string();
-        for action in writers::plan(r, agents, scope, opts, &hook) {
+        let actions = writers::plan(r, agents, scope, opts, &hook);
+        for action in &actions {
             let key = action.key();
-            let existing = lock.applied().find(|a| a.key() == key);
-            match (existing, &action) {
-                (None, _) => p.todo.push((name.clone(), action)),
-                (Some(Applied::Skill { hash, dir }), Action::Skill { payload, .. })
-                    if *hash != payload.hash =>
-                {
-                    let owner = lock
-                        .kits
-                        .iter()
-                        .find(|e| e.applied.iter().any(|a| a.key() == key))
-                        .map_or("another kit", |e| e.name.as_str());
-                    if owner != name {
-                        bail!(
-                            "{} is installed by {owner} with different content than {name} wants. Remove {owner} first",
-                            tilde(dir)
-                        );
-                    }
-                    p.todo.push((name.clone(), action));
+            // Two kits in one install that want the same thing differently.
+            if let Some((other, first)) = p.todo.iter().find(|(k, a)| *k != name && a.key() == key)
+                && !plan::same_content(first, action)
+            {
+                bail!(
+                    "{other} and {name} both set {}, differently. Install one of them",
+                    action
+                        .describe()
+                        .split_whitespace()
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                );
+            }
+            let Some(done) = lock.applied().find(|a| a.key() == key) else {
+                p.todo.push((name.clone(), action.clone()));
+                continue;
+            };
+            if plan::in_place(action, done) {
+                p.shared.push((name.clone(), done.clone()));
+                continue;
+            }
+            let owners: Vec<&str> = lock
+                .kits
+                .iter()
+                .filter(|e| e.applied.iter().any(|a| a.key() == key))
+                .map(|e| e.name.as_str())
+                .collect();
+            match owners.iter().find(|o| **o != name) {
+                // Another kit put it there, with different content.
+                Some(owner) => bail!(
+                    "{} is installed by {owner} with different content than {name} wants. Remove {owner} first",
+                    action
+                        .describe()
+                        .split_whitespace()
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ),
+                // An older version of this kit: replace it.
+                None => p.todo.push((name.clone(), action.clone())),
+            }
+        }
+        // What an older version installed that this one no longer has. Only
+        // when the version changed and every agent it was installed for is
+        // in this install, so `kit add x -a codex` never drops Claude's files.
+        if let Some(e) = lock.get(&name)
+            && e.version != r.kit.manifest.kit.version
+            && e.agents.iter().all(|a| agents.iter().any(|x| x.id() == a))
+        {
+            let keys: BTreeSet<String> = actions.iter().map(Action::key).collect();
+            for old in &e.applied {
+                let used_elsewhere = lock
+                    .kits
+                    .iter()
+                    .any(|o| o.name != name && o.applied.iter().any(|a| a.key() == old.key()));
+                if !keys.contains(&old.key()) && !used_elsewhere {
+                    p.stale.push((name.clone(), old.clone()));
                 }
-                (Some(done), _) => p.shared.push((name.clone(), done.clone())),
             }
         }
     }
@@ -302,10 +346,11 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         finish_print(&chosen, agents, scope, &prepared, opts, &text, json)?;
         return Ok(Outcome::Printed);
     }
-    let work = prepared
-        .todo
-        .iter()
-        .any(|(_, a)| !matches!(a, Action::Skip { .. }));
+    let work = !prepared.stale.is_empty()
+        || prepared
+            .todo
+            .iter()
+            .any(|(_, a)| !matches!(a, Action::Skip { .. }));
     if !json {
         print!("{text}");
     }
@@ -357,10 +402,31 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         .map(|(k, _)| k.clone())
         .collect();
     let owned: Vec<Action> = actions.into_iter().cloned().collect();
-    let applied = plan::apply_all(&owned, req.force)?;
-    let pairs: Vec<(String, Applied)> = owners.into_iter().zip(applied).collect();
+    let ours: std::collections::HashSet<String> = lock.applied().map(Applied::key).collect();
+    let applied = plan::apply_all(&owned, req.force, &ours)?;
+    let pairs: Vec<(String, Applied)> = owners
+        .into_iter()
+        .zip(applied)
+        .filter_map(|(k, a)| Some((k, a?)))
+        .collect();
+    let mut left = Vec::new();
+    for (_, old) in prepared.stale.iter().rev() {
+        match plan::undo(old, false) {
+            Ok(Some(msg)) => left.push(msg),
+            Ok(None) => {}
+            Err(err) => left.push(format!("{err:#}")),
+        }
+    }
+    for (kit, old) in &prepared.stale {
+        if let Some(e) = lock.get_mut(kit) {
+            e.applied.retain(|a| a.key() != old.key());
+        }
+    }
     record(&mut lock, &chosen, agents, opts, pairs, &prepared.shared);
     lock.save(scope)?;
+    for msg in &left {
+        eprintln!("kept      {msg}");
+    }
 
     if json {
         print_json("add", &chosen, agents, scope, &prepared, opts, true)?;
@@ -475,7 +541,7 @@ fn record(
         for a in mine {
             let key = a.key();
             match entry.applied.iter_mut().find(|x| x.key() == key) {
-                Some(slot) => *slot = a,
+                Some(slot) => *slot = plan::merge(slot, a),
                 None => entry.applied.push(a),
             }
         }
@@ -669,6 +735,9 @@ fn render_plan(
             }
         }
     }
+    for (kit, old) in &p.stale {
+        let _ = writeln!(s, "remove    {}   (no longer in {kit})", old.describe());
+    }
     if !p.shared.is_empty() {
         let _ = writeln!(
             s,
@@ -779,8 +848,29 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         }
     }
 
+    // A base another installed kit extends stays until that kit goes; it
+    // only stops being one the user asked for.
+    let mut still_needed = Vec::new();
+    for name in &args.kits {
+        let e = lock.get(name).expect("checked above");
+        let users: Vec<String> = e
+            .required_by
+            .iter()
+            .filter(|r| !args.kits.contains(r))
+            .cloned()
+            .collect();
+        if !users.is_empty() {
+            still_needed.push((name.clone(), users));
+        }
+    }
+
     // The kits named, plus bases nothing else needs any more.
-    let mut going: BTreeSet<String> = args.kits.iter().cloned().collect();
+    let mut going: BTreeSet<String> = args
+        .kits
+        .iter()
+        .filter(|n| !still_needed.iter().any(|(s, _)| s == *n))
+        .cloned()
+        .collect();
     loop {
         let more: Vec<String> = lock
             .kits
@@ -814,6 +904,38 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
     }
 
     let summary = removal_summary(&undo);
+    if !json {
+        for (name, users) in &still_needed {
+            println!(
+                "{name} stays: {} extends it. It goes when {} is removed.",
+                users.join(", "),
+                if users.len() == 1 {
+                    "that kit"
+                } else {
+                    "they are"
+                }
+            );
+        }
+    }
+    if going.is_empty() {
+        for (name, _) in &still_needed {
+            if let Some(e) = lock.get_mut(name) {
+                e.requested = false;
+            }
+        }
+        lock.save(&scope)?;
+        if json {
+            let data = serde_json::json!({
+                "removed": [], "scope": scope_json(&scope), "changes": 0,
+                "stays": still_needed.iter().map(|(n, u)| serde_json::json!({"kit": n, "extendedBy": u})).collect::<Vec<_>>(),
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&crate::envelope("remove", true, data, None, vec![]))?
+            );
+        }
+        return Ok(());
+    }
     if !json {
         let names: Vec<&str> = going.iter().map(String::as_str).collect();
         println!(
@@ -852,6 +974,11 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         }
     }
     lock.kits.retain(|e| !going.contains(&e.name));
+    for (name, _) in &still_needed {
+        if let Some(e) = lock.get_mut(name) {
+            e.requested = false;
+        }
+    }
     for e in &mut lock.kits {
         e.required_by.retain(|r| !going.contains(r));
     }

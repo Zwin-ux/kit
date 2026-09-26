@@ -39,15 +39,11 @@ impl Config {
 
     pub fn save(&self) -> Result<()> {
         let file = path();
-        if let Some(parent) = file.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let body = toml::to_string(self)?;
-        std::fs::write(
+        super::plan::write_file(
             &file,
-            format!("# Written by kit setup. Edit it, or run kit setup again.\n{body}"),
+            format!("# Written by kit setup. Edit it, or run kit setup again.\n{body}").as_bytes(),
         )
-        .with_context(|| format!("cannot write {}", file.display()))
     }
 
     /// The saved agents Kit knows about.
