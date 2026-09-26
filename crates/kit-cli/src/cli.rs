@@ -61,6 +61,26 @@ pub enum Command {
         kit: Option<String>,
     },
 
+    /// Install kits into your coding agents
+    #[command(
+        after_help = "Shows every file, key and command first, and asks before writing.\n\nExample:\n  kit add frontend-design --global           every project, every agent found\n  kit add llm-engineer --agent codex         this repo, Codex only\n  kit add backend-engineer --print           show the plan, write nothing"
+    )]
+    Add(AddArgs),
+
+    /// Remove installed kits, exactly as they were added
+    #[command(after_help = "Example:\n  kit remove frontend-design --global")]
+    Remove(RemoveArgs),
+
+    /// Installed kits, and anything changed by hand since
+    List(ListKitsArgs),
+
+    /// Called by agent hooks that kits install
+    #[command(hide = true)]
+    Hook {
+        #[command(subcommand)]
+        event: HookCommand,
+    },
+
     /// Write kit.toml: the checks every run must pass
     #[command(
         after_help = "Example:\n  kit init            detect, check and write\n  kit init --print    show the proposal, write nothing"
@@ -387,4 +407,57 @@ mod tests {
             .collect();
         assert_eq!(from_enum, AgentArg::PREFERENCE);
     }
+}
+
+#[derive(Debug, Args)]
+pub struct AddArgs {
+    /// Kit names (see kit show), or folders with a KIT.toml
+    #[arg(value_name = "KIT", required = true)]
+    pub kits: Vec<String>,
+    /// Install for all your projects instead of this repo
+    #[arg(short, long)]
+    pub global: bool,
+    /// Agent to set up; repeat for more. Default: every agent installed here
+    #[arg(short, long, value_enum)]
+    pub agent: Vec<crate::kits::writers::Agent>,
+    /// Skills and rules only: no MCP servers, no hooks
+    #[arg(long)]
+    pub no_code: bool,
+    /// Show the plan and write nothing
+    #[arg(long)]
+    pub print: bool,
+    /// Do not ask; install the plan as shown
+    #[arg(short, long)]
+    pub yes: bool,
+    /// Replace skill folders and config entries Kit did not write
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct RemoveArgs {
+    #[arg(value_name = "KIT", required = true)]
+    pub kits: Vec<String>,
+    /// Remove from all projects instead of this repo
+    #[arg(short, long)]
+    pub global: bool,
+    /// Do not ask
+    #[arg(short, long)]
+    pub yes: bool,
+    /// Also remove skill folders that were edited by hand
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ListKitsArgs {
+    /// Only kits installed for all projects
+    #[arg(short, long)]
+    pub global: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum HookCommand {
+    /// Run a kit's after-edit hooks for the file in the hook payload (stdin)
+    AfterEdit { kit: String },
 }

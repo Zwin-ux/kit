@@ -72,6 +72,12 @@ async fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         None => launch_tui(cli.demo).await,
         Some(Command::Show { kit }) => kits::cmd_show(kit.as_deref(), json),
+        Some(Command::Add(args)) => kits::install::cmd_add(args, json),
+        Some(Command::Remove(args)) => kits::install::cmd_remove(args, json),
+        Some(Command::List(args)) => kits::install::cmd_list(args, json),
+        Some(Command::Hook {
+            event: cli::HookCommand::AfterEdit { kit },
+        }) => std::process::exit(kits::hook::after_edit(&kit)?),
         Some(Command::Run(args)) => cmd_run(args, json).await,
         Some(Command::Init(args)) => init::cmd_init(args, json).await,
         Some(Command::Land(args)) => land::cmd_land(args, json),

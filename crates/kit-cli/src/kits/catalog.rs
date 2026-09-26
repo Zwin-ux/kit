@@ -47,7 +47,6 @@ impl KitFiles {
     }
 
     /// Every file under `rel`, as (path relative to `rel`, bytes).
-    #[allow(dead_code)] // the installer uses it; the next slice lands it
     pub fn files_under(&self, rel: &str) -> Result<Vec<(PathBuf, Vec<u8>)>> {
         let mut out = Vec::new();
         match self {
@@ -71,7 +70,6 @@ impl KitFiles {
     }
 }
 
-#[allow(dead_code)]
 fn collect_bundled(dir: &'static Dir<'static>, base: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
     for f in dir.files() {
         let rel = f.path().strip_prefix(base).unwrap_or(f.path());
@@ -82,7 +80,6 @@ fn collect_bundled(dir: &'static Dir<'static>, base: &Path, out: &mut Vec<(PathB
     }
 }
 
-#[allow(dead_code)]
 fn collect_path(dir: &Path, base: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) -> Result<()> {
     for entry in std::fs::read_dir(dir).with_context(|| format!("cannot read {}", dir.display()))? {
         let path = entry?.path();

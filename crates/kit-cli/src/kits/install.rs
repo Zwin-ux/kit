@@ -1,0 +1,808 @@
+//! `kit add`, `kit remove`, `kit list`: install kits into agents, record
+//! them in `kit.lock`, undo them exactly. See `docs/dev/DESIGN-KITS.md` §1, §4.
+
+use super::catalog::{self, Kit};
+use super::lock::{Entry, Lock, LockedHook};
+use super::plan::{self, Action, Applied, tilde};
+use super::writers::{self, Agent, Options, Resolved, Scope};
+use crate::cli::{AddArgs, ListKitsArgs, RemoveArgs};
+use anyhow::{Context, Result, bail};
+use std::collections::BTreeSet;
+use std::fmt::Write as _;
+use std::io::{BufRead, IsTerminal, Write as _};
+use std::path::{Path, PathBuf};
+
+pub fn home_dir() -> Result<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .context("cannot find your home directory (HOME is not set)")
+}
+
+/// `--global`, or the git repo around the current directory.
+pub fn scope(global: bool) -> Result<Scope> {
+    if global {
+        return Ok(Scope::Global { home: home_dir()? });
+    }
+    match repo_root(Path::new(".")) {
+        Some(root) => Ok(Scope::Repo(root)),
+        None => bail!(
+            "not in a git repo. Use --global to install for all your projects, or cd into a repo"
+        ),
+    }
+}
+
+pub fn repo_root(dir: &Path) -> Option<PathBuf> {
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(dir)
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
+}
+
+/// Agents named with `--agent`, else every agent installed here.
+fn agents(chosen: &[Agent]) -> Result<Vec<Agent>> {
+    let mut agents: Vec<Agent> = if chosen.is_empty() {
+        Agent::ALL.into_iter().filter(|a| a.installed()).collect()
+    } else {
+        chosen.to_vec()
+    };
+    agents.sort();
+    agents.dedup();
+    if agents.is_empty() {
+        bail!(
+            "no coding agent found. Install one, or name one with --agent:\n  \
+             Claude Code   npm i -g @anthropic-ai/claude-code\n  \
+             Codex         npm i -g @openai/codex"
+        );
+    }
+    Ok(agents)
+}
+
+/// How hooks call back into Kit: `kit` if that is this binary, else its path.
+fn hook_program() -> String {
+    let me = std::env::current_exe().ok();
+    let canon = |p: &Path| std::fs::canonicalize(p).ok();
+    if let (Some(me), Some(on_path)) = (&me, plan::find_program("kit"))
+        && canon(me).is_some()
+        && canon(me) == canon(&on_path)
+    {
+        return "kit".into();
+    }
+    match me {
+        Some(p) => format!("\"{}\"", p.display()),
+        None => "kit".into(),
+    }
+}
+
+// ---- kit add --------------------------------------------------------------
+
+/// Kits to install: each requested kit and its bases, bases first.
+struct Chosen {
+    kits: Vec<Kit>,
+    /// Names asked for on the command line, with what was typed.
+    requested: Vec<(String, String)>,
+    /// (base, kit that extends it).
+    edges: Vec<(String, String)>,
+}
+
+fn choose(specs: &[String]) -> Result<Chosen> {
+    let mut chosen = Chosen {
+        kits: Vec::new(),
+        requested: Vec::new(),
+        edges: Vec::new(),
+    };
+    for spec in specs {
+        let chain = catalog::resolve(spec)?;
+        let top = chain
+            .last()
+            .expect("resolve returns the kit")
+            .name()
+            .to_string();
+        chosen.requested.push((top.clone(), spec.clone()));
+        for kit in chain {
+            if kit.name() != top {
+                chosen.edges.push((kit.name().to_string(), top.clone()));
+            }
+            if !chosen.kits.iter().any(|k| k.name() == kit.name()) {
+                chosen.kits.push(kit);
+            }
+        }
+    }
+    Ok(chosen)
+}
+
+/// The plan, split into what to do and what is already there.
+struct Prepared {
+    /// (kit, action) to apply, in order.
+    todo: Vec<(String, Action)>,
+    /// (kit, record) already installed by another kit, now shared.
+    shared: Vec<(String, Applied)>,
+}
+
+fn prepare(
+    resolved: &[Resolved<'_>],
+    agents: &[Agent],
+    scope: &Scope,
+    opts: Options,
+    lock: &Lock,
+) -> Result<Prepared> {
+    let hook = hook_program();
+    let mut p = Prepared {
+        todo: Vec::new(),
+        shared: Vec::new(),
+    };
+    for r in resolved {
+        let name = r.kit.name().to_string();
+        for action in writers::plan(r, agents, scope, opts, &hook) {
+            let key = action.key();
+            let existing = lock.applied().find(|a| a.key() == key);
+            match (existing, &action) {
+                (None, _) => p.todo.push((name.clone(), action)),
+                (Some(Applied::Skill { hash, dir }), Action::Skill { payload, .. })
+                    if *hash != payload.hash =>
+                {
+                    let owner = lock
+                        .kits
+                        .iter()
+                        .find(|e| e.applied.iter().any(|a| a.key() == key))
+                        .map_or("another kit", |e| e.name.as_str());
+                    if owner != name {
+                        bail!(
+                            "{} is installed by {owner} with different content than {name} wants. Remove {owner} first",
+                            tilde(dir)
+                        );
+                    }
+                    p.todo.push((name.clone(), action));
+                }
+                (Some(done), _) => p.shared.push((name.clone(), done.clone())),
+            }
+        }
+    }
+    Ok(p)
+}
+
+pub fn cmd_add(args: AddArgs, json: bool) -> Result<()> {
+    let scope = scope(args.global)?;
+    let agents = agents(&args.agent)?;
+    let chosen = choose(&args.kits)?;
+    let mut lock = Lock::load(&scope)?;
+
+    if !json
+        && chosen
+            .kits
+            .iter()
+            .any(|k| k.manifest.skill.iter().any(|s| s.source.is_some()))
+    {
+        eprintln!("Fetching  pinned skills (cached after the first time)");
+    }
+    let resolved: Vec<Resolved<'_>> = chosen
+        .kits
+        .iter()
+        .map(Resolved::load)
+        .collect::<Result<_>>()?;
+
+    let mut opts = Options {
+        no_code: args.no_code,
+    };
+    let mut prepared = prepare(&resolved, &agents, &scope, opts, &lock)?;
+    let text = render_plan(&chosen, &agents, &scope, &prepared);
+
+    if args.print || json && !args.yes {
+        return finish_print(&chosen, &agents, &scope, &prepared, &text, json);
+    }
+    let work = prepared
+        .todo
+        .iter()
+        .any(|(_, a)| !matches!(a, Action::Skip { .. }));
+    if !json {
+        print!("{text}");
+    }
+    if !work {
+        record(
+            &mut lock,
+            &chosen,
+            &agents,
+            opts,
+            Vec::new(),
+            &prepared.shared,
+        );
+        lock.save(&scope)?;
+        if !json {
+            println!("Already installed. Nothing to do.");
+        } else {
+            print_json("add", &chosen, &agents, &scope, &prepared, true)?;
+        }
+        return Ok(());
+    }
+
+    if !args.yes {
+        let code = prepared.todo.iter().any(|(_, a)| a.runs_code());
+        match ask(code)? {
+            Answer::Yes => {}
+            Answer::No => {
+                println!("Nothing was changed.");
+                return Ok(());
+            }
+            Answer::NoCode => {
+                opts.no_code = true;
+                prepared = prepare(&resolved, &agents, &scope, opts, &lock)?;
+            }
+        }
+    }
+
+    let actions: Vec<&Action> = prepared
+        .todo
+        .iter()
+        .map(|(_, a)| a)
+        .filter(|a| !matches!(a, Action::Skip { .. }))
+        .collect();
+    let owners: Vec<String> = prepared
+        .todo
+        .iter()
+        .filter(|(_, a)| !matches!(a, Action::Skip { .. }))
+        .map(|(k, _)| k.clone())
+        .collect();
+    let owned: Vec<Action> = actions.into_iter().cloned().collect();
+    let applied = plan::apply_all(&owned, args.force)?;
+    let pairs: Vec<(String, Applied)> = owners.into_iter().zip(applied).collect();
+    record(&mut lock, &chosen, &agents, opts, pairs, &prepared.shared);
+    lock.save(&scope)?;
+
+    if json {
+        return print_json("add", &chosen, &agents, &scope, &prepared, true);
+    }
+    let names: Vec<&str> = chosen.requested.iter().map(|(n, _)| n.as_str()).collect();
+    let who: Vec<&str> = agents.iter().map(|a| a.title()).collect();
+    println!(
+        "Done. {} {} {} in {}.",
+        who.join(" and "),
+        if who.len() == 1 { "has" } else { "have" },
+        names.join(" and "),
+        scope.label()
+    );
+    println!("Recorded in {}.", tilde(&super::lock::path(&scope)));
+    let flag = if matches!(scope, Scope::Global { .. }) {
+        " --global"
+    } else {
+        ""
+    };
+    println!("check     kit list{flag}");
+    println!("undo      kit remove {}{flag}", names.join(" "));
+    Ok(())
+}
+
+/// Write what was installed into the lock.
+fn record(
+    lock: &mut Lock,
+    chosen: &Chosen,
+    agents: &[Agent],
+    opts: Options,
+    applied: Vec<(String, Applied)>,
+    shared: &[(String, Applied)],
+) {
+    for kit in &chosen.kits {
+        let name = kit.name().to_string();
+        if lock.get(&name).is_none() {
+            lock.kits.push(Entry {
+                name: name.clone(),
+                version: String::new(),
+                source: name.clone(),
+                requested: false,
+                required_by: Vec::new(),
+                agents: Vec::new(),
+                hooks: Vec::new(),
+                applied: Vec::new(),
+            });
+        }
+        let entry = lock.get_mut(&name).expect("just inserted");
+        entry.version.clone_from(&kit.manifest.kit.version);
+        if let Some((_, spec)) = chosen.requested.iter().find(|(n, _)| *n == name) {
+            entry.requested = true;
+            entry.source = if catalog::find(spec).is_ok_and(|k| k.level == catalog::Level::Direct) {
+                std::fs::canonicalize(spec)
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| spec.clone())
+            } else {
+                spec.clone()
+            };
+        }
+        for (base, top) in &chosen.edges {
+            if *base == name && !entry.required_by.contains(top) {
+                entry.required_by.push(top.clone());
+            }
+        }
+        for a in agents {
+            if !entry.agents.iter().any(|x| x == a.id()) {
+                entry.agents.push(a.id().to_string());
+            }
+        }
+        if !opts.no_code {
+            entry.hooks = kit
+                .manifest
+                .hook
+                .iter()
+                .map(|h| LockedHook {
+                    glob: h.glob.clone(),
+                    run: h.run.clone(),
+                })
+                .collect();
+        }
+        let mine = applied
+            .iter()
+            .chain(shared)
+            .filter(|(k, _)| *k == name)
+            .map(|(_, a)| a.clone());
+        for a in mine {
+            let key = a.key();
+            match entry.applied.iter_mut().find(|x| x.key() == key) {
+                Some(slot) => *slot = a,
+                None => entry.applied.push(a),
+            }
+        }
+    }
+}
+
+enum Answer {
+    Yes,
+    No,
+    NoCode,
+}
+
+fn ask(code: bool) -> Result<Answer> {
+    if !std::io::stdin().is_terminal() {
+        bail!(
+            "kit add needs your yes before it writes anything. Run it in a terminal, or add --yes (and --no-code to skip anything that runs code)"
+        );
+    }
+    let prompt = if code {
+        "Continue?  [y] install  [n] cancel  [s] skills and rules only (no code): "
+    } else {
+        "Continue?  [y] install  [n] cancel: "
+    };
+    print!("{prompt}");
+    std::io::stdout().flush()?;
+    let mut line = String::new();
+    std::io::stdin().lock().read_line(&mut line)?;
+    Ok(match line.trim().to_ascii_lowercase().as_str() {
+        "y" | "yes" => Answer::Yes,
+        "s" if code => Answer::NoCode,
+        _ => Answer::No,
+    })
+}
+
+fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -> String {
+    let mut s = String::new();
+    let who: Vec<&str> = agents.iter().map(|a| a.title()).collect();
+    for (name, _) in &chosen.requested {
+        let kit = chosen
+            .kits
+            .iter()
+            .find(|k| k.name() == name)
+            .expect("requested kit is chosen");
+        let meta = &kit.manifest.kit;
+        let extends = if meta.extends.is_empty() {
+            String::new()
+        } else {
+            format!("  (extends {})", meta.extends.join(", "))
+        };
+        let _ = writeln!(
+            s,
+            "{} {}{extends}  →  {}, {}",
+            meta.title,
+            meta.version,
+            who.join(" and "),
+            scope.label()
+        );
+        let _ = writeln!(s, "{}", kit.level.label());
+    }
+    let _ = writeln!(s);
+
+    // Skills, grouped by folder; details once, then "same N skills".
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for (_, a) in &p.todo {
+        if let Action::Skill { dir, .. } = a
+            && let Some(parent) = dir.parent()
+            && !dirs.iter().any(|d| d == parent)
+        {
+            dirs.push(parent.to_path_buf());
+        }
+    }
+    for (i, parent) in dirs.iter().enumerate() {
+        let here: Vec<(&String, &Action)> = p
+            .todo
+            .iter()
+            .filter(|(_, a)| matches!(a, Action::Skill { dir, .. } if dir.parent() == Some(parent)))
+            .map(|(k, a)| (k, a))
+            .collect();
+        let _ = writeln!(s, "skills    {:<3} {}/", here.len(), tilde(parent));
+        if i > 0 {
+            continue;
+        }
+        let width = here
+            .iter()
+            .filter_map(|(_, a)| match a {
+                Action::Skill { payload, .. } => Some(payload.name.len()),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        let rows: Vec<(&str, String, &str)> = here
+            .iter()
+            .filter_map(|(kit, a)| {
+                let Action::Skill { payload, .. } = a else {
+                    return None;
+                };
+                let sref = chosen
+                    .kits
+                    .iter()
+                    .find(|k| k.name() == kit.as_str())
+                    .and_then(|k| k.manifest.skill.iter().find(|s| s.name == payload.name));
+                let origin = sref
+                    .and_then(|s| s.origin())
+                    .unwrap_or_else(|| format!("{kit} (in the kit)"));
+                let licence = sref
+                    .and_then(|s| s.licence.as_deref())
+                    .unwrap_or("no licence");
+                Some((payload.name.as_str(), origin, licence))
+            })
+            .collect();
+        let owidth = rows.iter().map(|(_, o, _)| o.len()).max().unwrap_or(0);
+        for (name, origin, licence) in rows {
+            let _ = writeln!(s, "            {name:width$}  {origin:owidth$}  {licence}");
+        }
+    }
+    for (_, a) in &p.todo {
+        match a {
+            Action::Skill { .. } => {}
+            Action::Rules { text, .. } => {
+                let _ = writeln!(s, "{}  + {} lines", a.describe(), text.lines().count());
+            }
+            _ if a.runs_code() => {
+                let _ = writeln!(s, "{}   RUNS CODE", a.describe());
+            }
+            _ => {
+                let _ = writeln!(s, "{}", a.describe());
+            }
+        }
+    }
+    if !p.shared.is_empty() {
+        let _ = writeln!(
+            s,
+            "already   {} in place (installed before, or by another kit)",
+            p.shared.len()
+        );
+    }
+    let code = p.todo.iter().filter(|(_, a)| a.runs_code()).count();
+    let _ = writeln!(s);
+    if code > 0 {
+        let _ = writeln!(
+            s,
+            "Runs code on your machine: {code} (MCP servers and hooks)."
+        );
+    }
+    s
+}
+
+fn finish_print(
+    chosen: &Chosen,
+    agents: &[Agent],
+    scope: &Scope,
+    p: &Prepared,
+    text: &str,
+    json: bool,
+) -> Result<()> {
+    if json {
+        return print_json("add", chosen, agents, scope, p, false);
+    }
+    print!("{text}");
+    println!("Nothing was written (--print).");
+    Ok(())
+}
+
+fn print_json(
+    command: &str,
+    chosen: &Chosen,
+    agents: &[Agent],
+    scope: &Scope,
+    p: &Prepared,
+    applied: bool,
+) -> Result<()> {
+    let actions: Vec<_> = p
+        .todo
+        .iter()
+        .map(|(kit, a)| {
+            serde_json::json!({
+                "kit": kit, "change": a.describe(), "key": a.key(),
+                "runsCode": a.runs_code(), "skipped": matches!(a, Action::Skip { .. }),
+            })
+        })
+        .collect();
+    let data = serde_json::json!({
+        "kits": chosen.requested.iter().map(|(n, _)| n).collect::<Vec<_>>(),
+        "installs": chosen.kits.iter().map(Kit::name).collect::<Vec<_>>(),
+        "agents": agents.iter().map(|a| a.id()).collect::<Vec<_>>(),
+        "scope": scope_json(scope),
+        "actions": actions,
+        "shared": p.shared.len(),
+        "applied": applied,
+    });
+    let warnings = if applied {
+        vec![]
+    } else {
+        vec!["nothing was written; add --yes to install".to_string()]
+    };
+    let env = crate::envelope(command, true, data, None, warnings);
+    println!("{}", serde_json::to_string_pretty(&env)?);
+    Ok(())
+}
+
+fn scope_json(scope: &Scope) -> serde_json::Value {
+    match scope {
+        Scope::Global { .. } => serde_json::json!("global"),
+        Scope::Repo(root) => serde_json::json!(root.display().to_string()),
+    }
+}
+
+// ---- kit remove -------------------------------------------------------------
+
+pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
+    let scope = scope(args.global)?;
+    let mut lock = Lock::load(&scope)?;
+    let flag = if args.global { " --global" } else { "" };
+    for name in &args.kits {
+        match lock.get(name) {
+            None => bail!(
+                "{name} is not installed in {}. See kit list{flag}",
+                scope.label()
+            ),
+            Some(e) if !e.requested => bail!(
+                "{name} was installed as part of {}. Remove that instead",
+                e.required_by.join(", ")
+            ),
+            Some(_) => {}
+        }
+    }
+
+    // The kits named, plus bases nothing else needs any more.
+    let mut going: BTreeSet<String> = args.kits.iter().cloned().collect();
+    loop {
+        let more: Vec<String> = lock
+            .kits
+            .iter()
+            .filter(|e| !going.contains(&e.name) && !e.requested && !e.required_by.is_empty())
+            .filter(|e| e.required_by.iter().all(|r| going.contains(r)))
+            .map(|e| e.name.clone())
+            .collect();
+        if more.is_empty() {
+            break;
+        }
+        going.extend(more);
+    }
+
+    let staying: Vec<&Entry> = lock
+        .kits
+        .iter()
+        .filter(|e| !going.contains(&e.name))
+        .collect();
+    let mut undo: Vec<Applied> = Vec::new();
+    for e in lock.kits.iter().filter(|e| going.contains(&e.name)) {
+        for a in &e.applied {
+            let key = a.key();
+            let kept = staying
+                .iter()
+                .any(|s| s.applied.iter().any(|x| x.key() == key));
+            if !kept && !undo.iter().any(|u| u.key() == key) {
+                undo.push(a.clone());
+            }
+        }
+    }
+
+    let summary = removal_summary(&undo);
+    if !json {
+        let names: Vec<&str> = going.iter().map(String::as_str).collect();
+        println!(
+            "Removes {} from {}: {summary}.",
+            names.join(", "),
+            scope.label()
+        );
+    }
+    if !args.yes {
+        if !std::io::stdin().is_terminal() || json {
+            bail!("kit remove needs your yes. Run it in a terminal, or add --yes");
+        }
+        print!("Continue? [y/N] ");
+        std::io::stdout().flush()?;
+        let mut line = String::new();
+        std::io::stdin().lock().read_line(&mut line)?;
+        if !matches!(line.trim(), "y" | "Y" | "yes") {
+            println!("Nothing was changed.");
+            return Ok(());
+        }
+    }
+
+    let mut kept = Vec::new();
+    for a in undo.iter().rev() {
+        if let Some(msg) = plan::undo(a, args.force)? {
+            kept.push(msg);
+        }
+    }
+    lock.kits.retain(|e| !going.contains(&e.name));
+    for e in &mut lock.kits {
+        e.required_by.retain(|r| !going.contains(r));
+    }
+    lock.save(&scope)?;
+
+    if json {
+        let data = serde_json::json!({
+            "removed": going, "scope": scope_json(&scope), "changes": undo.len(), "leftInPlace": kept,
+        });
+        let env = crate::envelope("remove", true, data, None, kept);
+        println!("{}", serde_json::to_string_pretty(&env)?);
+        return Ok(());
+    }
+    for msg in &kept {
+        println!("kept      {msg}");
+    }
+    println!("Done.");
+    Ok(())
+}
+
+fn removal_summary(undo: &[Applied]) -> String {
+    let count = |f: fn(&Applied) -> bool| undo.iter().filter(|a| f(a)).count();
+    let parts = [
+        (
+            count(|a| matches!(a, Applied::Skill { .. })),
+            "skill",
+            "skills",
+        ),
+        (
+            count(|a| matches!(a, Applied::Rules { .. })),
+            "rules block",
+            "rules blocks",
+        ),
+        (
+            count(|a| {
+                matches!(
+                    a,
+                    Applied::McpJson { .. } | Applied::McpToml { .. } | Applied::Command { .. }
+                )
+            }),
+            "MCP server",
+            "MCP servers",
+        ),
+        (
+            count(|a| matches!(a, Applied::HookJson { .. })),
+            "hook",
+            "hooks",
+        ),
+    ];
+    let words: Vec<String> = parts
+        .iter()
+        .filter(|(n, ..)| *n > 0)
+        .map(|(n, one, many)| format!("{n} {}", if *n == 1 { one } else { many }))
+        .collect();
+    if words.is_empty() {
+        "nothing on disk".into()
+    } else {
+        words.join(", ")
+    }
+}
+
+// ---- kit list ---------------------------------------------------------------
+
+pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
+    let mut scopes = vec![Scope::Global { home: home_dir()? }];
+    if !args.global
+        && let Some(root) = repo_root(Path::new("."))
+    {
+        scopes.push(Scope::Repo(root));
+    }
+    let mut out = Vec::new();
+    for scope in &scopes {
+        let lock = Lock::load(scope)?;
+        let mut rows = Vec::new();
+        for e in &lock.kits {
+            let mut drift = Vec::new();
+            for a in &e.applied {
+                if let Some(d) = plan::drifted(a)? {
+                    drift.push(d);
+                }
+            }
+            rows.push((e.clone(), drift));
+        }
+        out.push((scope.clone(), rows));
+    }
+
+    if json {
+        let data: Vec<_> = out
+            .iter()
+            .map(|(scope, rows)| {
+                let kits: Vec<_> = rows
+                    .iter()
+                    .map(|(e, drift)| {
+                        serde_json::json!({
+                            "name": e.name, "version": e.version, "agents": e.agents,
+                            "requested": e.requested, "requiredBy": e.required_by,
+                            "skills": skill_names(e).len(), "drift": drift,
+                        })
+                    })
+                    .collect();
+                serde_json::json!({ "scope": scope_json(scope), "kits": kits })
+            })
+            .collect();
+        let env = crate::envelope(
+            "list",
+            true,
+            serde_json::json!({ "scopes": data }),
+            None,
+            vec![],
+        );
+        println!("{}", serde_json::to_string_pretty(&env)?);
+        return Ok(());
+    }
+
+    if out.iter().all(|(_, rows)| rows.is_empty()) {
+        println!("No kits installed.");
+        println!("next      kit show");
+        return Ok(());
+    }
+    for (scope, rows) in &out {
+        if rows.is_empty() {
+            continue;
+        }
+        println!("{}  ({})", scope.label(), tilde(&super::lock::path(scope)));
+        let width = rows.iter().map(|(e, _)| e.name.len()).max().unwrap_or(0);
+        for (e, drift) in rows {
+            let mut parts = vec![format!("{} skills", skill_names(e).len())];
+            let mcp = e
+                .applied
+                .iter()
+                .filter(|a| {
+                    matches!(
+                        a,
+                        Applied::McpJson { .. } | Applied::McpToml { .. } | Applied::Command { .. }
+                    )
+                })
+                .count();
+            if mcp > 0 {
+                parts.push(format!("{mcp} mcp"));
+            }
+            if !e.hooks.is_empty() {
+                parts.push(format!("{} hook", e.hooks.len()));
+            }
+            let status = match drift.len() {
+                0 => "ok".to_string(),
+                1 => drift[0].clone(),
+                n => format!("{n} changes by hand: {}", drift[0]),
+            };
+            let part_of = if e.requested {
+                String::new()
+            } else {
+                format!("  (part of {})", e.required_by.join(", "))
+            };
+            println!(
+                "  {:width$}   {:7}  {:14}  {:28}  {status}{part_of}",
+                e.name,
+                e.version,
+                e.agents.join(", "),
+                parts.join(" · ")
+            );
+        }
+    }
+    Ok(())
+}
+
+fn skill_names(e: &Entry) -> BTreeSet<String> {
+    e.applied
+        .iter()
+        .filter_map(|a| match a {
+            Applied::Skill { dir, .. } => dir.file_name().map(|n| n.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect()
+}
