@@ -8,22 +8,76 @@ use std::time::SystemTime;
 
 use super::paths::{run_dir, runs_dir};
 
-/// Persist a receipt and optional output log. Returns the run directory.
-pub fn write_receipt(receipt: &Receipt, output: &str) -> Result<std::path::PathBuf> {
+/// Persist a receipt and its output log. Returns the run directory.
+///
+/// Write-once: the run dir must not exist yet, so a second write for the same
+/// id fails and never replaces proof. `receipt.json` is published last, by
+/// rename, so a write that dies part way leaves no file that reads as a
+/// complete receipt (readers skip a dir without `receipt.json`).
+///
+/// `base` is the commit the run's worktree started at. It goes in `base.txt`
+/// (the frozen `Receipt` shape has no field for it); `kit land` applies
+/// `diff.patch` onto it.
+pub fn write_receipt(
+    receipt: &Receipt,
+    output: &str,
+    base: Option<&str>,
+) -> Result<std::path::PathBuf> {
     let dir = run_dir(&receipt.id.0);
-    fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
+    if let Some(parent) = dir.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    fs::create_dir(&dir).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            anyhow::anyhow!(
+                "receipt for run {} already exists at {} (receipts are write-once)",
+                receipt.id,
+                dir.display()
+            )
+        } else {
+            anyhow::Error::new(e).context(format!("create {}", dir.display()))
+        }
+    })?;
 
-    let json = serde_json::to_string_pretty(receipt).context("serialize receipt")?;
-    fs::write(dir.join("receipt.json"), json).context("write receipt.json")?;
-    fs::write(dir.join("output.log"), output).context("write output.log")?;
+    write_new(&dir.join("output.log"), output.as_bytes())?;
     if !receipt.diff.is_empty() {
-        fs::write(dir.join("diff.patch"), &receipt.diff).context("write diff.patch")?;
+        write_new(&dir.join("diff.patch"), receipt.diff.as_bytes())?;
+    }
+    if let Some(base) = base {
+        write_new(&dir.join(BASE_FILE), format!("{base}\n").as_bytes())?;
     }
     if let Some(gate) = &receipt.gate {
         let g = serde_json::to_string_pretty(gate).context("serialize gate")?;
-        fs::write(dir.join("gate.json"), g).context("write gate.json")?;
+        write_new(&dir.join("gate.json"), g.as_bytes())?;
     }
+    let json = serde_json::to_string_pretty(receipt).context("serialize receipt")?;
+    let tmp = dir.join("receipt.json.tmp");
+    write_new(&tmp, json.as_bytes())?;
+    fs::rename(&tmp, dir.join("receipt.json")).context("publish receipt.json")?;
     Ok(dir)
+}
+
+/// Sidecar in the run dir: the base commit sha, one line.
+pub const BASE_FILE: &str = "base.txt";
+
+/// The base commit recorded for a run dir, if any.
+pub fn read_base(dir: &Path) -> Option<String> {
+    let raw = fs::read_to_string(dir.join(BASE_FILE)).ok()?;
+    let sha = raw.trim();
+    (!sha.is_empty()).then(|| sha.to_string())
+}
+
+/// Create `path` (never overwrite) and flush `bytes` to disk.
+fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .with_context(|| format!("create {}", path.display()))?;
+    file.write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .with_context(|| format!("write {}", path.display()))
 }
 
 /// Read a receipt by run id (full ULID or unique prefix).
@@ -183,15 +237,18 @@ pub fn ensure_layout() -> Result<()> {
 }
 
 /// Load kit.toml from a repo root if present; otherwise defaults.
-pub fn load_kit_config(repo: &Path) -> kit_core::KitConfig {
+/// The repo's `kit.toml`, or the default when there is none.
+///
+/// A file that exists but does not parse is an error, never the default:
+/// one typo (an unknown key) would otherwise switch the gate off in silence.
+pub fn load_kit_config(repo: &Path) -> anyhow::Result<kit_core::KitConfig> {
     let path = repo.join("kit.toml");
     if !path.exists() {
-        return kit_core::KitConfig::default();
+        return Ok(kit_core::KitConfig::default());
     }
-    match fs::read_to_string(&path) {
-        Ok(raw) => toml::from_str(&raw).unwrap_or_default(),
-        Err(_) => kit_core::KitConfig::default(),
-    }
+    let raw = fs::read_to_string(&path)
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
+    toml::from_str(&raw).map_err(|e| anyhow::anyhow!("{} is not valid: {}", path.display(), e))
 }
 
 #[cfg(test)]
@@ -200,6 +257,20 @@ mod tests {
     use crate::engine::paths::kit_home_test_lock;
     use kit_core::{AgentKind, Bounds, RunId, RunSpec, RunState};
     use std::time::{Duration, SystemTime};
+
+    /// `lint` is not a gate key. A typo must stop the run, not turn the gate off.
+    #[test]
+    fn broken_kit_toml_is_an_error_not_an_empty_gate() {
+        let root = std::env::temp_dir().join(format!("kit-bad-toml-{}", RunId::default().0));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("kit.toml"), "[gate]\nlint = \"cargo clippy\"\n").unwrap();
+        let err = load_kit_config(&root).unwrap_err().to_string();
+        assert!(err.contains("kit.toml is not valid"), "{err}");
+        assert!(err.contains("lint"), "{err}");
+        fs::remove_dir_all(&root).unwrap();
+        // No file at all is still the default, not an error.
+        assert!(load_kit_config(&root).unwrap().gate.is_empty());
+    }
 
     #[test]
     fn list_and_read_roundtrip() {
@@ -236,7 +307,7 @@ mod tests {
             gate: None,
             output_truncated: false,
         };
-        write_receipt(&receipt, "hello\n").unwrap();
+        write_receipt(&receipt, "hello\n", None).unwrap();
 
         let rows = list_receipts(10).unwrap();
         assert_eq!(rows.len(), 1);
@@ -260,13 +331,122 @@ mod tests {
         let _ = fs::remove_dir_all(&home);
     }
 
+    /// Scratch `KIT_HOME` for one store test; callers hold the lock.
+    fn scratch_home(tag: &str) -> PathBuf {
+        let home = std::env::temp_dir().join(format!(
+            "kit-store-{tag}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&home);
+        // SAFETY: tests serialize KIT_HOME via kit_home_test_lock.
+        unsafe {
+            std::env::set_var("KIT_HOME", &home);
+        }
+        ensure_layout().unwrap();
+        home
+    }
+
+    fn drop_home(home: &Path) {
+        unsafe {
+            std::env::remove_var("KIT_HOME");
+        }
+        let _ = fs::remove_dir_all(home);
+    }
+
+    fn sample(id: &str, state: RunState, diff: &str) -> Receipt {
+        Receipt {
+            version: Receipt::VERSION,
+            id: RunId(id.into()),
+            spec: RunSpec {
+                repo: PathBuf::from("/tmp/kit"),
+                agent: AgentKind::Codex,
+                task: "write once".into(),
+                branch: None,
+                bounds: Bounds::default(),
+            },
+            state,
+            started_at: None,
+            ended_at: Some(SystemTime::now()),
+            diff: diff.into(),
+            gate: None,
+            output_truncated: false,
+        }
+    }
+
+    /// Proof is write-once: a second receipt for the same id is refused and
+    /// every byte of the first stays on disk.
+    #[test]
+    fn second_write_for_same_id_errors_and_keeps_original() {
+        let _lock = kit_home_test_lock();
+        let home = scratch_home("once");
+        let id = "01TESTWRITEONCE000000000001";
+        let dir = write_receipt(
+            &sample(id, RunState::Pass, "+pass\n"),
+            "first\n",
+            Some("abc123"),
+        )
+        .unwrap();
+        assert_eq!(read_base(&dir).as_deref(), Some("abc123"));
+        let files = ["receipt.json", "output.log", "diff.patch", BASE_FILE];
+        let before: Vec<Vec<u8>> = files
+            .iter()
+            .map(|f| fs::read(dir.join(f)).unwrap())
+            .collect();
+
+        let err = write_receipt(
+            &sample(id, RunState::Error, "+other\n"),
+            "second\n",
+            Some("def456"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("already exists"), "{err}");
+
+        let after: Vec<Vec<u8>> = files
+            .iter()
+            .map(|f| fs::read(dir.join(f)).unwrap())
+            .collect();
+        assert_eq!(before, after, "the first receipt was changed");
+        assert_eq!(read_receipt(id).unwrap().unwrap().state, RunState::Pass);
+        assert!(!dir.join("receipt.json.tmp").exists());
+        drop_home(&home);
+    }
+
+    /// A run dir without `receipt.json` (a write that died before publish)
+    /// is not a receipt: list skips it and read does not find it.
+    #[test]
+    fn reader_ignores_dir_without_receipt_json() {
+        let _lock = kit_home_test_lock();
+        let home = scratch_home("torn");
+        let torn = run_dir("01TESTTORNRECEIPT0000000001");
+        fs::create_dir_all(&torn).unwrap();
+        fs::write(torn.join("output.log"), "half\n").unwrap();
+        fs::write(torn.join("receipt.json.tmp"), "{\"version\": 1").unwrap();
+        write_receipt(
+            &sample("01TESTWHOLERECEIPT000000001", RunState::Pass, ""),
+            "",
+            None,
+        )
+        .unwrap();
+
+        let rows = list_receipts(0).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "01TESTWHOLERECEIPT000000001");
+        assert!(read_receipt("01TESTTORN").is_err());
+        drop_home(&home);
+    }
+
     #[test]
     fn workspace_kit_toml_declares_a_real_gate() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .canonicalize()
             .expect("workspace root");
-        let cfg = load_kit_config(&root);
+        let cfg = load_kit_config(&root).expect("kit.toml");
         assert!(
             !cfg.gate.is_empty(),
             "kit.toml must exist and declare checks so Kit-on-Kit is not vacuous"

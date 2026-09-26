@@ -849,14 +849,27 @@ fn raw_disk_redirection(segment: &str) -> bool {
 async fn run_check(label: &str, command: &str, worktree: &Path, remaining: Duration) -> GateCheck {
     let started = Instant::now();
     let Some(mut child) = build_command(command, worktree) else {
-        return skipped_check(label, command, started.elapsed(), "could not parse command");
+        return unrunnable_check(
+            label,
+            command,
+            started.elapsed(),
+            "could not parse the command",
+        );
     };
     match tokio::time::timeout(remaining, child.output()).await {
         Err(_) => timed_out_check(label, command, started.elapsed()),
-        Ok(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => {
-            skipped_check(label, command, started.elapsed(), "command was not found")
-        }
-        Ok(Err(_)) => skipped_check(label, command, started.elapsed(), "could not start command"),
+        Ok(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => unrunnable_check(
+            label,
+            command,
+            started.elapsed(),
+            "program not found; install it or fix kit.toml",
+        ),
+        Ok(Err(error)) => unrunnable_check(
+            label,
+            command,
+            started.elapsed(),
+            &format!("could not start: {error}"),
+        ),
         Ok(Ok(output)) if output.status.success() => GateCheck {
             label: label.to_owned(),
             command: command.to_owned(),
@@ -903,7 +916,7 @@ fn build_command(command: &str, worktree: &Path) -> Option<Command> {
     } else {
         let argv = tokenize(command)?;
         let (program, args) = argv.split_first()?;
-        let mut child = Command::new(program);
+        let mut child = Command::new(resolve_program(program));
         child.args(args);
         child
     };
@@ -915,19 +928,63 @@ fn build_command(command: &str, worktree: &Path) -> Option<Command> {
     Some(process)
 }
 
+/// On Windows, find `npm` as `npm.cmd` the way a shell would.
+///
+/// `Command::new("npm")` only looks for `npm.exe`, so every check naming an
+/// npm/pnpm/yarn shim failed with "not found" even though inference had seen
+/// it on PATH. The resolved `.cmd` / `.bat` path is spawned by std, which
+/// escapes its arguments for cmd.exe; checks never go through `cmd /C`.
+fn resolve_program(program: &str) -> std::ffi::OsString {
+    #[cfg(windows)]
+    {
+        if let Some(found) = find_on_path(
+            program,
+            std::env::var_os("PATH").as_deref(),
+            &["exe", "com", "cmd", "bat"],
+        ) {
+            return found.into_os_string();
+        }
+    }
+    program.into()
+}
+
+/// First `dir/program.ext` on `path`, trying `exts` in order. Programs with a
+/// directory or an extension are left to the OS.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn find_on_path(
+    program: &str,
+    path: Option<&std::ffi::OsStr>,
+    exts: &[&str],
+) -> Option<std::path::PathBuf> {
+    let bare = Path::new(program);
+    if bare.components().count() != 1 || bare.extension().is_some() {
+        return None;
+    }
+    std::env::split_paths(path?).find_map(|dir| {
+        exts.iter()
+            .map(|ext| dir.join(format!("{program}.{ext}")))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
 /// Point cargo at `{worktree}/target` so a Kit-on-Kit gate cannot compile into
 /// the parent process's `CARGO_TARGET_DIR` (stale workspace test binaries).
 fn isolate_cargo_target_dir(process: &mut Command, worktree: &Path) {
     process.env("CARGO_TARGET_DIR", worktree.join("target"));
 }
 
-fn skipped_check(label: &str, command: &str, duration: Duration, why: &str) -> GateCheck {
+/// A configured check that could not run is a FAIL, never a skip.
+///
+/// `Skipped` counts as passed in kit-core, so a typo in `kit.toml` or a tool
+/// missing from PATH would let a gate PASS without running anything.
+/// `exit_code: None` marks "never ran" apart from a real non-zero exit.
+fn unrunnable_check(label: &str, command: &str, duration: Duration, why: &str) -> GateCheck {
     GateCheck {
         label: label.to_owned(),
         command: command.to_owned(),
-        status: CheckStatus::Skipped,
+        status: CheckStatus::Fail,
         exit_code: None,
-        summary: Some(format!("{label}: skipped ({why})")),
+        summary: Some(format!("{label}: did not run ({why})")),
         duration,
     }
 }
@@ -1171,6 +1228,73 @@ mod tests {
                 .as_deref()
                 .is_some_and(|summary| !summary.is_empty())
         );
+    }
+
+    /// A check that never ran must not PASS the gate. It used to be
+    /// `Skipped`, which kit-core counts as passed: a typo in kit.toml
+    /// produced a PASS receipt with zero checks run.
+    #[tokio::test]
+    async fn missing_program_fails_the_gate() {
+        let config = GateConfig {
+            test: Some("definitely-not-a-program-kit7 --run".to_owned()),
+            ..GateConfig::default()
+        };
+        let outcome = KitGate::new().evaluate(Path::new("."), &config).await;
+        assert!(!outcome.passed, "a check that never ran passed the gate");
+        let check = outcome
+            .first_failure()
+            .expect("unrunnable check is recorded");
+        assert_eq!(check.status, CheckStatus::Fail);
+        assert_eq!(check.exit_code, None);
+        let summary = check.summary.as_deref().unwrap_or_default();
+        assert!(summary.contains("did not run"), "{summary}");
+        assert!(summary.contains("fix kit.toml"), "{summary}");
+    }
+
+    #[test]
+    fn find_on_path_resolves_shims_by_extension_order() {
+        let dir = env::temp_dir().join(format!("kit-gate-shim-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("npm.cmd"), "").unwrap();
+        fs::write(dir.join("npm.bat"), "").unwrap();
+        let path = env::join_paths([dir.join("missing"), dir.clone()]).unwrap();
+        let exts = ["exe", "com", "cmd", "bat"];
+
+        let found = find_on_path("npm", Some(&path), &exts);
+        assert_eq!(found, Some(dir.join("npm.cmd")));
+        assert_eq!(find_on_path("pnpm", Some(&path), &exts), None);
+        assert_eq!(
+            find_on_path("npm.cmd", Some(&path), &exts),
+            None,
+            "explicit ext"
+        );
+        assert_eq!(
+            find_on_path("bin/npm", Some(&path), &exts),
+            None,
+            "has a dir"
+        );
+        assert_eq!(find_on_path("npm", None, &exts), None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The Windows regression: a bare name that only exists as a `.cmd` shim.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn windows_check_runs_a_cmd_shim_by_bare_name() {
+        let dir = env::temp_dir().join(format!("kit-gate-cmd-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("kitgateshim.cmd"), "@echo off\r\necho shim %1\r\n").unwrap();
+        let path = env::join_paths([dir.clone()]).unwrap();
+        let resolved = find_on_path("kitgateshim", Some(&path), &["exe", "com", "cmd", "bat"])
+            .expect("shim found");
+        let output = Command::new(resolved)
+            .arg("ok")
+            .output()
+            .await
+            .expect("shim runs");
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).contains("shim ok"));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

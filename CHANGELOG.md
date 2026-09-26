@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased — npm distribution
+
+### Added
+- `kit land <id>` commits a passed run's changes on a new branch `kit/<id>` at the run's base commit. It does not switch your branch or change your files. `--apply` edits the working tree instead (clean tree only), `--branch` names the branch, `--json` returns the `land` envelope. It refuses fail/error/killed runs, UNCONFIGURED gates and empty diffs; `--force` overrides with a warning and a note in the commit. A second land says `already landed` (trailer `Kit-Receipt: <id>`). The kept run worktree goes once it is landed
+- `kit run` and `kit receipt show` print `Next: kit land <id>` after a proven PASS with changes
+- The run dir has `base.txt`: the commit the run started from
+- `kit init` proposes a gate and writes `kit.toml`. It detects Rust, Go, Node (package manager from `packageManager` or the lockfile) and Python (ruff, black, mypy, pytest only when configured). It uses only scripts that exist and do not write: a `format` script that runs `prettier --write` is not the format check. `--print` only prints, `--force` replaces, `--check` runs each command once and keeps the ones that pass, `--json` returns the `init` envelope. Mixed repos use the root toolchain and name the rest
+- `kit run` (on stderr) and `kit doctor` point to `kit init` when the repo has no `kit.toml`; `kit doctor --json` has `kitToml`
+- npm: `@mzwin/kit` 1.x is a launcher plus one binary package per platform (Windows x64, macOS arm64/x64, Linux x64/arm64 glibc 2.17+). Prereleases publish to `alpha`; `latest` stays 0.1 until 1.0.0
+- `scripts/npm-smoke.mjs` installs the packed tarballs and runs `kit` through the npm shim; CI runs it on Linux, macOS and Windows
+- `kit doctor` shows how kit was installed and warns only about the old 0.1 Node app, not its own npm shim
+- GitHub Release per tag: `kit-<version>-<target>.tar.gz` / `.zip` and `SHA256SUMS`
+- `scripts/install.sh` (Linux glibc, macOS) and `scripts/install.ps1` (Windows x64): download from the GitHub Release, stop on a SHA-256 mismatch, install without sudo and without changing `PATH`. CI tests both against a local release (`installers.yml`)
+- Release: the launcher is published only after every platform package is visible on the registry; a new job installs the published version on Linux, macOS and Windows and runs it
+- The receipt (and so `kit land`) holds only what the agent changed. Files the gate writes, such as coverage or reports, stay out, and the run log says when the gate changed files
+- Release docs cover all channels: [`docs/dev/RELEASING.md`](docs/dev/RELEASING.md) (was `RELEASE-npm.md`)
+
+### Changed
+- `kit init --check` no longer drops a failing check in silence (the gate could then PASS on lint alone). It stops and names the checks; `--drop-failing` makes that choice explicit
+- Agent output that reaches the 8 MiB cap inside a multi-byte character no longer crashes the run, and nothing is appended after the cut
+- Live gate inference and `kit init` share one detector. Inference no longer uses a `format` script that writes files or runs `lint` as the typecheck; `lint` is an `extra` check. A pnpm, yarn or bun repo is no longer checked with npm when that tool is missing
+
+### Fixed
+- The receipt diff now holds new files, binary files (`--binary`) and commits the agent made. It used to be `git diff HEAD`: a new file was missing, and an agent that committed its work left an empty diff and a worktree that Kit removed as clean, with the commit in it
+- A gate check whose program is not found (or cannot start) now FAILS the gate. It used to be "skipped", which counted as passed: a typo in kit.toml gave a PASS receipt with no check run
+- `kit run` from a subdirectory uses the repo root, so it reads the same `kit.toml` the gate runs against
+- `kit doctor` says `not ready` (not `missing`) for an installed agent that is logged out or has no model, and `--json` agents gain `installed`
+- A run whose agent is not installed stops before any worktree. It used to fall back to a dry run, which could PASS the gate on an unchanged tree
+- On Windows, a missing agent no longer shows as ready (`cmd /C` "is not recognized" output was read as a version)
+- A `kit.toml` that does not parse stops the run with the file path and the parse error. It used to switch the gate off without a message
+- `ollama` is ready only when its server answers and the model is pulled
+- `--json` errors print a `{ ok: false, error }` envelope on stdout and exit 2
+- `kit` without a terminal stops with a message instead of drawing into a pipe and waiting
+- `receipt show` labels a zero-check gate `UNCONFIGURED`, the same as `kit run`
+- No `\\?\` prefixes in Windows paths; git worktree chatter is quiet; states print in lowercase; help points to the README, not repo-only docs
+
 ## 1.0.0-alpha.1 — Control Room
 
 Not 1.0.0. npm `@mzwin/kit` is still the 0.1 workbench. This is the Rust Control Room: dispatch, gate, receipt.

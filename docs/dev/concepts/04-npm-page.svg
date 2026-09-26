@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
+  <title id="title">Concept for the Kit npm package page</title>
+  <desc id="desc">A restrained npm package header presents the scoped package name, alpha install command, one-line purpose, and five supported platforms.</desc>
+  <rect width="1280" height="760" fill="#0B0E12"/>
+  <style>text{font-family:Consolas,'SFMono-Regular',monospace;fill:#F0F1E3}.muted{fill:#8D969A}.accent{fill:#00E6CC}.small{font-size:17px}.body{font-size:21px}.label{font-size:13px;letter-spacing:3px}.head{font-size:42px;font-weight:700}</style>
+  <rect x="40" y="35" width="1200" height="680" rx="8" fill="#12171C" stroke="#344047"/>
+  <text x="68" y="72" class="label accent">NPM / PACKAGE CONCEPT</text>
+  <text x="1030" y="72" class="label muted">README HERO</text>
+  <path d="M68 93h1144" stroke="#344047"/>
+  <text x="68" y="165" class="head">@mzwin/kit</text>
+  <text x="68" y="203" class="small muted">1.0.0-alpha.1  /  MIT  /  Node 18+ launcher</text>
+  <text x="68" y="271" class="body">Dispatch many agents. Watch them in one place.</text>
+  <text x="68" y="305" class="body accent">Nothing ships unproven.</text>
+  <text x="68" y="349" class="small muted">Rust Control Room for Codex, Claude, Grok, and Ollama.</text>
+  <text x="68" y="378" class="small muted">Each run gets a git worktree, a gate, and a receipt.</text>
+  <rect x="68" y="420" width="1144" height="76" rx="5" fill="#0B0E12" stroke="#00E6CC"/>
+  <text x="94" y="467" class="body">$ npm install -g <tspan class="accent">@mzwin/kit@alpha</tspan></text>
+  <text x="68" y="547" class="label accent">PREBUILT TARGETS</text>
+  <text x="68" y="583" class="small">Windows x64</text>
+  <text x="300" y="583" class="small">macOS arm64</text>
+  <text x="535" y="583" class="small">macOS x64</text>
+  <text x="750" y="583" class="small">Linux x64</text>
+  <text x="970" y="583" class="small">Linux arm64</text>
+  <text x="750" y="612" class="small muted">glibc</text>
+  <text x="970" y="612" class="small muted">glibc</text>
+  <path d="M68 637h1144" stroke="#344047"/>
+  <text x="68" y="676" class="small muted">Alpha installs require @alpha. Plain installs stay on 0.1.x until stable 1.0.0.</text>
+</svg>

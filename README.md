@@ -36,13 +36,27 @@ Repo shims (`.\kit.cmd` / `.\kit.ps1`, or `. .\scripts\use-rust-kit.ps1`) launch
 | Command | What it does |
 |---------|----------------|
 | `cargo run -p kit-cli -- --demo` / `.\kit.cmd --demo` | Control Room TUI |
+| `cargo run -p kit-cli -- init` | Write `kit.toml`: a gate for the repo (`--print`, `--check`, `--force`) |
 | `cargo run -p kit-cli -- run --task "…"` | One isolated run (live agent if on PATH) |
 | `cargo run -p kit-cli -- doctor` | Probe codex / claude / grok / ollama + skills pack |
 | `cargo run -p kit-cli -- run --dry-run --json` | Offline path (worktree → stream → **this repo's gate** → receipt) |
 | `cargo run -p kit-cli -- receipt list` | Browse proof under `~/.kit/runs/` |
 | `cargo run -p kit-cli -- receipt show <id>` | One receipt (+ `--output` for log tail) |
+| `cargo run -p kit-cli -- land <id>` | Put a passed run's changes on a new branch `kit/<id>` (`--apply`, `--branch`, `--force`) |
 
-**Product loop:** dispatch → table of runs → FAIL wash + first error → `r` retry with gate context → receipt under `~/.kit/runs/<id>/`.
+**Your repo:** `kit init` reads `Cargo.toml`, `go.mod`, `package.json` or `pyproject.toml`, prints the `kit.toml` gate it proposes and writes it. It uses only commands that check and do not change files. `kit init --print` shows the proposal only; `kit init --check` runs each command once and keeps the ones that pass; `--force` replaces an existing file.
+
+```bash
+cd your-repo
+kit init --check
+kit run --agent codex --task "fix the failing test"
+kit land <id>              # the id kit run printed
+git merge kit/<id>
+```
+
+**Land:** a run that passes its gate keeps its changes in `diff.patch`. `kit land <id>` commits them on a new branch `kit/<id>` at the commit the run started from. Your branch, HEAD and files do not change. `--apply` puts the changes in your working tree instead (clean tree only), with no commit. Kit refuses runs that failed, have no gate checks (UNCONFIGURED) or changed nothing; `--force` overrides the first two and says so in the commit. Landing twice says `already landed`.
+
+**Product loop:** dispatch → table of runs → FAIL wash + first error → `r` retry with gate context → receipt under `~/.kit/runs/<id>/` → `kit land <id>`.
 
 Keys: `↑↓` select · `f` filter · `Enter` open · `g` gate · `d` dispatch · `b` board · `k` kill · `r` retry · `?` help · `q` quit.
 
@@ -51,6 +65,33 @@ This repo has a real [`kit.toml`](kit.toml) (fmt + clippy + `cargo test --worksp
 ---
 
 ## Install (1.0 alpha)
+
+Use one of these lines. Each installs the same `kit` binary.
+
+| Method | Command |
+|--------|---------|
+| npm (primary) | `npm install -g @mzwin/kit@alpha` |
+| Linux, macOS | `curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh \| sh -s -- --prerelease` |
+| Windows PowerShell | `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.ps1))) -Prerelease` |
+| Cargo | `cargo install --git https://github.com/Zwin-ux/kit kit-cli --locked` |
+
+- npm without `@alpha` installs the old 0.1 app until 1.0.0.
+- The install scripts need a GitHub Release with archives. The first one comes with the release after 1.0.0-alpha.1. Until then, use npm or Cargo.
+- The install scripts check the SHA-256 of the download against `SHA256SUMS` and stop if it does not match. They install to `~/.local/bin` (Windows: `%LOCALAPPDATA%\kit\bin`) and do not change `PATH`. If that directory is not on `PATH`, they show the line to add.
+- Linux builds need glibc 2.17 or newer. On musl (Alpine), use the Cargo line.
+- Do not use `cargo install kit-cli`. That crate on crates.io is a different project.
+
+Then:
+
+```bash
+kit doctor
+kit --demo
+cd your-repo && kit init
+```
+
+Details: [`docs/dev/RELEASING.md`](docs/dev/RELEASING.md).
+
+From source:
 
 ```bash
 git clone https://github.com/Zwin-ux/kit.git
@@ -115,7 +156,7 @@ cargo run -p kit-cli -- --demo   # lands on a FAIL so the proof loop is obvious
 
 ## Receipts
 
-Every run writes `~/.kit/runs/<id>/` (`receipt.json`, `output.log`, optional `diff.patch` / `gate.json`).
+Every run writes `~/.kit/runs/<id>/` (`receipt.json`, `output.log`, optional `diff.patch` / `gate.json` / `base.txt`). `diff.patch` holds every change since the run's base commit (`base.txt`): edits, new files, binary files and commits the agent made. It applies with `git apply` to that commit.
 
 ```bash
 cargo run -p kit-cli -- receipt list
