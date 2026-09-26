@@ -35,13 +35,11 @@ pub enum Action {
         name: String,
         value: toml_edit::Table,
     },
-    /// Run an agent's own CLI (`claude mcp add`), with the command that undoes it.
-    Command {
-        argv: Vec<String>,
-        undo: Vec<String>,
-        what: String,
-        /// Adds something that runs code (a local MCP server).
-        code: bool,
+    /// A user-scope Claude Code server, added through Claude Code's own CLI
+    /// (`claude mcp add-json --scope user`), which owns `~/.claude.json`.
+    ClaudeMcp {
+        name: String,
+        value: serde_json::Value,
     },
     /// Append one entry to `hooks.<event>` in a JSON settings file.
     HookJson {
@@ -69,7 +67,9 @@ impl Action {
             }
             Self::McpJson { file, name, .. } => format!("mcp       {name} → {}", tilde(file)),
             Self::McpToml { file, name, .. } => format!("mcp       {name} → {}", tilde(file)),
-            Self::Command { what, .. } => format!("mcp       {what}"),
+            Self::ClaudeMcp { name, .. } => {
+                format!("mcp       {name} → claude mcp add-json --scope user")
+            }
             Self::HookJson { file, event, .. } => format!("hook      {event} → {}", tilde(file)),
             Self::GateToml { file, commands, .. } => format!(
                 "gate      {}  + {}",
@@ -86,20 +86,68 @@ impl Action {
 }
 
 impl Action {
+    /// The file or folder this action writes, if any.
+    pub fn path(&self) -> Option<&Path> {
+        match self {
+            Self::Skill { dir, .. } => Some(dir),
+            Self::Rules { file, .. }
+            | Self::McpJson { file, .. }
+            | Self::McpToml { file, .. }
+            | Self::HookJson { file, .. }
+            | Self::GateToml { file, .. } => Some(file),
+            Self::ClaudeMcp { .. } | Self::Skip { .. } => None,
+        }
+    }
+
+    /// The program an MCP action makes the agent start, as a command line
+    /// (`npx -y pkg@1.2.3`). `None` for anything else, or a remote server.
+    pub fn command(&self) -> Option<String> {
+        let (cmd, args): (&str, Vec<String>) = match self {
+            Self::McpJson { value, .. } | Self::ClaudeMcp { value, .. } => (
+                value.get("command")?.as_str()?,
+                value
+                    .get("args")
+                    .and_then(|a| a.as_array())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|a| a.as_str().map(str::to_string))
+                    .collect(),
+            ),
+            Self::McpToml { value, .. } => (
+                value.get("command")?.as_str()?,
+                value
+                    .get("args")
+                    .and_then(|a| a.as_array())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|a| a.as_str().map(str::to_string))
+                    .collect(),
+            ),
+            _ => return None,
+        };
+        Some(
+            std::iter::once(cmd.to_string())
+                .chain(args)
+                .map(|a| shell_word(&a))
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
+    }
+
     /// Identity of the thing this action changes. Two kits that change the
     /// same thing share it; it is undone only when neither needs it.
     pub fn key(&self) -> String {
         match self {
-            Self::Skill { dir, .. } => format!("skill {}", dir.display()),
-            Self::Rules { file, kit, .. } => format!("rules {} {kit}", file.display()),
+            Self::Skill { dir, .. } => format!("skill {}", key_path(dir)),
+            Self::Rules { file, kit, .. } => format!("rules {} {kit}", key_path(file)),
             Self::McpJson { file, name, .. } | Self::McpToml { file, name, .. } => {
-                format!("mcp {} {name}", file.display())
+                format!("mcp {} {name}", key_path(file))
             }
-            Self::Command { undo, .. } => format!("command {}", undo.join(" ")),
+            Self::ClaudeMcp { name, .. } => format!("claude-mcp user {name}"),
             Self::HookJson { file, event, entry } => {
-                format!("hook {} {event} {entry}", file.display())
+                format!("hook {} {event} {entry}", key_path(file))
             }
-            Self::GateToml { file, kit, .. } => format!("gate {} {kit}", file.display()),
+            Self::GateToml { file, kit, .. } => format!("gate {} {kit}", key_path(file)),
             Self::Skip { piece, .. } => format!("skip {piece}"),
         }
     }
@@ -109,7 +157,7 @@ impl Action {
         match self {
             Self::McpJson { value, .. } => value.get("command").is_some(),
             Self::McpToml { value, .. } => value.contains_key("command"),
-            Self::Command { code, .. } => *code,
+            Self::ClaudeMcp { value, .. } => value.get("command").is_some(),
             // Gate commands run on every `kit run` in the repo.
             Self::HookJson { .. } | Self::GateToml { .. } => true,
             _ => false,
@@ -118,6 +166,11 @@ impl Action {
 }
 
 /// What was done, with enough to undo it exactly. Stored in the lock file.
+///
+/// Records are data, never commands: undoing one runs nothing but Kit's
+/// own code, plus `claude mcp remove --scope user <name>` built here from a
+/// validated name. Paths are stored relative to the scope's root (see
+/// `lock.rs`), so a record can only ever point inside it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Applied {
@@ -135,14 +188,24 @@ pub enum Applied {
         file: PathBuf,
         name: String,
         created: bool,
+        /// The user's own server of that name, replaced with `--force`;
+        /// remove puts it back.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous: Option<serde_json::Value>,
     },
     McpToml {
         file: PathBuf,
         name: String,
         created: bool,
+        /// As for `McpJson`, the table's TOML text.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous: Option<String>,
     },
-    Command {
-        undo: Vec<String>,
+    ClaudeMcp {
+        name: String,
+        /// The server as added, so an upgrade can tell it changed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<serde_json::Value>,
     },
     HookJson {
         file: PathBuf,
@@ -160,43 +223,320 @@ pub enum Applied {
 }
 
 impl Applied {
+    /// One line for the plan screen.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Skill { dir, .. } => format!("skill {}", tilde(dir)),
+            Self::Rules { file, kit, .. } => format!("rules {} (block kit:{kit})", tilde(file)),
+            Self::McpJson { file, name, .. } | Self::McpToml { file, name, .. } => {
+                format!("mcp {name} from {}", tilde(file))
+            }
+            Self::ClaudeMcp { name, .. } => format!("mcp {name} from Claude Code (user)"),
+            Self::HookJson { file, event, .. } => format!("hook {event} from {}", tilde(file)),
+            Self::GateToml { file, kit, .. } => format!("gate {kit} from {}", tilde(file)),
+        }
+    }
+
+    /// The file or folder this record changed, if any.
+    pub fn path(&self) -> Option<&Path> {
+        match self {
+            Self::Skill { dir, .. } => Some(dir),
+            Self::Rules { file, .. }
+            | Self::McpJson { file, .. }
+            | Self::McpToml { file, .. }
+            | Self::HookJson { file, .. }
+            | Self::GateToml { file, .. } => Some(file),
+            Self::ClaudeMcp { .. } => None,
+        }
+    }
+
+    pub fn path_mut(&mut self) -> Option<&mut PathBuf> {
+        match self {
+            Self::Skill { dir, .. } => Some(dir),
+            Self::Rules { file, .. }
+            | Self::McpJson { file, .. }
+            | Self::McpToml { file, .. }
+            | Self::HookJson { file, .. }
+            | Self::GateToml { file, .. } => Some(file),
+            Self::ClaudeMcp { .. } => None,
+        }
+    }
+
     /// Same identity as [`Action::key`].
     pub fn key(&self) -> String {
         match self {
-            Self::Skill { dir, .. } => format!("skill {}", dir.display()),
-            Self::Rules { file, kit, .. } => format!("rules {} {kit}", file.display()),
+            Self::Skill { dir, .. } => format!("skill {}", key_path(dir)),
+            Self::Rules { file, kit, .. } => format!("rules {} {kit}", key_path(file)),
             Self::McpJson { file, name, .. } | Self::McpToml { file, name, .. } => {
-                format!("mcp {} {name}", file.display())
+                format!("mcp {} {name}", key_path(file))
             }
-            Self::Command { undo } => format!("command {}", undo.join(" ")),
+            Self::ClaudeMcp { name, .. } => format!("claude-mcp user {name}"),
             Self::HookJson {
                 file, event, entry, ..
-            } => format!("hook {} {event} {entry}", file.display()),
-            Self::GateToml { file, kit, .. } => format!("gate {} {kit}", file.display()),
+            } => format!("hook {} {event} {entry}", key_path(file)),
+            Self::GateToml { file, kit, .. } => format!("gate {} {kit}", key_path(file)),
         }
     }
 }
 
-/// Apply every action in order. On a failure, undo what was applied and
-/// return the error, so a failed `kit add` changes nothing.
-pub fn apply_all(actions: &[Action], force: bool) -> Result<Vec<Applied>> {
+/// Is what `action` wants already exactly what `record` installed, and
+/// still on disk? An upgrade or a changed server is not.
+pub fn in_place(action: &Action, record: &Applied) -> bool {
+    match (action, record) {
+        (Action::Skill { payload, .. }, Applied::Skill { hash, .. }) => *hash == payload.hash,
+        (
+            Action::Rules {
+                file,
+                kit,
+                version,
+                text,
+            },
+            Applied::Rules { .. },
+        ) => {
+            let block = set_block("", kit, version, text);
+            read_or_empty(file).is_ok_and(|t| t.contains(block.trim_end()))
+        }
+        (Action::McpJson { file, name, value }, Applied::McpJson { .. }) => read_json(file)
+            .is_ok_and(|d| d.get("mcpServers").and_then(|s| s.get(name)) == Some(value)),
+        (Action::McpToml { file, name, value }, Applied::McpToml { .. }) => read_or_empty(file)
+            .ok()
+            .and_then(|t| t.parse::<toml_edit::DocumentMut>().ok())
+            .and_then(|d| {
+                d.get("mcp_servers")
+                    .and_then(|s| s.get(name))
+                    .and_then(|i| i.as_table().map(ToString::to_string))
+            })
+            .is_some_and(|t| t == value.to_string()),
+        (Action::ClaudeMcp { value, .. }, Applied::ClaudeMcp { value: had, .. }) => {
+            had.as_ref().is_none_or(|h| h == value)
+        }
+        (Action::HookJson { file, event, entry }, Applied::HookJson { .. }) => read_json(file)
+            .is_ok_and(|d| {
+                d["hooks"][event]
+                    .as_array()
+                    .is_some_and(|l| l.contains(entry))
+            }),
+        (Action::Skip { .. }, _) => true,
+        _ => false,
+    }
+}
+
+/// Two kits asking for the same key want the same thing.
+pub fn same_content(a: &Action, b: &Action) -> bool {
+    match (a, b) {
+        (Action::Skill { payload: x, .. }, Action::Skill { payload: y, .. }) => x.hash == y.hash,
+        (Action::McpJson { value: x, .. }, Action::McpJson { value: y, .. })
+        | (Action::ClaudeMcp { value: x, .. }, Action::ClaudeMcp { value: y, .. }) => x == y,
+        (Action::McpToml { value: x, .. }, Action::McpToml { value: y, .. }) => {
+            x.to_string() == y.to_string()
+        }
+        _ => true,
+    }
+}
+
+/// A record replaced by a newer apply keeps what only the first knew:
+/// that Kit created the file, and the user's server it replaced.
+pub fn merge(old: &Applied, new: Applied) -> Applied {
+    match (old, new) {
+        (Applied::Rules { created: c, .. }, Applied::Rules { file, kit, created }) => {
+            Applied::Rules {
+                file,
+                kit,
+                created: created || *c,
+            }
+        }
+        (
+            Applied::McpJson {
+                created: c,
+                previous: p,
+                ..
+            },
+            Applied::McpJson {
+                file,
+                name,
+                created,
+                previous,
+            },
+        ) => Applied::McpJson {
+            file,
+            name,
+            created: created || *c,
+            previous: previous.or_else(|| p.clone()),
+        },
+        (
+            Applied::McpToml {
+                created: c,
+                previous: p,
+                ..
+            },
+            Applied::McpToml {
+                file,
+                name,
+                created,
+                previous,
+            },
+        ) => Applied::McpToml {
+            file,
+            name,
+            created: created || *c,
+            previous: previous.or_else(|| p.clone()),
+        },
+        (
+            Applied::HookJson { created: c, .. },
+            Applied::HookJson {
+                file,
+                event,
+                entry,
+                created,
+            },
+        ) => Applied::HookJson {
+            file,
+            event,
+            entry,
+            created: created || *c,
+        },
+        (_, new) => new,
+    }
+}
+
+/// Apply every action in order. The result lines up with `actions`:
+/// `None` where nothing needed doing (the user already had exactly that).
+/// `ours` holds the keys of changes Kit already made (an upgrade may
+/// replace those). On a failure every file and folder touched is put back
+/// byte for byte, so a failed `kit add` really changes nothing.
+pub fn apply_all(
+    actions: &[Action],
+    force: bool,
+    ours: &std::collections::HashSet<String>,
+) -> Result<Vec<Option<Applied>>> {
+    let mut saved: Vec<Saved> = Vec::new();
     let mut done = Vec::new();
+    let mut ours = ours.clone();
     for action in actions {
-        match apply(action, force) {
-            Ok(Some(a)) => done.push(a),
-            Ok(None) => {}
+        let key = action.key();
+        let result = save(action).and_then(|s| {
+            saved.push(s);
+            apply(action, force, ours.contains(&key))
+        });
+        ours.insert(key);
+        match result {
+            Ok(a) => done.push(a),
             Err(err) => {
-                for a in done.iter().rev() {
-                    let _ = undo(a, true);
+                for (i, s) in saved.iter().enumerate().rev() {
+                    s.restore(done.get(i).and_then(Option::as_ref));
                 }
                 return Err(err.context("nothing was changed"));
             }
         }
     }
+    for s in saved {
+        s.discard();
+    }
     Ok(done)
 }
 
-fn apply(action: &Action, force: bool) -> Result<Option<Applied>> {
+/// What a path held before an action touched it.
+enum Saved {
+    File {
+        path: PathBuf,
+        bytes: Option<Vec<u8>>,
+    },
+    Dir {
+        path: PathBuf,
+        copy: Option<PathBuf>,
+    },
+    Nothing,
+}
+
+fn save(action: &Action) -> Result<Saved> {
+    Ok(match action {
+        Action::Skill { dir, .. } => {
+            let copy = if dir.exists() {
+                let copy = dir.with_file_name(format!(
+                    ".{}.kit-rollback-{}",
+                    dir.file_name().unwrap_or_default().to_string_lossy(),
+                    std::process::id()
+                ));
+                let _ = std::fs::remove_dir_all(&copy);
+                copy_dir(dir, &copy)?;
+                Some(copy)
+            } else {
+                None
+            };
+            Saved::Dir {
+                path: dir.clone(),
+                copy,
+            }
+        }
+        Action::ClaudeMcp { .. } | Action::Skip { .. } => Saved::Nothing,
+        other => {
+            let path = other
+                .path()
+                .expect("file actions have a path")
+                .to_path_buf();
+            let bytes = match std::fs::read(&path) {
+                Ok(b) => Some(b),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(e) => return Err(e).with_context(|| format!("cannot read {}", path.display())),
+            };
+            Saved::File { path, bytes }
+        }
+    })
+}
+
+impl Saved {
+    /// Put the path back as it was. `applied` undoes what cannot be saved
+    /// as bytes (a server added through `claude mcp`).
+    fn restore(&self, applied: Option<&Applied>) {
+        match self {
+            Self::File { path, bytes } => match bytes {
+                Some(b) => {
+                    let _ = write_file(path, b);
+                }
+                None => {
+                    let _ = std::fs::remove_file(path);
+                    prune(path, 2);
+                }
+            },
+            Self::Dir { path, copy } => {
+                let _ = std::fs::remove_dir_all(path);
+                match copy {
+                    Some(c) => {
+                        let _ = std::fs::rename(c, path);
+                    }
+                    None => prune(path, 2),
+                }
+            }
+            Self::Nothing => {
+                if let Some(a @ Applied::ClaudeMcp { .. }) = applied {
+                    let _ = undo(a, true);
+                }
+            }
+        }
+    }
+
+    fn discard(self) {
+        if let Self::Dir { copy: Some(c), .. } = self {
+            let _ = std::fs::remove_dir_all(c);
+        }
+    }
+}
+
+fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let (src, dst) = (entry.path(), to.join(entry.file_name()));
+        if entry.file_type()?.is_dir() {
+            copy_dir(&src, &dst)?;
+        } else {
+            std::fs::copy(&src, &dst)?;
+        }
+    }
+    Ok(())
+}
+
+fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
     Ok(Some(match action {
         Action::Skill { dir, payload } => {
             write_skill(dir, payload, force)?;
@@ -224,21 +564,25 @@ fn apply(action: &Action, force: bool) -> Result<Option<Applied>> {
             let created = !file.exists();
             let mut doc = read_json(file)?;
             let servers = object_at(&mut doc, "mcpServers", file)?;
-            if let Some(existing) = servers.get(name)
-                && existing != value
-                && !force
-            {
-                bail!(
+            let existing = servers.get(name).cloned();
+            let previous = match existing {
+                // The user already has exactly this: it stays theirs.
+                Some(v) if v == *value && !ours => return Ok(None),
+                Some(_) if ours => None,
+                Some(v) if force => Some(v),
+                Some(_) => bail!(
                     "{} already has an MCP server '{name}' that Kit did not write. Rename or remove it, or use --force",
                     file.display()
-                );
-            }
+                ),
+                None => None,
+            };
             servers.insert(name.clone(), value.clone());
             write_json(file, &doc)?;
             Applied::McpJson {
                 file: file.clone(),
                 name: name.clone(),
                 created,
+                previous,
             }
         }
         Action::McpToml { file, name, value } => {
@@ -253,27 +597,39 @@ fn apply(action: &Action, force: bool) -> Result<Option<Applied>> {
                 .as_table_mut()
                 .with_context(|| format!("{}: mcp_servers is not a table", file.display()))?;
             servers.set_implicit(true);
-            let same = servers
-                .get(name)
-                .and_then(|i| i.as_table())
-                .is_some_and(|t| t.to_string() == value.to_string());
-            if servers.contains_key(name) && !same && !force {
-                bail!(
+            let existing = servers.get(name).map(|i| {
+                i.as_table()
+                    .map_or_else(|| i.to_string(), ToString::to_string)
+            });
+            let previous = match existing {
+                Some(t) if t == value.to_string() && !ours => return Ok(None),
+                Some(_) if ours => None,
+                Some(t) if force => Some(t),
+                Some(_) => bail!(
                     "{} already has [mcp_servers.{name}] that Kit did not write. Rename or remove it, or use --force",
                     file.display()
-                );
-            }
+                ),
+                None => None,
+            };
             servers.insert(name, toml_edit::Item::Table(value.clone()));
             write(file, &doc.to_string())?;
             Applied::McpToml {
                 file: file.clone(),
                 name: name.clone(),
                 created,
+                previous,
             }
         }
-        Action::Command { argv, undo, .. } => {
-            run_argv(argv)?;
-            Applied::Command { undo: undo.clone() }
+        Action::ClaudeMcp { name, value } => {
+            if ours {
+                // An upgrade: Claude Code will not add over its own entry.
+                run_argv(&claude_mcp_argv("remove", name, None)?)?;
+            }
+            run_argv(&claude_mcp_argv("add-json", name, Some(value))?)?;
+            Applied::ClaudeMcp {
+                name: name.clone(),
+                value: Some(value.clone()),
+            }
         }
         Action::HookJson { file, event, entry } => {
             let created = !file.exists();
@@ -284,7 +640,11 @@ fn apply(action: &Action, force: bool) -> Result<Option<Applied>> {
                 .or_insert_with(|| serde_json::Value::Array(Vec::new()))
                 .as_array_mut()
                 .with_context(|| format!("{}: hooks.{event} is not a list", file.display()))?;
-            if !list.contains(entry) {
+            if list.contains(entry) {
+                if !ours {
+                    return Ok(None); // already there, and not Kit's to take out
+                }
+            } else {
                 list.push(entry.clone());
             }
             write_json(file, &doc)?;
@@ -361,6 +721,9 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 return Ok(None);
             }
             if !force && disk_hash(dir)?.as_deref() != Some(hash.as_str()) {
+                // It is the user's now: a later `kit add` must not treat it
+                // as Kit's and overwrite it.
+                let _ = std::fs::remove_file(dir.join(OWNED));
                 return Ok(Some(format!(
                     "{} was changed after install; left in place (use --force to remove it)",
                     tilde(dir)
@@ -385,11 +748,15 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             file,
             name,
             created,
+            previous,
         } => {
             if file.exists() {
                 let mut doc = read_json(file)?;
                 if let Some(servers) = doc.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-                    servers.remove(name);
+                    match previous {
+                        Some(v) => servers.insert(name.clone(), v.clone()),
+                        None => servers.remove(name),
+                    };
                 }
                 finish_json(file, &doc, *created, "mcpServers")?;
             }
@@ -398,12 +765,24 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             file,
             name,
             created,
+            previous,
         } => {
             if file.exists() {
                 let mut doc: toml_edit::DocumentMut = read_or_empty(file)?.parse()?;
                 let empty = match doc.get_mut("mcp_servers").and_then(|t| t.as_table_mut()) {
                     Some(servers) => {
-                        servers.remove(name);
+                        match previous
+                            .as_deref()
+                            .map(str::parse::<toml_edit::DocumentMut>)
+                        {
+                            Some(Ok(prev)) => {
+                                servers
+                                    .insert(name, toml_edit::Item::Table(prev.as_table().clone()));
+                            }
+                            _ => {
+                                servers.remove(name);
+                            }
+                        }
                         servers.is_empty()
                     }
                     None => true,
@@ -419,7 +798,9 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 }
             }
         }
-        Applied::Command { undo } => run_argv(undo)?,
+        Applied::ClaudeMcp { name, .. } => {
+            run_argv(&claude_mcp_argv("remove", name, None)?)?;
+        }
         Applied::HookJson {
             file,
             event,
@@ -491,6 +872,24 @@ pub fn drifted(applied: &Applied) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Does `path` resolve inside `base`, following any symlinks on the way?
+/// A repo can make `.claude` a link to somewhere else; Kit then neither
+/// writes through it nor deletes through it.
+pub fn inside(path: &Path, base: &Path) -> bool {
+    let Ok(base) = std::fs::canonicalize(base) else {
+        return false;
+    };
+    // Kit never writes a link itself, so one in the final place is foreign.
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return false;
+    }
+    // The deepest part that exists decides where the rest would land.
+    path.ancestors()
+        .find(|p| p.exists())
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .is_some_and(|real| real.starts_with(&base))
+}
+
 /// Remove up to `levels` parent folders of `path` while they are empty
 /// (`.claude/skills`, then `.claude`). A folder with anything in it stays.
 fn prune(path: &Path, levels: usize) {
@@ -522,15 +921,14 @@ fn write_skill(dir: &Path, payload: &SkillPayload, force: bool) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&path, &f.bytes)
-            .with_context(|| format!("cannot write {}", path.display()))?;
+        write_file(&path, &f.bytes)?;
         #[cfg(unix)]
         if f.executable {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
         }
     }
-    std::fs::write(dir.join(OWNED), format!("{}\n", payload.hash))?;
+    write_file(&dir.join(OWNED), format!("{}\n", payload.hash).as_bytes())?;
     Ok(())
 }
 
@@ -620,10 +1018,62 @@ fn read_or_empty(file: &Path) -> Result<String> {
 }
 
 fn write(file: &Path, text: &str) -> Result<()> {
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)?;
+    write_file(file, text.as_bytes())
+}
+
+/// Write `bytes` to `file` without ever following a link: the file must not
+/// be a link, the data goes to a new temp file opened with `create_new`
+/// (O_EXCL) under a fresh name in the same folder, and it is renamed over
+/// the file only after checking again. A planted link, at the file or at a
+/// guessable temp name, cannot redirect the write elsewhere.
+pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    let is_link = |p: &Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
+    if is_link(file) {
+        bail!(
+            "{} is a link. Kit will not write through it",
+            file.display()
+        );
     }
-    std::fs::write(file, text).with_context(|| format!("cannot write {}", file.display()))
+    let parent = file
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    let tmp = parent.join(format!(
+        ".{}.kit-{}-{nanos:x}-{}.tmp",
+        file.file_name().unwrap_or_default().to_string_lossy(),
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ));
+    let written = (|| -> std::io::Result<()> {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()
+    })();
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e).with_context(|| format!("cannot write {}", file.display()));
+    }
+    if is_link(file) {
+        let _ = std::fs::remove_file(&tmp);
+        bail!(
+            "{} became a link. Kit will not write through it",
+            file.display()
+        );
+    }
+    std::fs::rename(&tmp, file).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        anyhow::Error::new(e).context(format!("cannot write {}", file.display()))
+    })
 }
 
 fn read_json(file: &Path) -> Result<serde_json::Value> {
@@ -677,6 +1127,23 @@ fn object_at<'a>(
         .with_context(|| format!("{}: {key} is not an object", file.display()))
 }
 
+/// `claude mcp <verb> --scope user <name> [json]`. The name must be a
+/// plain name, so it can never be read as a flag (`--scope=project`).
+fn claude_mcp_argv(
+    verb: &str,
+    name: &str,
+    json: Option<&serde_json::Value>,
+) -> Result<Vec<String>> {
+    if !super::manifest::is_slug(name) {
+        bail!("'{name}' is not a valid MCP server name");
+    }
+    let mut argv: Vec<String> = ["claude", "mcp", verb, "--scope", "user", name]
+        .map(String::from)
+        .to_vec();
+    argv.extend(json.map(ToString::to_string));
+    Ok(argv)
+}
+
 /// Run an agent CLI directly, never through a shell, so kit-supplied
 /// arguments (JSON, names) cannot be reinterpreted. On Windows the npm
 /// `.cmd` shim is found on PATH and std escapes its arguments.
@@ -715,6 +1182,28 @@ pub fn find_program(program: &str) -> Option<PathBuf> {
             .map(|ext| dir.join(format!("{program}{ext}")))
             .find(|p| p.is_file())
     })
+}
+
+/// A path as it appears in a key: one separator, so a path rebuilt from a
+/// record (`root` + `.claude/skills/x`) matches the one a writer made
+/// (`root/.claude/skills` + `x`) on Windows too.
+fn key_path(p: &Path) -> String {
+    p.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// One argument as it would be typed: quoted when it has spaces or quotes.
+pub fn shell_word(a: &str) -> String {
+    if !a.is_empty()
+        && a.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_./@=:,+%^~".contains(c))
+    {
+        a.to_string()
+    } else {
+        format!("'{}'", a.replace('\'', "'\\''"))
+    }
 }
 
 /// For display: relative inside the current folder, `~/…` under home.
@@ -787,8 +1276,12 @@ mod tests {
                 payload: payload("v1"),
             }],
             false,
+            &Default::default(),
         )
-        .unwrap();
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
         assert!(dir.join(OWNED).is_file());
         assert_eq!(drifted(&applied[0]).unwrap(), None);
         std::fs::write(dir.join("SKILL.md"), "edited").unwrap();
@@ -811,6 +1304,7 @@ mod tests {
                 payload: payload("v1"),
             }],
             false,
+            &Default::default(),
         )
         .unwrap_err();
         assert!(
@@ -849,8 +1343,12 @@ mod tests {
                 },
             ],
             false,
+            &Default::default(),
         )
-        .unwrap();
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
         assert!(
             std::fs::read_to_string(&toml)
                 .unwrap()
@@ -893,6 +1391,7 @@ mod tests {
                 },
             ],
             false,
+            &Default::default(),
         )
         .unwrap_err();
         assert!(

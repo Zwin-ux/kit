@@ -80,8 +80,8 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Some(Command::Remove(args)) => kits::install::cmd_remove(args, json),
         Some(Command::List(args)) => kits::install::cmd_list(args, json),
         Some(Command::Hook {
-            event: cli::HookCommand::AfterEdit { kit },
-        }) => std::process::exit(kits::hook::after_edit(&kit)?),
+            event: cli::HookCommand::AfterEdit { kit, scope },
+        }) => std::process::exit(kits::hook::after_edit(&kit, scope)?),
         Some(Command::Run(args)) => cmd_run(args, json).await,
         Some(Command::Init(args)) => init::cmd_init(args, json).await,
         Some(Command::Land(args)) => land::cmd_land(args, json),
@@ -779,6 +779,7 @@ fn print_doctor(version: &str, json: bool) {
         eprintln!("kit: cannot check installed kits: {e:#}");
         Vec::new()
     });
+    let kits_ok = kits.iter().all(kits::doctor::KitReport::ok);
 
     if json {
         let agents: Vec<serde_json::Value> = statuses
@@ -808,11 +809,19 @@ fn print_doctor(version: &str, json: bool) {
             "kitToml": kit_toml.as_ref().map(|p| p.display().to_string()),
             "kits": kits::doctor::to_json(&kits),
         });
-        let envelope = json_envelope("doctor", true, data, None);
+        let envelope = json_envelope(
+            "doctor",
+            kits_ok,
+            data,
+            (!kits_ok).then(|| "an installed kit failed a check".to_string()),
+        );
         println!(
             "{}",
             serde_json::to_string_pretty(&envelope).unwrap_or_default()
         );
+        if !kits_ok {
+            std::process::exit(1);
+        }
         return;
     }
 
@@ -878,6 +887,9 @@ fn print_doctor(version: &str, json: bool) {
     }
     println!("  kit run \"describe a task\"");
     println!("  kit --demo");
+    if !kits_ok {
+        std::process::exit(1);
+    }
 }
 
 #[cfg(test)]

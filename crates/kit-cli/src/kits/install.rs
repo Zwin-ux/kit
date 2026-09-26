@@ -2,7 +2,7 @@
 //! them in `kit.lock`, undo them exactly. See `docs/dev/DESIGN-KITS.md` §1, §4.
 
 use super::catalog::{self, Kit};
-use super::lock::{Entry, Lock, LockedHook};
+use super::lock::{ApprovedChecks, Entry, Lock, LockedHook};
 use super::plan::{self, Action, Applied, tilde};
 use super::writers::{self, Agent, Options, Resolved, Scope};
 use crate::cli::{AddArgs, ListKitsArgs, RemoveArgs};
@@ -133,6 +133,9 @@ struct Prepared {
     todo: Vec<(String, Action)>,
     /// (kit, record) already installed by another kit, now shared.
     shared: Vec<(String, Applied)>,
+    /// (kit, record) an older version of the kit installed that the new
+    /// one no longer has: undone after the new version is in place.
+    stale: Vec<(String, Applied)>,
 }
 
 fn prepare(
@@ -146,35 +149,95 @@ fn prepare(
     let mut p = Prepared {
         todo: Vec::new(),
         shared: Vec::new(),
+        stale: Vec::new(),
     };
     for r in resolved {
         let name = r.kit.name().to_string();
-        for action in writers::plan(r, agents, scope, opts, &hook) {
+        let actions = writers::plan(r, agents, scope, opts, &hook);
+        for action in &actions {
             let key = action.key();
-            let existing = lock.applied().find(|a| a.key() == key);
-            match (existing, &action) {
-                (None, _) => p.todo.push((name.clone(), action)),
-                (Some(Applied::Skill { hash, dir }), Action::Skill { payload, .. })
-                    if *hash != payload.hash =>
-                {
-                    let owner = lock
-                        .kits
-                        .iter()
-                        .find(|e| e.applied.iter().any(|a| a.key() == key))
-                        .map_or("another kit", |e| e.name.as_str());
-                    if owner != name {
-                        bail!(
-                            "{} is installed by {owner} with different content than {name} wants. Remove {owner} first",
-                            tilde(dir)
-                        );
-                    }
-                    p.todo.push((name.clone(), action));
+            // Two kits in one install that want the same thing differently.
+            if let Some((other, first)) = p.todo.iter().find(|(k, a)| *k != name && a.key() == key)
+                && !plan::same_content(first, action)
+            {
+                bail!(
+                    "{other} and {name} both set {}, differently. Install one of them",
+                    action
+                        .describe()
+                        .split_whitespace()
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                );
+            }
+            let Some(done) = lock.applied().find(|a| a.key() == key) else {
+                p.todo.push((name.clone(), action.clone()));
+                continue;
+            };
+            if plan::in_place(action, done) {
+                p.shared.push((name.clone(), done.clone()));
+                continue;
+            }
+            let owners: Vec<&str> = lock
+                .kits
+                .iter()
+                .filter(|e| e.applied.iter().any(|a| a.key() == key))
+                .map(|e| e.name.as_str())
+                .collect();
+            match owners.iter().find(|o| **o != name) {
+                // Another kit put it there, with different content.
+                Some(owner) => bail!(
+                    "{} is installed by {owner} with different content than {name} wants. Remove {owner} first",
+                    action
+                        .describe()
+                        .split_whitespace()
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ),
+                // An older version of this kit: replace it.
+                None => p.todo.push((name.clone(), action.clone())),
+            }
+        }
+        // What an older version installed that this one no longer has. Only
+        // when the version changed and every agent it was installed for is
+        // in this install, so `kit add x -a codex` never drops Claude's files.
+        if let Some(e) = lock.get(&name)
+            && e.version != r.kit.manifest.kit.version
+            && e.agents.iter().all(|a| agents.iter().any(|x| x.id() == a))
+        {
+            let keys: BTreeSet<String> = actions.iter().map(Action::key).collect();
+            for old in &e.applied {
+                let used_elsewhere = lock
+                    .kits
+                    .iter()
+                    .any(|o| o.name != name && o.applied.iter().any(|a| a.key() == old.key()));
+                if !keys.contains(&old.key()) && !used_elsewhere {
+                    p.stale.push((name.clone(), old.clone()));
                 }
-                (Some(done), _) => p.shared.push((name.clone(), done.clone())),
             }
         }
     }
     Ok(p)
+}
+
+/// In a repo, every file Kit writes must land inside it. A repo can make
+/// `.claude` or `CLAUDE.md` a link to elsewhere; Kit refuses to follow it.
+fn confine(p: &Prepared, scope: &Scope) -> Result<()> {
+    let Scope::Repo(root) = scope else {
+        return Ok(());
+    };
+    for (_, a) in &p.todo {
+        if let Some(path) = a.path()
+            && !plan::inside(path, root)
+        {
+            bail!(
+                "{} is a link, or leads outside this repo. Kit will not write through it",
+                tilde(path)
+            );
+        }
+    }
+    Ok(())
 }
 
 /// One `kit add`, from the command line or from `kit setup`.
@@ -232,16 +295,18 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
         no_code: req.no_code,
     };
     let mut prepared = prepare(&resolved, agents, scope, opts, &lock)?;
-    let text = render_plan(&chosen, agents, scope, &prepared);
+    confine(&prepared, scope)?;
+    let text = render_plan(&chosen, agents, scope, &prepared, opts);
 
     if req.print || json && !req.yes {
-        finish_print(&chosen, agents, scope, &prepared, &text, json)?;
+        finish_print(&chosen, agents, scope, &prepared, opts, &text, json)?;
         return Ok(Outcome::Printed);
     }
-    let work = prepared
-        .todo
-        .iter()
-        .any(|(_, a)| !matches!(a, Action::Skip { .. }));
+    let work = !prepared.stale.is_empty()
+        || prepared
+            .todo
+            .iter()
+            .any(|(_, a)| !matches!(a, Action::Skip { .. }));
     if !json {
         print!("{text}");
     }
@@ -258,7 +323,7 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
         if !json {
             println!("Already installed. Nothing to do.");
         } else {
-            print_json("add", &chosen, agents, scope, &prepared, true)?;
+            print_json("add", &chosen, agents, scope, &prepared, opts, true)?;
         }
         return Ok(Outcome::AlreadyInstalled);
     }
@@ -275,6 +340,7 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
                 println!("Leaving out MCP servers and hooks. Skills and rules only.");
                 opts.no_code = true;
                 prepared = prepare(&resolved, agents, scope, opts, &lock)?;
+                confine(&prepared, scope)?;
             }
         }
     }
@@ -292,13 +358,34 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
         .map(|(k, _)| k.clone())
         .collect();
     let owned: Vec<Action> = actions.into_iter().cloned().collect();
-    let applied = plan::apply_all(&owned, req.force)?;
-    let pairs: Vec<(String, Applied)> = owners.into_iter().zip(applied).collect();
+    let ours: std::collections::HashSet<String> = lock.applied().map(Applied::key).collect();
+    let applied = plan::apply_all(&owned, req.force, &ours)?;
+    let pairs: Vec<(String, Applied)> = owners
+        .into_iter()
+        .zip(applied)
+        .filter_map(|(k, a)| Some((k, a?)))
+        .collect();
+    let mut left = Vec::new();
+    for (_, old) in prepared.stale.iter().rev() {
+        match plan::undo(old, false) {
+            Ok(Some(msg)) => left.push(msg),
+            Ok(None) => {}
+            Err(err) => left.push(format!("{err:#}")),
+        }
+    }
+    for (kit, old) in &prepared.stale {
+        if let Some(e) = lock.get_mut(kit) {
+            e.applied.retain(|a| a.key() != old.key());
+        }
+    }
     record(&mut lock, &chosen, agents, opts, pairs, &prepared.shared);
     lock.save(scope)?;
+    for msg in &left {
+        eprintln!("kept      {msg}");
+    }
 
     if json {
-        print_json("add", &chosen, agents, scope, &prepared, true)?;
+        print_json("add", &chosen, agents, scope, &prepared, opts, true)?;
         return Ok(Outcome::Installed);
     }
     let names: Vec<&str> = chosen.requested.iter().map(|(n, _)| n.as_str()).collect();
@@ -316,7 +403,14 @@ pub fn add(req: &Request, json: bool) -> Result<Outcome> {
         titles.join(" and "),
         scope.label()
     );
-    println!("Recorded in {}.", tilde(&super::lock::path(scope)));
+    match super::lock::shared_path(scope) {
+        Some(shared) => println!(
+            "Recorded in {}; {} is a copy to commit for your team.",
+            tilde(&super::lock::path(scope)),
+            tilde(&shared)
+        ),
+        None => println!("Recorded in {}.", tilde(&super::lock::path(scope))),
+    }
     let flag = if matches!(scope, Scope::Global { .. }) {
         " --global"
     } else {
@@ -347,6 +441,7 @@ fn record(
                 required_by: Vec::new(),
                 agents: Vec::new(),
                 hooks: Vec::new(),
+                checks: ApprovedChecks::default(),
                 applied: Vec::new(),
             });
         }
@@ -354,13 +449,7 @@ fn record(
         entry.version.clone_from(&kit.manifest.kit.version);
         if let Some((_, spec)) = chosen.requested.iter().find(|(n, _)| *n == name) {
             entry.requested = true;
-            entry.source = if catalog::find(spec).is_ok_and(|k| k.level == catalog::Level::Direct) {
-                std::fs::canonicalize(spec)
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|_| spec.clone())
-            } else {
-                spec.clone()
-            };
+            entry.source.clone_from(spec);
         }
         for (base, top) in &chosen.edges {
             if *base == name && !entry.required_by.contains(top) {
@@ -384,6 +473,21 @@ fn record(
                 })
                 .collect();
         }
+        // What doctor may run later: fixed now, from what the user approved.
+        let check = &kit.manifest.check;
+        entry.checks = ApprovedChecks {
+            mcp: check
+                .mcp_starts
+                .iter()
+                .filter_map(|n| Some((n.clone(), kit.manifest.mcp.get(n)?.clone())))
+                .filter(|(_, s)| !(opts.no_code && s.runs_code()))
+                .collect(),
+            commands: if opts.no_code {
+                Vec::new()
+            } else {
+                check.commands.clone()
+            },
+        };
         let mine = applied
             .iter()
             .chain(shared)
@@ -392,7 +496,7 @@ fn record(
         for a in mine {
             let key = a.key();
             match entry.applied.iter_mut().find(|x| x.key() == key) {
-                Some(slot) => *slot = a,
+                Some(slot) => *slot = plan::merge(slot, a),
                 None => entry.applied.push(a),
             }
         }
@@ -427,7 +531,53 @@ fn ask(code: bool) -> Result<Answer> {
     })
 }
 
-fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -> String {
+/// Exactly what an action will run: the MCP server's command line, or for
+/// the hook, each of the kit's hook commands with the files it runs on.
+fn runs(chosen: &Chosen, kit: &str, a: &Action) -> Vec<String> {
+    match a {
+        Action::HookJson { .. } => chosen
+            .kits
+            .iter()
+            .filter(|k| k.name() == kit)
+            .flat_map(|k| &k.manifest.hook)
+            .map(|h| {
+                let run = h.describe();
+                match &h.glob {
+                    Some(g) => format!("{run}   (after each edit of {g})"),
+                    None => format!("{run}   (after each edit)"),
+                }
+            })
+            .collect(),
+        _ => a.command().into_iter().collect(),
+    }
+}
+
+/// `[check]` commands `kit doctor` will run later, per kit (none with no code).
+fn doctor_commands(chosen: &Chosen, p: &Prepared, opts: Options) -> Vec<(String, String)> {
+    if opts.no_code {
+        return Vec::new();
+    }
+    chosen
+        .kits
+        .iter()
+        .filter(|k| p.todo.iter().any(|(n, _)| n == k.name()))
+        .flat_map(|k| {
+            k.manifest
+                .check
+                .commands
+                .iter()
+                .map(|c| (k.name().to_string(), c.clone()))
+        })
+        .collect()
+}
+
+fn render_plan(
+    chosen: &Chosen,
+    agents: &[Agent],
+    scope: &Scope,
+    p: &Prepared,
+    opts: Options,
+) -> String {
     let mut s = String::new();
     let who: Vec<&str> = agents.iter().map(|a| a.title()).collect();
     for (name, _) in &chosen.requested {
@@ -508,7 +658,7 @@ fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -
             let _ = writeln!(s, "            {name:width$}  {origin:owidth$}  {licence}");
         }
     }
-    for (_, a) in &p.todo {
+    for (kit, a) in &p.todo {
         match a {
             Action::Skill { .. } => {}
             Action::Rules { text, .. } => {
@@ -516,11 +666,17 @@ fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -
             }
             _ if a.runs_code() => {
                 let _ = writeln!(s, "{}   RUNS CODE", a.describe());
+                for cmd in runs(chosen, kit, a) {
+                    let _ = writeln!(s, "            runs  {cmd}");
+                }
             }
             _ => {
                 let _ = writeln!(s, "{}", a.describe());
             }
         }
+    }
+    for (kit, old) in &p.stale {
+        let _ = writeln!(s, "remove    {}   (no longer in {kit})", old.describe());
     }
     if !p.shared.is_empty() {
         let _ = writeln!(
@@ -529,12 +685,16 @@ fn render_plan(chosen: &Chosen, agents: &[Agent], scope: &Scope, p: &Prepared) -
             p.shared.len()
         );
     }
-    let code = p.todo.iter().filter(|(_, a)| a.runs_code()).count();
+    let checks = doctor_commands(chosen, p, opts);
+    for (_, cmd) in &checks {
+        let _ = writeln!(s, "check     kit doctor runs `{cmd}`   RUNS CODE");
+    }
+    let code = p.todo.iter().filter(|(_, a)| a.runs_code()).count() + checks.len();
     let _ = writeln!(s);
     if code > 0 {
         let _ = writeln!(
             s,
-            "Runs code on your machine: {code} (MCP servers and hooks)."
+            "Runs code on your machine: {code} (MCP servers, hooks and checks, each shown above)."
         );
         let _ = writeln!(s);
     }
@@ -546,11 +706,12 @@ fn finish_print(
     agents: &[Agent],
     scope: &Scope,
     p: &Prepared,
+    opts: Options,
     text: &str,
     json: bool,
 ) -> Result<()> {
     if json {
-        return print_json("add", chosen, agents, scope, p, false);
+        return print_json("add", chosen, agents, scope, p, opts, false);
     }
     print!("{text}");
     println!("Nothing was written (--print).");
@@ -563,6 +724,7 @@ fn print_json(
     agents: &[Agent],
     scope: &Scope,
     p: &Prepared,
+    opts: Options,
     applied: bool,
 ) -> Result<()> {
     let actions: Vec<_> = p
@@ -571,7 +733,8 @@ fn print_json(
         .map(|(kit, a)| {
             serde_json::json!({
                 "kit": kit, "change": a.describe(), "key": a.key(),
-                "runsCode": a.runs_code(), "skipped": matches!(a, Action::Skip { .. }),
+                "runsCode": a.runs_code(), "runs": runs(chosen, kit, a),
+                "skipped": matches!(a, Action::Skip { .. }),
             })
         })
         .collect();
@@ -581,6 +744,10 @@ fn print_json(
         "agents": agents.iter().map(|a| a.id()).collect::<Vec<_>>(),
         "scope": scope_json(scope),
         "actions": actions,
+        "doctorChecks": doctor_commands(chosen, p, opts)
+            .into_iter()
+            .map(|(kit, run)| serde_json::json!({ "kit": kit, "runs": run }))
+            .collect::<Vec<_>>(),
         "shared": p.shared.len(),
         "applied": applied,
     });
@@ -621,8 +788,29 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         }
     }
 
+    // A base another installed kit extends stays until that kit goes; it
+    // only stops being one the user asked for.
+    let mut still_needed = Vec::new();
+    for name in &args.kits {
+        let e = lock.get(name).expect("checked above");
+        let users: Vec<String> = e
+            .required_by
+            .iter()
+            .filter(|r| !args.kits.contains(r))
+            .cloned()
+            .collect();
+        if !users.is_empty() {
+            still_needed.push((name.clone(), users));
+        }
+    }
+
     // The kits named, plus bases nothing else needs any more.
-    let mut going: BTreeSet<String> = args.kits.iter().cloned().collect();
+    let mut going: BTreeSet<String> = args
+        .kits
+        .iter()
+        .filter(|n| !still_needed.iter().any(|(s, _)| s == *n))
+        .cloned()
+        .collect();
     loop {
         let more: Vec<String> = lock
             .kits
@@ -657,6 +845,38 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
 
     let summary = removal_summary(&undo);
     if !json {
+        for (name, users) in &still_needed {
+            println!(
+                "{name} stays: {} extends it. It goes when {} is removed.",
+                users.join(", "),
+                if users.len() == 1 {
+                    "that kit"
+                } else {
+                    "they are"
+                }
+            );
+        }
+    }
+    if going.is_empty() {
+        for (name, _) in &still_needed {
+            if let Some(e) = lock.get_mut(name) {
+                e.requested = false;
+            }
+        }
+        lock.save(&scope)?;
+        if json {
+            let data = serde_json::json!({
+                "removed": [], "scope": scope_json(&scope), "changes": 0,
+                "stays": still_needed.iter().map(|(n, u)| serde_json::json!({"kit": n, "extendedBy": u})).collect::<Vec<_>>(),
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&crate::envelope("remove", true, data, None, vec![]))?
+            );
+        }
+        return Ok(());
+    }
+    if !json {
         let names: Vec<&str> = going.iter().map(String::as_str).collect();
         println!(
             "Removes {} from {}: {summary}.",
@@ -680,11 +900,25 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
 
     let mut kept = Vec::new();
     for a in undo.iter().rev() {
+        if let (Scope::Repo(root), Some(path)) = (&scope, a.path())
+            && !plan::inside(path, root)
+        {
+            kept.push(format!(
+                "{} is now a link, or leads outside this repo; left alone",
+                tilde(path)
+            ));
+            continue;
+        }
         if let Some(msg) = plan::undo(a, args.force)? {
             kept.push(msg);
         }
     }
     lock.kits.retain(|e| !going.contains(&e.name));
+    for (name, _) in &still_needed {
+        if let Some(e) = lock.get_mut(name) {
+            e.requested = false;
+        }
+    }
     for e in &mut lock.kits {
         e.required_by.retain(|r| !going.contains(r));
     }
@@ -722,7 +956,7 @@ fn removal_summary(undo: &[Applied]) -> String {
             count(|a| {
                 matches!(
                     a,
-                    Applied::McpJson { .. } | Applied::McpToml { .. } | Applied::Command { .. }
+                    Applied::McpJson { .. } | Applied::McpToml { .. } | Applied::ClaudeMcp { .. }
                 )
             }),
             "MCP server",
@@ -773,13 +1007,14 @@ pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
             }
             rows.push((e.clone(), drift));
         }
-        out.push((scope.clone(), rows));
+        let proposed = proposed_here(scope, &lock);
+        out.push((scope.clone(), rows, proposed));
     }
 
     if json {
         let data: Vec<_> = out
             .iter()
-            .map(|(scope, rows)| {
+            .map(|(scope, rows, proposed)| {
                 let kits: Vec<_> = rows
                     .iter()
                     .map(|(e, drift)| {
@@ -790,7 +1025,9 @@ pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
                         })
                     })
                     .collect();
-                serde_json::json!({ "scope": scope_json(scope), "kits": kits })
+                serde_json::json!({
+                    "scope": scope_json(scope), "kits": kits, "notInstalledHere": proposed,
+                })
             })
             .collect();
         let env = crate::envelope(
@@ -804,12 +1041,22 @@ pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    if out.iter().all(|(_, rows)| rows.is_empty()) {
+    for (_, _, proposed) in &out {
+        if !proposed.is_empty() {
+            println!(
+                "This repo's kit.lock lists {}, not installed on this machine.",
+                proposed.join(", ")
+            );
+            println!("next      kit add <kit>   (shows the plan before anything runs)");
+            println!();
+        }
+    }
+    if out.iter().all(|(_, rows, _)| rows.is_empty()) {
         println!("No kits installed.");
         println!("next      kit show");
         return Ok(());
     }
-    for (scope, rows) in &out {
+    for (scope, rows, _) in &out {
         if rows.is_empty() {
             continue;
         }
@@ -823,7 +1070,9 @@ pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
                 .filter(|a| {
                     matches!(
                         a,
-                        Applied::McpJson { .. } | Applied::McpToml { .. } | Applied::Command { .. }
+                        Applied::McpJson { .. }
+                            | Applied::McpToml { .. }
+                            | Applied::ClaudeMcp { .. }
                     )
                 })
                 .count();
@@ -853,6 +1102,29 @@ pub fn cmd_list(args: ListKitsArgs, json: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Kit names in the repo's shared kit.lock that this machine has not
+/// installed. Names only: nothing else in that file is trusted or used.
+fn proposed_here(scope: &Scope, lock: &Lock) -> Vec<String> {
+    let Some(file) = super::lock::shared_path(scope) else {
+        return Vec::new();
+    };
+    let Ok(raw) = std::fs::read_to_string(file) else {
+        return Vec::new();
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return Vec::new();
+    };
+    v["kits"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|k| k["requested"].as_bool().unwrap_or(true))
+        .filter_map(|k| k["name"].as_str())
+        .filter(|n| super::manifest::is_slug(n) && lock.get(n).is_none())
+        .map(str::to_string)
+        .collect()
 }
 
 fn skill_names(e: &Entry) -> BTreeSet<String> {

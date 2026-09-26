@@ -218,26 +218,9 @@ fn claude(kit: &Resolved<'_>, scope: &Scope, opts: Options, hook_program: &str) 
                         why: "Claude Code is not installed; run kit add again once it is".into(),
                     }
                 } else {
-                    Action::Command {
-                        argv: vec![
-                            "claude".into(),
-                            "mcp".into(),
-                            "add-json".into(),
-                            "--scope".into(),
-                            "user".into(),
-                            name.clone(),
-                            value.to_string(),
-                        ],
-                        undo: vec![
-                            "claude".into(),
-                            "mcp".into(),
-                            "remove".into(),
-                            "--scope".into(),
-                            "user".into(),
-                            name.clone(),
-                        ],
-                        what: format!("{name} → claude mcp add-json --scope user"),
-                        code: server.runs_code(),
+                    Action::ClaudeMcp {
+                        name: name.clone(),
+                        value,
                     }
                 }
             }
@@ -260,7 +243,14 @@ fn claude(kit: &Resolved<'_>, scope: &Scope, opts: Options, hook_program: &str) 
                 "matcher": "Edit|Write|MultiEdit",
                 "hooks": [{
                     "type": "command",
-                    "command": format!("{hook_program} hook after-edit {}", m.kit.name),
+                    "command": format!(
+                        "{hook_program} hook after-edit {} --scope {}",
+                        m.kit.name,
+                        match scope {
+                            Scope::Global { .. } => "global",
+                            Scope::Repo(_) => "repo",
+                        }
+                    ),
                 }],
             }),
         });

@@ -294,7 +294,7 @@ pub enum Action {
     RulesBlock  { file: PathBuf, kit: String, text: String },
     JsonKey     { file: PathBuf, pointer: String, value: serde_json::Value },
     TomlKey     { file: PathBuf, path: Vec<String>, value: toml_edit::Item },
-    Command     { argv: Vec<String>, undo: Vec<String> },   // `claude mcp add`
+    ClaudeMcp   { name: String, value: serde_json::Value },  // `claude mcp add-json --scope user`
     Skip        { piece: String, why: String },
 }
 ```
@@ -302,6 +302,29 @@ pub enum Action {
 `Plan` is the single source for the confirm screen, `--print`, `apply`,
 `kit.lock`, `remove` and drift. Each `Action` knows its inverse, so
 remove is "apply the inverses recorded in the lock", not a guess.
+
+### Whose record Kit trusts
+
+A repo is untrusted input: anyone can commit a `kit.lock`. So Kit acts
+only on its own record, written by `kit add` after the user said yes:
+`~/.kit/kit.lock` for global installs and `~/.kit/repos/<id>/kit.lock`
+for a repo, where `<id>` comes from the repo's root and git folder (each clone has
+its own, and so does each worktree).
+
+- The record is data, never commands. Undo runs Kit's own code, plus
+  `claude mcp remove --scope user <name>` built by Kit from a validated
+  name. No record carries an argv.
+- Paths are stored relative to the repo (or home) and refused on load if
+  absolute, if they contain `..`, or, for home, if they are outside
+  `.claude`, `.agents` and `.codex`. In a repo, Kit also refuses to write
+  or delete through a link that leads outside it.
+- Hooks and `kit doctor` run only the hooks and `[check]` approved at
+  `kit add`, from that record; the hook command names its scope
+  (`kit hook after-edit NAME --scope repo`).
+- The repo's own `kit.lock` is a copy for the team, with no machine
+  paths. Kit writes it and never reads it back, except for `kit list`
+  naming kits it lists that are not installed here. `kit sync` must treat
+  it as a proposal: show the plan and ask, exactly like `kit add`.
 
 ---
 
@@ -368,9 +391,9 @@ Removes 11 skills, 1 CLAUDE.md block, playwright MCP, 1 hook. Continue? [y/N]
   code changes.
 - A skill edited by hand shows as drift; `update` and `remove` leave it
   in place unless `--force`, and say which file.
-- `kit sync` installs exactly what `kit.lock` pins (new machine, new
-  teammate). `kit.lock` is committed for repo scope and lives in
-  `~/.kit/` for global scope.
+- `kit sync` proposes what a repo's `kit.lock` lists (new machine, new
+  teammate) and installs it only after the same plan and yes as `kit add`.
+  The repo copy is committed; Kit's own record lives in `~/.kit/`.
 - `kit doctor` runs each installed kit's `[check]` and reports drift.
 
 ---

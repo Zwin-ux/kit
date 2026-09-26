@@ -10,17 +10,18 @@ use super::install::{home_dir, repo_root};
 use super::lock::{Lock, LockedHook};
 use super::manifest::Builtin;
 use super::writers::Scope;
+use crate::cli::HookScope;
 use anyhow::Result;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-pub fn after_edit(kit: &str) -> Result<i32> {
+pub fn after_edit(kit: &str, scope: Option<HookScope>) -> Result<i32> {
     let mut raw = String::new();
     std::io::stdin().take(4 << 20).read_to_string(&mut raw)?;
     let Some(file) = edited_file(&raw) else {
         return Ok(0);
     };
-    let hooks = hooks_for(kit, &file)?;
+    let hooks = hooks_for(kit, &file, scope)?;
     let mut code = 0;
     for h in hooks {
         if h.glob.as_deref().is_some_and(|g| !glob_match(g, &file)) {
@@ -47,17 +48,24 @@ fn edited_file(raw: &str) -> Option<PathBuf> {
     Some(PathBuf::from(path))
 }
 
-/// The kit's hooks: the repo install wins over the global one.
-fn hooks_for(kit: &str, file: &Path) -> Result<Vec<LockedHook>> {
+/// The kit's hooks, as approved at `kit add` and kept in Kit's own record
+/// (never a repo's kit.lock). `--scope` is written into the hook by
+/// `kit add`, so a repo install cannot stand in for a global one. Without
+/// it, the repo install wins over the global one.
+fn hooks_for(kit: &str, file: &Path, scope: Option<HookScope>) -> Result<Vec<LockedHook>> {
     let dir = file
         .parent()
         .filter(|d| d.is_dir())
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
     let mut scopes = Vec::new();
-    if let Some(root) = repo_root(&dir) {
+    if scope != Some(HookScope::Global)
+        && let Some(root) = repo_root(&dir).or_else(|| repo_root(Path::new(".")))
+    {
         scopes.push(Scope::Repo(root));
     }
-    scopes.push(Scope::Global { home: home_dir()? });
+    if scope != Some(HookScope::Repo) {
+        scopes.push(Scope::Global { home: home_dir()? });
+    }
     for scope in scopes {
         if let Some(e) = Lock::load(&scope)?.get(kit) {
             return Ok(e.hooks.clone());
