@@ -32,13 +32,15 @@ Every `kit … --json` payload:
 | Field | Type |
 |-------|------|
 | `id` | string (ULID) |
-| `state` | string (`pass`, `fail`, `killed`, …) |
+| `state` | string (`pass`, `fail`, `unconfigured`, `killed`, `error`) |
 | `receiptDir` | path string |
 | `worktreeRemoved` | bool |
 | `gatePassed` | bool \| null |
 | `gateVacuous` | bool |
 
-Exit code: `0` pass, `1` fail or vacuous (unless `--allow-vacuous` / `--dry-run`), `2` other.
+`unconfigured`: the gate had no checks to run, so nothing proved the work (`gatePassed` is false, `gateVacuous` true). Receipts use the same state; ones written before 2.0.0 recorded it as `pass` and read back as `unconfigured`.
+
+Exit code: `0` pass, `1` fail or unconfigured (unless `--allow-vacuous` / `--dry-run`), `2` other.
 
 ## `kit init --json` → `data`
 

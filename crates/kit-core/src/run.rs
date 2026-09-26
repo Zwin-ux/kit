@@ -81,6 +81,9 @@ pub enum RunState {
     Gating,
     Pass,
     Fail,
+    /// The gate had no checks to run: nothing proved the work, so it is
+    /// neither pass nor fail.
+    Unconfigured,
     Killed,
     Error,
 }
@@ -88,7 +91,10 @@ pub enum RunState {
 impl RunState {
     /// Terminal states never transition again; their receipt is final.
     pub fn is_terminal(self) -> bool {
-        matches!(self, Self::Pass | Self::Fail | Self::Killed | Self::Error)
+        matches!(
+            self,
+            Self::Pass | Self::Fail | Self::Unconfigured | Self::Killed | Self::Error
+        )
     }
 
     pub fn is_active(self) -> bool {

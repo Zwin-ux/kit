@@ -60,12 +60,21 @@ impl GateOutcome {
     /// callers should infer defaults rather than claim proof that never ran.
     pub fn vacuous() -> Self {
         Self {
-            passed: true,
+            passed: false,
             checks: Vec::new(),
             scope_violations: Vec::new(),
             firewall_blocks: Vec::new(),
             duration: Duration::ZERO,
         }
+    }
+
+    /// No checks ran and nothing was refused: the gate proved nothing.
+    /// Receipts written before 2.0.0 recorded this with `passed: true`, so
+    /// `passed` is not part of the test.
+    pub fn is_vacuous(&self) -> bool {
+        self.checks.is_empty()
+            && self.scope_violations.is_empty()
+            && self.firewall_blocks.is_empty()
     }
 
     /// The line shown next to a failing run in the Control Room.

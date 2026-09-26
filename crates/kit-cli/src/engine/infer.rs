@@ -155,12 +155,9 @@ pub fn missing_programs(gate: &GateConfig) -> Vec<String> {
     out
 }
 
-/// True when outcome is a vacuous pass (no checks, no violations) — CEO: render UNCONFIGURED.
+/// True when the gate ran no checks and refused nothing: UNCONFIGURED.
 pub fn is_vacuous(outcome: &kit_core::GateOutcome) -> bool {
-    outcome.passed
-        && outcome.checks.is_empty()
-        && outcome.scope_violations.is_empty()
-        && outcome.firewall_blocks.is_empty()
+    outcome.is_vacuous()
 }
 
 /// True when a command changes files instead of checking them: a write/fix

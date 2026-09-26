@@ -44,7 +44,7 @@ impl Agent for CodexAgent {
         let _ = tx
             .send(RunDelta::Output(format!(
                 "kit: spawning codex exec in {}\n",
-                worktree.display()
+                crate::process::tilde(worktree)
             )))
             .await;
 
