@@ -862,7 +862,11 @@ fn print_doctor(version: &str, start_mcp: bool, json: bool) {
     println!();
     println!("status:");
     println!("  binary          ok (rust)");
-    println!("  binary path     {binary_display}");
+    // Text shows `~/…` like `kit home`; --json keeps the absolute path.
+    let binary_text = binary_path
+        .as_deref()
+        .map_or_else(|| "(unknown)".into(), kits::plan::tilde);
+    println!("  binary path     {binary_text}");
     println!("  installed via   {install}");
     println!("  control room    ok (kit-tui)");
     println!("  gate engine     ok (kit-gate)");
