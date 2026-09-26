@@ -411,7 +411,13 @@ commands = ["touch {}"]
     // any `claude mcp remove`.
     write(&repo.join(".claude/skills/s/SKILL.md"), "mine");
     let fake = root.join("bin/claude");
-    write(&fake, &format!("#!/bin/sh\ntouch {}\n", marker("claude")));
+    write(
+        &fake,
+        &format!(
+            "#!/bin/sh\n[ \"$1\" = mcp ] && touch {}\nexit 0\n",
+            marker("claude-mcp")
+        ),
+    );
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
