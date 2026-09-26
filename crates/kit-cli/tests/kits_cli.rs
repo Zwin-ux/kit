@@ -1265,3 +1265,34 @@ fn links_and_pipes_in_a_skill_folder_are_never_read_through() {
         text(&out.stderr)
     );
 }
+
+/// A folder link partway down a path never lets Kit write into, or
+/// remove from, git's own folder, even with --force.
+#[cfg(unix)]
+#[test]
+fn nothing_is_written_into_git_through_a_folder_link() {
+    let root = scratch("git-dir");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let spec = kit.to_str().unwrap();
+    for (link, to, force) in [
+        (".claude", ".git", false),
+        (".claude/skills", "../.git", true),
+    ] {
+        let repo = root.join(format!("repo-{force}"));
+        git_repo(&repo);
+        let at = repo.join(link);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(to, &at).unwrap();
+        let mut args = vec!["add", spec, "-a", "claude", "--no-code", "--yes"];
+        if force {
+            args.push("--force");
+        }
+        let out = env.kit(&repo, &args);
+        assert!(!out.status.success(), "{link} -> {to}");
+        assert!(!repo.join(".git/hello").exists(), "{link} -> {to}");
+        assert!(!repo.join(".git/skills").exists(), "{link} -> {to}");
+        assert!(!repo.join(".git/settings.json").exists(), "{link} -> {to}");
+        assert!(repo.join(".git/HEAD").is_file());
+    }
+}

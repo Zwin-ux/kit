@@ -698,6 +698,7 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             if !dir.exists() {
                 return Ok(None);
             }
+            guard_git(dir)?;
             if !force && is_installed(dir, hash)? != Some(true) {
                 // It is the user's now: a later `kit add` must not treat it
                 // as Kit's and overwrite it.
@@ -828,36 +829,112 @@ pub fn inside(path: &Path, base: &Path) -> bool {
     if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
         return link_target_within(path, &base).is_some();
     }
-    // The deepest part that exists decides where the rest would land.
-    path.ancestors()
-        .find(|p| p.exists())
-        .and_then(|p| std::fs::canonicalize(p).ok())
-        .is_some_and(|real| real.starts_with(&base))
+    resolved(path).is_some_and(|real| real.starts_with(&base) && !in_git_dir(&real))
+}
+
+/// Where `path` really lands: its deepest existing part with every link
+/// resolved, plus the parts that do not exist yet.
+fn resolved(path: &Path) -> Option<PathBuf> {
+    let existing = path.ancestors().find(|p| p.exists())?;
+    let rest = path.strip_prefix(existing).ok()?;
+    Some(std::fs::canonicalize(existing).ok()?.join(rest))
+}
+
+/// Refuse any write or removal that would land inside git's own folder,
+/// however the path gets there (a link partway down included).
+fn guard_git(path: &Path) -> Result<()> {
+    if resolved(path).is_some_and(|real| in_git_dir(&real)) {
+        bail!(
+            "{} leads into git's own folder. Kit will not write or remove anything there",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+/// Is `real` (resolved) inside a git folder: the repo's `--git-dir` or
+/// `--git-common-dir`, or any folder that is itself a git repository's
+/// store (`HEAD`, `objects`, `refs`), whatever it is named?
+fn in_git_dir(real: &Path) -> bool {
+    let known = LINK_ROOT
+        .lock()
+        .ok()
+        .and_then(|r| r.as_ref().map(|r| r.git_dirs.clone()))
+        .unwrap_or_default();
+    real.ancestors().any(|a| {
+        known.iter().any(|g| same_path(a, g))
+            || (a.join("HEAD").is_file() && a.join("objects").is_dir() && a.join("refs").is_dir())
+    })
+}
+
+/// Paths compare without case on macOS and Windows, whose disks usually
+/// ignore it.
+fn same_path(a: &Path, b: &Path) -> bool {
+    if cfg!(any(target_os = "macos", windows)) {
+        a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+    } else {
+        a == b
+    }
+}
+
+/// The scope Kit writes in, and the git folders inside it that it never
+/// touches.
+struct LinkRules {
+    root: PathBuf,
+    git_dirs: Vec<PathBuf>,
 }
 
 /// Where Kit may follow a link to a file: the repo, or home for `--global`.
-static LINK_ROOT: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+static LINK_ROOT: std::sync::Mutex<Option<LinkRules>> = std::sync::Mutex::new(None);
 
 /// Let writes follow a link when the link and the file it leads to are both
 /// inside `root`. Anything else stays refused.
 pub fn follow_links_within(root: &Path) {
+    let rules = std::fs::canonicalize(root).ok().map(|root| LinkRules {
+        git_dirs: git_dirs(&root),
+        root,
+    });
     if let Ok(mut r) = LINK_ROOT.lock() {
-        *r = std::fs::canonicalize(root).ok();
+        *r = rules;
     }
 }
 
+/// `git rev-parse --absolute-git-dir --git-common-dir` for `root`, resolved.
+/// Empty when `root` is not in a repo.
+fn git_dirs(root: &Path) -> Vec<PathBuf> {
+    let Ok(out) = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--absolute-git-dir", "--git-common-dir"])
+        .stderr(std::process::Stdio::null())
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|l| std::fs::canonicalize(root.join(l)).ok())
+        .collect()
+}
+
 /// The file a link leads to, when the link and that file are both inside
-/// `root` (already canonical). Links to folders are never followed.
+/// `root` (already canonical), the file is the same kind as the link's name
+/// (`.md`, `.json` or `.toml`), is not a program, and is not in a git
+/// folder. Links to folders are never followed.
 fn link_target_within(link: &Path, root: &Path) -> Option<PathBuf> {
     let parent = link.parent().filter(|p| !p.as_os_str().is_empty())?;
     let parent = std::fs::canonicalize(parent).ok()?;
     let target = std::fs::canonicalize(link).ok()?;
-    let in_git = target
-        .strip_prefix(root)
-        .is_ok_and(|rest| rest.components().any(|c| c.as_os_str() == ".git"));
-    (parent.starts_with(root) && target.starts_with(root) && target.is_file())
+    let ext = |p: &Path| p.extension().map(|e| e.to_string_lossy().to_lowercase());
+    let same_kind =
+        matches!(ext(link).as_deref(), Some("md" | "json" | "toml")) && ext(link) == ext(&target);
+    (parent.starts_with(root) && target.starts_with(root) && target.is_file() && same_kind)
         .then_some(target)
-        .filter(|t| !in_git && !executable(t))
+        .filter(|t| !in_git_dir(t) && !executable(t))
 }
 
 /// A link that leads to a program (a git hook, a script) is never written
@@ -886,6 +963,7 @@ fn prune(path: &Path, levels: usize) {
 // ---- skills -------------------------------------------------------------
 
 fn write_skill(dir: &Path, payload: &SkillPayload, force: bool) -> Result<()> {
+    guard_git(dir)?;
     if dir.exists() {
         let owned = dir.join(OWNED).is_file();
         if !owned && !force {
@@ -1088,7 +1166,10 @@ pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
     static N: AtomicU64 = AtomicU64::new(0);
     let is_link = |p: &Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
     if is_link(file) {
-        let root = LINK_ROOT.lock().ok().and_then(|r| r.clone());
+        let root = LINK_ROOT
+            .lock()
+            .ok()
+            .and_then(|r| r.as_ref().map(|r| r.root.clone()));
         if let Some(target) = root.and_then(|r| link_target_within(file, &r)) {
             return write_file(&target, bytes);
         }
@@ -1097,6 +1178,7 @@ pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
             file.display()
         );
     }
+    guard_git(file)?;
     let parent = file
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
