@@ -567,9 +567,9 @@ fn ask(code: bool) -> Result<Answer> {
         );
     }
     let prompt = if code {
-        "Continue?  [y] install  [n] cancel  [s] skills and rules only (no code): "
+        "Continue? [y/N], or s for skills and rules only (no code): "
     } else {
-        "Continue?  [y] install  [n] cancel: "
+        "Continue? [y/N] "
     };
     print!("{prompt}");
     std::io::stdout().flush()?;
@@ -1332,7 +1332,7 @@ fn proposed_here(scope: &Scope, lock: &Lock) -> Vec<String> {
         .collect()
 }
 
-fn skill_names(e: &Entry) -> BTreeSet<String> {
+pub(crate) fn skill_names(e: &Entry) -> BTreeSet<String> {
     e.applied
         .iter()
         .filter_map(|a| match a {

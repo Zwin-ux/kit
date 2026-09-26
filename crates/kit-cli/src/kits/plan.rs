@@ -1228,7 +1228,7 @@ fn disk_hash(dir: &Path) -> Result<Option<String>> {
 /// Is the skill folder at `dir` what Kit installed with `hash`? `None` when
 /// it is gone. Git on Windows (`core.autocrlf`) checks a committed skill
 /// out with CRLF line endings; that alone is not an edit.
-fn is_installed(dir: &Path, hash: &str) -> Result<Option<bool>> {
+pub(crate) fn is_installed(dir: &Path, hash: &str) -> Result<Option<bool>> {
     if !dir.is_dir() {
         return Ok(None);
     }

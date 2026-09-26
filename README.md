@@ -47,7 +47,7 @@ hook      PostToolUse → ~/.claude/settings.json   RUNS CODE
 
 Runs code on your machine: 2 (MCP servers and hooks).
 
-Continue?  [y] install  [n] cancel  [s] skills and rules only (no code): y
+Continue? [y/N], or s for skills and rules only (no code): y
 Done. Claude Code has Frontend Design in all projects.
 undo      kit remove frontend-design --global
 
@@ -95,6 +95,7 @@ kit add backend-engineer --print      # the plan, nothing written
 kit list                              # what is installed, and anything changed by hand
 kit remove frontend-design --global   # exactly what was added, nothing else
 kit doctor                            # agents found, and each kit's checks
+kit doctor --start-mcp                # also start each kit's MCP servers once
 ```
 
 Kits stack. Frontend Design and LLM Engineer can both be installed, and
@@ -120,7 +121,7 @@ names any kit it lists that you have not installed.
 - **Nothing is written before you see it.** The plan lists every folder, file
   block, config key and command. `--print` stops there.
 - **Anything that runs code says so.** MCP servers and hooks are marked
-  `RUNS CODE` and counted. `[s]` or `--no-code` installs skills and rules only.
+  `RUNS CODE` and counted. `s` or `--no-code` installs skills and rules only.
 - **Everything is pinned.** Skills by commit and content hash. A local MCP
   server starts through `npx`, `bunx`, `pnpm dlx` or `uvx` with one package
   at an exact version (never `@latest`, a range, a URL or a tarball), or is
@@ -171,7 +172,7 @@ path = "skills/house-style"
 
 [mcp.chrome-devtools]
 command = "npx"
-args    = ["-y", "chrome-devtools-mcp@1.10.1"]
+args    = ["-y", "chrome-devtools-mcp@1.10.1", "--no-usage-statistics"]
 
 [[hook]]                                # Kit's own: the project's formatter and linter
 on   = "after_edit"
@@ -179,7 +180,7 @@ glob = "*.{ts,tsx,css}"
 use  = "format-and-lint"                # or: run = "a command using $FILE"
 
 [check]                                 # what kit doctor proves
-mcp_starts = ["chrome-devtools"]
+mcp_starts = ["chrome-devtools"]        # with --start-mcp only
 ```
 
 ```bash
