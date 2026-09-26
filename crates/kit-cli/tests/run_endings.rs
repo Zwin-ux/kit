@@ -37,6 +37,7 @@ fn envelope(stdout: &[u8]) -> Value {
         .unwrap_or_else(|e| panic!("stdout is not one JSON value ({e}): {}", text(stdout)))
 }
 
+#[cfg(unix)]
 fn assert_receipt(env: &Value, state: &str) {
     assert_eq!(env["data"]["state"], state, "{env}");
     let dir = env["data"]["receiptDir"].as_str().expect("receiptDir");
@@ -54,10 +55,10 @@ fn assert_receipt(env: &Value, state: &str) {
     );
 }
 
-/// Before: `kit run` returned the error from `main`, so there was no receipt
-/// and `--json` printed no envelope at all.
+/// Outside a git repo nothing can run: `kit run` says so once, prints one
+/// envelope under `--json`, and writes no receipt (no run happened).
 #[test]
-fn run_that_cannot_start_leaves_an_error_receipt_and_envelope() {
+fn run_outside_a_repo_says_so_once_and_writes_no_receipt() {
     let home = scratch("home");
     let not_a_repo = scratch("not-a-repo");
     let out = kit(&home, &not_a_repo)
@@ -73,7 +74,23 @@ fn run_that_cannot_start_leaves_an_error_receipt_and_envelope() {
             .is_some_and(|e| e.contains("not a git repository")),
         "the envelope says why: {env}"
     );
-    assert_receipt(&env, "error");
+    let runs = home.join("runs");
+    assert!(
+        !runs.exists() || std::fs::read_dir(&runs).unwrap().next().is_none(),
+        "no receipt for a run that never started"
+    );
+
+    let out = kit(&home, &not_a_repo)
+        .args(["run", "--dry-run", "--task", "smoke"])
+        .output()
+        .expect("run kit");
+    assert_eq!(out.status.code(), Some(2));
+    let err = text(&out.stderr);
+    assert_eq!(err.matches("not a git repository").count(), 1, "{err}");
+    assert!(
+        !err.contains("kit.toml"),
+        "no init hint outside a repo: {err}"
+    );
 }
 
 /// Before: Ctrl-C killed `kit` itself, leaving no receipt, no envelope and the
