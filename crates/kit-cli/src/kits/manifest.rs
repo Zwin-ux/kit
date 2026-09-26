@@ -530,9 +530,18 @@ fn steers_program(key: &str) -> bool {
     k.starts_with("LD_")
         || k.starts_with("DYLD_")
         || k.starts_with("PYTHON")
+        || k.starts_with("NPM_CONFIG_")
         || matches!(
             k.as_str(),
-            "NODE_OPTIONS" | "RUBYOPT" | "PERL5OPT" | "BASH_ENV" | "ENV"
+            "NODE_OPTIONS"
+                | "NODE_PATH"
+                | "RUBYOPT"
+                | "RUBYLIB"
+                | "PERL5OPT"
+                | "PERL5LIB"
+                | "JAVA_TOOL_OPTIONS"
+                | "BASH_ENV"
+                | "ENV"
         )
 }
 
@@ -722,6 +731,9 @@ mod tests {
             ("PYTHONSTARTUP", "$X"),
             ("BASH_ENV", "$X"),
             ("ENV", "$X"),
+            ("npm_config_registry", "$X"),
+            ("NODE_PATH", "$X"),
+            ("JAVA_TOOL_OPTIONS", "$X"),
         ] {
             assert!(env(k, v).is_err(), "{k}={v} should be refused");
         }

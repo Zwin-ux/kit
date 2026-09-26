@@ -443,6 +443,10 @@ enum Saved {
 }
 
 fn save(action: &Action) -> Result<Saved> {
+    // Before any copy is made: a rollback copy must not land in git's folder.
+    if let Some(path) = action.path() {
+        guard_git(path)?;
+    }
     Ok(match action {
         Action::Skill { dir, .. } => {
             let copy = if dir.exists() {
@@ -499,6 +503,9 @@ impl Saved {
                 }
             },
             Self::Dir { path, copy } => {
+                if guard_git(path).is_err() {
+                    return;
+                }
                 let _ = std::fs::remove_dir_all(path);
                 match copy {
                     Some(c) => {
@@ -852,19 +859,36 @@ fn guard_git(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Is `real` (resolved) inside a git folder: the repo's `--git-dir` or
-/// `--git-common-dir`, or any folder that is itself a git repository's
-/// store (`HEAD`, `objects`, `refs`), whatever it is named?
+/// Is `real` (resolved) inside a git folder? Only the folders from the
+/// scope's root down to `real` count: each is checked against the repo's
+/// `--git-dir` and `--git-common-dir`, and for being a git store itself
+/// (`HEAD`, `objects`, `refs`), whatever it is named. Folders above the
+/// root do not count, so a worktree inside a bare clone (`proj.git/main`)
+/// still works. A path outside the root (Kit's own `~/.kit`) is checked
+/// against the known git folders only.
 fn in_git_dir(real: &Path) -> bool {
-    let known = LINK_ROOT
+    let Some((root, known)) = LINK_ROOT
         .lock()
         .ok()
-        .and_then(|r| r.as_ref().map(|r| r.git_dirs.clone()))
-        .unwrap_or_default();
-    real.ancestors().any(|a| {
-        known.iter().any(|g| same_path(a, g))
-            || (a.join("HEAD").is_file() && a.join("objects").is_dir() && a.join("refs").is_dir())
-    })
+        .and_then(|r| r.as_ref().map(|r| (r.root.clone(), r.git_dirs.clone())))
+    else {
+        return false;
+    };
+    let known_here = |dir: &Path| known.iter().any(|g| same_path(dir, g));
+    let Ok(rest) = real.strip_prefix(&root) else {
+        return real.ancestors().any(known_here);
+    };
+    let store = |dir: &Path| {
+        dir.join("HEAD").is_file() && dir.join("objects").is_dir() && dir.join("refs").is_dir()
+    };
+    let mut dir = root.clone();
+    for part in rest.components() {
+        dir.push(part);
+        if known_here(&dir) || store(&dir) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Paths compare without case on macOS and Windows, whose disks usually
@@ -1185,7 +1209,7 @@ fn write_with_mode(file: &Path, bytes: &[u8], private: bool) -> Result<()> {
             return write_with_mode(&target, bytes, private);
         }
         bail!(
-            "{} is a link that leads outside this repo (or home, for --global). Kit will not write through it",
+            "{} is a link Kit will not write through: it leads outside this repo (or home, for --global), to a different kind of file, to a program, or into git's folder",
             file.display()
         );
     }
