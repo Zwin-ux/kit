@@ -38,7 +38,7 @@ $env:NO_COLOR=1; cargo run -p kit-cli -- --demo
 
 **Layout:**
 ```
-HEADER   KIT / CONTROL ROOM          N RUNNING  M FAIL  K GATED
+HEADER   KIT / CONTROL ROOM          N RUNNING  M GATING  K FAIL
 BODY     bordered table (+ FAIL annotation lines)
 FOOTER   key hints (dim) · optional flash/status right
 ```

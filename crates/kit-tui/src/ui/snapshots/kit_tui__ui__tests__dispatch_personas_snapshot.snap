@@ -1,0 +1,20 @@
+---
+source: crates/kit-tui/src/ui/mod.rs
+expression: frame
+---
+"KIT / DISPATCH                                                         fan-out 3"
+"┌ repos (space) ───┐┌ agents (space) ────────────┐┌ personas (space) ──────────┐"
+"│  [x] kit         ││  [x] codex                 ││▶ [x] eng                   │"
+"│                  ││  [ ] claude                ││  [x] product               │"
+"│                  ││  [ ] grok                  ││  [x] design                │"
+"│                  ││  [ ] ollama                ││  [ ] qa                    │"
+"│                  ││                            ││                            │"
+"│                  ││                            ││                            │"
+"│                  ││                            ││                            │"
+"│                  ││                            ││                            │"
+"│                  ││                            ││                            │"
+"└──────────────────┘└────────────────────────────┘└────────────────────────────┘"
+"┌ task ────────────────────────────────────────────────────────────────────────┐"
+"│empty room first paint                                                        │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" [esc] back  [tab] field  [↑↓] move  [space] toggle  [enter] submit             "

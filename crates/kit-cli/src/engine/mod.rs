@@ -19,4 +19,4 @@ pub use registry::{MAX_CONCURRENT_RUNS, RunRegistry, concurrency_limiter};
 #[allow(unused_imports)]
 pub use runner::{RunOptions, execute, execute_cancellable, parse_agent};
 #[allow(unused_imports)]
-pub use supervisor::{ConcurrencyProbe, proof_dispatch_n, run_supervisor, spawn_production};
+pub use supervisor::{run_supervisor, spawn_production};

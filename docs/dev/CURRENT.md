@@ -1,33 +1,39 @@
 # Kit 1.0 — Current architecture state
 
-**Date:** 2026-08-07  
-**Goal:** production multi-agent control room — Codex-like headless workflow × N agents + skills.
+**Date:** 2026-08-16  
+**Ground truth:** [`docs/dev/design-package/00-HONEST-STATE.md`](design-package/00-HONEST-STATE.md)  
+**Goal:** a widely used, high-quality developer tool — one `kit` verb, one Control Room, a loop people trust. Not a persona studio.
+
+Version: **`1.0.0-alpha.1`**. Not 1.0.0. Not tagged alpha.2 until dogfood notes exist.
 
 ---
 
 ## Product one-liner
 
-Dispatch many agents. Watch them in one place. Nothing ships unproven.
+Dispatch many agents. Watch them in one place. Nothing ships unproven — and the product must prove that on itself.
 
 ## What is real today
 
 | Layer | Status | Prove it |
 |-------|--------|----------|
-| Control Room TUI | Real (1.0 craft) | `cargo run -p kit-cli -- --demo` — FAIL selected + wash; empty room shows agent readiness |
-| Dispatch / Board / Detail | Real (1.0 craft) | shared chrome; semantic STATE/GATE colors; concept art in `docs/dev/assets/` |
-| Gate (Guardian) | Real | kit-gate tests |
+| Control Room TUI | Real (1.0 craft) | `cargo run -p kit-cli -- --demo` — FAIL selected + wash; `f` cycles ALL/FAIL/RUN/DONE |
+| Dispatch / Board / Detail | Real | Board is **prefill only**. Dispatch is repos × agents × **personas** (product/design/eng/qa). Persona is TUI-local — prepended to the engine task, not a kit-core field |
+| Gate (Guardian) | Real, thin | ~50 firewall fixtures in one test — not the PRD's 855-case suite |
+| **kit.toml (this repo)** | **Real** | root `kit.toml` — fmt + clippy -D warnings + `cargo test --workspace`, 15m, firewall block |
 | Worktree + receipt | Real | `kit run --dry-run --json` |
-| **Agent adapters** | **Live** | codex / claude / grok / ollama |
-| **Skills injection** | **Live** | `.agents/skills` → worktree + prompt |
+| Agent adapters | Live | codex / claude / grok / ollama — `probe()` reports authenticated if the binary exists |
+| Skills injection | Live | `.agents/skills` → worktree + prompt |
 | PTY attach | Stub | 1.0.1 (CEO stamp) |
-| Kill mid-run | **Wired** | `k` → EngineCommand::Kill → CancelHandle + tree kill (Win job / Unix pgid); receipt `Killed` |
-| Retry fail | **Wired** | fail-only; gate failure context in new task |
-| Max concurrency | **Wired + proven** | semaphore 8; P3 harness dispatches 12 dry-runs, asserts max in-flight ≤8 |
-| Vacuous gate | **Wired** | empty gate → infer cargo/npm when live; still empty → UI `UNCONFIGURED` (not PASS); live `kit run` exits 1 unless `--allow-vacuous` |
-| JSON envelope | **Wired** | `schemaVersion: 1` on `run --json` + `doctor --json` — see `docs/json-contract.md` |
-| Help overlay | **Wired** | `?` / Esc in Control Room surface |
-| Skill packs | **Wired** | default `.agents/skills`; optional `skills/` or `KIT_SKILLS_DIR` (Harness etc.) — see `docs/skills-packs.md` |
-| Receipt browser | **Wired** | `kit receipt list` / `kit receipt show <id>` (+ `--json`, `--output`) |
+| Kill mid-run | Wired | proven on dry-run handles, **not** yet on a live Codex dogfood |
+| Retry fail | Wired | fail-only; gate failure context in new task |
+| Max concurrency | Wired + proven | semaphore 8; P3 harness uses a **bare git fixture** (not this repo's gate) |
+| Vacuous gate | Wired | empty `kit.toml` → infer cargo/npm **on live only**; dry-run stays vacuous without a file; UI `UNCONFIGURED` |
+| JSON envelope | Wired | `schemaVersion: 1` on `run --json` + `doctor --json` |
+| Help overlay | Wired | `?` / Esc; arrows move, `k` kills (not j/k) |
+| Receipt browser | Wired | `kit receipt list` / `show` |
+| Dogfood | **Session A proven** | receipt `01M06A2PXBBH43ZFF3GJ9VQW94` — `gateVacuous: false`, fmt+clippy+test PASS. QA note: `docs/dev/dogfood-notes/2026-08-16-qa.md`. B still open |
+| Install / PATH | **In progress (2026-08-16)** | Repo `kit.cmd`/`kit.ps1` + `scripts/use-rust-kit.ps1` on disk. GitHub About/topics/release still sell 0.1 (human-only). No installer. |
+| 0.1 Node tree | Legacy, still in repo | `packages/` + Node CI (6 jobs) + keep-alive catalog bot |
 
 ## Spine
 
@@ -36,67 +42,42 @@ kit (TUI Dispatch or `kit run`)
   → engine::execute
        → git worktree
        → kit-agents::adapter(kind).spawn  (or dry-run)
-            → install .agents/skills (addyosmani pack)
+            → install .agents/skills
             → skills preamble + user task
             → codex exec | claude -p | grok -p | ollama run
             → stream → RunDelta → Control Room
-       → kit-gate
+       → kit-gate (kit.toml or live inference)
        → ~/.kit/runs/<id>/receipt.json
 ```
 
-## Agent workflow (Codex-style)
-
-| Agent | Command shape |
-|-------|----------------|
-| Codex | `codex exec -C <wt> -s workspace-write --json <prompt>` |
-| Claude | `claude -p <prompt>` (cwd = worktree) |
-| Grok | `grok -p <prompt> --cwd <wt> --always-approve` |
-| Ollama | `ollama run $KIT_OLLAMA_MODEL` (stdin prompt) |
-
-`KIT_FULL_AUTO=1` bypasses approval prompts (dangerous — for sandboxes only).  
-`KIT_SKILLS_DIR` overrides skill pack path.
-
-**Defaults:** live when the CLI is on PATH; `--dry-run` for CI/offline.  
-TUI Dispatch uses the same auto rule.
-
 ## How to run
 
+Windows: prefer the repo shims. Bare `kit` on this Windows PATH is still npm `@mzwin/kit@0.1.3` until you dot-source `scripts/use-rust-kit.ps1` or put `target\release` on PATH.
+
 ```bash
-# Doctor — which agents + skills are ready
+.\kit.cmd doctor
+.\kit.cmd --demo
+. .\scripts\use-rust-kit.ps1    # then `kit` is Rust for this session
+
+# cargo remains valid
 cargo run -p kit-cli -- doctor
-
-# Offline CI path
+cargo run -p kit-cli -- --demo
 cargo run -p kit-cli -- run --dry-run --task "smoke" --json
-
-# Live Codex (if installed) with skills in the worktree
-cargo run -p kit-cli -- run --agent codex --task "add a unit test for X"
-
-# Control Room — d dispatch spins agents live
-cargo run -p kit-cli
 ```
 
-## Specs / plans
+## Specs
 
-- `docs/dev/PRD-1.0.md` — product requirements  
-- `docs/dev/tasks/B2-agent-adapters.md` — adapter + skills spec  
-- `tasks/plan.md` / `tasks/todo.md` — execution checklist  
-- Root `AGENTS.md` + `.agents/skills` — skill routing for every agent  
-- **`wiki/kit-1.0/`** — Karpathy llm-wiki: every concept fully specified + workstreams P0–P5  
-  - Start: `wiki/kit-1.0/CLAUDE.md` + `wiki/kit-1.0/wiki/index.md`  
-  - Roadmap: `wiki/concepts/roadmap/workstreams`  
-  - Query: `outputs/queries/2026-08-01-what-next-for-high-quality-v1.md`
+- What to do next (full inventory): [`SPEC-next.md`](SPEC-next.md)
+- Design package (start here): `docs/dev/design-package/`
+- PRD: `docs/dev/PRD-1.0.md`
+- Surface: `docs/dev/SPEC-surface-1.0.md`
 
-## Next (production) — see wiki workstreams + bigger-scope plan
+## Next (do not reorder)
 
-PR **#11 merged to main** (`b42acfd`). CEO stamp still holds: board prefill-only 1.0, attach **1.0.1**, marketplace cut.
-
-| Done on main | Next for 1.0.0 |
-|--------------|----------------|
-| P0–P4 alpha (TUI + engine + vacuous + JSON) | H0 dogfood Kit-on-Kit |
-| Receipt CLI list/show | Dispatch real repo paths |
-| Demo FAIL selected | Gate inference hardening + `kit.toml` |
-| | **P5** npm platform binaries + curl installer |
-| | 60s demo asset + third-party install proof |
-| | Tag **1.0.0** only when clean-machine install works |
+1. Horizon 0 in `SPEC-next.md` / `tasks/todo.md` — I1 GitHub (human), I2 commit when asked, I3–I5 Sessions B–D
+2. P1 isolate `CARGO_TARGET_DIR` in worktrees
+3. N1 path-filter Node CI
+4. U1 FAIL annotation at 60/80 — one TUI slice
+5. PTY, installer, alpha.2 — **not before Horizon 0 checkpoint**
 
 **1.0.1:** PTY attach. **1.1:** board pull-queue.

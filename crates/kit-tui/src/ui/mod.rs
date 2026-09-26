@@ -13,6 +13,7 @@ use ratatui::text::Line;
 
 use crate::theme::Theme;
 use common::draw_help_overlay;
+use ratatui::widgets::Clear;
 
 /// Paint the active screen into `frame`.
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -26,36 +27,40 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if app.help_open {
         let theme = Theme::resolve();
         let area = frame.area();
-        // Centered panel over the current screen.
+        frame.render_widget(Clear, area);
+        // At the 80×14 contract, gutters mash header/footer through the panel.
+        let tight = area.width < 90 || area.height < 18;
+        let v_gutter = if tight {
+            Constraint::Length(0)
+        } else {
+            Constraint::Percentage(12)
+        };
+        let h_gutter = if tight {
+            Constraint::Length(0)
+        } else {
+            Constraint::Percentage(8)
+        };
         let v = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(12),
-                Constraint::Percentage(76),
-                Constraint::Percentage(12),
-            ])
+            .constraints([v_gutter, Constraint::Min(8), v_gutter])
             .split(area);
         let h = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(8),
-                Constraint::Percentage(84),
-                Constraint::Percentage(8),
-            ])
+            .constraints([h_gutter, Constraint::Min(20), h_gutter])
             .split(v[1]);
         draw_help_overlay(frame, h[1], &theme, help_lines(app));
     }
 }
 
 fn help_lines(app: &App) -> Vec<Line<'static>> {
+    // No blank rows: at 14 terminal rows the panel inner height is ~12.
+    // Kill and retry must appear in that window (k is kill, not nav).
     let mut lines: Vec<Line<'static>> = vec![
         Line::from("Kit Control Room — keys"),
-        Line::from(""),
         Line::from("Global"),
         Line::from("  ?          toggle this help"),
         Line::from("  Esc        back / close help"),
         Line::from("  q          quit (Control Room only; disabled while attached)"),
-        Line::from(""),
     ];
     match app.screen {
         Screen::ControlRoom => {
@@ -65,10 +70,10 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
                 Line::from("  Enter      open run detail (stream)"),
                 Line::from("  g          open gate log"),
                 Line::from("  d          dispatch fan-out"),
-                Line::from("  b          board (prefill list)"),
-                Line::from("  f          filter ALL → FAIL → RUN → DONE"),
                 Line::from("  k          kill selected run"),
                 Line::from("  r          retry FAIL only"),
+                Line::from("  b          board (prefill list)"),
+                Line::from("  f          filter ALL → FAIL → RUN → DONE"),
             ]);
         }
         Screen::RunDetail { .. } => {
@@ -90,8 +95,9 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
         Screen::Dispatch => {
             lines.extend([
                 Line::from("Dispatch"),
+                Line::from("  ↑↓         move in the focused list"),
                 Line::from("  Tab        next field"),
-                Line::from("  Space      toggle repo/agent"),
+                Line::from("  Space      toggle repo/agent/persona"),
                 Line::from("  type       task prompt"),
                 Line::from("  Enter      submit fan-out"),
             ]);
@@ -106,8 +112,6 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
             ]);
         }
     }
-    lines.push(Line::from(""));
-    lines.push(Line::from("Press Esc or ? to close"));
     lines
 }
 
@@ -133,9 +137,43 @@ mod tests {
         AppEvent::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
+    fn snapshot_footer(frame: &str) -> &str {
+        frame
+            .lines()
+            .rev()
+            .find(|line| line.contains('['))
+            .unwrap_or(frame)
+    }
+
     #[test]
     fn empty_control_room_snapshot() {
         let app = App::with_motion(false);
+        let frame = render_to_string(&app, 80, 12);
+        let footer = snapshot_footer(&frame);
+        assert!(
+            footer.contains('?') && footer.contains('r'),
+            "80-col footer must keep help and retry: {footer}"
+        );
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
+    fn empty_control_room_probe_all_missing_snapshot() {
+        let mut app = App::with_motion(false);
+        app.set_agents_probe(vec![
+            ("codex".into(), false),
+            ("claude".into(), false),
+            ("grok".into(), false),
+            ("ollama".into(), false),
+        ]);
+        let frame = render_to_string(&app, 80, 12);
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
+    fn empty_control_room_probe_ready_snapshot() {
+        let mut app = App::with_motion(false);
+        app.set_agents_probe(vec![("codex".into(), true), ("claude".into(), false)]);
         let frame = render_to_string(&app, 80, 12);
         insta::assert_snapshot!(frame);
     }
@@ -148,10 +186,50 @@ mod tests {
     }
 
     #[test]
+    fn too_small_snapshot() {
+        let app = App::with_motion(false);
+        let frame = render_to_string(&app, 40, 8);
+        assert!(
+            frame.contains("need 60×12") && frame.contains("40×8"),
+            "too-small floor must teach the next action: {frame}"
+        );
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
     fn populated_control_room_snapshot() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
         let frame = render_to_string(&app, 80, 14);
+        assert!(
+            frame.contains("^ tsc: 3 errors"),
+            "FAIL first-error must stay readable at 80×14: {frame}"
+        );
+        assert!(
+            frame.contains("GATING") && !frame.contains("GATED"),
+            "header must say GATING, never 0 GATED: {frame}"
+        );
+        assert!(
+            !frame.contains('⠋') && !frame.contains('⠙'),
+            "motion-off snapshots must rest: {frame}"
+        );
+        let header = frame.lines().next().unwrap_or("");
+        assert!(
+            header.contains("FAIL ·") || header.contains("r retry"),
+            "80-col header must keep the demo FAIL flash: {header}"
+        );
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
+    fn populated_control_room_motion_on_snapshot() {
+        let mut app = App::with_motion(true);
+        app.load_prd_fixture();
+        let frame = render_to_string(&app, 80, 14);
+        assert!(
+            frame.contains('⠋') && frame.contains("GATING") && frame.contains("RUN"),
+            "motion-on live work must breathe; GATING is the wedge: {frame}"
+        );
         insta::assert_snapshot!(frame);
     }
 
@@ -160,6 +238,19 @@ mod tests {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
         let frame = render_to_string(&app, 60, 12);
+        let footer = snapshot_footer(&frame);
+        assert!(
+            footer.contains('?') && footer.contains('r'),
+            "60-col footer must keep help and retry: {footer}"
+        );
+        assert!(
+            frame.contains("^ tsc: 3 errors"),
+            "FAIL first-error must stay readable at 60×12: {frame}"
+        );
+        assert!(
+            frame.contains("GATING"),
+            "60-col STATE must keep GATING: {frame}"
+        );
         insta::assert_snapshot!(frame);
     }
 
@@ -175,6 +266,10 @@ mod tests {
             }
         ));
         let frame = render_to_string(&app, 80, 16);
+        assert!(
+            frame.contains("codex·eng"),
+            "run detail header must use vendor·role: {frame}"
+        );
         insta::assert_snapshot!(frame);
     }
 
@@ -211,6 +306,15 @@ mod tests {
         app.load_prd_fixture();
         app.update(code(KeyCode::Enter));
         let frame = render_to_string(&app, 60, 12);
+        assert!(
+            frame.contains("GATE FAIL"),
+            "60-col run detail must keep GATE FAIL: {frame}"
+        );
+        let footer = snapshot_footer(&frame);
+        assert!(
+            footer.contains("[r]etry") || footer.contains("[r]"),
+            "60-col run detail must keep retry: {footer}"
+        );
         insta::assert_snapshot!(frame);
     }
 
@@ -225,6 +329,10 @@ mod tests {
         )));
         assert_eq!(app.screen, Screen::Attached);
         let frame = render_to_string(&app, 80, 12);
+        assert!(
+            frame.contains("codex·eng"),
+            "attach header must use vendor·role: {frame}"
+        );
         insta::assert_snapshot!(frame);
     }
 
@@ -238,6 +346,60 @@ mod tests {
             KeyModifiers::NONE,
         )));
         let frame = render_to_string(&app, 80, 16);
+        assert!(
+            frame.contains("[↑↓]"),
+            "dispatch footer must include move keys: {frame}"
+        );
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
+    fn dispatch_with_probe_snapshot() {
+        let mut app = App::with_motion(false);
+        app.dispatch.repos = vec![
+            ("/repos/kit".into(), true),
+            ("/repos/guardian".into(), false),
+        ];
+        app.set_agents_probe(vec![
+            ("codex".into(), false),
+            ("claude".into(), true),
+            ("grok".into(), false),
+            ("ollama".into(), false),
+        ]);
+        app.dispatch.task = "port guard.js across the monorepo".into();
+        app.screen = Screen::Dispatch;
+        let frame = render_to_string(&app, 80, 16);
+        assert!(
+            frame.contains("claude  ready") && frame.contains("codex  missing"),
+            "probe must annotate agents without rewriting ids: {frame}"
+        );
+        assert!(
+            !frame.contains("claude  ready") || frame.contains("[x] claude  ready"),
+            "first ready agent is selected: {frame}"
+        );
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
+    fn dispatch_personas_snapshot() {
+        let mut app = App::with_motion(false);
+        app.dispatch.repos = vec![("/repos/kit".into(), true)];
+        app.dispatch.task = "empty room first paint".into();
+        for (p, on) in &mut app.dispatch.personas {
+            *on = matches!(
+                *p,
+                crate::persona::Persona::Product
+                    | crate::persona::Persona::Design
+                    | crate::persona::Persona::Eng
+            );
+        }
+        app.screen = Screen::Dispatch;
+        app.dispatch.focus = crate::app::DispatchFocus::Personas;
+        let frame = render_to_string(&app, 80, 16);
+        assert!(
+            frame.contains("product") && frame.contains("design") && frame.contains("eng"),
+            "persona column must be visible: {frame}"
+        );
         insta::assert_snapshot!(frame);
     }
 
@@ -254,6 +416,18 @@ mod tests {
     }
 
     #[test]
+    fn empty_board_snapshot() {
+        let mut app = App::with_motion(false);
+        app.update(AppEvent::Key(KeyEvent::new(
+            KeyCode::Char('b'),
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(app.screen, Screen::Board);
+        let frame = render_to_string(&app, 80, 14);
+        insta::assert_snapshot!(frame);
+    }
+
+    #[test]
     fn help_overlay_control_room_snapshot() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
@@ -262,12 +436,23 @@ mod tests {
             KeyModifiers::NONE,
         )));
         assert!(app.help_open);
-        let frame = render_to_string(&app, 80, 20);
+        let frame = render_to_string(&app, 80, 14);
         assert!(
             !frame.contains("j/k"),
             "help must not advertise j/k nav while k=kill: {frame}"
         );
-        assert!(frame.contains("kill") || frame.contains("Kill") || frame.contains("k"));
+        assert!(
+            !frame.contains("KIT / CONTROL ROOM") && !frame.contains("[↑↓] select"),
+            "help overlay must cover the Control Room chrome: {frame}"
+        );
+        assert!(
+            frame.contains("kill"),
+            "help overlay at 80×14 must show kill: {frame}"
+        );
+        assert!(
+            frame.contains("retry"),
+            "help overlay at 80×14 must show retry: {frame}"
+        );
         insta::assert_snapshot!(frame);
     }
 }

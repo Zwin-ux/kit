@@ -137,6 +137,8 @@ Use `scheduler_create` / UI schedules. Prefer **audit** on a timer so implement 
 |----------|------|
 | `kit-luna-storm` | Older P0–P2 diagnose storm (still useful) |
 | `kit-quality-cycle` | **Primary** quality ladder (this doc) |
+| `kit-craft-cycle` | Design + product + eng in parallel, then optional Power slice. Use before TUI/motion work. |
+| `kit-alpha-land` | CEO-framed alpha-land swarm: P1 isolation, N1 CI, Session B, remaining TUI. No 1.0.0 tag. |
 
 ---
 

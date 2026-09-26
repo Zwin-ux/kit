@@ -259,4 +259,19 @@ mod tests {
         }
         let _ = fs::remove_dir_all(&home);
     }
+
+    #[test]
+    fn workspace_kit_toml_declares_a_real_gate() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("workspace root");
+        let cfg = load_kit_config(&root);
+        assert!(
+            !cfg.gate.is_empty(),
+            "kit.toml must exist and declare checks so Kit-on-Kit is not vacuous"
+        );
+        assert!(cfg.gate.test.as_deref().unwrap().contains("cargo test"));
+        assert_eq!(cfg.firewall.mode, kit_core::FirewallMode::Block);
+    }
 }

@@ -77,11 +77,11 @@ States: `QUEUED → RUNNING → GATING → PASS | FAIL | KILLED | ERROR`.
 **Control Room** (default surface, `kit`)
 
 ```
-KIT / CONTROL ROOM                         2 RUNNING  1 FAIL  0 GATED
+KIT / CONTROL ROOM                    1 RUNNING  1 GATING  1 FAIL
 +------------------------------------------------------------------+
 | REPO            AGENT    TASK                   STATE    GATE     |
 | kit             codex    port guard.js          RUN 2m   --       |
-| kit             grok     frame clock            RUN 2m   --       |
+| kit             grok     frame clock            GATING 2m --      |
 | trenchwire      codex    fix red CI             DONE     FAIL     |
 |                                               ^ tsc: 3 errors     |
 | guardian        claude   855-case suite         DONE     PASS     |

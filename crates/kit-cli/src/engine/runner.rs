@@ -284,22 +284,22 @@ pub async fn execute_cancellable(
     } else {
         RunState::Fail
     };
-    send(&tx, &id, RunDelta::State(state)).await;
-
-    write_terminal(
+    let result = write_terminal(
         opts,
-        id,
+        id.clone(),
         repo,
-        branch,
-        wt_path,
-        started_at,
+        Some(branch),
+        Some(wt_path),
+        Some(started_at),
         state,
         output,
         truncated,
         Some(gate),
-        tx,
     )
-    .await
+    .await?;
+    // Proof first: the terminal state goes out only once its receipt exists.
+    send(&tx, &id, RunDelta::State(state)).await;
+    Ok(result)
 }
 
 fn cancelled(cancel: &Option<Arc<CancelHandle>>) -> bool {
@@ -326,39 +326,106 @@ async fn finalize_killed(
         note,
     );
     send(&tx, &id, RunDelta::Output(note.into())).await;
-    send(&tx, &id, RunDelta::State(RunState::Killed)).await;
-    write_terminal(
+    let result = write_terminal(
         opts,
-        id,
+        id.clone(),
         repo,
-        branch,
-        wt_path,
-        started_at,
+        Some(branch),
+        Some(wt_path),
+        Some(started_at),
         RunState::Killed,
         output,
         truncated,
         None,
-        tx,
+    )
+    .await?;
+    send(&tx, &id, RunDelta::State(RunState::Killed)).await;
+    Ok(result)
+}
+
+/// Terminal path for a run killed before it started: still queued on the
+/// concurrency limiter, or cancelled between permit and execute. Nothing was
+/// created (no worktree, branch, or start time), yet the run still gets a
+/// receipt, and `Killed` is sent only once that receipt is written.
+pub(crate) async fn finalize_killed_before_start(
+    opts: RunOptions,
+    id: RunId,
+    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
+) -> Result<RunResult> {
+    let note = "kit: run killed while queued (never started)\n";
+    let result = finalize_outside_run(opts, id.clone(), RunState::Killed, note, &tx).await?;
+    send(&tx, &id, RunDelta::State(RunState::Killed)).await;
+    Ok(result)
+}
+
+/// Terminal path for a run whose own path failed before it reported a
+/// terminal state (runner paths send one only after their receipt is
+/// written). The error goes into the stream and an `Error` receipt, and
+/// `Error` is sent even if that receipt cannot be written, so the run's row
+/// never stays active.
+pub(crate) async fn finalize_failed(
+    opts: RunOptions,
+    id: RunId,
+    err: &anyhow::Error,
+    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
+) -> Result<RunResult> {
+    let note = format!("kit: run failed: {err:#}\n");
+    let result = finalize_outside_run(opts, id.clone(), RunState::Error, &note, &tx).await;
+    send(&tx, &id, RunDelta::State(RunState::Error)).await;
+    result
+}
+
+/// Receipt for a run that ends outside its own run path, with `note` in the
+/// stream and the log. A worktree the run got before failing is diffed and
+/// removed if clean; the start time is not known here, so none is recorded.
+async fn finalize_outside_run(
+    opts: RunOptions,
+    id: RunId,
+    state: RunState,
+    note: &str,
+    tx: &Option<mpsc::Sender<(RunId, RunDelta)>>,
+) -> Result<RunResult> {
+    // Record the repo the way a started run would; keep the raw token if it
+    // does not resolve (the run is over either way).
+    let repo = resolve_repo(&opts.repo).unwrap_or_else(|_| PathBuf::from(&opts.repo));
+    let wt = worktrees_dir().join(&id.0);
+    let wt_path = wt.is_dir().then_some(wt);
+    let branch = wt_path.as_ref().map(|_| branch_name(&id.0));
+    let mut output = String::new();
+    let mut truncated = false;
+    append_capped(
+        &mut output,
+        &mut truncated,
+        opts.bounds.output_cap_bytes,
+        note,
+    );
+    send(tx, &id, RunDelta::Output(note.into())).await;
+    write_terminal(
+        opts, id, repo, branch, wt_path, None, state, output, truncated, None,
     )
     .await
 }
 
+/// Persist the receipt, then remove the worktree if the run left it clean.
+/// `wt_path` is `None` when the run never got a worktree.
 #[allow(clippy::too_many_arguments)]
 async fn write_terminal(
     opts: RunOptions,
     id: RunId,
     repo: PathBuf,
-    branch: String,
-    wt_path: PathBuf,
-    started_at: SystemTime,
+    branch: Option<String>,
+    wt_path: Option<PathBuf>,
+    started_at: Option<SystemTime>,
     state: RunState,
     output: String,
     truncated: bool,
     gate: Option<GateOutcome>,
-    _tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
 ) -> Result<RunResult> {
     let ended_at = SystemTime::now();
-    let diff = worktree::worktree_diff(&wt_path).unwrap_or_default();
+    let diff = wt_path
+        .as_deref()
+        .map(|wt| worktree::worktree_diff(wt).unwrap_or_default())
+        .unwrap_or_default();
 
     let receipt = Receipt {
         version: Receipt::VERSION,
@@ -367,11 +434,11 @@ async fn write_terminal(
             repo: repo.clone(),
             agent: opts.agent,
             task: opts.task.clone(),
-            branch: Some(branch),
+            branch,
             bounds: opts.bounds.clone(),
         },
         state,
-        started_at: Some(started_at),
+        started_at,
         ended_at: Some(ended_at),
         diff,
         gate: gate.clone(),
@@ -379,13 +446,15 @@ async fn write_terminal(
     };
 
     let receipt_dir = write_receipt(&receipt, &output)?;
-    let removed = remove_if_clean(&repo, &wt_path).unwrap_or(false);
+    let removed = wt_path
+        .as_deref()
+        .is_some_and(|wt| remove_if_clean(&repo, wt).unwrap_or(false));
 
     Ok(RunResult {
         id,
         state,
         receipt_dir,
-        worktree: if removed { None } else { Some(wt_path) },
+        worktree: if removed { None } else { wt_path },
         worktree_removed: removed,
         gate,
     })
@@ -465,6 +534,10 @@ async fn live_agent(
     // First tick is immediate; consume so we do not race spawn.
     poll.tick().await;
 
+    // The adapter's pipe readers hold the only senders. Once the agent exits
+    // they drop, and a closed channel is always ready: under `biased` it would
+    // starve the exit poll below (Session B: kit spun until the run timeout).
+    let mut pipes_open = true;
     let outcome = loop {
         if cancel.is_some_and(|c| c.is_cancelled()) {
             let _ = handle.kill().await;
@@ -491,7 +564,7 @@ async fn live_agent(
                 let _ = handle.kill().await;
                 break AgentPhase::TimedOut;
             }
-            maybe = local_rx.recv() => {
+            maybe = local_rx.recv(), if pipes_open => {
                 match maybe {
                     Some(delta) => {
                         if let RunDelta::Output(chunk) = &delta {
@@ -503,6 +576,7 @@ async fn live_agent(
                     }
                     None => {
                         // Output pipes closed; keep polling exit until done/kill/timeout.
+                        pipes_open = false;
                     }
                 }
             }
@@ -577,7 +651,7 @@ pub fn parse_agent(s: &str) -> Result<AgentKind> {
 mod tests {
     use super::*;
     use crate::engine::paths::kit_home_test_lock;
-    use std::path::PathBuf;
+    use kit_core::CheckStatus;
 
     /// Holding a std Mutex across await is intentional here: tests must not
     /// interleave KIT_HOME mutation. Clippy would prefer tokio::Mutex; that
@@ -599,16 +673,9 @@ mod tests {
         out
     }
 
-    fn kit_repo_root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .expect("workspace root")
-    }
-
     #[tokio::test]
     async fn dry_run_writes_receipt_and_cleans_worktree() {
-        let root = kit_repo_root();
+        let root = crate::engine::paths::bare_git_fixture();
         let home = std::env::temp_dir().join(format!(
             "kit-test-home-{}-{}",
             std::process::id(),
@@ -648,6 +715,7 @@ mod tests {
         assert!(result.receipt_dir.starts_with(&home));
 
         let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -657,8 +725,137 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dry_run_gate_does_not_write_parent_cargo_target_dir() {
+        let root = crate::engine::paths::bare_git_fixture();
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let home = std::env::temp_dir().join(format!(
+            "kit-test-home-target-{}-{stamp}",
+            std::process::id()
+        ));
+        let parent_target =
+            std::env::temp_dir().join(format!("kit-parent-target-{}-{stamp}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&parent_target);
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&parent_target).unwrap();
+        let sentinel = parent_target.join("sentinel");
+        std::fs::write(&sentinel, b"parent-target\n").unwrap();
+
+        #[cfg(windows)]
+        let script = home.join("p1-probe.cmd");
+        #[cfg(not(windows))]
+        let script = home.join("p1-probe.sh");
+        #[cfg(windows)]
+        std::fs::write(
+            &script,
+            "@echo off\r\nif not exist \"%CARGO_TARGET_DIR%\" mkdir \"%CARGO_TARGET_DIR%\"\r\necho p1>\"%CARGO_TARGET_DIR%\\p1-marker\"\r\n",
+        )
+        .unwrap();
+        #[cfg(not(windows))]
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nmkdir -p \"$CARGO_TARGET_DIR\"\necho p1 > \"$CARGO_TARGET_DIR/p1-marker\"\n",
+        )
+        .unwrap();
+        #[cfg(windows)]
+        let test_cmd = format!("cmd /C \"{}\"", script.display());
+        #[cfg(not(windows))]
+        let test_cmd = format!("sh \"{}\"", script.display());
+        let kit_toml = format!("[gate]\ntest = '{test_cmd}'\ntimeout = \"30s\"\n");
+        std::fs::write(root.join("kit.toml"), kit_toml).unwrap();
+        let loaded = crate::engine::store::load_kit_config(&root);
+        assert!(
+            !loaded.gate.is_empty(),
+            "fixture kit.toml must parse so the probe actually runs"
+        );
+
+        let before_count = std::fs::read_dir(&parent_target).unwrap().count();
+        let before_dir_mtime = std::fs::metadata(&parent_target)
+            .unwrap()
+            .modified()
+            .unwrap();
+        let before_sentinel = std::fs::metadata(&sentinel).unwrap().modified().unwrap();
+
+        let result = with_kit_home(&home, || async {
+            let prev = std::env::var_os("CARGO_TARGET_DIR");
+            unsafe {
+                std::env::set_var("CARGO_TARGET_DIR", &parent_target);
+            }
+            struct Restore(Option<std::ffi::OsString>);
+            impl Drop for Restore {
+                fn drop(&mut self) {
+                    match &self.0 {
+                        Some(v) => unsafe { std::env::set_var("CARGO_TARGET_DIR", v) },
+                        None => unsafe { std::env::remove_var("CARGO_TARGET_DIR") },
+                    }
+                }
+            }
+            let _restore = Restore(prev);
+            let opts = RunOptions {
+                repo: root.to_string_lossy().into_owned(),
+                agent: AgentKind::Codex,
+                task: "p1 cargo target isolation".into(),
+                dry_run: Some(true),
+                bounds: Bounds::default(),
+            };
+            execute(opts, None, None).await.expect("execute")
+        })
+        .await;
+
+        let after_count = std::fs::read_dir(&parent_target).unwrap().count();
+        let after_dir_mtime = std::fs::metadata(&parent_target)
+            .unwrap()
+            .modified()
+            .unwrap();
+        let after_sentinel = std::fs::metadata(&sentinel).unwrap().modified().unwrap();
+        println!(
+            "parent target count {before_count}->{after_count} dir_mtime {before_dir_mtime:?}->{after_dir_mtime:?}"
+        );
+
+        let gate = result.gate.as_ref().expect("dry-run still runs the gate");
+        assert_eq!(
+            gate.checks.len(),
+            1,
+            "probe check must run, got {:?}",
+            gate.checks
+        );
+        assert_eq!(
+            gate.checks[0].status,
+            CheckStatus::Pass,
+            "probe must actually run: {:?}",
+            gate.checks[0]
+        );
+        assert_eq!(
+            after_count, before_count,
+            "parent CARGO_TARGET_DIR file count changed"
+        );
+        assert_eq!(
+            after_sentinel, before_sentinel,
+            "parent sentinel mtime changed"
+        );
+        assert_eq!(
+            after_dir_mtime, before_dir_mtime,
+            "parent target dir mtime changed"
+        );
+        assert!(
+            !parent_target.join("p1-marker").exists(),
+            "probe wrote into the parent CARGO_TARGET_DIR"
+        );
+
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&parent_target);
+        let _ = std::fs::remove_dir_all(&root);
+        if let Some(wt) = result.worktree {
+            let _ = std::fs::remove_dir_all(&wt);
+        }
+    }
+
+    #[tokio::test]
     async fn cancel_before_start_yields_killed() {
-        let root = kit_repo_root();
+        let root = crate::engine::paths::bare_git_fixture();
         let home = std::env::temp_dir().join(format!(
             "kit-test-kill-{}-{}",
             std::process::id(),
@@ -693,5 +890,110 @@ mod tests {
         assert!(raw.contains("\"killed\"") || raw.contains("killed"));
 
         let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Real child that exits at once. As in kit-agents' `spawn_streaming`, the
+    /// only sender lives in the stdout reader and drops at EOF (agent exit).
+    struct ExitAtOnce;
+
+    #[async_trait::async_trait]
+    impl Agent for ExitAtOnce {
+        fn kind(&self) -> AgentKind {
+            AgentKind::Codex
+        }
+
+        async fn probe(&self) -> kit_agents::AgentStatus {
+            kit_agents::AgentStatus::missing(AgentKind::Codex)
+        }
+
+        async fn spawn(
+            &self,
+            _spec: &RunSpec,
+            worktree: &std::path::Path,
+            tx: mpsc::Sender<RunDelta>,
+        ) -> std::result::Result<Box<dyn kit_agents::AgentHandle>, kit_agents::SpawnError> {
+            let mut cmd = if cfg!(windows) {
+                let mut c = tokio::process::Command::new("cmd");
+                c.args(["/C", "exit", "0"]);
+                c
+            } else {
+                tokio::process::Command::new("true")
+            };
+            let mut child = cmd
+                .current_dir(worktree)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+                .map_err(|source| kit_agents::SpawnError::Io {
+                    kind: AgentKind::Codex,
+                    source,
+                })?;
+            let stdout = child.stdout.take().expect("piped stdout");
+            tokio::spawn(async move {
+                use tokio::io::AsyncBufReadExt;
+                let mut lines = tokio::io::BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let _ = tx.send(RunDelta::Output(format!("{line}\n"))).await;
+                }
+            });
+            Ok(Box::new(ExitHandle(std::sync::Mutex::new(child))))
+        }
+    }
+
+    /// `AgentHandle` must be `Sync`; `tokio::process::Child` is not.
+    struct ExitHandle(std::sync::Mutex<tokio::process::Child>);
+
+    #[async_trait::async_trait]
+    impl kit_agents::AgentHandle for ExitHandle {
+        async fn wait(&mut self) -> std::io::Result<i32> {
+            let child = self.0.get_mut().expect("child");
+            Ok(child.wait().await?.code().unwrap_or(1))
+        }
+
+        async fn kill(&mut self) -> std::io::Result<()> {
+            self.0.get_mut().expect("child").kill().await
+        }
+
+        async fn try_wait(&mut self) -> std::io::Result<Option<i32>> {
+            let child = self.0.get_mut().expect("child");
+            Ok(child.try_wait()?.map(|status| status.code().unwrap_or(1)))
+        }
+    }
+
+    /// Session B: once the agent exits its pipes close and `recv()` yields
+    /// `None` on every poll. The biased select must still reach the exit poll.
+    #[tokio::test]
+    async fn live_agent_sees_exit_after_output_pipes_close() {
+        let dir = std::env::temp_dir();
+        let opts = RunOptions {
+            task: "exit at once".into(),
+            dry_run: Some(false),
+            bounds: Bounds {
+                timeout: Duration::from_secs(10),
+                ..Bounds::default()
+            },
+            ..RunOptions::default()
+        };
+        let id = RunId::default();
+        let (mut output, mut truncated) = (String::new(), false);
+        let run = live_agent(
+            &ExitAtOnce,
+            &opts,
+            &id,
+            &dir,
+            &dir,
+            &None,
+            &mut output,
+            &mut truncated,
+            None,
+        );
+        let phase = tokio::time::timeout(Duration::from_secs(2), run)
+            .await
+            .expect("exit poll starved: live_agent never saw the agent exit")
+            .expect("live_agent");
+        assert_eq!(phase, AgentPhase::Ok);
+        assert!(output.contains("kit: codex exited with code 0"), "{output}");
     }
 }

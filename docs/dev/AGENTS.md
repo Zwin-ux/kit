@@ -58,9 +58,11 @@ Status board: `CURRENT.md`
 | F1 Event loop | Done |
 | F2 Control Room | Done |
 | F3 Run detail | Done |
-| F4 Dispatch + Board | In progress / landing |
+| F4 Dispatch + Board | Done (prefill Board; Dispatch is not a path browser) |
 | F5 Theme (light) | Partial |
 | F6 Hit-testing | Not started |
+
+Operating context: `docs/dev/design-package/` (honest state first).
 
 ## Visual rules (TUI)
 

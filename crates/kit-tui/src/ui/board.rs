@@ -44,8 +44,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
             frame,
             chunks[1],
             &theme,
-            "Board is empty",
-            "press n to add a task  ·  Enter prefills Dispatch",
+            "Nothing queued",
+            "press n to add  ·  Enter prefills Dispatch  ·  not a live pull-queue",
         );
     } else {
         draw_table(frame, app, chunks[1], &theme);
@@ -65,7 +65,7 @@ fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         Cell::from("#").style(theme.dim().add_modifier(Modifier::BOLD)),
         Cell::from("TASK").style(theme.dim().add_modifier(Modifier::BOLD)),
         Cell::from("REPO").style(theme.dim().add_modifier(Modifier::BOLD)),
-        Cell::from("AGENT").style(theme.dim().add_modifier(Modifier::BOLD)),
+        Cell::from("ROLE").style(theme.dim().add_modifier(Modifier::BOLD)),
         Cell::from("STATE").style(theme.dim().add_modifier(Modifier::BOLD)),
     ]);
 
@@ -93,7 +93,11 @@ fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
                 Cell::from(format!("{marker}{}", t.id)).style(base),
                 Cell::from(truncate(&t.title, 32)).style(base),
                 Cell::from(truncate(&t.repo_hint, 12)).style(base),
-                Cell::from(truncate(&t.agent_hint, 10)).style(base),
+                Cell::from(truncate(
+                    &format!("{}·{}", t.agent_hint, t.persona.label()),
+                    14,
+                ))
+                .style(base),
                 Cell::from(state).style(state_style),
             ])
         })

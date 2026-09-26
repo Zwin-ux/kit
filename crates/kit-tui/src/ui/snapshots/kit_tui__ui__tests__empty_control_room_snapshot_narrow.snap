@@ -2,7 +2,7 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"         terminal too small — need 60×12 (now 60×8)         "
+"       need 60×12 — maximize this terminal (now 60×8)       "
 "                                                            "
 "                                                            "
 "                                                            "

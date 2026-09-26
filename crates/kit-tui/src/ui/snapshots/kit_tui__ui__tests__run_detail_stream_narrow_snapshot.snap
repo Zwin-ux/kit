@@ -2,7 +2,7 @@
 source: crates/kit-tui/src/ui/mod.rs
 expression: frame
 ---
-"KIT / RUN  trenchwire · codex · fix red CI  DONE  GATE FAIL "
+"KIT / RUN  trenchwire · codex·eng · fix re…  DONE  GATE FAIL"
 "worktree  /tmp/kit-wt-01FIXRUN3                             "
 " stream  │  gate  │  diff                                   "
 "┌ stream ──────────────────────────────────────────────────┐"
@@ -13,4 +13,4 @@ expression: frame
 "│src/client.ts(88,12): error TS2345                        │"
 "│src/api.ts(3,1): error TS2307: Cannot find module         │"
 "└──────────────────────────────────────────────────────────┘"
-" [esc] back  [1]stream [2]gate [3]diff  [a]ttach  [k]ill    "
+" [esc] back  [1]stream  [2]gate  [k]ill  [r]etry      follow"

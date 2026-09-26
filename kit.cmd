@@ -1,13 +1,14 @@
 @echo off
 setlocal
-REM Repo-root shim so `kit` works without a global install.
+REM Repo-root shim: Rust Control Room (1.0), not the Node 0.1 skill launcher.
 set "KIT_ROOT=%~dp0"
-set "KIT_BIN=%KIT_ROOT%packages\cli\dist\bin.js"
-
+set "KIT_BIN=%KIT_ROOT%target\release\kit.exe"
+if not exist "%KIT_BIN%" set "KIT_BIN=%KIT_ROOT%target\debug\kit.exe"
 if not exist "%KIT_BIN%" (
-  echo kit: CLI not built. Run: pnpm build
+  echo kit: Rust binary not built.
+  echo   cargo build -p kit-cli --release
+  echo Then run: kit --demo
   exit /b 1
 )
-
-node "%KIT_BIN%" %*
+"%KIT_BIN%" %*
 exit /b %ERRORLEVEL%
