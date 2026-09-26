@@ -443,6 +443,10 @@ enum Saved {
 }
 
 fn save(action: &Action) -> Result<Saved> {
+    // Before any copy is made: a rollback copy must not land in git's folder.
+    if let Some(path) = action.path() {
+        guard_git(path)?;
+    }
     Ok(match action {
         Action::Skill { dir, .. } => {
             let copy = if dir.exists() {
@@ -499,6 +503,9 @@ impl Saved {
                 }
             },
             Self::Dir { path, copy } => {
+                if guard_git(path).is_err() {
+                    return;
+                }
                 let _ = std::fs::remove_dir_all(path);
                 match copy {
                     Some(c) => {
@@ -698,7 +705,8 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             if !dir.exists() {
                 return Ok(None);
             }
-            if !force && disk_hash(dir)?.as_deref() != Some(hash.as_str()) {
+            guard_git(dir)?;
+            if !force && is_installed(dir, hash)? != Some(true) {
                 // It is the user's now: a later `kit add` must not treat it
                 // as Kit's and overwrite it.
                 let _ = std::fs::remove_file(dir.join(OWNED));
@@ -807,10 +815,10 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
 /// Is what Kit installed still as installed? `None` when it is gone.
 pub fn drifted(applied: &Applied) -> Result<Option<String>> {
     if let Applied::Skill { dir, hash } = applied {
-        return Ok(match disk_hash(dir)? {
+        return Ok(match is_installed(dir, hash)? {
             None => Some(format!("{} is missing", tilde(dir))),
-            Some(h) if &h != hash => Some(format!("{} was changed by hand", tilde(dir))),
-            Some(_) => None,
+            Some(false) => Some(format!("{} was changed by hand", tilde(dir))),
+            Some(true) => None,
         });
     }
     Ok(None)
@@ -828,36 +836,129 @@ pub fn inside(path: &Path, base: &Path) -> bool {
     if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
         return link_target_within(path, &base).is_some();
     }
-    // The deepest part that exists decides where the rest would land.
-    path.ancestors()
-        .find(|p| p.exists())
-        .and_then(|p| std::fs::canonicalize(p).ok())
-        .is_some_and(|real| real.starts_with(&base))
+    resolved(path).is_some_and(|real| real.starts_with(&base) && !in_git_dir(&real))
+}
+
+/// Where `path` really lands: its deepest existing part with every link
+/// resolved, plus the parts that do not exist yet.
+fn resolved(path: &Path) -> Option<PathBuf> {
+    let existing = path.ancestors().find(|p| p.exists())?;
+    let rest = path.strip_prefix(existing).ok()?;
+    Some(std::fs::canonicalize(existing).ok()?.join(rest))
+}
+
+/// Refuse any write or removal that would land inside git's own folder,
+/// however the path gets there (a link partway down included).
+fn guard_git(path: &Path) -> Result<()> {
+    if resolved(path).is_some_and(|real| in_git_dir(&real)) {
+        bail!(
+            "{} leads into git's own folder. Kit will not write or remove anything there",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+/// Is `real` (resolved) inside a git folder? Only the folders from the
+/// scope's root down to `real` count: each is checked against the repo's
+/// `--git-dir` and `--git-common-dir`, and for being a git store itself
+/// (`HEAD`, `objects`, `refs`), whatever it is named. Folders above the
+/// root do not count, so a worktree inside a bare clone (`proj.git/main`)
+/// still works. A path outside the root (Kit's own `~/.kit`) is checked
+/// against the known git folders only.
+fn in_git_dir(real: &Path) -> bool {
+    let Some((root, known)) = LINK_ROOT
+        .lock()
+        .ok()
+        .and_then(|r| r.as_ref().map(|r| (r.root.clone(), r.git_dirs.clone())))
+    else {
+        return false;
+    };
+    let known_here = |dir: &Path| known.iter().any(|g| same_path(dir, g));
+    let Ok(rest) = real.strip_prefix(&root) else {
+        return real.ancestors().any(known_here);
+    };
+    let store = |dir: &Path| {
+        dir.join("HEAD").is_file() && dir.join("objects").is_dir() && dir.join("refs").is_dir()
+    };
+    let mut dir = root.clone();
+    for part in rest.components() {
+        dir.push(part);
+        if known_here(&dir) || store(&dir) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Paths compare without case on macOS and Windows, whose disks usually
+/// ignore it.
+fn same_path(a: &Path, b: &Path) -> bool {
+    if cfg!(any(target_os = "macos", windows)) {
+        a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+    } else {
+        a == b
+    }
+}
+
+/// The scope Kit writes in, and the git folders inside it that it never
+/// touches.
+struct LinkRules {
+    root: PathBuf,
+    git_dirs: Vec<PathBuf>,
 }
 
 /// Where Kit may follow a link to a file: the repo, or home for `--global`.
-static LINK_ROOT: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+static LINK_ROOT: std::sync::Mutex<Option<LinkRules>> = std::sync::Mutex::new(None);
 
 /// Let writes follow a link when the link and the file it leads to are both
 /// inside `root`. Anything else stays refused.
 pub fn follow_links_within(root: &Path) {
+    let rules = std::fs::canonicalize(root).ok().map(|root| LinkRules {
+        git_dirs: git_dirs(&root),
+        root,
+    });
     if let Ok(mut r) = LINK_ROOT.lock() {
-        *r = std::fs::canonicalize(root).ok();
+        *r = rules;
     }
 }
 
+/// `git rev-parse --absolute-git-dir --git-common-dir` for `root`, resolved.
+/// Empty when `root` is not in a repo.
+fn git_dirs(root: &Path) -> Vec<PathBuf> {
+    let Ok(out) = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--absolute-git-dir", "--git-common-dir"])
+        .stderr(std::process::Stdio::null())
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|l| std::fs::canonicalize(root.join(l)).ok())
+        .collect()
+}
+
 /// The file a link leads to, when the link and that file are both inside
-/// `root` (already canonical). Links to folders are never followed.
+/// `root` (already canonical), the file is the same kind as the link's name
+/// (`.md`, `.json` or `.toml`), is not a program, and is not in a git
+/// folder. Links to folders are never followed.
 fn link_target_within(link: &Path, root: &Path) -> Option<PathBuf> {
     let parent = link.parent().filter(|p| !p.as_os_str().is_empty())?;
     let parent = std::fs::canonicalize(parent).ok()?;
     let target = std::fs::canonicalize(link).ok()?;
-    let in_git = target
-        .strip_prefix(root)
-        .is_ok_and(|rest| rest.components().any(|c| c.as_os_str() == ".git"));
-    (parent.starts_with(root) && target.starts_with(root) && target.is_file())
+    let ext = |p: &Path| p.extension().map(|e| e.to_string_lossy().to_lowercase());
+    let same_kind =
+        matches!(ext(link).as_deref(), Some("md" | "json" | "toml")) && ext(link) == ext(&target);
+    (parent.starts_with(root) && target.starts_with(root) && target.is_file() && same_kind)
         .then_some(target)
-        .filter(|t| !in_git && !executable(t))
+        .filter(|t| !in_git_dir(t) && !executable(t))
 }
 
 /// A link that leads to a program (a git hook, a script) is never written
@@ -886,6 +987,7 @@ fn prune(path: &Path, levels: usize) {
 // ---- skills -------------------------------------------------------------
 
 fn write_skill(dir: &Path, payload: &SkillPayload, force: bool) -> Result<()> {
+    guard_git(dir)?;
     if dir.exists() {
         let owned = dir.join(OWNED).is_file();
         if !owned && !force {
@@ -894,15 +996,14 @@ fn write_skill(dir: &Path, payload: &SkillPayload, force: bool) -> Result<()> {
                 tilde(dir)
             );
         }
-        let on_disk = disk_hash(dir)?;
-        if on_disk.as_deref() == Some(payload.hash.as_str()) {
+        if disk_hash(dir)?.as_deref() == Some(payload.hash.as_str()) {
             return Ok(());
         }
         // The marker holds the hash Kit wrote. A folder that no longer
         // matches it was edited by hand: never replace that silently.
         if owned && !force {
             let wrote = std::fs::read_to_string(dir.join(OWNED)).unwrap_or_default();
-            if on_disk.as_deref() != Some(wrote.trim()) {
+            if is_installed(dir, wrote.trim())? != Some(true) {
                 bail!(
                     "{} was changed by hand since Kit installed it. Copy your changes, or use --force",
                     tilde(dir)
@@ -935,6 +1036,35 @@ fn disk_hash(dir: &Path) -> Result<Option<String>> {
     let mut files = Vec::new();
     collect(dir, dir, &mut files)?;
     Ok(Some(super::fetch::content_hash(&files)))
+}
+
+/// Is the skill folder at `dir` what Kit installed with `hash`? `None` when
+/// it is gone. Git on Windows (`core.autocrlf`) checks a committed skill
+/// out with CRLF line endings; that alone is not an edit.
+fn is_installed(dir: &Path, hash: &str) -> Result<Option<bool>> {
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let mut files = Vec::new();
+    collect(dir, dir, &mut files)?;
+    if super::fetch::content_hash(&files) == hash {
+        return Ok(Some(true));
+    }
+    for f in &mut files {
+        f.bytes = lf_only(&f.bytes);
+    }
+    Ok(Some(super::fetch::content_hash(&files) == hash))
+}
+
+/// `bytes` with every CRLF turned into LF.
+fn lf_only(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for (i, b) in bytes.iter().enumerate() {
+        if !(*b == b'\r' && bytes.get(i + 1) == Some(&b'\n')) {
+            out.push(*b);
+        }
+    }
+    out
 }
 
 /// Every entry of a skill folder as hashed. Links are never followed (a
@@ -1053,22 +1183,37 @@ fn write(file: &Path, text: &str) -> Result<()> {
 /// be a link, the data goes to a new temp file opened with `create_new`
 /// (O_EXCL) under a fresh name in the same folder, and it is renamed over
 /// the file only after checking again. A planted link, at the file or at a
-/// guessable temp name, cannot redirect the write elsewhere.
+/// guessable temp name, cannot redirect the write elsewhere. The file keeps
+/// its permissions (a 0600 settings file stays 0600).
 pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
+    write_with_mode(file, bytes, false)
+}
+
+/// As `write_file`, readable by this user only (0600 on Unix): for Kit's
+/// own record, which can hold the text of the user's settings files.
+pub fn write_private(file: &Path, bytes: &[u8]) -> Result<()> {
+    write_with_mode(file, bytes, true)
+}
+
+fn write_with_mode(file: &Path, bytes: &[u8], private: bool) -> Result<()> {
     use std::io::Write as _;
     use std::sync::atomic::{AtomicU64, Ordering};
     static N: AtomicU64 = AtomicU64::new(0);
     let is_link = |p: &Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
     if is_link(file) {
-        let root = LINK_ROOT.lock().ok().and_then(|r| r.clone());
+        let root = LINK_ROOT
+            .lock()
+            .ok()
+            .and_then(|r| r.as_ref().map(|r| r.root.clone()));
         if let Some(target) = root.and_then(|r| link_target_within(file, &r)) {
-            return write_file(&target, bytes);
+            return write_with_mode(&target, bytes, private);
         }
         bail!(
-            "{} is a link that leads outside this repo (or home, for --global). Kit will not write through it",
+            "{} is a link Kit will not write through: it leads outside this repo (or home, for --global), to a different kind of file, to a program, or into git's folder",
             file.display()
         );
     }
+    guard_git(file)?;
     let parent = file
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -1089,7 +1234,22 @@ pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
             .create_new(true)
             .open(&tmp)?;
         f.write_all(bytes)?;
-        f.sync_all()
+        f.sync_all()?;
+        // Windows has no 0600: a private file keeps the folder's default.
+        #[cfg(not(unix))]
+        let _ = private;
+        #[cfg(unix)]
+        if private {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+            return Ok(());
+        }
+        if let Ok(old) = std::fs::symlink_metadata(file)
+            && old.is_file()
+        {
+            std::fs::set_permissions(&tmp, old.permissions())?;
+        }
+        Ok(())
     })();
     if let Err(e) = written {
         let _ = std::fs::remove_file(&tmp);
@@ -1353,7 +1513,7 @@ mod tests {
         let applied = apply_all(
             &[Action::Skill {
                 dir: dir.clone(),
-                payload: payload("v1"),
+                payload: payload("v1\nline two\n"),
             }],
             false,
             &Default::default(),
@@ -1363,6 +1523,9 @@ mod tests {
         .flatten()
         .collect::<Vec<_>>();
         assert!(dir.join(OWNED).is_file());
+        assert_eq!(drifted(&applied[0]).unwrap(), None);
+        // A Windows checkout (CRLF) of the same skill is not an edit.
+        std::fs::write(dir.join("SKILL.md"), "v1\r\nline two\r\n").unwrap();
         assert_eq!(drifted(&applied[0]).unwrap(), None);
         std::fs::write(dir.join("SKILL.md"), "edited").unwrap();
         assert!(

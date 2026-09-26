@@ -718,7 +718,8 @@ fn the_plan_shows_exactly_what_will_run() {
     let plan = text(&out.stdout);
     for want in [
         "runs  npx -y thing@1.0.0",
-        "runs  echo formatted   (after each edit of *.md)",
+        "runs  echo formatted\n",
+        "when  after each edit of *.md",
         "check     kit doctor runs `test -f README.md`   RUNS CODE",
         "Runs code on your machine: 3",
     ] {
@@ -1263,4 +1264,108 @@ fn links_and_pipes_in_a_skill_folder_are_never_read_through() {
         "{}",
         text(&out.stderr)
     );
+}
+
+/// A folder link partway down a path never lets Kit write into, or
+/// remove from, git's own folder, even with --force.
+#[cfg(unix)]
+#[test]
+fn nothing_is_written_into_git_through_a_folder_link() {
+    let root = scratch("git-dir");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let spec = kit.to_str().unwrap();
+    for (link, to, force) in [
+        (".claude", ".git", false),
+        (".claude/skills", "../.git", true),
+    ] {
+        let repo = root.join(format!("repo-{force}"));
+        git_repo(&repo);
+        let at = repo.join(link);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(to, &at).unwrap();
+        let mut args = vec!["add", spec, "-a", "claude", "--no-code", "--yes"];
+        if force {
+            args.push("--force");
+        }
+        let out = env.kit(&repo, &args);
+        assert!(!out.status.success(), "{link} -> {to}");
+        assert!(!repo.join(".git/hello").exists(), "{link} -> {to}");
+        assert!(!repo.join(".git/skills").exists(), "{link} -> {to}");
+        assert!(!repo.join(".git/settings.json").exists(), "{link} -> {to}");
+        assert!(repo.join(".git/HEAD").is_file());
+    }
+}
+
+/// A 0600 settings file stays 0600 after Kit edits it, and Kit's own
+/// record (which can hold that file's text) is readable by this user only.
+#[cfg(unix)]
+#[test]
+fn private_files_stay_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = scratch("modes");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let settings = repo.join(".claude/settings.json");
+    write(&settings, "{\"env\":{\"TOKEN\":\"secret\"}}\n");
+    std::fs::set_permissions(&settings, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let out = env.kit(
+        &repo,
+        &["add", kit.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&settings), 0o600);
+    let records = env.home.join(".kit/repos");
+    let record = std::fs::read_dir(&records)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path()
+        .join("kit.lock");
+    assert_eq!(mode(&record), 0o600, "{}", record.display());
+}
+
+/// A worktree inside a bare clone (`git clone --bare url proj.git`, then
+/// `git worktree add main`) is a normal repo: its bare store above it is
+/// not "git's folder" for what Kit writes there.
+#[test]
+fn a_worktree_inside_a_bare_clone_takes_kits() {
+    let root = scratch("bare");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let src = root.join("src");
+    git_repo(&src);
+    write(&src.join("README.md"), "hi\n");
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-qm", "init"]);
+    let bare = root.join("proj.git");
+    git(
+        &root,
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            src.to_str().unwrap(),
+            bare.to_str().unwrap(),
+        ],
+    );
+    git(&bare, &["worktree", "add", "-q", "main"]);
+    let main = bare.join("main");
+    let out = env.kit(
+        &main,
+        &[
+            "add",
+            kit.to_str().unwrap(),
+            "-a",
+            "claude",
+            "--no-code",
+            "--yes",
+        ],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(main.join(".claude/skills/hello/SKILL.md").is_file());
 }

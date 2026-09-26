@@ -465,9 +465,9 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
     let who: Vec<&str> = agents.iter().map(|a| a.title()).collect();
     println!(
         "Done. {} {} {} in {}.",
-        who.join(" and "),
+        super::setup::and_list(&who),
         if who.len() == 1 { "has" } else { "have" },
-        titles.join(" and "),
+        super::setup::and_list(&titles),
         scope.label()
     );
     match super::lock::shared_path(scope) {
@@ -608,10 +608,7 @@ fn runs(chosen: &Chosen, kit: &str, a: &Action) -> Vec<String> {
             .iter()
             .filter(|k| k.name() == kit)
             .flat_map(|k| &k.manifest.hook)
-            .map(|h| match &h.glob {
-                Some(g) => format!("{}   (after each edit of {g})", h.run),
-                None => format!("{}   (after each edit)", h.run),
-            })
+            .map(|h| h.run.clone())
             .collect(),
         _ => a.command().into_iter().collect(),
     }
@@ -662,7 +659,7 @@ fn render_plan(
             "{} {}{extends}  →  {}, {}",
             meta.title,
             meta.version,
-            who.join(" and "),
+            super::setup::and_list(&who),
             scope.label()
         );
         match kit.pin.as_deref().filter(|p| p.starts_with("github:")) {
@@ -741,9 +738,16 @@ fn render_plan(
             let _ = writeln!(s, "            {name:width$}  {origin:owidth$}  {licence}");
         }
     }
+    let mut said = Vec::new();
     for (kit, a) in &p.todo {
         match a {
             Action::Skill { .. } => {}
+            // One agent skipped for several kits is said once.
+            Action::Skip { .. } if said.contains(&a.describe()) => {}
+            Action::Skip { .. } => {
+                let _ = writeln!(s, "{}", a.describe());
+                said.push(a.describe());
+            }
             Action::Rules { text, .. } => {
                 let _ = writeln!(s, "{}  + {} lines", a.describe(), text.lines().count());
             }
@@ -751,6 +755,21 @@ fn render_plan(
                 let _ = writeln!(s, "{}   RUNS CODE", a.describe());
                 for cmd in runs(chosen, kit, a) {
                     let _ = writeln!(s, "            runs  {cmd}");
+                }
+                // When a hook runs goes on its own line, so neither wraps.
+                if matches!(a, Action::HookJson { .. }) {
+                    for h in chosen
+                        .kits
+                        .iter()
+                        .filter(|k| k.name() == kit)
+                        .flat_map(|k| &k.manifest.hook)
+                    {
+                        let when = match &h.glob {
+                            Some(g) => format!("after each edit of {g}"),
+                            None => "after each edit".into(),
+                        };
+                        let _ = writeln!(s, "            when  {when}");
+                    }
                 }
             }
             _ => {
@@ -873,6 +892,9 @@ fn scope_json(scope: &Scope) -> serde_json::Value {
 pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
     let scope = scope(args.global)?;
     plan::follow_links_within(scope.root());
+    // Before undoing anything: a linked lock would refuse the save after
+    // the files were already changed, leaving a stale record.
+    super::lock::check_not_linked(&scope)?;
     let mut lock = Lock::load(&scope)?;
     let flag = if args.global { " --global" } else { "" };
     for name in &args.kits {
