@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1a1a1a?style=for-the-badge" alt="MIT" /></a>
-  <img src="https://img.shields.io/badge/status-1.0%20alpha-00E6CC?style=for-the-badge" alt="1.0 alpha" />
+  <img src="https://img.shields.io/badge/status-2.0-00E6CC?style=for-the-badge" alt="2.0" />
 </p>
 
 A **kit** is everything an agent needs for one kind of work. Frontend Design
@@ -15,7 +15,7 @@ file it edits. Kit writes each piece in the format your agent reads, shows you
 every file first, and can take it all out again.
 
 ```console
-$ npm install -g @mzwin/kit@alpha
+$ npm install -g @mzwin/kit
 $ kit
 Kit sets your coding agents up for a job, and proves what they do.
 
@@ -216,20 +216,17 @@ with the failure · `?` help · `q` quit.
 
 ---
 
-## Install (1.0 alpha)
+## Install
 
 Each line installs the same `kit` binary.
 
 | Method | Command |
 |--------|---------|
-| npm | `npm install -g @mzwin/kit@alpha` |
-| Linux, macOS | `curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh \| sh -s -- --prerelease` |
-| Windows PowerShell | `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.ps1))) -Prerelease` |
-| Cargo | `cargo install --git https://github.com/Zwin-ux/kit kitctl --locked` |
+| npm | `npm install -g @mzwin/kit` |
+| Linux, macOS | `curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh \| sh` |
+| Windows PowerShell | `irm https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.ps1 \| iex` |
+| Cargo | `cargo install kitctl --locked` |
 
-- npm without `@alpha` installs the old 0.1 app until 1.0.0.
-- The install scripts need a GitHub Release with archives. Until the first
-  one, use npm or Cargo.
 - The install scripts check the download's SHA-256 against `SHA256SUMS`,
   install to `~/.local/bin` (Windows: `%LOCALAPPDATA%\kit\bin`), and show the
   line to add if that is not on `PATH`.
@@ -263,7 +260,7 @@ Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md).
 <summary>Legacy: Kit 0.1.x npm workbench</summary>
 
 The earlier `npm i -g @mzwin/kit` (0.1.x) was a Node skill workbench. It is
-kept in `packages/` for history; 1.0 is the Rust binary above. See
+kept in `packages/` for history; Kit is now the Rust binary above. See
 [Workbench architecture](docs/dev/WORKBENCH_ARCHITECTURE.md).
 
 </details>

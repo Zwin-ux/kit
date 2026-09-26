@@ -838,7 +838,7 @@ fn print_doctor(version: &str, json: bool) {
     if let Some(s) = skills {
         println!("  skills pack     {}", s.display());
     } else {
-        println!("  skills pack     missing (.agents/skills)");
+        println!("  skills pack     none here (optional; `kit add <kit>` installs skills)");
     }
     match &kit_toml {
         Some(p) => println!("  kit.toml        {}", p.display()),
@@ -854,7 +854,7 @@ fn print_doctor(version: &str, json: bool) {
             match kind {
                 PathKit::Node01 => {
                     println!("  kit 0.1 (Node) is on PATH: {}", p.display());
-                    println!("    → npm install -g @mzwin/kit@alpha");
+                    println!("    → npm install -g @mzwin/kit");
                 }
                 _ => println!("  another kit is on PATH: {}", p.display()),
             }
