@@ -14,6 +14,8 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
+const TITLE: &str = "KIT / CONTROL ROOM";
+
 pub fn draw(frame: &mut Frame, app: &App) {
     let theme = Theme::resolve();
     let area = frame.area();
@@ -33,9 +35,17 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     let agents = app.agents_strip();
     let filter = app.run_filter.label();
-    let stats = if agents.is_empty() {
+    // Queued runs are waiting on the concurrency limit: count them whenever
+    // there are any, so 16 dispatched never reads as 8.
+    let queued = app.queued_count();
+    let wide = if agents.is_empty() {
+        let queued = if queued > 0 {
+            format!("{queued} QUEUED  ")
+        } else {
+            String::new()
+        };
         format!(
-            "[{filter}]  {} RUNNING  {} GATING  {} FAIL",
+            "[{filter}]  {} RUNNING  {queued}{} GATING  {} FAIL",
             app.running_count(),
             app.gated_count(),
             app.fail_count()
@@ -43,9 +53,33 @@ pub fn draw(frame: &mut Frame, app: &App) {
     } else if app.runs.is_empty() {
         agents
     } else {
+        let queued = if queued > 0 {
+            format!("{queued}Q ")
+        } else {
+            String::new()
+        };
         format!(
-            "[{filter}]  {}  ·  {}R {}G {}F",
+            "[{filter}]  {}  ·  {}R {queued}{}G {}F",
             agents,
+            app.running_count(),
+            app.gated_count(),
+            app.fail_count()
+        )
+    };
+    // `draw_header` drops the stats whole when title + stats overflow; keep
+    // the counts at the 60-column floor by falling back to letters.
+    let stats = if TITLE.chars().count() + 2 + wide.chars().count() <= area.width as usize
+        || app.runs.is_empty()
+    {
+        wide
+    } else {
+        let queued = if queued > 0 {
+            format!("{queued}Q ")
+        } else {
+            String::new()
+        };
+        format!(
+            "[{filter}] {}R {queued}{}G {}F",
             app.running_count(),
             app.gated_count(),
             app.fail_count()
@@ -55,7 +89,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         frame,
         chunks[0],
         &theme,
-        "KIT / CONTROL ROOM",
+        TITLE,
         &stats,
         app.flash_message(),
         app.error.as_deref(),
@@ -108,23 +142,74 @@ fn draw_table(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     frame.render_widget(block, area);
 
     let widths = column_widths(inner.width);
-    let mut lines: Vec<Line> = vec![header_line(widths, theme)];
     let order = app.display_order();
     let selected_id = app.selected_id.as_ref();
+    // One group per run: its row, then its FAIL annotation if any.
+    let mut groups: Vec<Vec<Line>> = Vec::with_capacity(order.len());
+    let mut selected_group = 0;
     for &idx in &order {
         let run = &app.runs[idx];
         let selected = selected_id.is_some_and(|id| *id == run.id);
-        lines.push(data_line(run, selected, app, theme, widths));
+        if selected {
+            selected_group = groups.len();
+        }
+        let mut group = vec![data_line(run, selected, app, theme, widths)];
         if let Some(summary) = run.gate_summary() {
-            lines.push(annotation_line(
+            group.push(annotation_line(
                 &summary,
                 selected,
                 theme,
                 inner.width as usize,
             ));
         }
+        groups.push(group);
+    }
+
+    let budget = inner.height.saturating_sub(1) as usize; // column header
+    let (start, end) = visible_groups(&groups, selected_group, budget);
+    let mut lines: Vec<Line> = vec![header_line(widths, theme)];
+    lines.extend(groups[start..end].iter().flatten().cloned());
+    if start > 0 || end < groups.len() {
+        lines.push(overflow_line(start, groups.len() - end, theme));
     }
     frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The runs that fit in `budget` lines, as a range of `groups`. When they do
+/// not all fit, one line is kept for the overflow count and the range is the
+/// first page that holds the selected run.
+fn visible_groups(groups: &[Vec<Line>], selected: usize, budget: usize) -> (usize, usize) {
+    let total: usize = groups.iter().map(Vec::len).sum();
+    if total <= budget {
+        return (0, groups.len());
+    }
+    let budget = budget.saturating_sub(1); // overflow line
+    let fits =
+        |start: usize, end: usize| groups[start..end].iter().map(Vec::len).sum::<usize>() <= budget;
+    // Earliest start that still shows the selected run.
+    let mut start = 0;
+    while start < selected && !fits(start, selected + 1) {
+        start += 1;
+    }
+    let mut end = start;
+    while end < groups.len() && fits(start, end + 1) {
+        end += 1;
+    }
+    (start, end.max((start + 1).min(groups.len())))
+}
+
+fn overflow_line(above: usize, below: usize, theme: &Theme) -> Line<'static> {
+    let mut parts = Vec::with_capacity(2);
+    if above > 0 {
+        parts.push(format!("↑ {above} more above"));
+    }
+    if below > 0 {
+        parts.push(format!("↓ {below} more below"));
+    }
+    Line::from(Span::styled(
+        format!("  {}", parts.join("  ·  ")),
+        theme.dim(),
+    ))
 }
 
 /// Five Control Room columns. FAIL annotations are *not* a table cell —
