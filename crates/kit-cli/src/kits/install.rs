@@ -234,7 +234,8 @@ fn prepare(
 }
 
 /// In a repo, every file Kit writes must land inside it. A repo can make
-/// `.claude` or `CLAUDE.md` a link to elsewhere; Kit refuses to follow it.
+/// `.claude` or `CLAUDE.md` a link to elsewhere; Kit refuses to follow it,
+/// unless it is a link to another file in the same repo.
 fn confine(p: &Prepared, scope: &Scope) -> Result<()> {
     let Scope::Repo(root) = scope else {
         return Ok(());
@@ -286,6 +287,7 @@ pub fn cmd_add(args: AddArgs, json: bool) -> Result<()> {
 
 pub fn add(req: &Request, json: bool) -> Result<Outcome> {
     let (scope, agents) = (&req.scope, req.agents.as_slice());
+    plan::follow_links_within(scope.root());
     let chosen = choose(&req.kits)?;
     let mut lock = Lock::load(scope)?;
 
@@ -795,6 +797,7 @@ fn scope_json(scope: &Scope) -> serde_json::Value {
 
 pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
     let scope = scope(args.global)?;
+    plan::follow_links_within(scope.root());
     let mut lock = Lock::load(&scope)?;
     let flag = if args.global { " --global" } else { "" };
     for name in &args.kits {

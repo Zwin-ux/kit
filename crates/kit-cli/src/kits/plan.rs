@@ -790,15 +790,36 @@ pub fn inside(path: &Path, base: &Path) -> bool {
     let Ok(base) = std::fs::canonicalize(base) else {
         return false;
     };
-    // Kit never writes a link itself, so one in the final place is foreign.
+    // A link in the final place counts only when it and the file it leads
+    // to both sit inside `base` (`CLAUDE.md -> AGENTS.md`).
     if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
-        return false;
+        return link_target_within(path, &base).is_some();
     }
     // The deepest part that exists decides where the rest would land.
     path.ancestors()
         .find(|p| p.exists())
         .and_then(|p| std::fs::canonicalize(p).ok())
         .is_some_and(|real| real.starts_with(&base))
+}
+
+/// Where Kit may follow a link to a file: the repo, or home for `--global`.
+static LINK_ROOT: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// Let writes follow a link when the link and the file it leads to are both
+/// inside `root`. Anything else stays refused.
+pub fn follow_links_within(root: &Path) {
+    if let Ok(mut r) = LINK_ROOT.lock() {
+        *r = std::fs::canonicalize(root).ok();
+    }
+}
+
+/// The file a link leads to, when the link and that file are both inside
+/// `root` (already canonical). Links to folders are never followed.
+fn link_target_within(link: &Path, root: &Path) -> Option<PathBuf> {
+    let parent = link.parent().filter(|p| !p.as_os_str().is_empty())?;
+    let parent = std::fs::canonicalize(parent).ok()?;
+    let target = std::fs::canonicalize(link).ok()?;
+    (parent.starts_with(root) && target.starts_with(root) && target.is_file()).then_some(target)
 }
 
 /// Remove up to `levels` parent folders of `path` while they are empty
@@ -955,8 +976,12 @@ pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
     static N: AtomicU64 = AtomicU64::new(0);
     let is_link = |p: &Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
     if is_link(file) {
+        let root = LINK_ROOT.lock().ok().and_then(|r| r.clone());
+        if let Some(target) = root.and_then(|r| link_target_within(file, &r)) {
+            return write_file(&target, bytes);
+        }
         bail!(
-            "{} is a link. Kit will not write through it",
+            "{} is a link that leads outside this repo (or home, for --global). Kit will not write through it",
             file.display()
         );
     }

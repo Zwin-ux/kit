@@ -1144,3 +1144,53 @@ fn planted_links_never_redirect_a_write() {
         );
     }
 }
+
+/// A link to another file in the same repo (or, for --global, in home) is
+/// a normal setup: Kit writes the file it leads to and leaves the link.
+#[cfg(unix)]
+#[test]
+fn links_that_stay_inside_the_scope_are_followed() {
+    let root = scratch("inner-links");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let spec = kit.to_str().unwrap();
+
+    let repo = root.join("repo");
+    git_repo(&repo);
+    write(&repo.join("AGENTS.md"), "# Team rules\n");
+    std::os::unix::fs::symlink("AGENTS.md", repo.join("CLAUDE.md")).unwrap();
+    let out = env.kit(&repo, &["add", spec, "-a", "claude", "--no-code", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(read(&repo.join("AGENTS.md")).contains("Be kind."));
+    assert!(
+        std::fs::symlink_metadata(repo.join("CLAUDE.md"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&repo.join("AGENTS.md")), "# Team rules\n");
+
+    let dotfiles = env.home.join("dotfiles/CLAUDE.md");
+    write(&dotfiles, "# Mine\n");
+    std::fs::create_dir_all(env.home.join(".claude")).unwrap();
+    std::os::unix::fs::symlink(&dotfiles, env.home.join(".claude/CLAUDE.md")).unwrap();
+    let out = env.kit(
+        &root,
+        &[
+            "add",
+            spec,
+            "-a",
+            "claude",
+            "--global",
+            "--no-code",
+            "--yes",
+        ],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(read(&dotfiles).contains("Be kind."));
+    let out = env.kit(&root, &["remove", "demo", "--global", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(read(&dotfiles), "# Mine\n");
+}
