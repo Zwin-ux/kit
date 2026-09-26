@@ -735,12 +735,10 @@ impl App {
         if self.agents_probe.is_empty() {
             return String::new();
         }
-        // Grok without KIT_FULL_AUTO is installed but will not start, so it
-        // is neither ready nor missing here (Dispatch says why).
         let ready: Vec<&str> = self
             .agents_probe
             .iter()
-            .filter(|(n, ok)| *ok && (n != "grok" || self.full_auto))
+            .filter(|(n, ok)| self.startable(n, *ok))
             .map(|(n, _)| n.as_str())
             .collect();
         let missing: Vec<&str> = self
@@ -766,15 +764,13 @@ impl App {
         if self.agents_probe.is_empty() {
             return String::new();
         }
-        // Grok without KIT_FULL_AUTO is installed but will not start, so it
-        // is neither ready nor missing here (Dispatch says why).
         let ready: Vec<&str> = self
             .agents_probe
             .iter()
-            .filter(|(n, ok)| *ok && (n != "grok" || self.full_auto))
+            .filter(|(n, ok)| self.startable(n, *ok))
             .map(|(n, _)| n.as_str())
             .collect();
-        let missing = self.agents_probe.len() - ready.len();
+        let missing = self.agents_probe.iter().filter(|(_, ok)| !*ok).count();
         match (ready.is_empty(), missing) {
             (true, _) => "no agents — kit doctor".into(),
             (false, 0) => format!("{} ✓", ready.join("·")),
@@ -782,9 +778,19 @@ impl App {
         }
     }
 
-    /// How many agents reported ready at launch.
+    /// How many agents reported ready at launch and will start.
     pub fn agents_ready_count(&self) -> usize {
-        self.agents_probe.iter().filter(|(_, ok)| *ok).count()
+        self.agents_probe
+            .iter()
+            .filter(|(n, ok)| self.startable(n, *ok))
+            .count()
+    }
+
+    /// Ready, and Kit will start it: grok only with KIT_FULL_AUTO. An
+    /// installed grok without it is neither ready nor missing (Dispatch
+    /// says why).
+    fn startable(&self, name: &str, ready: bool) -> bool {
+        ready && (name != "grok" || self.full_auto)
     }
 
     pub fn is_dirty(&self) -> bool {
