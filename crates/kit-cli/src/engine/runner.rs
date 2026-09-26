@@ -66,6 +66,7 @@ enum AgentPhase {
 ///
 /// When `cancel` is set and cancelled mid-agent, the run ends as [`RunState::Killed`]
 /// without claiming a gate PASS.
+#[cfg(test)]
 pub async fn execute(
     opts: RunOptions,
     id: Option<RunId>,
@@ -83,6 +84,47 @@ pub async fn execute_cancellable(
 ) -> Result<RunResult> {
     let agent_impl = adapter(opts.agent);
     execute_with(opts, id, tx, cancel, agent_impl.as_ref()).await
+}
+
+/// Headless `kit run`: every ending leaves a receipt.
+///
+/// An error before the run could finish (not a git repo, a broken kit.toml,
+/// a missing agent) ends as an `Error` receipt and comes back as the second
+/// value instead of `Err`. The first Ctrl-C kills the run through the same
+/// path as Control Room `k`, so it ends `Killed` with its receipt written; a
+/// second Ctrl-C quits at once, without one.
+pub async fn execute_headless(
+    opts: RunOptions,
+    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
+) -> Result<(RunResult, Option<String>)> {
+    let id = RunId::default();
+    let cancel = CancelHandle::new();
+    let on_ctrl_c = tokio::spawn({
+        let cancel = cancel.clone();
+        async move {
+            if tokio::signal::ctrl_c().await.is_err() {
+                return;
+            }
+            eprintln!("\nkit: stopping the run (Ctrl-C again quits without a receipt)");
+            cancel.cancel();
+            if tokio::signal::ctrl_c().await.is_ok() {
+                std::process::exit(130);
+            }
+        }
+    });
+    let outcome =
+        execute_cancellable(opts.clone(), Some(id.clone()), tx.clone(), Some(cancel)).await;
+    on_ctrl_c.abort();
+    match outcome {
+        Ok(result) => Ok((result, None)),
+        Err(err) => match finalize_failed(opts, id, &err, tx).await {
+            Ok(result) => Ok((result, Some(format!("{err:#}")))),
+            // Keep the run's own error first; the receipt failure is secondary.
+            Err(receipt_err) => {
+                Err(err.context(format!("no Error receipt either: {receipt_err:#}")))
+            }
+        },
+    }
 }
 
 /// [`execute_cancellable`] with the agent adapter passed in (tests use fakes).
