@@ -292,9 +292,10 @@ pub fn mcp_starts(server: &McpServer) -> std::result::Result<Duration, String> {
     }
 }
 
-/// Stop a process and everything it started: every descendant still
-/// linked to it (so one that left the process group goes too), then its
-/// process group. On Windows `taskkill /T` walks the same tree.
+/// Stop a process and everything it started: its descendants (found by
+/// parent, so one that left the process group goes too, as long as the
+/// process that started it is still alive), then its process group. On
+/// Windows `taskkill /T` walks the same tree.
 fn stop_tree(child: &mut std::process::Child) {
     let pid = child.id();
     let quiet = |c: &mut Command| {
@@ -361,13 +362,19 @@ fn run_check(command: &str) -> std::result::Result<(), String> {
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
     let stderr = child.stderr.take().expect("piped");
     let (tx, rx) = std::sync::mpsc::channel();
-    // The first line that says anything; the reader ends when the pipe
-    // closes, which a helper left running can delay until it is stopped.
+    // The first line that says anything. The reader drains the pipe to
+    // the end, so a check that goes on writing never hits a closed pipe;
+    // the end can wait for a helper left running, until it is stopped.
     std::thread::spawn(move || {
-        let first = BufReader::new(stderr)
+        let mut first = None;
+        for line in BufReader::new(stderr)
             .lines()
             .map_while(std::result::Result::ok)
-            .find(|l| !l.trim().is_empty());
+        {
+            if first.is_none() && !line.trim().is_empty() {
+                first = Some(line);
+            }
+        }
         let _ = tx.send(first);
     });
     let start = Instant::now();
@@ -507,6 +514,11 @@ mod tests {
             assert!(!alive(&pid), "{pid} survived");
         }
         assert_eq!(run_check("echo nope >&2; exit 3"), Err("nope".to_string()));
+        // A check that goes on writing after its first line still passes.
+        assert_eq!(
+            run_check("echo warn >&2; for i in $(seq 2000); do echo more$i >&2; done; exit 0"),
+            Ok(())
+        );
     }
 
     #[test]
