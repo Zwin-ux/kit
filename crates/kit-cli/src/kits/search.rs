@@ -244,6 +244,8 @@ mod tests {
 
     #[test]
     fn the_starter_kits_are_always_searchable_offline() {
+        // index.rs's tests set KIT_INDEX under this lock; hold it too.
+        let _lock = crate::engine::paths::kit_home_test_lock();
         let (rows, notes, _) = rows(false).unwrap();
         assert!(notes.is_empty(), "{notes:?}");
         let hits = rank(&rows, &words("frontend"));
