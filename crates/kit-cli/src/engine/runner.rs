@@ -66,6 +66,7 @@ enum AgentPhase {
 ///
 /// When `cancel` is set and cancelled mid-agent, the run ends as [`RunState::Killed`]
 /// without claiming a gate PASS.
+#[cfg(test)]
 pub async fn execute(
     opts: RunOptions,
     id: Option<RunId>,
@@ -85,6 +86,56 @@ pub async fn execute_cancellable(
     execute_with(opts, id, tx, cancel, agent_impl.as_ref()).await
 }
 
+/// Headless `kit run`: every ending leaves a receipt.
+///
+/// An error before the run could finish (not a git repo, a broken kit.toml,
+/// a missing agent) ends as an `Error` receipt and comes back as the second
+/// value instead of `Err`. The first Ctrl-C kills the run through the same
+/// path as Control Room `k`, so it ends `Killed` with its receipt written; a
+/// second Ctrl-C quits at once, without one. Only when the `Error` receipt
+/// itself cannot be written is the result `Err`: there is then no receipt
+/// to point at.
+pub async fn execute_headless(
+    opts: RunOptions,
+    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
+) -> Result<(RunResult, Option<String>)> {
+    let id = RunId::default();
+    let cancel = CancelHandle::new();
+    let on_ctrl_c = tokio::spawn({
+        let cancel = cancel.clone();
+        async move {
+            if tokio::signal::ctrl_c().await.is_err() {
+                return;
+            }
+            eprintln!("\nkit: stopping the run (Ctrl-C again quits without a receipt)");
+            cancel.cancel();
+            if tokio::signal::ctrl_c().await.is_ok() {
+                std::process::exit(130);
+            }
+        }
+    });
+    let agent_impl = adapter(opts.agent);
+    let outcome = execute_reporting(
+        opts.clone(),
+        Some(id.clone()),
+        tx.clone(),
+        Some(cancel),
+        agent_impl.as_ref(),
+    )
+    .await;
+    on_ctrl_c.abort();
+    match outcome {
+        Ok(reported) => Ok(reported),
+        Err(err) => match finalize_failed(opts, id, &err, tx).await {
+            Ok(result) => Ok((result, Some(format!("{err:#}")))),
+            // Keep the run's own error first; the receipt failure is secondary.
+            Err(receipt_err) => {
+                Err(err.context(format!("no Error receipt either: {receipt_err:#}")))
+            }
+        },
+    }
+}
+
 /// [`execute_cancellable`] with the agent adapter passed in (tests use fakes).
 async fn execute_with(
     opts: RunOptions,
@@ -93,6 +144,20 @@ async fn execute_with(
     cancel: Option<Arc<CancelHandle>>,
     agent_impl: &dyn Agent,
 ) -> Result<RunResult> {
+    let (result, _) = execute_reporting(opts, id, tx, cancel, agent_impl).await?;
+    Ok(result)
+}
+
+/// [`execute_with`], also returning the error that ended a run as `Error`
+/// after its worktree existed (the receipt holds it; this hands it to the
+/// caller so `kit run` can print it and put it in the `--json` envelope).
+async fn execute_reporting(
+    opts: RunOptions,
+    id: Option<RunId>,
+    tx: Option<mpsc::Sender<(RunId, RunDelta)>>,
+    cancel: Option<Arc<CancelHandle>>,
+    agent_impl: &dyn Agent,
+) -> Result<(RunResult, Option<String>)> {
     ensure_layout()?;
     let id = id.unwrap_or_default();
     let repo = resolve_repo(&opts.repo)?;
@@ -132,6 +197,7 @@ async fn execute_with(
         &mut truncated,
     )
     .await;
+    let mut run_error = None;
     let (state, gate, note, agent_diff) = match ending {
         Ok(Ending::Killed(note)) => (RunState::Killed, None, Some(note), None),
         Ok(Ending::Gated {
@@ -139,12 +205,15 @@ async fn execute_with(
             gate,
             agent_diff,
         }) => (state, Some(gate), None, agent_diff),
-        Err(err) => (
-            RunState::Error,
-            None,
-            Some(format!("kit: run failed: {err:#}\n")),
-            None,
-        ),
+        Err(err) => {
+            run_error = Some(format!("{err:#}"));
+            (
+                RunState::Error,
+                None,
+                Some(format!("kit: run failed: {err:#}\n")),
+                None,
+            )
+        }
     };
     if let Some(note) = note {
         append_capped(
@@ -171,7 +240,7 @@ async fn execute_with(
     .await?;
     // Proof first: the terminal state goes out only once its receipt exists.
     send(&tx, &id, RunDelta::State(state)).await;
-    Ok(result)
+    Ok((result, run_error))
 }
 
 /// How a run that got its worktree ended, before its receipt is written.
@@ -271,7 +340,22 @@ async fn agent_and_gate(
         send(tx, id, RunDelta::Output(line.into())).await;
         GateOutcome::vacuous()
     } else {
-        KitGate::new().evaluate(wt_path, &config.gate).await
+        // A kill during the gate stops it: dropping the evaluation drops its
+        // children (`kill_on_drop`). A check the user interrupted is not a
+        // verdict, so the run ends Killed, never a FAIL it did not earn.
+        let kit_gate = KitGate::new();
+        let evaluate = kit_gate.evaluate(wt_path, &config.gate);
+        let gate = match cancel {
+            Some(c) => tokio::select! {
+                gate = evaluate => Some(gate),
+                () = c.cancelled() => None,
+            },
+            None => Some(evaluate.await),
+        };
+        match gate {
+            Some(gate) if !cancelled(cancel) => gate,
+            _ => return Ok(Ending::Killed("kit: run killed during the gate\n".into())),
+        }
     };
     send(tx, id, RunDelta::Gate(gate.clone())).await;
     if agent_diff.is_some() && worktree::worktree_diff(wt_path, base).ok() != agent_diff {
@@ -913,6 +997,68 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Ctrl-C (or Control Room `k`) while the gate runs stops the gate and
+    /// ends the run Killed. Before, the gate ran on and its verdict stood: a
+    /// PASS the user had cancelled, or a FAIL for a check the SIGINT killed.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancel_during_gate_stops_it_and_yields_killed() {
+        let root = crate::engine::paths::bare_git_fixture();
+        std::fs::write(
+            root.join("kit.toml"),
+            "[gate]\ntest = 'touch gate-started; exec sleep 30'\n",
+        )
+        .unwrap();
+        let home = std::env::temp_dir().join(format!(
+            "kit-test-gatekill-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        let cancel = CancelHandle::new();
+        let id = RunId("01TESTGATEKILL000000000001".into());
+
+        let started = std::time::Instant::now();
+        let result = with_kit_home(&home, || async {
+            let marker = worktrees_dir().join(&id.0).join("gate-started");
+            let killer = tokio::spawn({
+                let cancel = cancel.clone();
+                async move {
+                    while !marker.exists() {
+                        sleep(Duration::from_millis(20)).await;
+                    }
+                    cancel.cancel();
+                }
+            });
+            let opts = RunOptions {
+                repo: root.to_string_lossy().into_owned(),
+                agent: AgentKind::Codex,
+                task: "gate is slow".into(),
+                dry_run: Some(true),
+                bounds: Bounds::default(),
+            };
+            let result = execute_cancellable(opts, Some(id.clone()), None, Some(cancel)).await;
+            killer.abort();
+            result.expect("execute")
+        })
+        .await;
+
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "the gate ran on after the kill"
+        );
+        assert_eq!(result.state, RunState::Killed);
+        assert!(result.gate.is_none(), "an interrupted gate is no verdict");
+        let log = std::fs::read_to_string(result.receipt_dir.join("output.log")).unwrap();
+        assert!(log.contains("killed during the gate"), "{log}");
+
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// Real child that exits at once. As in kit-agents' `spawn_streaming`, the
     /// only sender lives in the stdout reader and drops at EOF (agent exit).
     struct ExitAtOnce;
@@ -1051,7 +1197,7 @@ mod tests {
                 dry_run: Some(false),
                 bounds: Bounds::default(),
             };
-            let result = execute_with(opts, Some(id.clone()), None, None, &SpawnFails).await;
+            let result = execute_reporting(opts, Some(id.clone()), None, None, &SpawnFails).await;
             let wt_dir = worktrees_dir().join(&id.0);
             let receipt = crate::engine::store::read_receipt(&id.0);
             let log = crate::engine::store::read_output_tail(&id.0, 4096);
@@ -1059,8 +1205,11 @@ mod tests {
         })
         .await;
 
-        let result = result.expect("a spawn failure still ends the run");
+        let (result, run_error) = result.expect("a spawn failure still ends the run");
         assert_eq!(result.state, RunState::Error);
+        // `kit run` prints this and puts it in the `--json` envelope.
+        let run_error = run_error.expect("the cause comes back with the result");
+        assert!(run_error.contains("program not found"), "{run_error}");
         assert!(result.worktree_removed, "clean worktree must be removed");
         assert!(!wt_dir.exists(), "leaked {}", wt_dir.display());
         assert_eq!(git_worktrees(&root).len(), 1, "{:?}", git_worktrees(&root));
