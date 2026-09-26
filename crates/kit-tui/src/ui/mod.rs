@@ -288,6 +288,13 @@ mod tests {
             header.contains("8 RUNNING") && header.contains("8 QUEUED"),
             "{header}"
         );
+        // At the 60-column floor the counts shrink rather than vanish.
+        let frame = render_to_string(&app, 60, 12);
+        let header = frame.lines().next().unwrap_or("");
+        assert!(
+            header.contains("8R") && header.contains("8Q") && header.contains("0F"),
+            "{header}"
+        );
     }
 
     #[test]

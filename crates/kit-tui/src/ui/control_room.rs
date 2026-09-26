@@ -14,6 +14,8 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
+const TITLE: &str = "KIT / CONTROL ROOM";
+
 pub fn draw(frame: &mut Frame, app: &App) {
     let theme = Theme::resolve();
     let area = frame.area();
@@ -36,7 +38,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     // Queued runs are waiting on the concurrency limit: count them whenever
     // there are any, so 16 dispatched never reads as 8.
     let queued = app.queued_count();
-    let stats = if agents.is_empty() {
+    let wide = if agents.is_empty() {
         let queued = if queued > 0 {
             format!("{queued} QUEUED  ")
         } else {
@@ -64,11 +66,30 @@ pub fn draw(frame: &mut Frame, app: &App) {
             app.fail_count()
         )
     };
+    // `draw_header` drops the stats whole when title + stats overflow; keep
+    // the counts at the 60-column floor by falling back to letters.
+    let stats = if TITLE.chars().count() + 2 + wide.chars().count() <= area.width as usize
+        || app.runs.is_empty()
+    {
+        wide
+    } else {
+        let queued = if queued > 0 {
+            format!("{queued}Q ")
+        } else {
+            String::new()
+        };
+        format!(
+            "[{filter}] {}R {queued}{}G {}F",
+            app.running_count(),
+            app.gated_count(),
+            app.fail_count()
+        )
+    };
     draw_header(
         frame,
         chunks[0],
         &theme,
-        "KIT / CONTROL ROOM",
+        TITLE,
         &stats,
         app.flash_message(),
         app.error.as_deref(),
