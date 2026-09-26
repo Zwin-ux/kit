@@ -1,6 +1,8 @@
-//! `kit land` through the real binary. Each test makes a scratch repo whose
-//! kit.toml gate writes files (a new text file, a new binary file, an edit),
-//! so a `kit run --dry-run` ends PASS with a real, non-vacuous diff.
+//! `kit land` through the real binary. Each test makes a scratch repo and a
+//! fake `claude` on PATH that writes files (a new text file, a new binary
+//! file, an edit), so `kit run --agent claude` ends PASS with a real,
+//! non-vacuous diff. The gate only runs `git --version`: files the gate
+//! writes never reach the receipt.
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -41,11 +43,44 @@ fn text(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
 }
 
-/// Scratch repo on branch `main` with a committed kit.toml whose gate
-/// `writes` (true) changes files, or (false) changes nothing.
+/// Scratch repo on branch `main` with a committed kit.toml, and a fake
+/// agent that `writes` (true) changes files, or (false) changes nothing.
 struct Fixture {
     repo: PathBuf,
     home: PathBuf,
+    bin: PathBuf,
+}
+
+/// A fake `claude`: answers the readiness probe, and on a real run makes
+/// the edits in its working directory (the run's worktree).
+fn fake_agent(bin: &Path, writes: bool) {
+    if cfg!(windows) {
+        let edits = if writes {
+            "echo hello> created.txt\r\ncopy /b seed.bin new.bin >nul\r\necho edited>> README.md\r\n"
+        } else {
+            ""
+        };
+        let body = format!(
+            "@echo off\r\nif \"%1\"==\"--version\" (echo 0.0.0 fake& exit /b 0)\r\nif \"%1\"==\"auth\" exit /b 1\r\n{edits}exit /b 0\r\n"
+        );
+        std::fs::write(bin.join("claude.cmd"), body).unwrap();
+    } else {
+        let edits = if writes {
+            "echo hello > created.txt && cp seed.bin new.bin && echo edited >> README.md"
+        } else {
+            "true"
+        };
+        let body = format!(
+            "#!/bin/sh\ncase \"$1\" in\n  --version) echo 0.0.0 fake ;;\n  auth) exit 1 ;;\n  *) {edits} ;;\nesac\n"
+        );
+        let path = bin.join("claude");
+        std::fs::write(&path, body).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
 }
 
 impl Fixture {
@@ -54,26 +89,26 @@ impl Fixture {
         let home = scratch(&format!("{tag}-home"));
         std::fs::write(repo.join("README.md"), "fixture\n").unwrap();
         std::fs::write(repo.join("seed.bin"), SEED).unwrap();
-        let cmd = match (writes, cfg!(windows)) {
-            (false, _) => "git --version",
-            (true, true) => {
-                "echo hello> created.txt && copy /b seed.bin new.bin >nul && echo edited>> README.md"
-            }
-            (true, false) => {
-                "echo hello > created.txt && cp seed.bin new.bin && echo edited >> README.md"
-            }
-        };
-        std::fs::write(repo.join("kit.toml"), format!("[gate]\ntest = '{cmd}'\n")).unwrap();
+        let bin = scratch(&format!("{tag}-bin"));
+        fake_agent(&bin, writes);
+        std::fs::write(repo.join("kit.toml"), "[gate]\ntest = 'git --version'\n").unwrap();
         git(&repo, &["init", "-q", "-b", "main"]);
         git(&repo, &["config", "core.autocrlf", "false"]);
         git(&repo, &["add", "."]);
         git(&repo, &["commit", "-q", "-m", "init"]);
-        Self { repo, home }
+        Self { repo, home, bin }
     }
 
     fn kit(&self, args: &[&str]) -> Output {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::env::join_paths(
+            std::iter::once(self.bin.clone()).chain(std::env::split_paths(&path)),
+        )
+        .unwrap();
         Command::new(env!("CARGO_BIN_EXE_kit"))
             .args(args)
+            .env("PATH", path)
+            .env_remove("KIT_FULL_AUTO")
             .current_dir(&self.repo)
             .env("KIT_HOME", &self.home)
             .env("GIT_AUTHOR_NAME", "kit")
@@ -86,11 +121,12 @@ impl Fixture {
             .expect("run kit")
     }
 
-    /// A dry run; returns its receipt id.
+    /// A run of the fake agent; returns its receipt id.
     fn run(&self) -> String {
         let out = self.kit(&[
             "run",
-            "--dry-run",
+            "--agent",
+            "claude",
             "--json",
             "--task",
             "Add greeting\n\nmore",
@@ -120,6 +156,7 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.repo);
         let _ = std::fs::remove_dir_all(&self.home);
+        let _ = std::fs::remove_dir_all(&self.bin);
     }
 }
 

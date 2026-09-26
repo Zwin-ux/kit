@@ -195,35 +195,19 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
         let envelope = json_envelope("run", ok, data, None);
         println!("{}", serde_json::to_string_pretty(&envelope)?);
     } else {
-        println!("run {}", result.id);
-        println!("  state     {}", state_label(result.state));
-        println!("  receipt   {}", result.receipt_dir.display());
-        if let Some(wt) = &result.worktree {
-            println!(
-                "  worktree  {} (kept: it has the run's changes)",
-                wt.display()
-            );
-        } else if result.worktree_removed {
-            println!("  worktree  removed (clean)");
-        }
-        if let Some(g) = &result.gate {
-            let label = if gate_vacuous {
-                "UNCONFIGURED"
-            } else if g.passed {
-                "PASS"
-            } else {
-                "FAIL"
-            };
-            println!("  gate      {label}");
-        }
-        if let Some(step) = land_hint(
-            result.state,
-            gate_vacuous,
-            &result.receipt_dir,
-            &result.id.0,
-        ) {
-            println!();
-            println!("{step}");
+        let has_diff = result.receipt_dir.join("diff.patch").is_file();
+        let summary = RunSummary {
+            state: result.state,
+            gate: result.gate.as_ref(),
+            vacuous: gate_vacuous,
+            dry,
+            id: &result.id.0,
+            receipt_dir: &result.receipt_dir,
+            worktree: result.worktree.as_deref(),
+            has_diff,
+        };
+        for line in summary.lines() {
+            println!("{line}");
         }
     }
 
@@ -304,15 +288,117 @@ fn delta_line(delta: &RunDelta) -> Option<String> {
     match delta {
         RunDelta::Output(chunk) if chunk.ends_with('\n') => Some(chunk.clone()),
         RunDelta::Output(chunk) => Some(format!("{chunk}\n")),
-        RunDelta::State(state) => Some(format!("kit: state {}\n", state_label(*state))),
+        RunDelta::State(RunState::Running) => Some("kit: agent running in its worktree\n".into()),
+        RunDelta::State(RunState::Gating) => {
+            Some("kit: agent done. Running the checks in kit.toml\n".into())
+        }
+        // Queued is instant; the end state is the verdict line on stdout.
+        RunDelta::State(_) => None,
         RunDelta::Worktree(_) | RunDelta::Gate(_) => None,
     }
 }
 
-/// The next step after a proven run with changes: `Next: kit land <id>`.
+/// Short form of a run id for people: 12 characters, the same prefix
+/// `kit land` names its branch with. The first 10 characters of a ULID are
+/// its timestamp, so fewer would collide for runs dispatched together.
+fn short_id(id: &str) -> &str {
+    id.get(..12).unwrap_or(id)
+}
+
+/// What `kit run` prints when a run ends: verdict, checks, where, next step.
+struct RunSummary<'a> {
+    state: RunState,
+    gate: Option<&'a kit_core::GateOutcome>,
+    vacuous: bool,
+    dry: bool,
+    id: &'a str,
+    receipt_dir: &'a Path,
+    worktree: Option<&'a Path>,
+    has_diff: bool,
+}
+
+impl RunSummary<'_> {
+    fn verdict(&self) -> &'static str {
+        match self.state {
+            RunState::Pass if self.dry => "DRY RUN",
+            RunState::Pass if self.vacuous => "UNCONFIGURED",
+            RunState::Pass => "PASS",
+            RunState::Fail => "FAIL",
+            RunState::Killed => "KILLED",
+            _ => "ERROR",
+        }
+    }
+
+    /// The one command to run next.
+    fn next(&self) -> String {
+        let id = short_id(self.id);
+        match self.state {
+            RunState::Pass if self.dry => {
+                "drop --dry-run to run an agent. A dry run proves nothing".into()
+            }
+            RunState::Pass if self.vacuous => "kit init, so the next run has checks to pass".into(),
+            RunState::Pass if self.has_diff => format!("kit land {id}"),
+            RunState::Pass => "nothing to land: the agent changed no files".into(),
+            _ => format!("kit receipt show {id} --output"),
+        }
+    }
+
+    fn lines(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut head = self.verdict().to_string();
+        if let Some(g) = self.gate.filter(|_| !self.vacuous) {
+            head.push(' ');
+            for c in &g.checks {
+                let mark = match c.status {
+                    kit_core::CheckStatus::Pass => "✓",
+                    kit_core::CheckStatus::Skipped => "-",
+                    kit_core::CheckStatus::Fail | kit_core::CheckStatus::TimedOut => "✗",
+                };
+                head.push_str(&format!(" {} {mark}", c.label));
+            }
+        }
+        out.push(head);
+        if let Some(g) = self.gate {
+            if let Some(c) = g.first_failure() {
+                let why = match c.status {
+                    kit_core::CheckStatus::TimedOut => "timed out".to_string(),
+                    _ => c
+                        .summary
+                        .as_deref()
+                        .and_then(|s| s.lines().next())
+                        .unwrap_or("failed")
+                        .to_string(),
+                };
+                out.push(format!("  {}: {why}", c.label));
+            }
+            if let Some(first) = g.scope_violations.first() {
+                out.push(format!(
+                    "  scope: {} file(s) outside [gate.scope], first {first}",
+                    g.scope_violations.len()
+                ));
+            }
+        }
+        out.push(String::new());
+        out.push(format!(
+            "run       {}  (receipt {})",
+            short_id(self.id),
+            self.receipt_dir.display()
+        ));
+        if let Some(wt) = self.worktree {
+            out.push(format!(
+                "worktree  {} (kept: it has the run's changes)",
+                wt.display()
+            ));
+        }
+        out.push(format!("next      {}", self.next()));
+        out
+    }
+}
+
+/// `next  kit land <id>` for a proven run with changes (receipt show).
 fn land_hint(state: RunState, vacuous: bool, receipt_dir: &Path, id: &str) -> Option<String> {
     (state == RunState::Pass && !vacuous && receipt_dir.join("diff.patch").is_file())
-        .then(|| format!("Next: kit land {id}"))
+        .then(|| format!("next      kit land {}", short_id(id)))
 }
 
 /// One line that points to `kit init` when `repo` is a folder with no kit.toml.
@@ -820,14 +906,77 @@ mod tests {
     #[test]
     fn land_hint_only_for_proven_runs_with_a_diff() {
         let dir = scratch("landhint");
-        assert_eq!(land_hint(RunState::Pass, false, &dir, "01X"), None);
+        let id = "01M06A2PXBBH43ZFF3GJ9VQW94";
+        assert_eq!(land_hint(RunState::Pass, false, &dir, id), None);
         fs::write(dir.join("diff.patch"), "+x\n").unwrap();
         assert_eq!(
-            land_hint(RunState::Pass, false, &dir, "01X").as_deref(),
-            Some("Next: kit land 01X")
+            land_hint(RunState::Pass, false, &dir, id).as_deref(),
+            Some("next      kit land 01M06A2PXBBH")
         );
-        assert_eq!(land_hint(RunState::Pass, true, &dir, "01X"), None);
-        assert_eq!(land_hint(RunState::Fail, false, &dir, "01X"), None);
+        assert_eq!(land_hint(RunState::Pass, true, &dir, id), None);
+        assert_eq!(land_hint(RunState::Fail, false, &dir, id), None);
+    }
+
+    fn check(label: &str, status: kit_core::CheckStatus, summary: &str) -> kit_core::GateCheck {
+        kit_core::GateCheck {
+            label: label.into(),
+            command: String::new(),
+            status,
+            exit_code: None,
+            summary: Some(summary.into()),
+            duration: Duration::ZERO,
+        }
+    }
+
+    /// Every ending names one next step, and FAIL shows the first failure.
+    #[test]
+    fn run_summary_always_ends_with_a_next_step() {
+        use kit_core::CheckStatus::{Fail, Pass};
+        let gate = kit_core::GateOutcome {
+            passed: false,
+            checks: vec![
+                check("format", Fail, "Diff in src/main.rs:1\nmore"),
+                check("test", Pass, ""),
+            ],
+            ..kit_core::GateOutcome::vacuous()
+        };
+        let dir = PathBuf::from("/r");
+        let fail = RunSummary {
+            state: RunState::Fail,
+            gate: Some(&gate),
+            vacuous: false,
+            dry: false,
+            id: "01M06A2PXBBH43ZFF3GJ9VQW94",
+            receipt_dir: &dir,
+            worktree: None,
+            has_diff: true,
+        };
+        let lines = fail.lines();
+        assert_eq!(lines[0], "FAIL  format ✗ test ✓");
+        assert_eq!(lines[1], "  format: Diff in src/main.rs:1");
+        assert_eq!(
+            lines.last().unwrap(),
+            "next      kit receipt show 01M06A2PXBBH --output"
+        );
+
+        let pass = RunSummary {
+            state: RunState::Pass,
+            ..fail
+        };
+        assert_eq!(pass.next(), "kit land 01M06A2PXBBH");
+        let empty = RunSummary {
+            has_diff: false,
+            ..pass
+        };
+        assert!(empty.next().starts_with("nothing to land"));
+        let vacuous = RunSummary {
+            vacuous: true,
+            ..pass
+        };
+        assert_eq!(vacuous.verdict(), "UNCONFIGURED");
+        assert!(vacuous.next().starts_with("kit init"));
+        let dry = RunSummary { dry: true, ..pass };
+        assert_eq!(dry.verdict(), "DRY RUN");
     }
 
     fn write_kit(dir: &Path, name: &str) -> PathBuf {
@@ -924,8 +1073,9 @@ mod tests {
         );
         assert_eq!(
             delta_line(&RunDelta::State(RunState::Gating)).as_deref(),
-            Some("kit: state gating\n")
+            Some("kit: agent done. Running the checks in kit.toml\n")
         );
+        assert_eq!(delta_line(&RunDelta::State(RunState::Pass)), None);
         assert_eq!(delta_line(&RunDelta::Worktree(PathBuf::from("wt"))), None);
     }
 
@@ -950,7 +1100,10 @@ mod tests {
             drop(tx);
         };
         tokio::join!(echo, hold_then_drop);
-        assert_eq!(lines[..2], ["kit: state running\n", "text: working\n"]);
+        assert_eq!(
+            lines[..2],
+            ["kit: agent running in its worktree\n", "text: working\n"]
+        );
         assert!(
             lines[2..]
                 .iter()

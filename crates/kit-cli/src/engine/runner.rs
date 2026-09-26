@@ -108,8 +108,9 @@ async fn execute_with(
 
     let wt_path = worktrees_dir().join(&id.0);
     let branch = branch_name(&id.0);
-    let base = create_worktree(&repo, &wt_path, &branch)
-        .with_context(|| format!("create worktree at {}", wt_path.display()))?;
+    // Its errors already name the repo or path and the fix; a wrapper
+    // would push the fix into the middle of the line.
+    let base = create_worktree(&repo, &wt_path, &branch)?;
     send(&tx, &id, RunDelta::Worktree(wt_path.clone())).await;
 
     let mut output = String::new();
