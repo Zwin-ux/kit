@@ -562,10 +562,7 @@ fn runs(chosen: &Chosen, kit: &str, a: &Action) -> Vec<String> {
             .iter()
             .filter(|k| k.name() == kit)
             .flat_map(|k| &k.manifest.hook)
-            .map(|h| match &h.glob {
-                Some(g) => format!("{}   (after each edit of {g})", h.run),
-                None => format!("{}   (after each edit)", h.run),
-            })
+            .map(|h| h.run.clone())
             .collect(),
         _ => a.command().into_iter().collect(),
     }
@@ -694,6 +691,21 @@ fn render_plan(
                 let _ = writeln!(s, "{}   RUNS CODE", a.describe());
                 for cmd in runs(chosen, kit, a) {
                     let _ = writeln!(s, "            runs  {cmd}");
+                }
+                // When a hook runs goes on its own line, so neither wraps.
+                if matches!(a, Action::HookJson { .. }) {
+                    for h in chosen
+                        .kits
+                        .iter()
+                        .filter(|k| k.name() == kit)
+                        .flat_map(|k| &k.manifest.hook)
+                    {
+                        let when = match &h.glob {
+                            Some(g) => format!("after each edit of {g}"),
+                            None => "after each edit".into(),
+                        };
+                        let _ = writeln!(s, "            when  {when}");
+                    }
                 }
             }
             _ => {

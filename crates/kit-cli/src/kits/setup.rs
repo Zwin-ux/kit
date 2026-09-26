@@ -57,21 +57,36 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         println!("Looking for agents on this machine…");
     }
     let mut found = Vec::new();
+    let mut rows = Vec::new();
     for agent in Agent::ALL {
         let st = kit_agents::adapter(kind(agent)).probe().await;
-        if !json {
-            let state = match (st.installed, st.authenticated) {
-                (false, _) => "not found".to_string(),
-                (true, auth) => format!(
-                    "{}   {}",
-                    short_version(st.version.as_deref()),
-                    if auth { "logged in" } else { "not logged in" }
-                ),
+        let (version, login) = if st.installed {
+            let login = if st.authenticated {
+                "logged in"
+            } else {
+                "not logged in"
             };
-            println!("  {:12}  {state}", agent.title());
-        }
+            (short_version(st.version.as_deref()).to_string(), login)
+        } else {
+            ("not found".to_string(), "")
+        };
+        rows.push((agent, version, login));
         if st.installed {
             found.push(agent);
+        }
+    }
+    if !json {
+        // Versions differ in length ("2.1.283", "codex-cli 0.155.0"): pad
+        // them so the login column lines up.
+        let width = rows
+            .iter()
+            .filter(|(_, _, l)| !l.is_empty())
+            .map(|(_, v, _)| v.chars().count())
+            .max()
+            .unwrap_or(0);
+        for (agent, version, login) in &rows {
+            let line = format!("  {:12}  {version:width$}   {login}", agent.title());
+            println!("{}", line.trim_end());
         }
     }
     if !json {

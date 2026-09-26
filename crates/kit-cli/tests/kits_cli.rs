@@ -718,7 +718,8 @@ fn the_plan_shows_exactly_what_will_run() {
     let plan = text(&out.stdout);
     for want in [
         "runs  npx -y thing@1.0.0",
-        "runs  echo formatted   (after each edit of *.md)",
+        "runs  echo formatted\n",
+        "when  after each edit of *.md",
         "check     kit doctor runs `test -f README.md`   RUNS CODE",
         "Runs code on your machine: 3",
     ] {
