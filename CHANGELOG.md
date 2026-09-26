@@ -12,7 +12,7 @@ Kit 2.0.0 is the first release of the Rust `kit` as the default install everywhe
 - **Install, change your mind, undo.** `kit add`, `kit remove` and `kit list` install and remove kits exactly as added; hand edits are kept and reported. A failed install rolls back. Kit refuses to overwrite files it did not write.
 - **Share a setup.** `kit.lock` records what a repo uses; `kit sync` installs it for a teammate, a new machine or CI through the same plan and yes, and `kit sync --check` fails CI when a machine drifts. `kit search` finds kits, `kit add github:owner/repo` installs a kit from GitHub at a pinned commit, and `kit new` starts your own.
 - **Proof.** `kit run` runs one agent in its own git worktree, then your repo's checks from `kit.toml`, and writes a receipt for every ending, Ctrl-C included. `kit land` puts a proven run on a new branch. `kit init` writes the checks for Rust, Go, Node and Python repos.
-- **Control Room.** `kit` opens one table of every run: status, the first error line of a failure, and runs waiting in the queue.
+- **Control Room.** `kit` opens one table of every run: status, the first error line of a failure, runs waiting in the queue, and your past runs from their receipts (Enter opens one, `r` runs its task again, `l` shows how to land a proven one). Before your first run, Kit's fox waits in the empty room.
 - **One-line install** on macOS, Linux and Windows, from npm, or with `cargo install kitctl`. Every archive has a SHA-256 checksum and a GitHub build attestation.
 
 ### Upgrading
@@ -26,6 +26,8 @@ Kit 2.0.0 is the first release of the Rust `kit` as the default install everywhe
 - `kit doctor --json` no longer has the `skillsPack` field.
 - `KIT_SKILLS_DIR` is removed. `kit run` no longer copies skill packs or writes `AGENTS.md` into the run's worktree; the agent uses the skills your kits installed.
 - A run sees only committed files. If a kit is installed into the repo (not `--global`) and the agent should use it, commit the kit's files before `kit run`.
+- `kit run` starts Grok only with `KIT_FULL_AUTO=1` and never picks it as the default agent: Grok's headless mode approves every action, shell commands included, and has no edit-only mode.
+- A run whose checks pass but whose agent changed nothing reads `NO CHANGES` instead of `PASS` (the gate itself still passed); `kit run --json` adds `changedFiles`.
 - A run with no checks (no `kit.toml` and nothing Kit can infer) is recorded with state `unconfigured` and `gatePassed: false` in its receipt, where it used to say `pass`; old receipts read the same way. The Control Room shows `GATE UNCONFIGURED`, and `kit land` refuses such a run without `--force`.
 
 ### Details
