@@ -1,8 +1,7 @@
 //! The kits part of `kit doctor`: is each installed kit still live? Skills
-//! as installed, rules blocks present, and each `[check]` in its KIT.toml:
-//! MCP servers answer an MCP `initialize`, commands exit 0.
+//! as installed, rules blocks present, and the `[check]` approved at
+//! `kit add`: MCP servers answer an MCP `initialize`, commands exit 0.
 
-use super::catalog;
 use super::install::{home_dir, repo_root};
 use super::lock::{Entry, Lock};
 use super::manifest::McpServer;
@@ -88,48 +87,36 @@ fn check(scope: &Scope, e: &Entry) -> KitReport {
         }
     }
 
-    // The kit's own [check], from its KIT.toml.
-    match catalog::find(&e.source) {
-        Ok(kit) => {
-            let installed_mcp = |name: &str| {
-                e.applied.iter().any(|a| match a {
-                    Applied::McpJson { name: n, .. } | Applied::McpToml { name: n, .. } => {
-                        n == name
-                    }
-                    Applied::Command { undo } => undo.last().is_some_and(|n| n == name),
-                    _ => false,
-                })
-            };
-            for name in &kit.manifest.check.mcp_starts {
-                let what = format!("{name} MCP starts");
-                let Some(server) = kit.manifest.mcp.get(name) else {
-                    continue;
-                };
-                if !installed_mcp(name) {
-                    checks.push((
-                        format!("{name} MCP not installed"),
-                        true,
-                        "skills and rules only".into(),
-                    ));
-                    continue;
-                }
-                checks.push(match mcp_starts(server) {
-                    Ok(took) => (what, true, format!("{:.1}s", took.as_secs_f64())),
-                    Err(why) => (what, false, why),
-                });
-            }
-            for cmd in &kit.manifest.check.commands {
-                checks.push(match run_check(cmd) {
-                    Ok(()) => (format!("`{cmd}` runs"), true, String::new()),
-                    Err(why) => (format!("`{cmd}` runs"), false, why),
-                });
-            }
+    // The kit's [check], as approved at `kit add` and kept in Kit's own
+    // record. Never re-read from a KIT.toml or a repo's kit.lock.
+    let installed_mcp = |name: &str| {
+        e.applied.iter().any(|a| match a {
+            Applied::McpJson { name: n, .. }
+            | Applied::McpToml { name: n, .. }
+            | Applied::ClaudeMcp { name: n } => n == name,
+            _ => false,
+        })
+    };
+    for (name, server) in &e.checks.mcp {
+        if !installed_mcp(name) {
+            checks.push((
+                format!("{name} MCP not installed"),
+                true,
+                "skills and rules only".into(),
+            ));
+            continue;
         }
-        Err(err) => checks.push((
-            "kit found".into(),
-            false,
-            format!("cannot read {}: {err}", e.source),
-        )),
+        let what = format!("{name} MCP starts");
+        checks.push(match mcp_starts(server) {
+            Ok(took) => (what, true, format!("{:.1}s", took.as_secs_f64())),
+            Err(why) => (what, false, why),
+        });
+    }
+    for cmd in &e.checks.commands {
+        checks.push(match run_check(cmd) {
+            Ok(()) => (format!("`{cmd}` runs"), true, String::new()),
+            Err(why) => (format!("`{cmd}` runs"), false, why),
+        });
     }
     KitReport {
         scope: scope.label(),

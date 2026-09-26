@@ -80,8 +80,8 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Some(Command::Remove(args)) => kits::install::cmd_remove(args, json),
         Some(Command::List(args)) => kits::install::cmd_list(args, json),
         Some(Command::Hook {
-            event: cli::HookCommand::AfterEdit { kit },
-        }) => std::process::exit(kits::hook::after_edit(&kit)?),
+            event: cli::HookCommand::AfterEdit { kit, scope },
+        }) => std::process::exit(kits::hook::after_edit(&kit, scope)?),
         Some(Command::Run(args)) => cmd_run(args, json).await,
         Some(Command::Init(args)) => init::cmd_init(args, json).await,
         Some(Command::Land(args)) => land::cmd_land(args, json),

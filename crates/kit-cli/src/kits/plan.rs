@@ -35,13 +35,11 @@ pub enum Action {
         name: String,
         value: toml_edit::Table,
     },
-    /// Run an agent's own CLI (`claude mcp add`), with the command that undoes it.
-    Command {
-        argv: Vec<String>,
-        undo: Vec<String>,
-        what: String,
-        /// Adds something that runs code (a local MCP server).
-        code: bool,
+    /// A user-scope Claude Code server, added through Claude Code's own CLI
+    /// (`claude mcp add-json --scope user`), which owns `~/.claude.json`.
+    ClaudeMcp {
+        name: String,
+        value: serde_json::Value,
     },
     /// Append one entry to `hooks.<event>` in a JSON settings file.
     HookJson {
@@ -63,7 +61,9 @@ impl Action {
             }
             Self::McpJson { file, name, .. } => format!("mcp       {name} → {}", tilde(file)),
             Self::McpToml { file, name, .. } => format!("mcp       {name} → {}", tilde(file)),
-            Self::Command { what, .. } => format!("mcp       {what}"),
+            Self::ClaudeMcp { name, .. } => {
+                format!("mcp       {name} → claude mcp add-json --scope user")
+            }
             Self::HookJson { file, event, .. } => format!("hook      {event} → {}", tilde(file)),
             Self::Skip { piece, why } => format!("skipped   {piece}: {why}"),
         }
@@ -71,6 +71,18 @@ impl Action {
 }
 
 impl Action {
+    /// The file or folder this action writes, if any.
+    pub fn path(&self) -> Option<&Path> {
+        match self {
+            Self::Skill { dir, .. } => Some(dir),
+            Self::Rules { file, .. }
+            | Self::McpJson { file, .. }
+            | Self::McpToml { file, .. }
+            | Self::HookJson { file, .. } => Some(file),
+            Self::ClaudeMcp { .. } | Self::Skip { .. } => None,
+        }
+    }
+
     /// Identity of the thing this action changes. Two kits that change the
     /// same thing share it; it is undone only when neither needs it.
     pub fn key(&self) -> String {
@@ -80,7 +92,7 @@ impl Action {
             Self::McpJson { file, name, .. } | Self::McpToml { file, name, .. } => {
                 format!("mcp {} {name}", file.display())
             }
-            Self::Command { undo, .. } => format!("command {}", undo.join(" ")),
+            Self::ClaudeMcp { name, .. } => format!("claude-mcp user {name}"),
             Self::HookJson { file, event, entry } => {
                 format!("hook {} {event} {entry}", file.display())
             }
@@ -93,7 +105,7 @@ impl Action {
         match self {
             Self::McpJson { value, .. } => value.get("command").is_some(),
             Self::McpToml { value, .. } => value.contains_key("command"),
-            Self::Command { code, .. } => *code,
+            Self::ClaudeMcp { value, .. } => value.get("command").is_some(),
             Self::HookJson { .. } => true,
             _ => false,
         }
@@ -101,6 +113,11 @@ impl Action {
 }
 
 /// What was done, with enough to undo it exactly. Stored in the lock file.
+///
+/// Records are data, never commands: undoing one runs nothing but Kit's
+/// own code, plus `claude mcp remove --scope user <name>` built here from a
+/// validated name. Paths are stored relative to the scope's root (see
+/// `lock.rs`), so a record can only ever point inside it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Applied {
@@ -124,8 +141,8 @@ pub enum Applied {
         name: String,
         created: bool,
     },
-    Command {
-        undo: Vec<String>,
+    ClaudeMcp {
+        name: String,
     },
     HookJson {
         file: PathBuf,
@@ -136,6 +153,29 @@ pub enum Applied {
 }
 
 impl Applied {
+    /// The file or folder this record changed, if any.
+    pub fn path(&self) -> Option<&Path> {
+        match self {
+            Self::Skill { dir, .. } => Some(dir),
+            Self::Rules { file, .. }
+            | Self::McpJson { file, .. }
+            | Self::McpToml { file, .. }
+            | Self::HookJson { file, .. } => Some(file),
+            Self::ClaudeMcp { .. } => None,
+        }
+    }
+
+    pub fn path_mut(&mut self) -> Option<&mut PathBuf> {
+        match self {
+            Self::Skill { dir, .. } => Some(dir),
+            Self::Rules { file, .. }
+            | Self::McpJson { file, .. }
+            | Self::McpToml { file, .. }
+            | Self::HookJson { file, .. } => Some(file),
+            Self::ClaudeMcp { .. } => None,
+        }
+    }
+
     /// Same identity as [`Action::key`].
     pub fn key(&self) -> String {
         match self {
@@ -144,7 +184,7 @@ impl Applied {
             Self::McpJson { file, name, .. } | Self::McpToml { file, name, .. } => {
                 format!("mcp {} {name}", file.display())
             }
-            Self::Command { undo } => format!("command {}", undo.join(" ")),
+            Self::ClaudeMcp { name } => format!("claude-mcp user {name}"),
             Self::HookJson {
                 file, event, entry, ..
             } => format!("hook {} {event} {entry}", file.display()),
@@ -246,9 +286,9 @@ fn apply(action: &Action, force: bool) -> Result<Option<Applied>> {
                 created,
             }
         }
-        Action::Command { argv, undo, .. } => {
-            run_argv(argv)?;
-            Applied::Command { undo: undo.clone() }
+        Action::ClaudeMcp { name, value } => {
+            run_argv(&claude_mcp_argv("add-json", name, Some(value))?)?;
+            Applied::ClaudeMcp { name: name.clone() }
         }
         Action::HookJson { file, event, entry } => {
             let created = !file.exists();
@@ -341,7 +381,9 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 }
             }
         }
-        Applied::Command { undo } => run_argv(undo)?,
+        Applied::ClaudeMcp { name } => {
+            run_argv(&claude_mcp_argv("remove", name, None)?)?;
+        }
         Applied::HookJson {
             file,
             event,
@@ -375,6 +417,24 @@ pub fn drifted(applied: &Applied) -> Result<Option<String>> {
         });
     }
     Ok(None)
+}
+
+/// Does `path` resolve inside `base`, following any symlinks on the way?
+/// A repo can make `.claude` a link to somewhere else; Kit then neither
+/// writes through it nor deletes through it.
+pub fn inside(path: &Path, base: &Path) -> bool {
+    let Ok(base) = std::fs::canonicalize(base) else {
+        return false;
+    };
+    // Kit never writes a link itself, so one in the final place is foreign.
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return false;
+    }
+    // The deepest part that exists decides where the rest would land.
+    path.ancestors()
+        .find(|p| p.exists())
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .is_some_and(|real| real.starts_with(&base))
 }
 
 /// Remove up to `levels` parent folders of `path` while they are empty
@@ -561,6 +621,23 @@ fn object_at<'a>(
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
         .with_context(|| format!("{}: {key} is not an object", file.display()))
+}
+
+/// `claude mcp <verb> --scope user <name> [json]`. The name must be a
+/// plain name, so it can never be read as a flag (`--scope=project`).
+fn claude_mcp_argv(
+    verb: &str,
+    name: &str,
+    json: Option<&serde_json::Value>,
+) -> Result<Vec<String>> {
+    if !super::manifest::is_slug(name) {
+        bail!("'{name}' is not a valid MCP server name");
+    }
+    let mut argv: Vec<String> = ["claude", "mcp", verb, "--scope", "user", name]
+        .map(String::from)
+        .to_vec();
+    argv.extend(json.map(ToString::to_string));
+    Ok(argv)
 }
 
 /// Run an agent CLI directly, never through a shell, so kit-supplied

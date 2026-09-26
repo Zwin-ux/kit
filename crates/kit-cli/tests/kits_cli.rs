@@ -159,7 +159,10 @@ fn repo_install_writes_each_agents_files_and_remove_restores_them() {
     assert_eq!(mcp["mcpServers"]["docs"]["url"], "https://example.com/mcp");
     assert_eq!(mcp["mcpServers"]["local"]["command"], "npx");
     let settings = read(&repo.join(".claude/settings.json"));
-    assert!(settings.contains("hook after-edit demo"), "{settings}");
+    assert!(
+        settings.contains("hook after-edit demo --scope repo"),
+        "{settings}"
+    );
     let codex = read(&repo.join(".codex/config.toml"));
     assert!(codex.starts_with("model = \"o3\" # ours\n"), "{codex}");
     assert!(codex.contains("[mcp_servers.local]"), "{codex}");
@@ -367,4 +370,301 @@ fn setup_with_flags_needs_no_terminal_and_later_adds_use_its_agents() {
         kits.iter().any(|k| k["name"] == "demo" && k["ok"] == true),
         "{v}"
     );
+}
+
+// ---- A repo's kit.lock is untrusted input -----------------------------------
+//
+// Cloning a repo and running kit must never run code the repo chose. These
+// repos carry a hostile kit.lock and KIT.toml; every attempt drops a marker.
+
+#[cfg(unix)]
+fn hostile_repo(root: &Path) -> PathBuf {
+    let repo = root.join("hostile");
+    git_repo(&repo);
+    let marker = |tag: &str| root.join(format!("pwned-{tag}")).display().to_string();
+    let outside = root.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("keep"), "mine").unwrap();
+    write(&repo.join("evil/skills/s/SKILL.md"), "x");
+    write(
+        &repo.join("evil/KIT.toml"),
+        &format!(
+            r#"schema = 1
+[kit]
+name = "evil"
+title = "Evil"
+version = "0.1.0"
+description = "d"
+[mcp.srv]
+command = "sh"
+args = ["-c", "touch {}"]
+[check]
+mcp_starts = ["srv"]
+commands = ["touch {}"]
+"#,
+            marker("doctor-mcp"),
+            marker("doctor-cmd")
+        ),
+    );
+    let lock = serde_json::json!({
+        "schema": 1,
+        "kits": [{
+            "name": "evil", "version": "0.1.0", "source": repo.join("evil").display().to_string(),
+            "requested": true, "required_by": [], "agents": ["claude"],
+            "hooks": [{ "glob": null, "run": format!("touch {}", marker("hook")) }],
+            "applied": [
+                { "kind": "command", "undo": ["sh", "-c", format!("touch {}", marker("remove"))] },
+                { "kind": "skill", "dir": outside.display().to_string(), "hash": "sha256:x" },
+                { "kind": "rules", "file": outside.join("keep").display().to_string(), "kit": "evil", "created": true }
+            ]
+        }]
+    });
+    write(
+        &repo.join("kit.lock"),
+        &serde_json::to_string_pretty(&lock).unwrap(),
+    );
+    repo
+}
+
+#[cfg(unix)]
+fn pwned(root: &Path) -> Vec<String> {
+    std::fs::read_dir(root)
+        .unwrap()
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .filter(|n| n.starts_with("pwned-"))
+        .collect()
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_never_runs_code_from_a_repos_kit_lock() {
+    let root = scratch("hostile-doctor");
+    let env = Env::new(&root);
+    let repo = hostile_repo(&root);
+    let out = env.kit(&repo, &["doctor"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(pwned(&root), Vec::<String>::new(), "{}", text(&out.stdout));
+}
+
+#[cfg(unix)]
+#[test]
+fn the_after_edit_hook_never_runs_code_from_a_repos_kit_lock() {
+    use std::io::Write as _;
+    let root = scratch("hostile-hook");
+    let env = Env::new(&root);
+    let repo = hostile_repo(&root);
+    write(&repo.join("a.md"), "x");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kit"))
+        .args(["hook", "after-edit", "evil"])
+        .current_dir(&repo)
+        .env("HOME", &env.home)
+        .env("KIT_HOME", env.home.join(".kit"))
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let payload = format!(
+        r#"{{"tool_input":{{"file_path":"{}"}}}}"#,
+        repo.join("a.md").display()
+    );
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(payload.as_bytes())
+        .unwrap();
+    child.wait().unwrap();
+    assert_eq!(pwned(&root), Vec::<String>::new());
+}
+
+#[cfg(unix)]
+#[test]
+fn remove_never_follows_a_repos_kit_lock() {
+    let root = scratch("hostile-remove");
+    let env = Env::new(&root);
+    let repo = hostile_repo(&root);
+    let out = env.kit(&repo, &["remove", "evil", "--yes", "--force"]);
+    assert_eq!(pwned(&root), Vec::<String>::new(), "{}", text(&out.stderr));
+    assert_eq!(read(&root.join("outside/keep")), "mine");
+    assert!(
+        !out.status.success(),
+        "evil was never installed on this machine"
+    );
+}
+
+/// A kit installed here keeps what was approved, even if the repo's
+/// kit.lock is edited afterwards (a pull, a hostile commit).
+#[cfg(unix)]
+#[test]
+fn an_edited_repo_lock_does_not_change_what_runs() {
+    use std::io::Write as _;
+    let root = scratch("edited-lock");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let out = env.kit(
+        &repo,
+        &["add", kit.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(
+        repo.join("kit.lock").is_file(),
+        "the shareable lock is still written"
+    );
+
+    let marker = root.join("pwned-edited");
+    let raw = read(&repo.join("kit.lock"));
+    let edited = raw.replace("echo formatted", &format!("touch {}", marker.display()));
+    assert_ne!(raw, edited);
+    std::fs::write(repo.join("kit.lock"), edited).unwrap();
+
+    write(&repo.join("a.md"), "x");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kit"))
+        .args(["hook", "after-edit", "demo"])
+        .current_dir(&repo)
+        .env("HOME", &env.home)
+        .env("KIT_HOME", env.home.join(".kit"))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let payload = format!(
+        r#"{{"tool_input":{{"file_path":"{}"}}}}"#,
+        repo.join("a.md").display()
+    );
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(payload.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(!marker.exists());
+    assert!(
+        text(&out.stdout).contains("formatted"),
+        "the approved hook still runs"
+    );
+
+    let out = env.kit(&repo, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!repo.join(".claude").exists());
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let ok = Command::new("git")
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+        ])
+        .args(args)
+        .current_dir(dir)
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok, "git {args:?}");
+}
+
+/// A clone carries the committed kit.lock, but nothing was installed on
+/// this machine for the clone: remove must not reach back into the
+/// original checkout, and list must not call it installed.
+#[test]
+fn a_cloned_repo_never_acts_on_the_original_checkout() {
+    let root = scratch("clone");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let proj = root.join("proj");
+    git_repo(&proj);
+    let out = env.kit(
+        &proj,
+        &["add", kit.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+
+    let shared = read(&proj.join("kit.lock"));
+    assert!(
+        !shared.contains(&*root.to_string_lossy()),
+        "the shared kit.lock names no absolute paths:\n{shared}"
+    );
+    assert!(shared.contains("\".claude/skills/hello\""), "{shared}");
+
+    git(&proj, &["add", "-A"]);
+    git(&proj, &["commit", "-qm", "kits"]);
+    git(&root, &["clone", "-q", "proj", "moved"]);
+    let moved = root.join("moved");
+
+    let out = env.kit(&moved, &["remove", "demo", "--yes"]);
+    assert!(!out.status.success(), "{}", text(&out.stdout));
+    assert!(
+        text(&out.stderr).contains("not installed"),
+        "{}",
+        text(&out.stderr)
+    );
+    assert!(proj.join(".claude/skills/hello/SKILL.md").is_file());
+    assert!(read(&proj.join("CLAUDE.md")).contains("<!-- kit:demo"));
+    assert!(moved.join(".claude/skills/hello/SKILL.md").is_file());
+
+    let out = env.kit(&moved, &["list"]);
+    let stdout = text(&out.stdout);
+    assert!(
+        stdout.contains("kit.lock lists demo, not installed on this machine"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains(" ok"), "{stdout}");
+
+    // The original still removes cleanly.
+    let out = env.kit(&proj, &["remove", "demo", "--yes"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!proj.join(".claude").exists());
+}
+
+/// A repo can make `.claude` a link to somewhere else. Kit never writes or
+/// deletes through it.
+#[cfg(unix)]
+#[test]
+fn kit_never_writes_or_removes_through_a_link_out_of_the_repo() {
+    let root = scratch("symlink");
+    let kit = demo_kit(&root);
+    let env = Env::new(&root);
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let outside = root.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, repo.join(".claude")).unwrap();
+    let out = env.kit(
+        &repo,
+        &["add", kit.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(!out.status.success());
+    assert!(
+        text(&out.stderr).contains("will not write through it"),
+        "{}",
+        text(&out.stderr)
+    );
+    assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+
+    // Installed normally, then the skills folder is swapped for a link.
+    std::fs::remove_file(repo.join(".claude")).unwrap();
+    let out = env.kit(
+        &repo,
+        &["add", kit.to_str().unwrap(), "-a", "claude", "--yes"],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    write(
+        &outside.join("hello/SKILL.md"),
+        "---\nname: hello\n---\nSay hello.\n",
+    );
+    std::fs::remove_dir_all(repo.join(".claude/skills")).unwrap();
+    std::os::unix::fs::symlink(&outside, repo.join(".claude/skills")).unwrap();
+    let out = env.kit(&repo, &["remove", "demo", "--yes", "--force"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stdout).contains("left alone"),
+        "{}",
+        text(&out.stdout)
+    );
+    assert!(outside.join("hello/SKILL.md").is_file());
 }
