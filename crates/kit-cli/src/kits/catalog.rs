@@ -41,8 +41,12 @@ impl KitFiles {
                 .and_then(|f| f.contents_utf8())
                 .map(str::to_owned)
                 .with_context(|| format!("bundled kit has no {rel}")),
-            Self::Path(root) => std::fs::read_to_string(root.join(rel))
-                .with_context(|| format!("cannot read {}", root.join(rel).display())),
+            Self::Path(root) => {
+                let file = root.join(rel);
+                refuse_link(&file)?;
+                std::fs::read_to_string(&file)
+                    .with_context(|| format!("cannot read {}", file.display()))
+            }
         }
     }
 
@@ -59,6 +63,7 @@ impl KitFiles {
             }
             Self::Path(root) => {
                 let base = root.join(rel);
+                refuse_link(&base)?;
                 if !base.is_dir() {
                     bail!("no folder {}", base.display());
                 }
@@ -68,6 +73,20 @@ impl KitFiles {
         out.sort();
         Ok(out)
     }
+}
+
+/// A kit folder's files are copied into the user's agent config, which may
+/// be committed. A link could pull in a file from anywhere on the machine
+/// (a key, a token), so Kit copies no links, in the kit folder or on the
+/// way to it.
+fn refuse_link(path: &Path) -> Result<()> {
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        bail!(
+            "{} is a link. Kit copies only real files from a kit folder",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 fn collect_bundled(dir: &'static Dir<'static>, base: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
@@ -83,6 +102,7 @@ fn collect_bundled(dir: &'static Dir<'static>, base: &Path, out: &mut Vec<(PathB
 fn collect_path(dir: &Path, base: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) -> Result<()> {
     for entry in std::fs::read_dir(dir).with_context(|| format!("cannot read {}", dir.display()))? {
         let path = entry?.path();
+        refuse_link(&path)?;
         if path.is_dir() {
             collect_path(&path, base, out)?;
         } else {
@@ -292,6 +312,33 @@ mod tests {
         let kits = resolve(dir.to_str().unwrap()).unwrap();
         assert_eq!(kits[0].name(), "essentials");
         assert_eq!(kits[1].level, Level::Direct);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_kit_never_copies_a_link() {
+        let dir = std::env::temp_dir().join(format!("kit-folder-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("skills/s")).unwrap();
+        std::fs::write(dir.join("secret"), "token").unwrap();
+        std::os::unix::fs::symlink(dir.join("secret"), dir.join("skills/s/SKILL.md")).unwrap();
+        std::os::unix::fs::symlink(dir.join("secret"), dir.join("RULES.md")).unwrap();
+        let files = KitFiles::Path(dir.clone());
+        assert!(
+            files
+                .files_under("skills/s")
+                .unwrap_err()
+                .to_string()
+                .contains("is a link")
+        );
+        assert!(
+            files
+                .read_to_string("RULES.md")
+                .unwrap_err()
+                .to_string()
+                .contains("is a link")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
