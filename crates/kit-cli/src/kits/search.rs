@@ -75,17 +75,8 @@ pub fn rank(rows: &[Row], words: &[String]) -> Vec<Row> {
     hits.into_iter().map(|(_, r)| r.clone()).collect()
 }
 
-/// What search found: the rows, notes to print, where the index came from,
-/// and why the index could not be read at all (only the bundled kits show).
-struct Found {
-    rows: Vec<Row>,
-    notes: Vec<String>,
-    from: String,
-    failed: Option<String>,
-}
-
 /// Bundled kits, then index kits whose names are not bundled.
-fn rows(refresh: bool) -> Result<Found> {
+fn rows(refresh: bool) -> Result<(Vec<Row>, Vec<String>, String)> {
     let mut rows: Vec<Row> = catalog::bundled()?
         .iter()
         .map(|k| Row {
@@ -97,7 +88,6 @@ fn rows(refresh: bool) -> Result<Found> {
         })
         .collect();
     let mut notes = Vec::new();
-    let mut failed = None;
     let from = match index::load(refresh) {
         Ok(ix) => {
             notes.extend(ix.warnings.iter().cloned());
@@ -115,17 +105,14 @@ fn rows(refresh: bool) -> Result<Found> {
             }
             ix.from
         }
+        // Not an error: the kits that ship with Kit are still a complete
+        // answer, so search says why the index is missing and exits 0.
         Err(err) => {
-            failed = Some(err.to_string());
+            notes.push(format!("{err}. Showing the kits that ship with Kit"));
             String::new()
         }
     };
-    Ok(Found {
-        rows,
-        notes,
-        from,
-        failed,
-    })
+    Ok((rows, notes, from))
 }
 
 /// Names installed for all projects or in this repo.
@@ -145,12 +132,7 @@ fn installed() -> BTreeSet<String> {
 }
 
 pub fn cmd_search(args: &SearchArgs, json: bool) -> Result<()> {
-    let Found {
-        rows: all,
-        notes,
-        from,
-        failed,
-    } = rows(args.refresh)?;
+    let (all, notes, from) = rows(args.refresh)?;
     let hits = rank(&all, &args.words);
     let have = installed();
     let query = args.words.join(" ");
@@ -166,11 +148,8 @@ pub fn cmd_search(args: &SearchArgs, json: bool) -> Result<()> {
             })
             .collect();
         let data = serde_json::json!({ "query": query, "index": from, "kits": kits });
-        let env = crate::envelope("search", failed.is_none(), data, failed.clone(), notes);
+        let env = crate::envelope("search", true, data, None, notes);
         println!("{}", serde_json::to_string_pretty(&env)?);
-        if failed.is_some() {
-            std::process::exit(2);
-        }
         return Ok(());
     }
 
@@ -211,13 +190,6 @@ pub fn cmd_search(args: &SearchArgs, json: bool) -> Result<()> {
     }
     for n in &notes {
         println!("note      {n}");
-    }
-    if let Some(err) = failed {
-        // Exit 2 (could not run): the index was not read; the list above is
-        // only the kits that ship with Kit.
-        eprintln!("kit: {err}");
-        eprintln!("     Only the kits that ship with Kit are listed.");
-        std::process::exit(2);
     }
     Ok(())
 }
@@ -272,10 +244,9 @@ mod tests {
 
     #[test]
     fn the_starter_kits_are_always_searchable_offline() {
-        let found = rows(false).unwrap();
-        assert!(found.notes.is_empty(), "{:?}", found.notes);
-        assert!(found.failed.is_none());
-        let hits = rank(&found.rows, &words("frontend"));
+        let (rows, notes, _) = rows(false).unwrap();
+        assert!(notes.is_empty(), "{notes:?}");
+        let hits = rank(&rows, &words("frontend"));
         assert_eq!(names(&hits)[0], "frontend-design");
         assert_eq!(hits[0].level, "Official");
     }

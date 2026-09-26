@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1a1a1a?style=for-the-badge" alt="MIT" /></a>
-  <img src="https://img.shields.io/badge/status-1.0%20alpha-00E6CC?style=for-the-badge" alt="1.0 alpha" />
+  <img src="https://img.shields.io/badge/status-2.0-00E6CC?style=for-the-badge" alt="2.0" />
 </p>
 
 A **kit** is everything an agent needs for one kind of work. Frontend Design
@@ -15,7 +15,7 @@ file it edits. Kit writes each piece in the format your agent reads, shows you
 every file first, and can take it all out again.
 
 ```console
-$ npm install -g @mzwin/kit@alpha
+$ npm install -g @mzwin/kit
 $ kit
 Kit sets your coding agents up for a job, and proves what they do.
 
@@ -115,8 +115,10 @@ names any kit it lists that you have not installed.
   `RUNS CODE` and counted. `[s]` or `--no-code` installs skills and rules only.
 - **Everything is pinned.** Skills by commit and content hash. A local MCP
   server starts through `npx`, `bunx`, `pnpm dlx` or `uvx` with one package
-  at an exact version (never `@latest`, a range, a URL or a tarball), or is a
-  program already on your PATH. Kits cannot start a shell.
+  at an exact version (never `@latest`, a range, a URL or a tarball), or is
+  the server's own program already on your PATH. Kits cannot start a shell,
+  an interpreter, or a wrapper such as `env` or `nohup`, and cannot pass
+  inline code.
 - **Your files stay yours.** Kit edits only between its own markers in
   `CLAUDE.md` and `AGENTS.md`, only its own keys in JSON and TOML (comments
   kept), and only skill folders it wrote. A folder you made is never overwritten.
@@ -124,6 +126,9 @@ names any kit it lists that you have not installed.
   own record, never read from the repo. A skill you edited by hand is left
   in place and named.
 - **A failed install changes nothing.** It rolls back what it did.
+- **Known limits.** A change to a skill file's permissions alone is not seen
+  as an edit. Kit's record for a repo is keyed on where the repo sits, so
+  after moving or renaming the folder, `kit add` the kits again there.
 - **No secrets, no telemetry.** Kits refer to environment variables by name.
   Fetching is `git` over HTTPS from the named repos.
 
@@ -216,20 +221,17 @@ with the failure · `?` help · `q` quit.
 
 ---
 
-## Install (1.0 alpha)
+## Install
 
 Each line installs the same `kit` binary.
 
 | Method | Command |
 |--------|---------|
-| npm | `npm install -g @mzwin/kit@alpha` |
-| Linux, macOS | `curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh \| sh -s -- --prerelease` |
-| Windows PowerShell | `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.ps1))) -Prerelease` |
-| Cargo | `cargo install --git https://github.com/Zwin-ux/kit kitctl --locked` |
+| npm | `npm install -g @mzwin/kit` |
+| Linux, macOS | `curl -fsSL https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.sh \| sh` |
+| Windows PowerShell | `irm https://raw.githubusercontent.com/Zwin-ux/kit/main/scripts/install.ps1 \| iex` |
+| Cargo | `cargo install kitctl --locked` |
 
-- npm without `@alpha` installs the old 0.1 app until 1.0.0.
-- The install scripts need a GitHub Release with archives. Until the first
-  one, use npm or Cargo.
 - The install scripts check the download's SHA-256 against `SHA256SUMS`,
   install to `~/.local/bin` (Windows: `%LOCALAPPDATA%\kit\bin`), and show the
   line to add if that is not on `PATH`.
@@ -251,7 +253,6 @@ cargo run -p kitctl -- --demo
 |-----|--------|
 | `KIT_HOME` | Where Kit keeps its records, config, cache and receipts (default `~/.kit`) |
 | `KIT_FULL_AUTO=1` | Skip agent approval prompts in `kit run` (sandboxes only) |
-| `KIT_SKILLS_DIR` | Skill pack copied into `kit run` worktrees |
 | `KIT_OLLAMA_MODEL` | Model for the Ollama adapter (default `llama3.2`) |
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
 | `KIT_THEME=high` | High-contrast palette |
@@ -263,7 +264,7 @@ Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md).
 <summary>Legacy: Kit 0.1.x npm workbench</summary>
 
 The earlier `npm i -g @mzwin/kit` (0.1.x) was a Node skill workbench. It is
-kept in `packages/` for history; 1.0 is the Rust binary above. See
+kept in `packages/` for history; Kit is now the Rust binary above. See
 [Workbench architecture](docs/dev/WORKBENCH_ARCHITECTURE.md).
 
 </details>

@@ -117,10 +117,91 @@ fn resolve_rev(repo: &str, rev: Option<&str>) -> Result<String> {
 }
 
 /// Fetch the kit at `spec` and read its `KIT.toml`. Always `Direct`,
-/// unless the index lists this exact commit.
+/// unless the index lists this exact commit. A failure is one plain line
+/// with a next step, never git's own output.
 pub fn fetch(spec: &GithubSpec) -> Result<Kit> {
-    let sha = resolve_rev(&spec.repo, spec.rev.as_deref())?;
-    fetch_at(spec, &sha, Level::Direct)
+    let sha = resolve_rev(&spec.repo, spec.rev.as_deref()).map_err(|e| plain(e, spec))?;
+    fetch_at(spec, &sha, Level::Direct).map_err(|e| plain(e, spec))
+}
+
+/// Why a fetch from GitHub failed, read from git's error text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Failure {
+    /// The repo does not exist or is private: git asks for a password.
+    Missing,
+    /// The repo is there but has no such commit.
+    Commit,
+    Network,
+    Other,
+}
+
+pub(crate) fn failure(err: &anyhow::Error) -> Failure {
+    let text = format!("{err:#}").to_lowercase();
+    let any = |marks: &[&str]| marks.iter().any(|m| text.contains(m));
+    if any(&[
+        "not our ref",
+        "couldn't find remote ref",
+        "no such remote ref",
+    ]) {
+        Failure::Commit
+    } else if any(&[
+        "could not resolve host",
+        "could not resolve proxy",
+        "connect tunnel failed",
+        "failed to connect",
+        "timed out",
+        "network is unreachable",
+        "connection refused",
+        "connection reset",
+    ]) {
+        Failure::Network
+    } else if any(&[
+        "could not read username",
+        "repository not found",
+        "does not appear to be a git repository",
+        "authentication failed",
+        "returned error: 403",
+        "returned error: 404",
+    ]) {
+        Failure::Missing
+    } else {
+        Failure::Other
+    }
+}
+
+/// `err` from fetching `spec` as one line a person can act on. Errors Kit
+/// wrote itself (no KIT.toml, an unpinned base, a bad manifest) pass through.
+fn plain(err: anyhow::Error, spec: &GithubSpec) -> anyhow::Error {
+    let repo = &spec.repo;
+    let at = spec.rev.as_deref().unwrap_or("its default branch");
+    match failure(&err) {
+        Failure::Missing => anyhow::anyhow!(
+            "github:{repo} was not found. Check the name at {}; Kit reads public repos only",
+            fetch::remote_url(repo)
+        ),
+        Failure::Commit => anyhow::anyhow!(
+            "github:{repo} has no commit {at}. Check the sha on GitHub, or leave @{at} off to take the default branch"
+        ),
+        Failure::Network => anyhow::anyhow!(
+            "cannot reach {} to fetch github:{repo}. Check your connection, then run it again",
+            fetch::remote_url(repo)
+        ),
+        Failure::Other if format!("{err:#}").contains(" has no folder ") => no_kit_toml(spec, at),
+        Failure::Other => err,
+    }
+}
+
+fn no_kit_toml(spec: &GithubSpec, at: &str) -> anyhow::Error {
+    let folder = if spec.path.is_empty() {
+        "the repo root".to_string()
+    } else {
+        spec.path.clone()
+    };
+    anyhow::anyhow!(
+        "github:{} at {at} has no KIT.toml in {folder}. Name the folder that holds it: github:{}/<folder>",
+        spec.repo,
+        spec.repo
+    )
 }
 
 /// The kit at `spec`, pinned to `sha`, with the trust level the caller
@@ -129,8 +210,10 @@ pub fn fetch_at(spec: &GithubSpec, sha: &str, level: Level) -> Result<Kit> {
     let root = unpack(spec, sha)?;
     let toml = root.join("KIT.toml");
     let pinned = spec.pinned(sha);
-    let raw =
-        std::fs::read_to_string(&toml).with_context(|| format!("{pinned} has no KIT.toml"))?;
+    if !toml.is_file() {
+        return Err(no_kit_toml(spec, &sha[..7]));
+    }
+    let raw = std::fs::read_to_string(&toml).with_context(|| format!("cannot read {pinned}"))?;
     let manifest = KitManifest::parse(&raw, &pinned)?;
     for base in &manifest.kit.extends {
         if !is_pinned_base(base)? {
@@ -345,7 +428,9 @@ pub(crate) mod tests {
             crate::kits::catalog::find(&format!("github:owner/kits/kits/tipper@{sha}")).unwrap();
         assert_eq!(kit.manifest.skill[0].name, "tip");
         let err = crate::kits::catalog::find("github:owner/gone").unwrap_err();
-        assert!(format!("{err:#}").contains("git could not"), "{err:#}");
+        let err = format!("{err:#}");
+        assert!(err.contains("github:owner/gone was not found"), "{err}");
+        assert!(!err.contains("git could not"), "no raw git output: {err}");
         unsafe {
             std::env::remove_var("KIT_HOME");
             std::env::remove_var("KIT_GIT_BASE");

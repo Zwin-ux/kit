@@ -174,6 +174,10 @@ pub enum Applied {
         /// remove puts it back.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         previous: Option<serde_json::Value>,
+        /// The file's text before Kit changed it, so remove can put back
+        /// exactly those bytes. Never copied into the repo's kit.lock.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original: Option<String>,
     },
     McpToml {
         file: PathBuf,
@@ -194,10 +198,20 @@ pub enum Applied {
         event: String,
         entry: serde_json::Value,
         created: bool,
+        /// As for `McpJson`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original: Option<String>,
     },
 }
 
 impl Applied {
+    /// Drop the copy of the user's file text (for the repo's shared kit.lock).
+    pub fn forget_original(&mut self) {
+        if let Self::McpJson { original, .. } | Self::HookJson { original, .. } = self {
+            *original = None;
+        }
+    }
+
     /// One line for the plan screen.
     pub fn describe(&self) -> String {
         match self {
@@ -320,6 +334,7 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
             Applied::McpJson {
                 created: c,
                 previous: p,
+                original: o,
                 ..
             },
             Applied::McpJson {
@@ -327,12 +342,14 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
                 name,
                 created,
                 previous,
+                original,
             },
         ) => Applied::McpJson {
             file,
             name,
             created: created || *c,
             previous: previous.or_else(|| p.clone()),
+            original: o.clone().or(original),
         },
         (
             Applied::McpToml {
@@ -353,18 +370,24 @@ pub fn merge(old: &Applied, new: Applied) -> Applied {
             previous: previous.or_else(|| p.clone()),
         },
         (
-            Applied::HookJson { created: c, .. },
+            Applied::HookJson {
+                created: c,
+                original: o,
+                ..
+            },
             Applied::HookJson {
                 file,
                 event,
                 entry,
                 created,
+                original,
             },
         ) => Applied::HookJson {
             file,
             event,
             entry,
             created: created || *c,
+            original: o.clone().or(original),
         },
         (_, new) => new,
     }
@@ -420,6 +443,10 @@ enum Saved {
 }
 
 fn save(action: &Action) -> Result<Saved> {
+    // Before any copy is made: a rollback copy must not land in git's folder.
+    if let Some(path) = action.path() {
+        guard_git(path)?;
+    }
     Ok(match action {
         Action::Skill { dir, .. } => {
             let copy = if dir.exists() {
@@ -445,6 +472,12 @@ fn save(action: &Action) -> Result<Saved> {
                 .path()
                 .expect("file actions have a path")
                 .to_path_buf();
+            if std::fs::metadata(&path).is_ok_and(|m| !m.is_file()) {
+                bail!(
+                    "{} is not a regular file. Kit will not touch it",
+                    path.display()
+                );
+            }
             let bytes = match std::fs::read(&path) {
                 Ok(b) => Some(b),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -470,6 +503,9 @@ impl Saved {
                 }
             },
             Self::Dir { path, copy } => {
+                if guard_git(path).is_err() {
+                    return;
+                }
                 let _ = std::fs::remove_dir_all(path);
                 match copy {
                     Some(c) => {
@@ -493,16 +529,43 @@ impl Saved {
     }
 }
 
+/// Copy a folder for rollback. Links are copied as links, never read
+/// through, and a pipe, device or socket stops the install untouched.
 fn copy_dir(from: &Path, to: &Path) -> Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
         let (src, dst) = (entry.path(), to.join(entry.file_name()));
-        if entry.file_type()?.is_dir() {
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            copy_link(&src, &dst)?;
+        } else if kind.is_dir() {
             copy_dir(&src, &dst)?;
-        } else {
+        } else if kind.is_file() {
             std::fs::copy(&src, &dst)?;
+        } else {
+            bail!(
+                "{} is not a regular file. Kit will not touch that folder",
+                src.display()
+            );
         }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn copy_link(src: &Path, dst: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(std::fs::read_link(src)?, dst)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn copy_link(src: &Path, dst: &Path) -> Result<()> {
+    let target = std::fs::read_link(src)?;
+    if std::fs::metadata(src).is_ok_and(|m| m.is_dir()) {
+        std::os::windows::fs::symlink_dir(target, dst)?;
+    } else {
+        std::os::windows::fs::symlink_file(target, dst)?;
     }
     Ok(())
 }
@@ -533,6 +596,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
         }
         Action::McpJson { file, name, value } => {
             let created = !file.exists();
+            let original = (!created).then(|| read_or_empty(file)).transpose()?;
             let mut doc = read_json(file)?;
             let servers = object_at(&mut doc, "mcpServers", file)?;
             let existing = servers.get(name).cloned();
@@ -554,6 +618,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                 name: name.clone(),
                 created,
                 previous,
+                original,
             }
         }
         Action::McpToml { file, name, value } => {
@@ -604,6 +669,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
         }
         Action::HookJson { file, event, entry } => {
             let created = !file.exists();
+            let original = (!created).then(|| read_or_empty(file)).transpose()?;
             let mut doc = read_json(file)?;
             let hooks = object_at(&mut doc, "hooks", file)?;
             let list = hooks
@@ -624,6 +690,7 @@ fn apply(action: &Action, force: bool, ours: bool) -> Result<Option<Applied>> {
                 event: event.clone(),
                 entry: entry.clone(),
                 created,
+                original,
             }
         }
         Action::Skip { .. } => return Ok(None),
@@ -638,7 +705,8 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             if !dir.exists() {
                 return Ok(None);
             }
-            if !force && disk_hash(dir)?.as_deref() != Some(hash.as_str()) {
+            guard_git(dir)?;
+            if !force && is_installed(dir, hash)? != Some(true) {
                 // It is the user's now: a later `kit add` must not treat it
                 // as Kit's and overwrite it.
                 let _ = std::fs::remove_file(dir.join(OWNED));
@@ -667,16 +735,17 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             name,
             created,
             previous,
+            original,
         } => {
             if file.exists() {
                 let mut doc = read_json(file)?;
                 if let Some(servers) = doc.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
                     match previous {
                         Some(v) => servers.insert(name.clone(), v.clone()),
-                        None => servers.remove(name),
+                        None => servers.shift_remove(name),
                     };
                 }
-                finish_json(file, &doc, *created, "mcpServers")?;
+                finish_json(file, &doc, *created, "mcpServers", original.as_deref())?;
             }
         }
         Applied::McpToml {
@@ -724,6 +793,7 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
             event,
             entry,
             created,
+            original,
         } => {
             if file.exists() {
                 let mut doc = read_json(file)?;
@@ -732,10 +802,10 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
                 {
                     list.retain(|e| e != entry);
                     if list.is_empty() {
-                        hooks.remove(event);
+                        hooks.shift_remove(event);
                     }
                 }
-                finish_json(file, &doc, *created, "hooks")?;
+                finish_json(file, &doc, *created, "hooks", original.as_deref())?;
             }
         }
     }
@@ -745,10 +815,10 @@ pub fn undo(applied: &Applied, force: bool) -> Result<Option<String>> {
 /// Is what Kit installed still as installed? `None` when it is gone.
 pub fn drifted(applied: &Applied) -> Result<Option<String>> {
     if let Applied::Skill { dir, hash } = applied {
-        return Ok(match disk_hash(dir)? {
+        return Ok(match is_installed(dir, hash)? {
             None => Some(format!("{} is missing", tilde(dir))),
-            Some(h) if &h != hash => Some(format!("{} was changed by hand", tilde(dir))),
-            Some(_) => None,
+            Some(false) => Some(format!("{} was changed by hand", tilde(dir))),
+            Some(true) => None,
         });
     }
     Ok(None)
@@ -761,15 +831,147 @@ pub fn inside(path: &Path, base: &Path) -> bool {
     let Ok(base) = std::fs::canonicalize(base) else {
         return false;
     };
-    // Kit never writes a link itself, so one in the final place is foreign.
+    // A link in the final place counts only when it and the file it leads
+    // to both sit inside `base` (`CLAUDE.md -> AGENTS.md`).
     if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
-        return false;
+        return link_target_within(path, &base).is_some();
     }
-    // The deepest part that exists decides where the rest would land.
-    path.ancestors()
-        .find(|p| p.exists())
-        .and_then(|p| std::fs::canonicalize(p).ok())
-        .is_some_and(|real| real.starts_with(&base))
+    resolved(path).is_some_and(|real| real.starts_with(&base) && !in_git_dir(&real))
+}
+
+/// Where `path` really lands: its deepest existing part with every link
+/// resolved, plus the parts that do not exist yet.
+fn resolved(path: &Path) -> Option<PathBuf> {
+    let existing = path.ancestors().find(|p| p.exists())?;
+    let rest = path.strip_prefix(existing).ok()?;
+    Some(std::fs::canonicalize(existing).ok()?.join(rest))
+}
+
+/// Refuse any write or removal that would land inside git's own folder,
+/// however the path gets there (a link partway down included).
+fn guard_git(path: &Path) -> Result<()> {
+    if resolved(path).is_some_and(|real| in_git_dir(&real)) {
+        bail!(
+            "{} leads into git's own folder. Kit will not write or remove anything there",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+/// Is `real` (resolved) inside a git folder? Only the folders from the
+/// scope's root down to `real` count: each is checked against the repo's
+/// `--git-dir` and `--git-common-dir`, and for being a git store itself
+/// (`HEAD`, `objects`, `refs`), whatever it is named. Folders above the
+/// root do not count, so a worktree inside a bare clone (`proj.git/main`)
+/// still works. A path outside the root (Kit's own `~/.kit`) is checked
+/// against the known git folders only.
+fn in_git_dir(real: &Path) -> bool {
+    let Some((root, known)) = LINK_ROOT
+        .lock()
+        .ok()
+        .and_then(|r| r.as_ref().map(|r| (r.root.clone(), r.git_dirs.clone())))
+    else {
+        return false;
+    };
+    let known_here = |dir: &Path| known.iter().any(|g| same_path(dir, g));
+    let Ok(rest) = real.strip_prefix(&root) else {
+        return real.ancestors().any(known_here);
+    };
+    let store = |dir: &Path| {
+        dir.join("HEAD").is_file() && dir.join("objects").is_dir() && dir.join("refs").is_dir()
+    };
+    let mut dir = root.clone();
+    for part in rest.components() {
+        dir.push(part);
+        if known_here(&dir) || store(&dir) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Paths compare without case on macOS and Windows, whose disks usually
+/// ignore it.
+fn same_path(a: &Path, b: &Path) -> bool {
+    if cfg!(any(target_os = "macos", windows)) {
+        a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+    } else {
+        a == b
+    }
+}
+
+/// The scope Kit writes in, and the git folders inside it that it never
+/// touches.
+struct LinkRules {
+    root: PathBuf,
+    git_dirs: Vec<PathBuf>,
+}
+
+/// Where Kit may follow a link to a file: the repo, or home for `--global`.
+static LINK_ROOT: std::sync::Mutex<Option<LinkRules>> = std::sync::Mutex::new(None);
+
+/// Let writes follow a link when the link and the file it leads to are both
+/// inside `root`. Anything else stays refused.
+pub fn follow_links_within(root: &Path) {
+    let rules = std::fs::canonicalize(root).ok().map(|root| LinkRules {
+        git_dirs: git_dirs(&root),
+        root,
+    });
+    if let Ok(mut r) = LINK_ROOT.lock() {
+        *r = rules;
+    }
+}
+
+/// `git rev-parse --absolute-git-dir --git-common-dir` for `root`, resolved.
+/// Empty when `root` is not in a repo.
+fn git_dirs(root: &Path) -> Vec<PathBuf> {
+    let Ok(out) = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--absolute-git-dir", "--git-common-dir"])
+        .stderr(std::process::Stdio::null())
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|l| std::fs::canonicalize(root.join(l)).ok())
+        .collect()
+}
+
+/// The file a link leads to, when the link and that file are both inside
+/// `root` (already canonical), the file is the same kind as the link's name
+/// (`.md`, `.json` or `.toml`), is not a program, and is not in a git
+/// folder. Links to folders are never followed.
+fn link_target_within(link: &Path, root: &Path) -> Option<PathBuf> {
+    let parent = link.parent().filter(|p| !p.as_os_str().is_empty())?;
+    let parent = std::fs::canonicalize(parent).ok()?;
+    let target = std::fs::canonicalize(link).ok()?;
+    let ext = |p: &Path| p.extension().map(|e| e.to_string_lossy().to_lowercase());
+    let same_kind =
+        matches!(ext(link).as_deref(), Some("md" | "json" | "toml")) && ext(link) == ext(&target);
+    (parent.starts_with(root) && target.starts_with(root) && target.is_file() && same_kind)
+        .then_some(target)
+        .filter(|t| !in_git_dir(t) && !executable(t))
+}
+
+/// A link that leads to a program (a git hook, a script) is never written
+/// through: Kit's text in it would run.
+#[cfg(unix)]
+fn executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn executable(_: &Path) -> bool {
+    false
 }
 
 /// Remove up to `levels` parent folders of `path` while they are empty
@@ -785,6 +987,7 @@ fn prune(path: &Path, levels: usize) {
 // ---- skills -------------------------------------------------------------
 
 fn write_skill(dir: &Path, payload: &SkillPayload, force: bool) -> Result<()> {
+    guard_git(dir)?;
     if dir.exists() {
         let owned = dir.join(OWNED).is_file();
         if !owned && !force {
@@ -795,6 +998,17 @@ fn write_skill(dir: &Path, payload: &SkillPayload, force: bool) -> Result<()> {
         }
         if disk_hash(dir)?.as_deref() == Some(payload.hash.as_str()) {
             return Ok(());
+        }
+        // The marker holds the hash Kit wrote. A folder that no longer
+        // matches it was edited by hand: never replace that silently.
+        if owned && !force {
+            let wrote = std::fs::read_to_string(dir.join(OWNED)).unwrap_or_default();
+            if is_installed(dir, wrote.trim())? != Some(true) {
+                bail!(
+                    "{} was changed by hand since Kit installed it. Copy your changes, or use --force",
+                    tilde(dir)
+                );
+            }
         }
         std::fs::remove_dir_all(dir)?;
     }
@@ -824,18 +1038,80 @@ fn disk_hash(dir: &Path) -> Result<Option<String>> {
     Ok(Some(super::fetch::content_hash(&files)))
 }
 
-fn collect(root: &Path, dir: &Path, out: &mut Vec<super::fetch::SkillFile>) -> Result<()> {
-    for entry in std::fs::read_dir(dir)? {
-        let path = entry?.path();
-        if path.is_dir() {
-            collect(root, &path, out)?;
-        } else if path.file_name().is_some_and(|n| n != OWNED) {
-            out.push(super::fetch::SkillFile {
-                path: path.strip_prefix(root).unwrap_or(&path).to_path_buf(),
-                bytes: std::fs::read(&path)?,
-                executable: false,
-            });
+/// Is the skill folder at `dir` what Kit installed with `hash`? `None` when
+/// it is gone. Git on Windows (`core.autocrlf`) checks a committed skill
+/// out with CRLF line endings; that alone is not an edit.
+fn is_installed(dir: &Path, hash: &str) -> Result<Option<bool>> {
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let mut files = Vec::new();
+    collect(dir, dir, &mut files)?;
+    if super::fetch::content_hash(&files) == hash {
+        return Ok(Some(true));
+    }
+    for f in &mut files {
+        f.bytes = lf_only(&f.bytes);
+    }
+    Ok(Some(super::fetch::content_hash(&files) == hash))
+}
+
+/// `bytes` with every CRLF turned into LF.
+fn lf_only(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for (i, b) in bytes.iter().enumerate() {
+        if !(*b == b'\r' && bytes.get(i + 1) == Some(&b'\n')) {
+            out.push(*b);
         }
+    }
+    out
+}
+
+/// Every entry of a skill folder as hashed. Links are never followed (a
+/// link counts as its target's name), and anything Kit never writes (a
+/// link, an empty folder, a file named like the marker below the top)
+/// shows up as a change. A pipe, device or socket is refused, not read.
+pub(crate) fn collect(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<super::fetch::SkillFile>,
+) -> Result<()> {
+    let rel = |p: &Path| p.strip_prefix(root).unwrap_or(p).to_path_buf();
+    let mut empty = true;
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let (path, kind) = (entry.path(), entry.file_type()?);
+        empty = false;
+        let bytes = if kind.is_dir() {
+            collect(root, &path, out)?;
+            continue;
+        } else if kind.is_symlink() {
+            let mut b = b"\0link\0".to_vec();
+            b.extend(std::fs::read_link(&path)?.to_string_lossy().as_bytes());
+            b
+        } else if kind.is_file() {
+            if dir == root && entry.file_name() == OWNED {
+                continue;
+            }
+            std::fs::read(&path)?
+        } else {
+            bail!(
+                "{} is not a regular file. Kit will not touch that folder",
+                path.display()
+            );
+        };
+        out.push(super::fetch::SkillFile {
+            path: rel(&path),
+            bytes,
+            executable: false,
+        });
+    }
+    if empty && dir != root {
+        out.push(super::fetch::SkillFile {
+            path: rel(dir).join("."),
+            bytes: Vec::new(),
+            executable: false,
+        });
     }
     Ok(())
 }
@@ -907,18 +1183,37 @@ fn write(file: &Path, text: &str) -> Result<()> {
 /// be a link, the data goes to a new temp file opened with `create_new`
 /// (O_EXCL) under a fresh name in the same folder, and it is renamed over
 /// the file only after checking again. A planted link, at the file or at a
-/// guessable temp name, cannot redirect the write elsewhere.
+/// guessable temp name, cannot redirect the write elsewhere. The file keeps
+/// its permissions (a 0600 settings file stays 0600).
 pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
+    write_with_mode(file, bytes, false)
+}
+
+/// As `write_file`, readable by this user only (0600 on Unix): for Kit's
+/// own record, which can hold the text of the user's settings files.
+pub fn write_private(file: &Path, bytes: &[u8]) -> Result<()> {
+    write_with_mode(file, bytes, true)
+}
+
+fn write_with_mode(file: &Path, bytes: &[u8], private: bool) -> Result<()> {
     use std::io::Write as _;
     use std::sync::atomic::{AtomicU64, Ordering};
     static N: AtomicU64 = AtomicU64::new(0);
     let is_link = |p: &Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
     if is_link(file) {
+        let root = LINK_ROOT
+            .lock()
+            .ok()
+            .and_then(|r| r.as_ref().map(|r| r.root.clone()));
+        if let Some(target) = root.and_then(|r| link_target_within(file, &r)) {
+            return write_with_mode(&target, bytes, private);
+        }
         bail!(
-            "{} is a link. Kit will not write through it",
+            "{} is a link Kit will not write through: it leads outside this repo (or home, for --global), to a different kind of file, to a program, or into git's folder",
             file.display()
         );
     }
+    guard_git(file)?;
     let parent = file
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -939,7 +1234,22 @@ pub fn write_file(file: &Path, bytes: &[u8]) -> Result<()> {
             .create_new(true)
             .open(&tmp)?;
         f.write_all(bytes)?;
-        f.sync_all()
+        f.sync_all()?;
+        // Windows has no 0600: a private file keeps the folder's default.
+        #[cfg(not(unix))]
+        let _ = private;
+        #[cfg(unix)]
+        if private {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+            return Ok(());
+        }
+        if let Ok(old) = std::fs::symlink_metadata(file)
+            && old.is_file()
+        {
+            std::fs::set_permissions(&tmp, old.permissions())?;
+        }
+        Ok(())
     })();
     if let Err(e) = written {
         let _ = std::fs::remove_file(&tmp);
@@ -971,12 +1281,55 @@ fn read_json(file: &Path) -> Result<serde_json::Value> {
     })
 }
 
+/// Write `doc` laid out the way the file already is: compact stays
+/// compact, an indent of 4 or a tab is kept, and so are CRLF line ends
+/// and the final newline. Keys keep their order (`preserve_order`).
 fn write_json(file: &Path, doc: &serde_json::Value) -> Result<()> {
-    write(file, &format!("{}\n", serde_json::to_string_pretty(doc)?))
+    write(file, &render_json(doc, &read_or_empty(file)?)?)
 }
 
-/// Write `doc` back, deleting the file if Kit created it and nothing else is left.
-fn finish_json(file: &Path, doc: &serde_json::Value, created: bool, key: &str) -> Result<()> {
+fn render_json(doc: &serde_json::Value, like: &str) -> Result<String> {
+    use serde::Serialize;
+    let body = like.trim_end();
+    let mut text = if body.is_empty() || body.contains('\n') {
+        let indent = body
+            .lines()
+            .skip(1)
+            .map(|l| &l[..l.len() - l.trim_start_matches([' ', '\t']).len()])
+            .find(|w| !w.is_empty())
+            .unwrap_or("  ");
+        let mut out = Vec::new();
+        let fmt = serde_json::ser::PrettyFormatter::with_indent(indent.as_bytes());
+        doc.serialize(&mut serde_json::Serializer::with_formatter(&mut out, fmt))?;
+        String::from_utf8(out)?
+    } else {
+        serde_json::to_string(doc)?
+    };
+    if like.is_empty() || like.ends_with('\n') {
+        text.push('\n');
+    }
+    if like.contains("\r\n") {
+        text = text.replace('\n', "\r\n");
+    }
+    Ok(text)
+}
+
+/// Write `doc` back, deleting the file if Kit created it and nothing else is
+/// left. When what is left is what the file held before Kit, its original
+/// bytes go back exactly.
+fn finish_json(
+    file: &Path,
+    doc: &serde_json::Value,
+    created: bool,
+    key: &str,
+    original: Option<&str>,
+) -> Result<()> {
+    let before = original.and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok());
+    if let (Some(text), Some(v)) = (original, &before)
+        && v == doc
+    {
+        return write(file, text);
+    }
     let mut doc = doc.clone();
     if let Some(obj) = doc.as_object_mut()
         && obj
@@ -984,7 +1337,12 @@ fn finish_json(file: &Path, doc: &serde_json::Value, created: bool, key: &str) -
             .and_then(|v| v.as_object())
             .is_some_and(|o| o.is_empty())
     {
-        obj.remove(key);
+        obj.shift_remove(key);
+    }
+    if let (Some(text), Some(v)) = (original, &before)
+        && *v == doc
+    {
+        return write(file, text);
     }
     if created && doc.as_object().is_some_and(|o| o.is_empty()) {
         std::fs::remove_file(file)?;
@@ -1155,7 +1513,7 @@ mod tests {
         let applied = apply_all(
             &[Action::Skill {
                 dir: dir.clone(),
-                payload: payload("v1"),
+                payload: payload("v1\nline two\n"),
             }],
             false,
             &Default::default(),
@@ -1165,6 +1523,9 @@ mod tests {
         .flatten()
         .collect::<Vec<_>>();
         assert!(dir.join(OWNED).is_file());
+        assert_eq!(drifted(&applied[0]).unwrap(), None);
+        // A Windows checkout (CRLF) of the same skill is not an edit.
+        std::fs::write(dir.join("SKILL.md"), "v1\r\nline two\r\n").unwrap();
         assert_eq!(drifted(&applied[0]).unwrap(), None);
         std::fs::write(dir.join("SKILL.md"), "edited").unwrap();
         assert!(

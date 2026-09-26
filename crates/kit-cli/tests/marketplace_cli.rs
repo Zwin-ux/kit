@@ -172,21 +172,29 @@ fn search_finds_starter_and_index_kits_best_first() {
     assert_eq!(v["data"]["kits"][0]["name"], "tipper");
     assert_eq!(v["data"]["kits"][0]["installed"], false);
 
-    // Offline with no cache: the starter kits still show, the reason goes to
-    // stderr in one plain line, and the exit is 2.
+    // Offline with no cache: the starter kits still show, with one plain
+    // note, and the exit is 0 with and without --json.
     std::fs::remove_dir_all(env.base.join("owner")).unwrap();
     let out = env.ok(&dir, &["search", "design", "--refresh"]);
     assert!(out.contains("could not refresh"), "{out}");
     std::fs::remove_dir_all(env.home.join(".kit/index")).unwrap();
-    let out = env.kit(&dir, &["search", "design"]);
-    assert_eq!(out.status.code(), Some(2), "{}", text(&out.stderr));
-    assert!(text(&out.stdout).contains("frontend-design"));
-    let err = text(&out.stderr);
-    assert!(err.contains("is not published yet"), "{err}");
-    assert!(err.contains("owner/kits"), "names the repo: {err}");
+    let out = env.ok(&dir, &["search", "design"]);
+    assert!(out.contains("frontend-design"), "{out}");
+    assert!(out.contains("is not published yet"), "{out}");
+    assert!(out.contains("owner/kits"), "names the repo: {out}");
     assert!(
-        !err.to_lowercase().contains("fatal"),
-        "no raw git output: {err}"
+        !out.to_lowercase().contains("fatal"),
+        "no raw git output: {out}"
+    );
+    let out = env.ok(&dir, &["search", "design", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["ok"], true);
+    assert!(
+        v["warnings"][0]
+            .as_str()
+            .unwrap()
+            .contains("is not published yet"),
+        "{out}"
     );
 }
 
@@ -438,10 +446,12 @@ fn a_teammates_clone_installs_what_the_repos_kit_lock_proposes() {
     let out = env.kit(&clone, &["sync", "--check"]);
     assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
     assert!(
-        text(&out.stdout).contains("kit tipper 0.3.0"),
+        text(&out.stdout).contains("skill .claude/skills/tip"),
         "{}",
         text(&out.stdout)
     );
+    let out = env.ok(&clone, &["list"]);
+    assert!(out.contains("next      kit sync"), "{out}");
 
     let out = env.kit(&clone, &["sync"]);
     assert!(
@@ -456,4 +466,53 @@ fn a_teammates_clone_installs_what_the_repos_kit_lock_proposes() {
     assert!(env.ok(&clone, &["sync", "--check"]).contains("In sync"));
     // The original checkout is untouched by anything the clone did.
     assert!(repo.join(".claude/skills/tip/SKILL.md").is_file());
+}
+
+#[test]
+fn sync_check_on_a_fresh_ci_runner_reads_the_committed_files() {
+    let env = Env::new("ci");
+    let repo = env.repo();
+    env.ok(&repo, &["add", "tipper", "-a", "claude", "--yes"]);
+    // This team commits the agent files too, so CI can check them.
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "kits"]);
+    let clone = env.root.join("ci-clone");
+    git(
+        &env.root,
+        &["clone", "-q", repo.to_str().unwrap(), "ci-clone"],
+    );
+
+    // A runner with a clean KIT_HOME: no record of this repo.
+    let ci = Env {
+        root: env.root.clone(),
+        home: env.root.join("ci-home"),
+        base: env.base.clone(),
+    };
+    std::fs::create_dir_all(&ci.home).unwrap();
+    let out = ci.ok(&clone, &["sync", "--check"]);
+    assert!(out.contains("In sync"), "{out}");
+    assert!(out.contains("this machine has no Kit record"), "{out}");
+    assert!(
+        !ci.home.join(".kit/repos").exists(),
+        "a check writes no record"
+    );
+
+    let out = ci.ok(&clone, &["sync", "--check", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["data"]["inSync"], true, "{out}");
+
+    // A hand edit to a committed skill is drift: exit 1, and it says which.
+    write(&clone.join(".claude/skills/tip/SKILL.md"), "changed\n");
+    let out = ci.kit(&clone, &["sync", "--check"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stdout).contains("skill .claude/skills/tip differs from kit.lock"),
+        "{}",
+        text(&out.stdout)
+    );
+    assert_eq!(
+        std::fs::read_to_string(clone.join(".claude/skills/tip/SKILL.md")).unwrap(),
+        "changed\n",
+        "--check changes nothing"
+    );
 }

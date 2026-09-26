@@ -103,16 +103,18 @@ fn load_from(file: &Path) -> Result<Lock> {
 fn spec_of(e: &Entry, root: Option<&Path>) -> Result<String> {
     let s = e.pin.as_deref().unwrap_or(&e.source);
     if let Some(rel) = s.strip_prefix("./") {
-        let plain = Path::new(rel)
-            .components()
-            .all(|c| matches!(c, std::path::Component::Normal(_)));
-        let Some(root) = root.filter(|_| plain) else {
+        // No `..` and no link on the way, down to KIT.toml itself.
+        let folder = root.and_then(|r| {
+            inside(r, &Path::new(rel).join("KIT.toml"))?;
+            inside(r, Path::new(rel))
+        });
+        let Some(folder) = folder else {
             bail!(
                 "kit.lock names {} at {s}, which is not a folder in this repo",
                 e.name
             );
         };
-        return Ok(root.join(rel).display().to_string());
+        return Ok(folder.display().to_string());
     }
     if let Some(folder) = s.strip_prefix("folder ") {
         bail!(
@@ -121,6 +123,114 @@ fn spec_of(e: &Entry, root: Option<&Path>) -> Result<String> {
         );
     }
     Ok(s.to_string())
+}
+
+/// `path` from a proposal, under `root`: relative, no `..`, and no link on
+/// the way (a planted link must not make the check read outside the repo).
+fn inside(root: &Path, path: &Path) -> Option<std::path::PathBuf> {
+    let plain = path.components().next().is_some()
+        && path
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+    if !plain {
+        return None;
+    }
+    let mut at = root.to_path_buf();
+    for c in path.components() {
+        at.push(c);
+        if std::fs::symlink_metadata(&at).is_ok_and(|m| m.file_type().is_symlink()) {
+            return None;
+        }
+    }
+    Some(at)
+}
+
+/// `kit sync --check` in a repo this machine has no Kit record for (a
+/// fresh CI runner): the repo's kit.lock against the files committed with
+/// it and against each kit's own `KIT.toml`. Runs nothing and writes
+/// nothing in the repo; a `github:` kit is fetched at its pin into Kit's
+/// cache under ~/.kit, as any install would. Exit 1 on any drift.
+fn check_committed(
+    source: &Lock,
+    requested: &[&Entry],
+    label: &str,
+    root: &Path,
+    json: bool,
+) -> Result<()> {
+    let mut gone: Vec<String> = Vec::new();
+    let mut skills = std::collections::BTreeSet::new();
+    for a in source.applied() {
+        let mut here = a.clone();
+        if let Some(path) = here.path_mut() {
+            let Some(full) = inside(root, path) else {
+                bail!(
+                    "{label} names {}, outside this repo. Kit will not read it",
+                    path.display()
+                );
+            };
+            *path = full;
+        }
+        if let Applied::Skill { dir, .. } = a
+            && let Some(name) = dir.file_name()
+        {
+            skills.insert(name.to_string_lossy().into_owned());
+        }
+        if !present(&here) {
+            gone.push(match (a, &here) {
+                (Applied::Skill { dir, .. }, Applied::Skill { dir: full, .. }) if full.is_dir() => {
+                    format!("skill {} differs from {label}", dir.display())
+                }
+                _ => describe(a),
+            });
+        }
+    }
+    for e in &source.kits {
+        let kit = super::catalog::find(&spec_of(e, Some(root))?)?;
+        let m = &kit.manifest;
+        if m.kit.version != e.version {
+            gone.push(format!(
+                "kit {}: {label} pins {}, the kit is {}",
+                e.name, e.version, m.kit.version
+            ));
+        }
+        for s in m.skill.iter().filter(|s| !skills.contains(&s.name)) {
+            gone.push(format!("skill {} of {} is not in {label}", s.name, e.name));
+        }
+    }
+    let names: Vec<String> = requested
+        .iter()
+        .map(|e| format!("{} {}", e.name, e.version))
+        .collect();
+    let against = format!("{label} and the files in this repo (this machine has no Kit record)");
+    if json {
+        let data = serde_json::json!({
+            "inSync": gone.is_empty(), "kits": names, "missing": gone, "checkedAgainst": against,
+        });
+        let err =
+            (!gone.is_empty()).then(|| format!("{} out of sync", plural(gone.len(), "change")));
+        let env = crate::envelope("sync", gone.is_empty(), data, err, vec![]);
+        println!("{}", serde_json::to_string_pretty(&env)?);
+    } else if gone.is_empty() {
+        println!(
+            "In sync: {label} pins {} and every file it lists is in place.",
+            plural(requested.len(), "kit")
+        );
+        println!("checked   {against}");
+    } else {
+        println!(
+            "Not in sync with {label}: {} missing or changed",
+            gone.len()
+        );
+        for l in &gone {
+            println!("  {l}");
+        }
+        println!("checked   {against}");
+        println!("Fix it: kit sync, then commit what it writes");
+    }
+    if !gone.is_empty() {
+        std::process::exit(1);
+    }
+    Ok(())
 }
 
 pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
@@ -167,6 +277,15 @@ pub fn cmd_sync(args: SyncArgs, json: bool) -> Result<()> {
         Scope::Repo(r) => Some(r.clone()),
         Scope::Global { .. } => super::install::repo_root(Path::new(".")),
     };
+
+    // A fresh CI runner has no record of this repo: check the committed
+    // files against the proposal instead of reporting everything missing.
+    if args.check
+        && let Scope::Repo(root) = &target_scope
+        && !lock::path(&target_scope).exists()
+    {
+        return check_committed(&source, &requested, &label, root, json);
+    }
 
     let mut target = Lock::load(&target_scope)?;
     // Kits proposed but not installed here (or at another version).
@@ -360,6 +479,7 @@ mod tests {
             name: "docs".into(),
             created: true,
             previous: None,
+            original: None,
         };
         std::fs::write(&mcp, r#"{"mcpServers":{"other":{}}}"#).unwrap();
         assert!(!present(&a));
@@ -383,6 +503,7 @@ mod tests {
             event: "PostToolUse".into(),
             entry: entry.clone(),
             created: true,
+            original: None,
         };
         std::fs::write(&settings, r#"{"hooks":{"PostToolUse":[]}}"#).unwrap();
         assert!(!present(&a));
@@ -393,5 +514,41 @@ mod tests {
         .unwrap();
         assert!(present(&a));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_kit_is_never_reached_through_a_link() {
+        let base = std::env::temp_dir().join(format!("kit-sync-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (repo, outside) = (base.join("repo"), base.join("outside"));
+        std::fs::create_dir_all(repo.join("kits/mine")).unwrap();
+        std::fs::create_dir_all(outside.join("mine")).unwrap();
+        std::fs::write(repo.join("kits/mine/KIT.toml"), "").unwrap();
+        std::fs::write(outside.join("mine/KIT.toml"), "").unwrap();
+        let entry = |source: &str| -> Entry {
+            serde_json::from_value(serde_json::json!({
+                "name": "mine", "version": "0.1.0", "source": source,
+                "requested": true, "agents": ["claude"], "applied": [],
+            }))
+            .unwrap()
+        };
+        let ok = spec_of(&entry("./kits/mine"), Some(&repo)).unwrap();
+        assert_eq!(Path::new(&ok), repo.join("kits/mine"));
+        assert!(spec_of(&entry("./../outside/mine"), Some(&repo)).is_err());
+
+        std::os::unix::fs::symlink(&outside, repo.join("linked")).unwrap();
+        assert!(spec_of(&entry("./linked/mine"), Some(&repo)).is_err());
+        std::fs::remove_file(repo.join("kits/mine/KIT.toml")).unwrap();
+        std::os::unix::fs::symlink(
+            outside.join("mine/KIT.toml"),
+            repo.join("kits/mine/KIT.toml"),
+        )
+        .unwrap();
+        assert!(
+            spec_of(&entry("./kits/mine"), Some(&repo)).is_err(),
+            "KIT.toml itself may not be a link"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

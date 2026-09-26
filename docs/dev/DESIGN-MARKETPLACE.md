@@ -97,7 +97,7 @@ Done. This repo matches kit.lock.
 $ kit sync
 In sync: kit.lock pins 1 kit and everything is in place.
 
-$ kit sync --check        # CI: exit 1 when anything is missing (2 = could not run), writes nothing
+$ kit sync --check        # CI: exit 1 when anything is missing (2 = could not run); never writes to the repo
 ```
 
 New machine, global kits: `kit sync --global --from ~/dotfiles/kit.lock`.
@@ -150,7 +150,13 @@ tags    = ["ios", "macos", "design"]
   names, versions, pins and skill hashes from it and installs through the
   same plan and yes as `kit add`; its hooks, checks and paths never enter
   Kit's own record (`~/.kit/repos/<id>/kit.lock`), and `--check` compares
-  the proposal with that record and the files it names.
+  the proposal with that record and the files it names. On a machine
+  with no record for the repo (a fresh CI runner), `--check` instead
+  compares kit.lock with the files committed beside it (skill hashes,
+  rules blocks, MCP and hook entries) and with each kit's own `KIT.toml`;
+  it runs nothing, never writes to the repo, and says which it compared
+  against. It may fetch a kit's pinned `github:` source into Kit's cache
+  under `~/.kit`, the same fetch an install makes.
 - **`kit sync` does not remove kits** that are installed but not in the
   lock. It only adds what is missing; `kit remove` stays the one way to
   take things out.

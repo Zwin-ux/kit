@@ -268,34 +268,14 @@ fn load_github(spec: &GithubSpec, src: &str, refresh: bool, trusted: bool) -> Re
 /// or private repo reads the same to git (it asks for a password), so both
 /// say the index is not published.
 fn plain(err: &anyhow::Error, spec: &GithubSpec, src: &str) -> String {
-    let text = format!("{err:#}").to_lowercase();
     let url = fetch::remote_url(&spec.repo);
-    if [
-        "could not read username",
-        "repository not found",
-        "authentication",
-        "does not appear to be a git repository",
-        "not found",
-        "403",
-    ]
-    .iter()
-    .any(|m| text.contains(m))
-    {
-        return format!("the kit index {src} is not published yet (no public repo at {url})");
+    match remote::failure(err) {
+        remote::Failure::Missing | remote::Failure::Commit => {
+            format!("the kit index {src} is not published yet (no public repo at {url})")
+        }
+        remote::Failure::Network => format!("cannot reach {url} to read the kit index"),
+        remote::Failure::Other => format!("cannot read the kit index {src}"),
     }
-    if [
-        "could not resolve",
-        "timed out",
-        "unable to access",
-        "connection",
-        "network",
-    ]
-    .iter()
-    .any(|m| text.contains(m))
-    {
-        return format!("cannot reach {url} to read the kit index");
-    }
-    format!("cannot read the kit index {src}")
 }
 
 /// Fetch the default branch of the index repo and read `index.toml`.
