@@ -7,6 +7,7 @@ use super::plan::{self, Action, Applied, tilde};
 use super::writers::{self, Agent, Options, Resolved, Scope};
 use crate::cli::{AddArgs, ListKitsArgs, RemoveArgs};
 use anyhow::{Context, Result, bail};
+use kit_tui::ansi::Paint;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::io::{BufRead, IsTerminal, Write as _};
@@ -354,7 +355,7 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
             .iter()
             .any(|k| k.manifest.skill.iter().any(|s| s.source.is_some()))
     {
-        eprintln!("Fetching  pinned skills (cached after the first time)");
+        eprintln!("Fetching pinned skills (cached after the first time)");
     }
     let resolved: Vec<Resolved<'_>> = chosen
         .kits
@@ -395,7 +396,7 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
             .iter()
             .any(|(_, a)| !matches!(a, Action::Skip { .. }));
     if !json {
-        print!("{text}");
+        print!("{}", paint_plan(&text, &Paint::stdout()));
     }
     if let Some(first) = prepared.edited.first()
         && !req.force
@@ -499,32 +500,54 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         .map(|k| k.manifest.kit.title.as_str())
         .collect();
     let who: Vec<&str> = agents.iter().map(|a| a.title()).collect();
+    let paint = Paint::stdout();
     println!(
-        "Done. {} {} {} in {}.",
-        super::setup::and_list(&who),
+        "{}Done. {} {} {} in {}.",
+        if paint.enabled() {
+            format!("{} ", paint.success("✓"))
+        } else {
+            String::new()
+        },
+        paint.bold(&super::setup::and_list(&who)),
         if who.len() == 1 { "has" } else { "have" },
-        super::setup::and_list(&titles),
+        paint.bold(&super::setup::and_list(&titles)),
         scope.label()
     );
     match super::lock::shared_path(scope) {
+        // The record's own path has a hash in it; `kit list` shows it.
         Some(shared) => println!(
-            "Recorded in {}; {} is a copy to commit for your team.",
-            tilde(&super::lock::path(scope)),
-            tilde(&shared)
+            "{}",
+            paint.muted(&format!(
+                "Kit keeps its record in {}; {} is a copy to commit for your team.",
+                tilde(&crate::engine::paths::kit_home()),
+                shared
+                    .file_name()
+                    .map_or_else(|| tilde(&shared), |n| n.to_string_lossy().into_owned())
+            ))
         ),
-        None => println!("Recorded in {}.", tilde(&super::lock::path(scope))),
+        None => println!(
+            "{}",
+            paint.muted(&format!(
+                "Recorded in {}.",
+                tilde(&super::lock::path(scope))
+            ))
+        ),
     }
     let flag = if matches!(scope, Scope::Global { .. }) {
         " --global"
     } else {
         ""
     };
-    println!("check     kit list{flag}");
+    let label = |l: &str| paint.muted(&format!("{l:10}"));
+    println!("{}kit list{flag}", label("check"));
     if matches!(scope, Scope::Repo(_)) {
         // `kit run` works in a fresh worktree of the last commit.
-        println!("commit    these files, so kit run's worktree has them too");
+        println!(
+            "{}these files, so kit run's worktree has them too",
+            label("commit")
+        );
     }
-    println!("undo      kit remove {}{flag}", names.join(" "));
+    println!("{}kit remove {}{flag}", label("undo"), names.join(" "));
     Ok(Outcome::Installed)
 }
 
@@ -624,12 +647,13 @@ fn ask(code: bool) -> Result<Answer> {
             "Kit needs your yes before it writes anything. Run it in a terminal, or add --yes (and --no-code to skip anything that runs code)"
         );
     }
-    let prompt = if code {
-        "Continue? [y/N], or s for skills and rules only (no code): "
+    let paint = Paint::stdout();
+    let options = if code {
+        "[y/N], or s for skills and rules only (no code): "
     } else {
-        "Continue? [y/N] "
+        "[y/N] "
     };
-    print!("{prompt}");
+    print!("{} {}", paint.bold("Continue?"), paint.muted(options));
     std::io::stdout().flush()?;
     let mut line = String::new();
     std::io::stdin().lock().read_line(&mut line)?;
@@ -794,6 +818,61 @@ fn doctor_commands(chosen: &Chosen, p: &Prepared, opts: Options) -> Vec<(String,
                 .map(|c| (k.name().to_string(), c.clone()))
         })
         .collect()
+}
+
+/// The plan as printed to a terminal: kit headers bold, labels and
+/// provenance muted, and everything that runs code in the warning colour.
+/// The words are exactly [`render_plan`]'s; only colour is added.
+fn paint_plan(text: &str, paint: &Paint) -> String {
+    if !paint.enabled() {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len() * 2);
+    let mut after_header = false;
+    for line in text.lines() {
+        let painted = if line.contains("  →  ") {
+            after_header = true;
+            out.push_str(&paint.bold(line));
+            out.push('\n');
+            continue;
+        } else if after_header {
+            after_header = false;
+            paint.muted(line)
+        } else if line.starts_with("Runs code on your machine") {
+            paint.warn(line)
+        } else if let Some(rest) = line.strip_prefix("            ") {
+            // A skill row (name, origin, licence) or a runs/when line.
+            match rest.split_once("  ") {
+                Some((name @ ("runs" | "when"), tail)) => {
+                    format!("            {}", paint.muted(&format!("{name}  {tail}")))
+                }
+                Some((name, tail)) => {
+                    let tail = match tail.strip_suffix("no licence") {
+                        Some(t) => format!("{}{}", paint.muted(t), paint.warn("no licence")),
+                        None => paint.muted(tail),
+                    };
+                    format!("            {name}  {tail}")
+                }
+                None => paint.muted(line),
+            }
+        } else if line.len() > 10
+            && line.as_bytes()[0].is_ascii_lowercase()
+            && line.is_char_boundary(10)
+            && line[..10].ends_with("  ")
+        {
+            let (label, rest) = line.split_at(10);
+            let rest = match rest.strip_suffix("   RUNS CODE") {
+                Some(r) => format!("{r}   {}", paint.warn("RUNS CODE")),
+                None => rest.to_string(),
+            };
+            format!("{}{rest}", paint.muted(label))
+        } else {
+            line.to_string()
+        };
+        out.push_str(&painted);
+        out.push('\n');
+    }
+    out
 }
 
 fn render_plan(

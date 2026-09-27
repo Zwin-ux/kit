@@ -6,12 +6,13 @@
 use super::catalog;
 use super::config::Config;
 use super::install::{self, Outcome, Request, home_dir, repo_root};
+use super::picker::{self, Item, Picker, Tone};
 use super::writers::{Agent, Scope};
 use crate::cli::SetupArgs;
 use anyhow::{Result, bail};
-use inquire::error::InquireError;
 use kit_core::AgentKind;
-use std::io::IsTerminal;
+use kit_tui::ansi::Paint;
+use std::io::{IsTerminal, Write};
 use std::path::Path;
 
 fn kind(agent: Agent) -> AgentKind {
@@ -19,15 +20,6 @@ fn kind(agent: Agent) -> AgentKind {
         Agent::Claude => AgentKind::Claude,
         Agent::Codex => AgentKind::Codex,
         Agent::Grok => AgentKind::Grok,
-    }
-}
-
-/// Ctrl-C or Esc on any screen: say so, change nothing.
-fn answered<T>(r: Result<T, InquireError>) -> Result<Option<T>> {
-    match r {
-        Ok(v) => Ok(Some(v)),
-        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => Ok(None),
-        Err(e) => Err(e.into()),
     }
 }
 
@@ -52,9 +44,20 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
     }
 
     // Screen 1: welcome and detection.
+    let paint = Paint::stdout();
     if !json {
+        println!(
+            "{}  {}",
+            paint.title("kit"),
+            paint.muted(env!("CARGO_PKG_VERSION"))
+        );
         println!("Kit sets your coding agents up for one job, then proves what they do.\n");
-        println!("Looking for agents on this machine…");
+        if tty {
+            print!("{}", paint.muted("Looking for agents on this machine…"));
+            let _ = std::io::stdout().flush();
+        } else {
+            println!("Looking for agents on this machine…");
+        }
     }
     let mut found = Vec::new();
     let mut rows = Vec::new();
@@ -73,14 +76,22 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
             };
             (short_version(st.version.as_deref()).to_string(), login)
         } else {
-            ("not found".to_string(), "")
+            ("not installed".to_string(), "")
         };
         rows.push((agent, version, login));
         if st.installed {
             found.push(agent);
         }
     }
-    if !json {
+    let asking_agents = args.agent.is_empty() && !found.is_empty();
+    if tty && !json {
+        // The picker shows what was found; clear the "Looking…" line.
+        print!("\r\x1b[K");
+    }
+    if !json && !asking_agents {
+        if tty {
+            println!();
+        }
         // Versions differ in length ("2.1.283", "codex-cli 0.155.0"): pad
         // them so the login column lines up.
         let width = rows
@@ -90,11 +101,13 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
             .max()
             .unwrap_or(0);
         for (agent, version, login) in &rows {
-            let line = format!("  {:12}  {version:width$}   {login}", agent.title());
+            let line = format!(
+                "  {}{:12}  {version:width$}   {login}",
+                paint.mark(kind(*agent)),
+                agent.title()
+            );
             println!("{}", line.trim_end());
         }
-    }
-    if !json {
         println!();
     }
 
@@ -112,16 +125,20 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         } else {
             saved.agents()
         };
-        let labels: Vec<String> = Agent::ALL
+        let items: Vec<Item> = rows
             .iter()
-            .map(|a| {
-                if found.contains(a) {
-                    a.title().to_string()
+            .map(|(agent, version, login)| {
+                let item = Item::new(agent.title()).agent(kind(*agent));
+                if found.contains(agent) {
+                    let tone = match *login {
+                        "logged in" => Tone::Good,
+                        "not logged in" => Tone::Warn,
+                        _ => Tone::Muted,
+                    };
+                    item.detail(version.clone()).note(*login, tone)
                 } else {
-                    format!(
-                        "{:12} not installed (Kit can still write its files)",
-                        a.title()
-                    )
+                    item.detail("not installed")
+                        .note("Kit can still write its files", Tone::Muted)
                 }
             })
             .collect();
@@ -131,29 +148,13 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
             .filter(|(_, a)| preselect.contains(a))
             .map(|(i, _)| i)
             .collect();
-        let names = |opts: &[inquire::list_option::ListOption<&String>]| {
-            let titles: Vec<&str> = opts.iter().map(|o| Agent::ALL[o.index].title()).collect();
-            and_list(&titles)
-        };
-        let picked = answered(
-            inquire::MultiSelect::new("Which agents should Kit set up?", labels.clone())
-                .with_default(&defaults)
-                .with_formatter(&names)
-                .with_help_message("↑↓ move · space toggle · enter confirm · esc cancel")
-                .with_validator(|l: &[inquire::list_option::ListOption<&String>]| {
-                    Ok(if l.is_empty() {
-                        inquire::validator::Validation::Invalid("Pick at least one".into())
-                    } else {
-                        inquire::validator::Validation::Valid
-                    })
-                })
-                .raw_prompt(),
-        )?;
-        let Some(picked) = picked else {
+        let picker =
+            Picker::new("Which agents should Kit set up?", "Agents", items, true).select(&defaults);
+        let Some(picked) = picker::run(picker)? else {
             println!("Nothing was changed.");
             return Ok(());
         };
-        picked.iter().map(|o| Agent::ALL[o.index]).collect()
+        picked.iter().map(|&i| Agent::ALL[i]).collect()
     } else {
         args.agent.clone()
     };
@@ -175,19 +176,9 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         };
         let mut order: Vec<&catalog::Kit> = all.iter().collect();
         order.sort_by_key(|k| (rank(k), k.name().to_string()));
-        let width = order
+        let items: Vec<Item> = order
             .iter()
-            .map(|k| k.manifest.kit.title.len())
-            .max()
-            .unwrap_or(0);
-        let labels: Vec<String> = order
-            .iter()
-            .map(|k| {
-                format!(
-                    "{:width$}   {}",
-                    k.manifest.kit.title, k.manifest.kit.description
-                )
-            })
+            .map(|k| Item::new(&k.manifest.kit.title).detail(&k.manifest.kit.description))
             .collect();
         // What was picked last time, or the first kit on a first run.
         let mut defaults: Vec<usize> = order
@@ -199,36 +190,16 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         if defaults.is_empty() {
             defaults.push(0);
         }
-        let titles: Vec<&str> = order
-            .iter()
-            .map(|k| k.manifest.kit.title.as_str())
-            .collect();
-        let names = |opts: &[inquire::list_option::ListOption<&String>]| {
-            let picked: Vec<&str> = opts.iter().map(|o| titles[o.index]).collect();
-            and_list(&picked)
-        };
-        let picked = answered(
-            inquire::MultiSelect::new("What should your agents focus on?", labels)
-                .with_default(&defaults)
-                .with_formatter(&names)
-                .with_page_size(8)
-                .with_help_message("↑↓ move · space toggle · enter confirm · esc cancel · kit show <kit> for details")
-                .with_validator(|l: &[inquire::list_option::ListOption<&String>]| {
-                    Ok(if l.is_empty() {
-                        inquire::validator::Validation::Invalid("Pick at least one".into())
-                    } else {
-                        inquire::validator::Validation::Valid
-                    })
-                })
-                .raw_prompt(),
-        )?;
-        let Some(picked) = picked else {
+        let picker = Picker::new("What should your agents focus on?", "Focus", items, true)
+            .select(&defaults)
+            .hint("kit show <kit> for details");
+        let Some(picked) = picker::run(picker)? else {
             println!("Nothing was changed.");
             return Ok(());
         };
         picked
             .iter()
-            .map(|o| order[o.index].name().to_string())
+            .map(|&i| order[i].name().to_string())
             .collect()
     } else {
         args.kit.clone()
@@ -243,39 +214,32 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
             None => bail!("--this-repo needs a git repo. cd into one, or use --global"),
         }
     } else if let Some(root) = &in_repo {
-        let repo_label = format!(
-            "This repo only   {}   commit it to share with your team",
-            short_path(&install::display_root(root))
-        );
-        let options = vec![
-            "All my projects   your agents use it everywhere".to_string(),
-            repo_label,
+        let items = vec![
+            Item::new("All my projects").detail("your agents use it everywhere"),
+            Item::new("This repo only")
+                .detail(format!(
+                    "{} · commit it to share with your team",
+                    short_path(&install::display_root(root))
+                ))
+                .answer(format!("This repo only ({})", repo_name(root))),
         ];
         let start = usize::from(saved.scope.as_deref() == Some("repo"));
-        let picked = answered(
-            inquire::Select::new("Install for", options)
-                .with_starting_cursor(start)
-                .with_help_message("↑↓ move · enter confirm · esc cancel")
-                .with_formatter(&|o| {
-                    if o.index == 0 {
-                        "All my projects".into()
-                    } else {
-                        "This repo only".into()
-                    }
-                })
-                .raw_prompt(),
-        )?;
-        match picked {
+        let picker = Picker::new("Where should Kit install it?", "Install for", items, false)
+            .select(&[start]);
+        match picker::run(picker)? {
             None => {
                 println!("Nothing was changed.");
                 return Ok(());
             }
-            Some(o) if o.index == 1 => Scope::Repo(root.clone()),
+            Some(p) if p == [1] => Scope::Repo(root.clone()),
             Some(_) => Scope::Global { home: home_dir()? },
         }
     } else {
         Scope::Global { home: home_dir()? }
     };
+    if tty && !json {
+        println!();
+    }
 
     // Screens 5 and 6: the plan, confirm, install.
     let req = Request {
@@ -304,36 +268,66 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         return Ok(());
     }
     println!(
-        "Saved your choices to {}.",
-        super::plan::tilde(&super::config::path())
+        "{}",
+        paint.muted(&format!(
+            "Saved your choices to {}.",
+            super::plan::tilde(&super::config::path())
+        ))
     );
     let not_now: Vec<&String> = saved.kits.iter().filter(|k| !kits.contains(k)).collect();
     for k in not_now {
-        println!("still installed   {k} (kit remove {k} to remove it)");
+        println!(
+            "{}{k}  {}",
+            paint.muted(&format!("{:10}", "still")),
+            paint.muted(&format!("installed; kit remove {k} removes it"))
+        );
     }
     if let Some(example) = kits
         .iter()
         .filter_map(|k| catalog::find(k).ok())
         .find_map(|k| k.manifest.kit.example)
     {
+        // The same label column as `kit add`'s check/undo lines.
+        let step = |label: &str, cmd: &str, why: &str| {
+            let why = if why.is_empty() {
+                String::new()
+            } else {
+                format!("   {}", paint.muted(why))
+            };
+            println!(
+                "{}{}{why}",
+                paint.muted(&format!("{label:10}")),
+                paint.bold(cmd)
+            );
+        };
         println!();
-        println!("Try it:");
+        let mut label = "try";
         if let Some(first) = agents.iter().find(|a| found.contains(a)) {
-            println!("  {} \"{example}\"", first.id());
+            step(label, &format!("{} \"{example}\"", first.id()), "");
+            label = "then";
         }
         match &scope {
             Scope::Repo(root) if !root.join("kit.toml").exists() => {
-                println!("  kit init   (the checks that prove a run; kit run needs them)");
-                println!("  kit run \"{example}\"   (in its own worktree)");
+                step(label, "kit init", "writes the checks that prove a run");
+                step(
+                    "then",
+                    &format!("kit run \"{example}\""),
+                    "runs it in its own worktree",
+                );
             }
-            _ => println!("  kit run \"{example}\"   (in its own worktree, proven by your checks)"),
+            _ => step(
+                label,
+                &format!("kit run \"{example}\""),
+                "runs it in its own worktree, proven by your checks",
+            ),
         }
+        step("later", "kit", "opens the Control Room to watch your runs");
     }
     if tty {
         // The fox, resting, signs off after the last step. Terminals only.
         println!();
         for line in kit_tui::fox::lines(0) {
-            println!("  {}", line.trim_end());
+            println!("  {}", paint.muted(line.trim_end()));
         }
     }
     Ok(())
@@ -363,6 +357,14 @@ fn short_version(v: Option<&str>) -> &str {
         Some(v) => v.split(" (").next().unwrap_or(v).trim(),
         None => "installed",
     }
+}
+
+/// The repo's folder name, as `kit add` names it (`this repo (shop)`).
+fn repo_name(root: &Path) -> String {
+    root.file_name().map_or_else(
+        || root.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
 }
 
 /// "A", "A and B", "A, B and C".

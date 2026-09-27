@@ -76,21 +76,46 @@ pub fn draw(frame: &mut Frame, app: &App) {
         app.dispatch.list_cursor,
         &theme,
     );
+    // Ids padded to the longest, so readiness words form a column.
+    let id_w = app
+        .dispatch
+        .agents
+        .iter()
+        .map(|(id, _)| id.chars().count())
+        .max()
+        .unwrap_or(0);
     let agent_items: Vec<(String, bool, bool)> = app
         .dispatch
         .agents
         .iter()
-        .map(|(id, on)| match app.agent_blocked(id) {
-            // Refused before the run starts, in the words `kit doctor` uses.
-            Some(why) => (format!("{id}  {why}"), *on, true),
-            None => (agent_display_label(id, &app.agents_probe), *on, false),
+        .map(|(id, on)| {
+            let label = match crate::brand::by_id(id) {
+                Some(b) => format!("{} {id:id_w$}", b.mark),
+                None => format!("   {id:id_w$}"),
+            };
+            match app.agent_blocked(id) {
+                // Refused before the run starts, in the words `kit doctor` uses.
+                Some(why) => (format!("{label}  {why}"), *on, true),
+                None => (
+                    agent_display_label(&label, id, &app.agents_probe),
+                    *on,
+                    false,
+                ),
+            }
         })
         .collect();
-    draw_toggle_list(
+    let marks: Vec<Option<&'static crate::brand::Brand>> = app
+        .dispatch
+        .agents
+        .iter()
+        .map(|(id, _)| crate::brand::by_id(id))
+        .collect();
+    draw_toggle_list_marked(
         frame,
         body[1],
         " agents (space) ",
         &agent_items,
+        &marks,
         app.dispatch.focus == DispatchFocus::Agents,
         app.dispatch.list_cursor,
         &theme,
@@ -166,9 +191,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
 }
 
 /// Annotate readiness when a probe is present. Stored agent ids stay bare.
-fn agent_display_label(id: &str, probe: &[(String, bool)]) -> String {
+fn agent_display_label(label: &str, id: &str, probe: &[(String, bool)]) -> String {
     if probe.is_empty() {
-        return id.to_string();
+        return label.trim_end().to_string();
     }
     let ready = probe
         .iter()
@@ -176,9 +201,9 @@ fn agent_display_label(id: &str, probe: &[(String, bool)]) -> String {
         .map(|(_, ok)| *ok)
         .unwrap_or(false);
     if ready {
-        format!("{id}  ready")
+        format!("{label}  ready")
     } else {
-        format!("{id}  missing")
+        format!("{label}  missing")
     }
 }
 
@@ -187,6 +212,22 @@ fn draw_toggle_list(
     area: Rect,
     title: &str,
     items: &[(String, bool, bool)],
+    focused: bool,
+    cursor: usize,
+    theme: &Theme,
+) {
+    draw_toggle_list_marked(frame, area, title, items, &[], focused, cursor, theme);
+}
+
+/// A toggle list whose labels may start with an agent's two-cell mark,
+/// painted in the agent's colour.
+#[allow(clippy::too_many_arguments)]
+fn draw_toggle_list_marked(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    items: &[(String, bool, bool)],
+    marks: &[Option<&'static crate::brand::Brand>],
     focused: bool,
     cursor: usize,
     theme: &Theme,
@@ -209,7 +250,19 @@ fn draw_toggle_list(
             } else {
                 theme.dim()
             };
-            ListItem::new(Line::from(Span::styled(line, style)))
+            let head = format!("{caret}{mark} ");
+            match marks.get(i).copied().flatten() {
+                Some(b) if line.starts_with(&format!("{head}{}", b.mark)) => {
+                    let rest: String = line.chars().skip(head.chars().count() + 2).collect();
+                    // `rest` starts with the space after the mark.
+                    ListItem::new(Line::from(vec![
+                        Span::styled(head, style),
+                        Span::styled(b.mark, style.patch(b.style(theme))),
+                        Span::styled(rest, style),
+                    ]))
+                }
+                _ => ListItem::new(Line::from(Span::styled(line, style))),
+            }
         })
         .collect();
 

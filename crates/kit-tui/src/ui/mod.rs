@@ -814,12 +814,15 @@ mod tests {
         app.set_agents_probe(vec![("claude".into(), true), ("grok".into(), true)]);
         app.screen = Screen::Dispatch;
         let frame = render_to_string(&app, 120, 16);
-        assert!(frame.contains("[ ] grok  needs KIT_FULL_AUTO"), "{frame}");
+        assert!(
+            frame.contains("[ ] ⊘  grok    needs KIT_FULL_AUTO"),
+            "{frame}"
+        );
         let frame = render_to_string(&app, 80, 16);
-        assert!(frame.contains("[ ] grok  needs"), "{frame}");
+        assert!(frame.contains("[ ] ⊘  grok    needs"), "{frame}");
         app.full_auto = true;
         let frame = render_to_string(&app, 120, 16);
-        assert!(frame.contains("grok  ready"), "{frame}");
+        assert!(frame.contains("⊘  grok    ready"), "{frame}");
     }
 
     /// A filter that hides every run says so, instead of an empty table.
@@ -1162,11 +1165,11 @@ mod tests {
         app.screen = Screen::Dispatch;
         let frame = render_to_string(&app, 80, 16);
         assert!(
-            frame.contains("claude  ready") && frame.contains("codex  missing"),
+            frame.contains("✻  claude  ready") && frame.contains(">_ codex   missing"),
             "probe must annotate agents without rewriting ids: {frame}"
         );
         assert!(
-            !frame.contains("claude  ready") || frame.contains("[x] claude  ready"),
+            !frame.contains("claude  ready") || frame.contains("[x] ✻  claude  ready"),
             "first ready agent is selected: {frame}"
         );
         insta::assert_snapshot!(frame);

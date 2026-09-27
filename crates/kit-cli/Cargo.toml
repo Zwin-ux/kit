@@ -30,7 +30,7 @@ serde_json = { workspace = true, features = ["preserve_order"] }
 tokio = { workspace = true, features = ["signal"] }
 toml.workspace = true
 toml_edit.workspace = true
-inquire.workspace = true
+crossterm.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true

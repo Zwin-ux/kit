@@ -437,8 +437,25 @@ fn data_line(
     } else {
         spans.push(Span::styled(repo_cell, base));
     }
+    // The agent's mark in its brand colour, then its name.
+    spans.push(Span::styled(" ", base));
+    // Narrow tables keep the name and drop the mark.
+    match crate::brand::by_id(&run.agent).filter(|_| widths[1] >= 13) {
+        Some(b) => {
+            let mark_style = if run.past {
+                base
+            } else {
+                base.patch(b.style(theme))
+            };
+            spans.push(Span::styled(b.mark, mark_style));
+            spans.push(Span::styled(
+                format!(" {}", pad_cell(&run.agent_cell(), widths[1] - 3)),
+                base,
+            ));
+        }
+        None => spans.push(Span::styled(pad_cell(&run.agent_cell(), widths[1]), base)),
+    }
     let parts = [
-        (pad_cell(&run.agent_cell(), widths[1]), base),
         (pad_cell(run.task_line(), widths[2]), base),
         (pad_cell(&state_label, widths[3]), state_style),
         (pad_cell(&gate_label, widths[4]), gate_style),
