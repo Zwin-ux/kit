@@ -168,6 +168,13 @@ impl Paint {
                 Style::default().fg(t.ansi.0).bg(t.ansi.1)
             }
             .add_modifier(Modifier::BOLD);
+            // Some terminals (kitty) draw `_` in the cell's last pixel row,
+            // where the next row's tile covers it. An underlined space
+            // draws the same stroke inside the cell.
+            let (ch, style) = match ch {
+                '_' => (' ', style.add_modifier(Modifier::UNDERLINED)),
+                c => (c, style),
+            };
             out.push_str(&format!("\x1b[{}m{ch}", sgr(style)));
         }
         out.push_str("\x1b[0m");
@@ -627,6 +634,19 @@ mod tests {
         );
         // Two colours in one cell use the upper half block on a background.
         assert!(Paint::with(Theme::kit()).fox_head()[3].contains("48;2;"));
+    }
+
+    #[test]
+    fn the_codex_underscore_is_drawn_inside_its_cell() {
+        let t = Paint::with(Theme::kit()).tile(AgentKind::Codex);
+        assert!(!t.contains('_'), "{t:?}");
+        assert!(t.contains(";4;") || t.contains("[1;4;"), "{t:?}");
+        // No colour: no background below it to cover the glyph.
+        assert!(
+            Paint::with(Theme::monochrome())
+                .tile(AgentKind::Codex)
+                .contains(">_")
+        );
     }
 
     #[test]
