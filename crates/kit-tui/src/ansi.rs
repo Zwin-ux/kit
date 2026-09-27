@@ -243,6 +243,7 @@ fn luminance((r, g, b): (f32, f32, f32)) -> f32 {
 }
 
 /// `rgb:RRRR/GGGG/BBBB` (1 to 4 hex digits each) from an OSC 11 reply.
+#[cfg_attr(not(unix), allow(dead_code))]
 fn parse_osc11(reply: &str) -> Option<(f32, f32, f32)> {
     let rest = &reply[reply.find("rgb:")? + 4..];
     let mut parts = rest.split('/').map(|p| {
