@@ -1,11 +1,14 @@
+<p align="center"><img src="docs/assets/kit-fox.svg" width="112" alt="Kit's fox" /></p>
+
 <p align="center">
   <strong>Kit sets your coding agents up for one job, then proves what they do.</strong><br />
   Kits for Claude Code, Codex and Grok: skills, rules, MCP servers and hooks, installed in one step and removed exactly.
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/@mzwin/kit"><img src="https://img.shields.io/npm/v/@mzwin/kit?style=for-the-badge&label=npm&color=FF5A1F" alt="npm version" /></a>
+  <a href="https://github.com/Zwin-ux/kit/releases/latest"><img src="https://img.shields.io/github/v/release/Zwin-ux/kit?style=for-the-badge&label=release&color=1a1a1a" alt="latest release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1a1a1a?style=for-the-badge" alt="MIT" /></a>
-  <img src="https://img.shields.io/badge/status-2.0-00E6CC?style=for-the-badge" alt="2.0" />
 </p>
 
 A **kit** is everything an agent needs for one kind of work. Frontend Design
@@ -13,6 +16,14 @@ brings skills for UI, accessibility and Core Web Vitals, the Chrome DevTools
 MCP server so the agent can look at the page, and a hook that formats each
 file it edits. Kit writes each piece in the format your agent reads, shows you
 every file first, and can take it all out again.
+
+Then, when the agent works, Kit can hold it to your repo's own checks: each
+run gets its own worktree, and it passes only if your tests, lints and builds do.
+
+```bash
+npm install -g @mzwin/kit
+kit
+```
 
 <p align="center"><img src="docs/media/setup.gif" width="880" alt="kit setup: the fox banner, then one picker each for agents, focus and where to install, each folding into a single line; every file and skill with its pinned source and licence; yes; and the fox signing off" /></p>
 
@@ -98,6 +109,7 @@ runtime through the [sosumi](https://github.com/NSHipster/sosumi.ai) MCP server,
 
 ```bash
 kit show                              # the kits
+kit search ios                        # the starter kits and the public index
 kit show frontend-design              # what it installs, before anything is written
 kit add                               # pick kits from a list
 kit add frontend-design --global      # all your projects
@@ -105,6 +117,7 @@ kit add llm-engineer --agent codex    # this repo only, Codex only
 kit add backend-engineer --print      # the plan, nothing written
 kit list                              # what is installed, and anything changed by hand
 kit remove frontend-design --global   # exactly what was added, nothing else
+kit sync                              # a teammate gets what this repo's kit.lock lists
 kit doctor                            # agents found, and each kit's checks
 kit doctor --start-mcp                # also start each kit's MCP servers once
 ```
@@ -126,8 +139,9 @@ Essentials, which both extend, installs once and stays until neither needs it.
 `--global` writes the home-directory column. Without it, Kit installs into the
 git repo you are in. Kit keeps its record of what it installed in `~/.kit`, and
 writes a copy to `kit.lock` in the repo for your team to commit. Kit never acts
-on that copy: a repo you clone cannot choose what Kit runs or deletes. `kit list`
-names any kit it lists that you have not installed.
+on that copy by itself: a repo you clone cannot choose what Kit runs or deletes.
+`kit sync` offers what it lists through the same plan and yes as `kit add`, and
+`kit list` names any kit it lists that you have not installed.
 
 `kit run` works in a clean checkout of your last commit, so the agent sees only
 committed files. Commit the repo-scope files `kit add` wrote before `kit run` if
@@ -201,13 +215,16 @@ mcp_starts = ["chrome-devtools"]        # with --start-mcp only
 ```
 
 ```bash
+kit new my-kit --extends essentials       # the folder and a KIT.toml to fill in
 kit show ./my-kit
 kit add ./my-kit --global
+kit add github:you/your-kits              # someone else's, at a pinned commit
 ```
 
-A kit from a folder is labelled `Direct source, not reviewed by Kit` above its
-plan. The design, including the public index of kits that comes next, is in
-[`docs/dev/DESIGN-KITS.md`](docs/dev/DESIGN-KITS.md).
+A kit from a folder or from GitHub is labelled `Direct source, not reviewed by
+Kit` above its plan. Kits in the public index,
+[Zwin-ux/kits](https://github.com/Zwin-ux/kits), are reviewed when they are
+listed, and `kit search` reads it. The design is in [`docs/dev/DESIGN-KITS.md`](docs/dev/DESIGN-KITS.md).
 
 ---
 

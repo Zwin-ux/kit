@@ -88,8 +88,8 @@ function stageLauncher(outRoot, version) {
   writeJson(path.join(dir, "package.json"), {
     name: "@mzwin/kit",
     ...common(version),
-    description: "Dispatch many coding agents. Watch them in one place. Nothing ships unproven.",
-    keywords: ["agents", "codex", "claude", "ollama", "worktree", "cli", "tui", "ci", "gate"],
+    description: "Kit sets your coding agents up for one job, then proves what they do. Kits of skills, rules, MCP servers and hooks for Claude Code, Codex and Grok.",
+    keywords: ["claude-code", "codex", "grok", "agent-skills", "mcp", "hooks", "coding-agents", "worktree", "cli", "tui"],
     bin: { kit: "bin/kit.js" },
     files: ["bin/", "platforms.json", "LICENSE", "README.md"],
     engines: { node: ">=18" },
