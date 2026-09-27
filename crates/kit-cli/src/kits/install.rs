@@ -302,10 +302,36 @@ pub enum Outcome {
 }
 
 pub fn cmd_add(args: AddArgs, json: bool) -> Result<()> {
+    let scope = scope(args.global)?;
+    let agents = agents(&args.agent)?;
+    let kits = if args.kits.is_empty() {
+        // Bare `kit add` in a terminal: the same list as setup, with what
+        // this scope already has marked installed.
+        let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+        if !tty || json || args.print {
+            bail!(
+                "kit add needs a kit name, for example kit add frontend-design. See them all with kit show"
+            );
+        }
+        let have: Vec<String> = Lock::load(&scope)?
+            .kits
+            .iter()
+            .map(|k| k.name.clone())
+            .collect();
+        match super::setup::pick_kits("Which kits should Kit add?", "Kits", &[], &have)? {
+            Some(kits) => kits,
+            None => {
+                println!("Nothing was changed.");
+                return Ok(());
+            }
+        }
+    } else {
+        args.kits
+    };
     let req = Request {
-        scope: scope(args.global)?,
-        agents: agents(&args.agent)?,
-        kits: args.kits,
+        scope,
+        agents,
+        kits,
         no_code: args.no_code,
         yes: args.yes,
         print: args.print,

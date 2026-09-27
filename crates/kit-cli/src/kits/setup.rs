@@ -46,12 +46,7 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
     // Screen 1: welcome and detection.
     let paint = Paint::stdout();
     if !json {
-        println!(
-            "{}  {}",
-            paint.title("kit"),
-            paint.muted(env!("CARGO_PKG_VERSION"))
-        );
-        println!("Kit sets your coding agents up for one job, then proves what they do.\n");
+        banner(&paint, tty);
         if tty {
             print!("{}", paint.muted("Looking for agents on this machine…"));
             let _ = std::io::stdout().flush();
@@ -161,46 +156,17 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
 
     // Screen 3: focus.
     let kits: Vec<String> = if args.kit.is_empty() {
-        let all = catalog::bundled()?;
-        // Job kits first, in the order people most often start with;
-        // Essentials (the base of the others) last.
-        const FIRST: &[&str] = &[
-            "frontend-design",
-            "fullstack-design",
-            "backend-engineer",
-            "llm-engineer",
-        ];
-        let rank = |k: &&catalog::Kit| match k.name() {
-            "essentials" => FIRST.len() + 1,
-            name => FIRST.iter().position(|f| *f == name).unwrap_or(FIRST.len()),
-        };
-        let mut order: Vec<&catalog::Kit> = all.iter().collect();
-        order.sort_by_key(|k| (rank(k), k.name().to_string()));
-        let items: Vec<Item> = order
-            .iter()
-            .map(|k| Item::new(&k.manifest.kit.title).detail(&k.manifest.kit.description))
-            .collect();
-        // What was picked last time, or the first kit on a first run.
-        let mut defaults: Vec<usize> = order
-            .iter()
-            .enumerate()
-            .filter(|(_, k)| saved.kits.iter().any(|s| s == k.name()))
-            .map(|(i, _)| i)
-            .collect();
-        if defaults.is_empty() {
-            defaults.push(0);
-        }
-        let picker = Picker::new("What should your agents focus on?", "Focus", items, true)
-            .select(&defaults)
-            .hint("kit show <kit> for details");
-        let Some(picked) = picker::run(picker)? else {
+        let Some(picked) = pick_kits(
+            "What should your agents focus on?",
+            "Focus",
+            &saved.kits,
+            &[],
+        )?
+        else {
             println!("Nothing was changed.");
             return Ok(());
         };
         picked
-            .iter()
-            .map(|&i| order[i].name().to_string())
-            .collect()
     } else {
         args.kit.clone()
     };
@@ -321,16 +287,126 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
                 "runs it in its own worktree, proven by your checks",
             ),
         }
-        step("later", "kit", "opens the Control Room to watch your runs");
     }
-    if tty {
-        // The fox, resting, signs off after the last step. Terminals only.
+    if tty && paint.enabled() {
+        // The fox signs off after the last step, with what bare `kit` does
+        // from now on. Terminals only.
+        sign_off(&paint);
+    } else if tty {
         println!();
-        for line in kit_tui::fox::lines(0) {
-            println!("  {}", paint.muted(line.trim_end()));
-        }
+        println!("From now on, kit opens the Control Room, where you watch your runs.");
     }
     Ok(())
+}
+
+/// Ask which kits, from the bundled catalogue: job kits first, Essentials
+/// last, with `selected` (or the first kit) ticked. `None` when cancelled.
+pub fn pick_kits(
+    question: &str,
+    summary: &str,
+    selected: &[String],
+    installed: &[String],
+) -> Result<Option<Vec<String>>> {
+    let all = catalog::bundled()?;
+    // Job kits first, in the order people most often start with;
+    // Essentials (the base of the others) last.
+    const FIRST: &[&str] = &[
+        "frontend-design",
+        "fullstack-design",
+        "backend-engineer",
+        "llm-engineer",
+    ];
+    let rank = |k: &&catalog::Kit| match k.name() {
+        "essentials" => FIRST.len() + 1,
+        name => FIRST.iter().position(|f| *f == name).unwrap_or(FIRST.len()),
+    };
+    let mut order: Vec<&catalog::Kit> = all.iter().collect();
+    order.sort_by_key(|k| (rank(k), k.name().to_string()));
+    let items: Vec<Item> = order
+        .iter()
+        .map(|k| {
+            let d = &k.manifest.kit.description;
+            Item::new(&k.manifest.kit.title).detail(if installed.iter().any(|i| i == k.name()) {
+                format!("installed · {d}")
+            } else {
+                d.clone()
+            })
+        })
+        .collect();
+    let mut defaults: Vec<usize> = order
+        .iter()
+        .enumerate()
+        .filter(|(_, k)| selected.iter().any(|s| s == k.name()))
+        .map(|(i, _)| i)
+        .collect();
+    if defaults.is_empty() {
+        // The first kit not yet installed.
+        let first = order
+            .iter()
+            .position(|k| !installed.iter().any(|i| i == k.name()))
+            .unwrap_or(0);
+        defaults.push(first);
+    }
+    let picker = Picker::new(question, summary, items, true)
+        .select(&defaults)
+        .hint("kit show <kit> for details");
+    Ok(picker::run(picker)?.map(|picked| {
+        picked
+            .iter()
+            .map(|&i| order[i].name().to_string())
+            .collect()
+    }))
+}
+
+/// The fox head beside the one thing setup has not said yet.
+fn sign_off(paint: &Paint) {
+    let beside = [
+        String::new(),
+        String::new(),
+        paint.bold("You're set."),
+        format!(
+            "From now on, {} opens the Control Room,",
+            paint.accent("kit")
+        ),
+        "where you watch your runs.".to_string(),
+    ];
+    println!();
+    for (i, head) in paint.fox_head().iter().enumerate() {
+        let pad = 16usize.saturating_sub(kit_tui::ansi::visible_len(head));
+        let text = beside.get(i).map_or("", String::as_str);
+        let line = format!("  {head}{}   {text}", " ".repeat(pad));
+        println!("{}", line.trim_end());
+    }
+}
+
+/// The first lines of setup. In a terminal wide enough, the fox head with
+/// the name and the promise beside it; otherwise two lines of text.
+fn banner(paint: &Paint, tty: bool) {
+    let name = format!(
+        "{}  {}",
+        paint.title("kit"),
+        paint.muted(env!("CARGO_PKG_VERSION"))
+    );
+    let wide = crossterm::terminal::size().is_ok_and(|(w, _)| w >= 66);
+    if !(tty && paint.enabled() && wide) {
+        println!("{name}");
+        println!("Kit sets your coding agents up for one job, then proves what they do.\n");
+        return;
+    }
+    let beside = [
+        String::new(),
+        name,
+        "Kit sets your coding agents up for one job,".to_string(),
+        "then proves what they do.".to_string(),
+    ];
+    println!();
+    for (i, head) in paint.fox_head().iter().enumerate() {
+        let pad = 16usize.saturating_sub(kit_tui::ansi::visible_len(head));
+        let text = beside.get(i).map_or("", String::as_str);
+        let line = format!("  {head}{}   {text}", " ".repeat(pad));
+        println!("{}", line.trim_end());
+    }
+    println!();
 }
 
 /// Bare `kit` with no saved setup, in a terminal: run setup first. Someone

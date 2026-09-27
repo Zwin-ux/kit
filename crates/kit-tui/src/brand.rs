@@ -27,7 +27,22 @@ pub struct Brand {
     pub rgb: (u8, u8, u8),
     /// The nearest of the 16 named colours.
     pub ansi: Color,
+    /// The text logo for line output: three cells on the brand's own
+    /// background, like a small app icon. Any terminal draws it.
+    pub tile: Tile,
     logo: Option<&'static [u8]>,
+}
+
+/// A three-cell text logo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tile {
+    /// Exactly three cells.
+    pub text: &'static str,
+    pub fg: (u8, u8, u8),
+    /// One background per cell, so a tile can carry a gradient.
+    pub bg: [(u8, u8, u8); 3],
+    /// Foreground and background in the 16 named colours.
+    pub ansi: (Color, Color),
 }
 
 const CLAUDE: Brand = Brand {
@@ -35,6 +50,12 @@ const CLAUDE: Brand = Brand {
     mark: "✻ ",
     rgb: (0xd9, 0x77, 0x57),
     ansi: Color::Red,
+    tile: Tile {
+        text: " ✻ ",
+        fg: (0xff, 0xf6, 0xf0),
+        bg: [(0xd9, 0x77, 0x57); 3],
+        ansi: (Color::White, Color::Red),
+    },
     logo: Some(include_bytes!("../assets/logos/claude.png")),
 };
 const CODEX: Brand = Brand {
@@ -42,6 +63,12 @@ const CODEX: Brand = Brand {
     mark: ">_",
     rgb: (0x7a, 0x9d, 0xff),
     ansi: Color::LightBlue,
+    tile: Tile {
+        text: " >_",
+        fg: (0xff, 0xff, 0xff),
+        bg: [(0xb1, 0xa7, 0xff), (0x7a, 0x9d, 0xff), (0x39, 0x41, 0xff)],
+        ansi: (Color::White, Color::Blue),
+    },
     logo: Some(include_bytes!("../assets/logos/codex.png")),
 };
 const GROK: Brand = Brand {
@@ -49,6 +76,12 @@ const GROK: Brand = Brand {
     mark: "⊘ ",
     rgb: (0xf0, 0xf1, 0xe3),
     ansi: Color::White,
+    tile: Tile {
+        text: " ⊘ ",
+        fg: (0x0a, 0x0a, 0x0a),
+        bg: [(0xf0, 0xf1, 0xe3); 3],
+        ansi: (Color::Black, Color::White),
+    },
     logo: Some(include_bytes!("../assets/logos/grok.png")),
 };
 const OLLAMA: Brand = Brand {
@@ -56,6 +89,12 @@ const OLLAMA: Brand = Brand {
     mark: "◉ ",
     rgb: (0xc8, 0xc8, 0xc8),
     ansi: Color::Gray,
+    tile: Tile {
+        text: " ◉ ",
+        fg: (0x0a, 0x0a, 0x0a),
+        bg: [(0xc8, 0xc8, 0xc8); 3],
+        ansi: (Color::Black, Color::Gray),
+    },
     logo: None,
 };
 
@@ -257,6 +296,7 @@ mod tests {
             AgentKind::Ollama,
         ] {
             assert_eq!(of(kind).mark.chars().count(), 2, "{kind:?}");
+            assert_eq!(of(kind).tile.text.chars().count(), 3, "{kind:?}");
         }
         assert_eq!(by_id("codex").map(|b| b.name), Some("Codex"));
         assert_eq!(by_id("nope"), None);

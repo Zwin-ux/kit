@@ -35,9 +35,9 @@ impl Theme {
             bg: Color::Reset,
             fg: Color::Rgb(0xf0, 0xf1, 0xe3),
             muted: Color::Rgb(0x6b, 0x72, 0x80),
-            accent: Color::Rgb(0x00, 0xe6, 0xcc),
+            accent: Color::Rgb(0xff, 0x5a, 0x1f),
             success: Color::Rgb(0x39, 0xff, 0x9e),
-            danger: Color::Rgb(0xff, 0x3b, 0x4e),
+            danger: Color::Rgb(0xff, 0x2d, 0x6f),
             warn: Color::Rgb(0xff, 0xba, 0x3d),
             fail_wash: Color::Rgb(0x2a, 0x12, 0x16),
             monochrome: false,
@@ -80,7 +80,8 @@ impl Theme {
             bg: Color::Reset,
             fg: Color::White,
             muted: Color::Gray,
-            accent: Color::LightCyan,
+            // Fox red; FAIL keeps the brighter red.
+            accent: Color::Red,
             success: Color::LightGreen,
             danger: Color::LightRed,
             warn: Color::Yellow,
@@ -284,7 +285,7 @@ mod tests {
     fn kit_palette_has_accent() {
         let t = Theme::kit();
         assert!(!t.monochrome);
-        assert_eq!(t.accent, Color::Rgb(0x00, 0xe6, 0xcc));
+        assert_eq!(t.accent, Color::Rgb(0xff, 0x5a, 0x1f));
     }
 
     #[test]
@@ -315,7 +316,7 @@ mod tests {
         assert_eq!(t.bg, Color::Reset);
         assert_eq!(t.fg, Color::White);
         assert_eq!(t.muted, Color::Gray);
-        assert_eq!(t.accent, Color::LightCyan);
+        assert_eq!(t.accent, Color::Red);
         assert_eq!(t.success, Color::LightGreen);
         assert_eq!(t.danger, Color::LightRed);
         assert_eq!(t.warn, Color::Yellow);

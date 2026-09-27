@@ -27,9 +27,9 @@ Semantic tokens (truecolor default). Map to ANSI16 when truecolor unavailable; d
 | `bg` | `#0B0E12` | Base background (usually terminal default) |
 | `fg` | `#F0F1E3` | Primary text |
 | `muted` | `#6B7280` | Footers, metadata, inactive chrome |
-| `accent` | `#00E6CC` | Brand, focus, RUNNING, selected rail |
+| `accent` | `#FF5A1F` | Fox red: brand, focus, RUNNING, selected rail, the fox |
 | `success` | `#39FF9E` | PASS, done good |
-| `danger` | `#FF3B4E` | FAIL, errors, kill |
+| `danger` | `#FF2D6F` | FAIL, errors, kill (a pinker red, so it never reads as the accent) |
 | `warn` | `#FFBA3D` | QUEUED, GATING, UNCONFIGURED |
 | `fail_wash` | `#2A1216` | FAIL row background tint |
 
@@ -44,7 +44,13 @@ Every list of agents shows each agent the same way (`kit-tui/src/brand.rs`): a t
 | Grok | `⊘` | `fg` | white |
 | Ollama | `◉` | `#C8C8C8` | gray |
 
-`kit setup`'s agent picker draws the real logo (`kit-tui/assets/logos/`) in the mark's cells where the terminal speaks the kitty or iTerm2 image protocol, and the text mark everywhere else. Under `NO_COLOR` the mark keeps its glyph and loses its colour. A past run's mark is muted with the rest of its row, and tables under 13 cells for AGENT drop the mark and keep the name.
+In line output (`kit setup`, `kit doctor`) each agent is a three-cell tile: the mark on the brand's own background, like a small app icon (`Brand::tile`, Codex on its violet-to-blue gradient). Any terminal with colour draws it. `kit setup`'s agent picker draws the real logo (`kit-tui/assets/logos/`) in the mark's cells where the terminal speaks the kitty or iTerm2 image protocol, and the text mark everywhere else. Under `NO_COLOR` the mark keeps its glyph and loses its colour. A past run's mark is muted with the rest of its row, and tables under 13 cells for AGENT drop the mark and keep the name.
+
+ANSI16 maps the accent to red and FAIL to bright red.
+
+### The fox in line output
+
+`kit setup` opens with the fox head (`fox::HEAD`, 16×12 pixels drawn in 16×6 half blocks: fox red, cream, ink) with the name and promise beside it, and signs off with the same head beside "You're set". Under 66 columns, piped, or without colour it falls back to text.
 
 The CLI's line output (`setup`, `add`, `doctor`) uses the same tokens through `kit-tui/src/ansi.rs`, only when stdout is a terminal: piped output and `--json` stay plain.
 

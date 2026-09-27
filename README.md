@@ -22,13 +22,14 @@ every file first, and can take it all out again.
 ```console
 $ npm install -g @mzwin/kit
 $ kit
-kit  2.0.0
-Kit sets your coding agents up for one job, then proves what they do.
+                    kit  2.0.0            (beside Kit's fox, in fox red)
+                    Kit sets your coding agents up for one job,
+                    then proves what they do.
 
 Which agents should Kit set up?
-  ❯ ● ✻  Claude Code   2.1.283         logged in
-    ○ >_ Codex         not installed   Kit can still write its files
-    ○ ⊘  Grok          not installed   Kit can still write its files
+  ❯ ●  ✻  Claude Code   2.1.283         logged in
+    ○  >_ Codex         not installed   Kit can still write its files
+    ○  ⊘  Grok          not installed   Kit can still write its files
   ↑↓ move · space select · enter confirm · esc cancel
 ```
 
@@ -59,7 +60,8 @@ undo      kit remove frontend-design --global
 
 try       claude "build a pricing page with three tiers"
 then      kit run "build a pricing page with three tiers"   runs it in its own worktree, proven by your checks
-later     kit   opens the Control Room to watch your runs
+
+From now on, kit opens the Control Room, where you watch your runs.
 ```
 
 </details>

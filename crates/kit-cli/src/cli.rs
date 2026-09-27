@@ -443,8 +443,9 @@ mod tests {
 
 #[derive(Debug, Args)]
 pub struct AddArgs {
-    /// Kit names (see kit show), or folders with a KIT.toml
-    #[arg(value_name = "KIT", required = true)]
+    /// Kit names (see kit show), or folders with a KIT.toml. None, in a
+    /// terminal: pick from a list
+    #[arg(value_name = "KIT")]
     pub kits: Vec<String>,
     /// Install for all your projects instead of this repo
     #[arg(short, long)]

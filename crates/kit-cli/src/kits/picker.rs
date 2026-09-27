@@ -172,7 +172,7 @@ impl Picker {
     /// Where the label starts, in cells. A single choice has no dot.
     fn label_col(&self) -> usize {
         let lead = if self.multi { LOGO_COL as usize } else { 4 };
-        lead + if self.has_marks() { 3 } else { 0 }
+        lead + if self.has_marks() { 4 } else { 0 }
     }
 
     /// The lines to draw: question, one per option, key line. `logos`
@@ -232,11 +232,12 @@ impl Picker {
             (true, true) => format!("{} ", paint.accent("●")),
             (true, false) => format!("{} ", paint.muted("○")),
         };
+        // Four cells: the logo image in the first two, or the text tile.
         let mark = match item.agent {
             _ if !self.has_marks() => String::new(),
-            Some(_) if logos => "   ".into(),
-            Some(a) => format!("{} ", paint.mark(a)),
-            None => "   ".into(),
+            Some(_) if logos => "    ".into(),
+            Some(a) => format!("{} ", paint.tile(a)),
+            None => "    ".into(),
         };
         let mut s = format!("  {caret} {dot}{mark}");
         let room = width.saturating_sub(self.label_col() + 1);
@@ -518,9 +519,9 @@ mod tests {
             lines,
             vec![
                 "Which agents should Kit set up?",
-                "  ❯ ● ✻  Claude Code   2.1.283             logged in",
-                "    ○ >_ Codex         codex-cli 0.155.0   not logged in",
-                "    ○ ⊘  Grok          not installed       Kit can still write its files",
+                "  ❯ ●  ✻  Claude Code   2.1.283             logged in",
+                "    ○  >_ Codex         codex-cli 0.155.0   not logged in",
+                "    ○  ⊘  Grok          not installed       Kit can still write its files",
                 "  ↑↓ move · space select · enter confirm · esc cancel",
             ]
         );
@@ -529,7 +530,7 @@ mod tests {
     #[test]
     fn logo_cells_are_left_blank_for_images() {
         let lines = agents().lines(100, &Paint::plain(), true);
-        assert!(lines[1].starts_with("  ❯ ●    Claude Code"));
+        assert!(lines[1].starts_with("  ❯ ●     Claude Code"));
         let (head, _) = split_at_cells(&lines[1], LOGO_COL as usize);
         assert_eq!(head, "  ❯ ● ");
     }
@@ -546,9 +547,9 @@ mod tests {
             }
         }
         let lines = agents().lines(60, &Paint::plain(), false);
-        assert!(lines[3].ends_with("still w…"), "{:?}", lines[3]);
+        assert!(lines[3].ends_with("still…"), "{:?}", lines[3]);
         let lines = agents().lines(44, &Paint::plain(), false);
-        assert_eq!(lines[3], "    ○ ⊘  Grok          not installed");
+        assert_eq!(lines[3], "    ○  ⊘  Grok          not installed");
     }
 
     #[test]
