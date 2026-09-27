@@ -977,17 +977,18 @@ fn print_doctor(version: &str, start_mcp: bool, json: bool) {
         };
         let ver = st.version.as_deref().unwrap_or("-");
         println!(
-            "  {}{:8}  {flag}  {}",
+            "  {} {:8}  {flag}  {}",
             paint.mark(st.kind),
             st.kind.label(),
-            paint.muted(ver)
+            // `2.1.283 (Claude Code)`: the name is already on the line.
+            paint.muted(ver.split(" (").next().unwrap_or(ver))
         );
         if let Some(r) = st.remedy {
-            println!("              → {r}");
+            println!("               → {r}");
         }
         if st.kind == AgentKind::Grok && st.installed && !kit_agents::full_auto() {
             println!(
-                "              → kit run starts grok only with KIT_FULL_AUTO=1 (it never asks before a command)"
+                "               → kit run starts grok only with KIT_FULL_AUTO=1 (it never asks before a command)"
             );
         }
     }

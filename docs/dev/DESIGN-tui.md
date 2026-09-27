@@ -33,6 +33,21 @@ Semantic tokens (truecolor default). Map to ANSI16 when truecolor unavailable; d
 | `warn` | `#FFBA3D` | QUEUED, GATING, UNCONFIGURED |
 | `fail_wash` | `#2A1216` | FAIL row background tint |
 
+### Agent marks
+
+Every list of agents shows each agent the same way (`kit-tui/src/brand.rs`): a two-cell mark in the brand colour, then the id in tables or the product name in prose and prompts. One order everywhere: claude, codex, grok, ollama.
+
+| Agent | Mark | Colour | ANSI16 |
+|-------|------|--------|--------|
+| Claude Code | `✻` | `#D97757` | red |
+| Codex | `>_` | `#7A9DFF` | light blue |
+| Grok | `⊘` | `fg` | white |
+| Ollama | `◉` | `#C8C8C8` | gray |
+
+`kit setup`'s agent picker draws the real logo (`kit-tui/assets/logos/`) in the mark's cells where the terminal speaks the kitty or iTerm2 image protocol, and the text mark everywhere else. Under `NO_COLOR` the mark keeps its glyph and loses its colour. A past run's mark is muted with the rest of its row, and tables under 13 cells for AGENT drop the mark and keep the name.
+
+The CLI's line output (`setup`, `add`, `doctor`) uses the same tokens through `kit-tui/src/ansi.rs`, only when stdout is a terminal: piped output and `--json` stay plain.
+
 **Never color alone.** Always pair with words: `PASS` / `FAIL` / `RUN` / `UNCONFIGURED`.
 
 ---
@@ -77,6 +92,7 @@ Semantic tokens (truecolor default). Map to ANSI16 when truecolor unavailable; d
 | `NO_COLOR` | Monochrome theme (modifiers only); motion also off |
 | `KIT_MOTION=off` | No spinner; RUNNING stays `RUN 2m` (resting frame) |
 | `KIT_THEME=high` | High-contrast palette |
+| `KIT_LOGOS=off` | Text marks instead of logo images in `kit setup`; `KIT_LOGOS=kitty` or `iterm` forces a protocol |
 
 ## Motion (F5)
 

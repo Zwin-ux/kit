@@ -22,22 +22,22 @@ every file first, and can take it all out again.
 ```console
 $ npm install -g @mzwin/kit
 $ kit
+kit  2.0.0
 Kit sets your coding agents up for one job, then proves what they do.
 
-Looking for agents on this machine…
-  Claude Code   2.1.283
-  Codex         not found
-  Grok          not found
+Which agents should Kit set up?
+  ❯ ● ✻  Claude Code   2.1.283         logged in
+    ○ >_ Codex         not installed   Kit can still write its files
+    ○ ⊘  Grok          not installed   Kit can still write its files
+  ↑↓ move · space select · enter confirm · esc cancel
+```
 
-> Which agents should Kit set up? Claude Code
-? What should your agents focus on?
-> [x] Frontend Design      UI, design systems, accessibility, browser testing
-  [ ] Full-stack Design    Frontend Design plus APIs, data, security, end-to-end tests
-  [ ] Backend Engineer     APIs, databases, security, performance, observability
-  [ ] LLM Engineer         Prompts, evals, RAG, model APIs, cost and latency
-  [ ] iOS / Apple Design   Native iOS apps that feel like Apple's: SwiftUI, HIG, Liquid Glass
-  [ ] Essentials           Spec, plan, build in small steps, test, review, ship
-> Install for All my projects   your agents use it everywhere
+Each question folds into one line once answered:
+
+```console
+✓ Agents       Claude Code
+✓ Focus        Frontend Design
+✓ Install for  All my projects
 
 Frontend Design 0.1.0  (extends essentials)  →  Claude Code, all projects
 Official
@@ -54,12 +54,12 @@ hook      PostToolUse → ~/.claude/settings.json   RUNS CODE
 Runs code on your machine: 2 (MCP servers, hooks and checks, each shown above).
 
 Continue? [y/N], or s for skills and rules only (no code): y
-Done. Claude Code has Frontend Design in all projects.
+✓ Done. Claude Code has Frontend Design in all projects.
 undo      kit remove frontend-design --global
 
-Try it:
-  claude "build a pricing page with three tiers"
-  kit run "build a pricing page with three tiers"   (in its own worktree, proven by your checks)
+try       claude "build a pricing page with three tiers"
+then      kit run "build a pricing page with three tiers"   runs it in its own worktree, proven by your checks
+later     kit   opens the Control Room to watch your runs
 ```
 
 </details>
@@ -284,6 +284,7 @@ cargo run -p kitctl -- --demo
 | `KIT_OLLAMA_MODEL` | Model for the Ollama adapter (default `llama3.2`) |
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
 | `KIT_THEME=high` | High-contrast palette |
+| `KIT_LOGOS=off` | Text marks instead of agent logos in `kit setup` (logos show in kitty, Ghostty, WezTerm and iTerm2, never inside tmux) |
 
 JSON output for scripts: commands take `--json` ([contract](docs/json-contract.md)).
 Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md).
