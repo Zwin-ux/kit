@@ -19,7 +19,7 @@ Contents:
 6. Engine: how it fits the crates
 7. Trust and licences
 8. Cut, build order, kill criteria
-9. Open questions for Mazen
+9. Decisions
 
 ---
 
@@ -73,7 +73,7 @@ agentclientprotocol.com/get-started/agents and cursor.com/docs/cli/acp):
 | Cursor | `agent acp` | Native | Permissions yes, session/load yes, **no client fs, no client terminal**; modes agent/plan/ask; auth via `agent login` or `CURSOR_API_KEY` |
 | Claude Code | `claude-agent-acp` (Zed's adapter, npm, built on the Claude Agent SDK) | Adapter | Uses the user's own Claude login **(unverified in Kit)** |
 | Codex | `codex-acp` (agentclientprotocol org) | Adapter | Uses the user's Codex login **(unverified in Kit)** |
-| Grok | none listed | — | Stays on today's headless adapter (`KIT_FULL_AUTO=1`) |
+| Grok | none listed | — | Stays on today's headless adapter; the YOLO switch replaces `KIT_FULL_AUTO=1` |
 | Ollama | via Codex bridge (ADR-0003) | — | Rides `codex-acp` if the bridge holds **(unverified)** |
 
 Rust side: the `agent-client-protocol` crate (Apache-2.0, 2.2.0,
@@ -95,11 +95,17 @@ say yes or no to risky steps, and only keep what passes.
 
 1. **Same task, several agents, one screen.** Dispatch already fans out;
    now each run is a live conversation, not a log.
-2. **Kit answers the permission prompts.** One policy for all agents
-   (edits inside the worktree: yes; shell: ask; network: ask), set per kit.
-   This also fixes today's worst gap: Claude's headless mode needs
-   `acceptEdits` tricks and Grok needs full auto. Over ACP every approval is
-   Kit's.
+2. **YOLO by default; Kit answers every permission prompt.** DECISION
+   (Mazen, 2026-09-27): the harness runs full power. Every
+   `session/request_permission` from every agent is answered `allow-once`
+   by Kit at once, and shows as a row in the transcript and the receipt.
+   Setup asks once ("Run agents in YOLO mode? They can run any command
+   in their worktree. [Y/n]", default yes) and stores it in
+   `~/.kit/config.toml`. `--careful` or `[permissions] mode = "ask"` in a
+   kit turns prompts back on. This also removes today's per-agent tricks
+   (Claude's `acceptEdits`, Grok's `KIT_FULL_AUTO=1`): one switch for all.
+   The safety net is the gate, not the prompt: nothing lands without a
+   pass.
 3. **Nothing ships unproven.** A session ends in the same Land → gate →
    receipt flow as a run. Talking is free; landing is gated.
 4. **Kits apply to all of them.** The kit's skills, rules and MCP servers
@@ -152,9 +158,12 @@ and tiles, never from recolouring their output.
 
 - Transcript rows: `you` in bold, agent text plain, tool calls as one
   collapsible row each (kind, target, diff size, status on the right).
-- Permission prompts are the only red box on screen: the one thing that
-  needs you. Idle `ASK` rows in the Control Room turn the STATE cell red
-  (`ASK`), distinct from `RUN` per the #34 review (M3: running is not red).
+- In YOLO (default) the permission box never appears; auto-allowed steps
+  get a small `yolo` tag on their row. The header shows `YOLO` in fox red
+  so it is never a secret.
+- In `--careful` mode permission prompts are the only red box on screen.
+  Waiting rows turn the Control Room STATE cell red (`ASK`), distinct from
+  `RUN` per the #34 review (M3: running is not red).
 - Plan line from ACP `plan` updates, pinned above the input.
 - Motion stays on the one clock: the spinner in the header, nothing else.
 - Diff view: `d` opens the existing RunDetail diff pane for the worktree.
@@ -193,10 +202,12 @@ Contract files are Claude-only; each change below is called out.
    `agent --version` output before trusting it).
 5. **`kit-tui` `event.rs` (contract):** no new variants needed;
    `RunUpdate(RunId, RunDelta)` carries the new deltas.
-6. **Policy:** `[permissions]` in KIT.toml / kit.toml with
-   `edit = "allow"`, `shell = "ask"`, `network = "ask"`, and an allowlist
-   of exact commands (the gate's checks are allowed by default). Evaluated
-   in `kit-core`, answered by the ACP client, recorded in the receipt.
+6. **Policy:** `mode = "yolo"` (default) or `"ask"`, from
+   `~/.kit/config.toml`, overridable by `[permissions]` in a repo kit.toml
+   and by `--careful` / `--yolo`. In `ask` mode an allowlist of exact
+   commands (the gate's checks by default) still auto-allows. Evaluated in
+   `kit-core`, answered by the ACP client, every answer recorded in the
+   receipt.
 7. **Adapter install:** `kit doctor` reports the ACP launcher per agent;
    `kit setup` offers to install it with the same pinned-launcher rules as
    MCP servers (e.g. `npx -y @zed-industries/claude-agent-acp@<pinned>`).
@@ -217,8 +228,13 @@ slice 2.
   repo)**). The Claude Agent SDK under the adapter has Anthropic's own
   terms; running it on the user's machine with the user's account is the
   intended use, redistributing it is not ours to do.
-- `allow-always` is scoped to the run, never global. Receipts list every
-  permission asked and the answer.
+- YOLO is honest about its reach: the worktree is where the agent works,
+  not a sandbox. A shell command can touch anything the user can. Setup's
+  one question says so in plain words, and `kit doctor` shows the mode.
+  A real sandbox (container or OS sandbox) is a later option, not a
+  precondition.
+- `allow-always` (careful mode) is scoped to the run, never global.
+  Receipts list every permission asked and the answer, YOLO included.
 
 ## 8. Cut, build order, kill criteria
 
@@ -228,7 +244,7 @@ Thin slices, each shippable and each skeptic-reviewed by another thread.
 |---|---|---|---|
 | 0 | ADR-0004 + this doc reviewed | Direction agreed | doc |
 | 1 | Cursor as a 4th agent, headless (`agent -p --output-format stream-json`) on today's adapter | Cursor works in Kit at all | S |
-| 2 | ACP client in `kit-agents` behind `KIT_ACP=1`, Cursor first, run mode only (one prompt, auto-answer by policy) | ACP maps onto runs and receipts | M |
+| 2 | ACP client in `kit-agents` behind `KIT_ACP=1`, Cursor first, run mode only (one prompt, YOLO answers) | ACP maps onto runs and receipts | M |
 | 3 | Claude and Codex via adapters, same run mode | All three on one protocol | M |
 | 4 | Session screen in the TUI + `ASK` state + follow-ups | The harness experience | L |
 | 5 | `kit run --watch` plain-CLI parity + JSON lines | Not TUI-only | S |
@@ -237,16 +253,15 @@ Thin slices, each shippable and each skeptic-reviewed by another thread.
 Kill criteria (stop and rethink if any hold after slice 3):
 
 - An adapter needs Kit to hold or proxy credentials.
-- Permission prompts can't be answered by Kit for one of the three (the
-  whole value of "Kit answers approvals" goes).
+- Kit can't answer permission prompts for one of the three (then YOLO and
+  careful mode both break for it).
 - Cold start regresses past 100 ms or idle CPU past 1% (M0 kill).
 - A session can land without a passing gate.
 
-## 9. Open questions for Mazen
+## 9. Decisions (Mazen, 2026-09-27)
 
-1. Cursor in or out? It's the one agent Kit doesn't run today and the only
-   one with native ACP. (Recommend in, slice 1.)
-2. Default permission policy: shell `ask` (recommend) or `allow` inside the
-   worktree?
-3. Grok: keep on headless with `KIT_FULL_AUTO=1` until xAI ships ACP
-   (recommend), or drop it from the harness view?
+1. Cursor is in: slice 1.
+2. YOLO is the default: Kit auto-allows every permission prompt; careful
+   mode is opt-in.
+3. Grok stays on its headless adapter until xAI ships ACP. Under YOLO it
+   no longer needs its own `KIT_FULL_AUTO=1`: the YOLO switch covers it.
