@@ -44,7 +44,12 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
     }
 
     // Screen 1: welcome and detection.
-    let paint = Paint::stdout();
+    // `--json` never paints, so it never asks the terminal anything.
+    let paint = if json {
+        Paint::plain()
+    } else {
+        Paint::stdout()
+    };
     if !json {
         banner(&paint, tty);
         if tty {

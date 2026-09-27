@@ -257,10 +257,18 @@ fn parse_osc11(reply: &str) -> Option<(f32, f32, f32)> {
 /// Ask the terminal for its background colour. The OSC 11 query is
 /// followed by a device-attributes query every terminal answers, so a
 /// terminal that ignores OSC 11 costs one round trip, not a timeout.
+///
+/// A reply that came late would land in stdin and be read as typing, so
+/// Kit asks only over a local link (never over SSH or through tmux or
+/// screen), waits up to a second for the device-attributes answer, and
+/// throws away anything unread if that answer never came.
 #[cfg(unix)]
 fn query_background() -> Option<(f32, f32, f32)> {
-    use std::io::{IsTerminal, Read, Write};
+    use std::io::{IsTerminal, Write};
     use std::os::fd::AsRawFd;
+    if !may_query(|k| std::env::var_os(k).is_some()) {
+        return None;
+    }
     let stdin = std::io::stdin();
     if !stdin.is_terminal() || !std::io::stdout().is_terminal() {
         return None;
@@ -273,11 +281,12 @@ fn query_background() -> Option<(f32, f32, f32)> {
     let _ = out.write_all(b"\x1b]11;?\x1b\\\x1b[c");
     let _ = out.flush();
     let fd = stdin.as_raw_fd();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
     let mut reply = Vec::new();
-    let mut lock = stdin.lock();
-    // Read until the device-attributes answer (`ESC [ ? … c`) ends it.
-    loop {
+    let mut answered = false;
+    // Byte by byte from the descriptor itself: nothing past the answer is
+    // taken, and nothing sits in a buffer for a later read to find.
+    while !answered {
         let left = deadline.saturating_duration_since(std::time::Instant::now());
         if left.is_zero() {
             break;
@@ -288,27 +297,49 @@ fn query_background() -> Option<(f32, f32, f32)> {
             revents: 0,
         };
         // SAFETY: one valid pollfd for the duration of the call.
-        let ready = unsafe { libc::poll(&mut pfd, 1, left.as_millis() as libc::c_int) };
+        let ready = unsafe { libc::poll(&mut pfd, 1, left.as_millis().max(1) as libc::c_int) };
         if ready <= 0 {
             break;
         }
-        let mut byte = [0u8; 64];
-        let Ok(n) = lock.read(&mut byte) else { break };
-        if n == 0 {
+        let mut byte = 0u8;
+        // SAFETY: reads at most one byte into a live u8.
+        let n = unsafe { libc::read(fd, (&mut byte as *mut u8).cast(), 1) };
+        if n != 1 {
             break;
         }
-        reply.extend_from_slice(&byte[..n]);
-        let text = String::from_utf8_lossy(&reply);
-        if let Some(i) = text.find("\x1b[?")
-            && text[i..].contains('c')
-        {
-            break;
-        }
+        reply.push(byte);
+        answered = da1_done(&reply);
+    }
+    if !answered {
+        // SAFETY: tcflush on our own terminal descriptor.
+        unsafe { libc::tcflush(fd, libc::TCIFLUSH) };
     }
     if !was_raw {
         let _ = crossterm::terminal::disable_raw_mode();
     }
     parse_osc11(&String::from_utf8_lossy(&reply))
+}
+
+/// Asking is safe only on a local terminal: over SSH the answer can come
+/// after Kit stops waiting, and tmux and screen may not pass it through.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn may_query(set: impl Fn(&str) -> bool) -> bool {
+    !["SSH_TTY", "SSH_CONNECTION", "SSH_CLIENT", "TMUX", "STY"]
+        .iter()
+        .any(|k| set(k))
+}
+
+/// True once `reply` ends with the device-attributes answer, `ESC [ ? … c`.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn da1_done(reply: &[u8]) -> bool {
+    let Some(start) = reply.windows(3).rposition(|w| w == b"\x1b[?") else {
+        return false;
+    };
+    let tail = &reply[start + 3..];
+    tail.last() == Some(&b'c')
+        && tail[..tail.len() - 1]
+            .iter()
+            .all(|b| b.is_ascii_digit() || *b == b';')
 }
 
 #[cfg(not(unix))]
@@ -496,6 +527,22 @@ mod tests {
         assert!(luminance(light) > 0.9);
         assert!(parse_osc11("rgb:f/f/f").is_some_and(|c| luminance(c) > 0.9));
         assert_eq!(parse_osc11("\x1b[?62;22c"), None);
+    }
+
+    #[test]
+    fn the_background_is_asked_only_on_a_local_terminal() {
+        assert!(may_query(|_| false));
+        for k in ["SSH_TTY", "SSH_CONNECTION", "TMUX", "STY"] {
+            assert!(!may_query(|v| v == k), "{k}");
+        }
+    }
+
+    #[test]
+    fn the_query_ends_on_the_device_attributes_answer() {
+        assert!(!da1_done(b"\x1b]11;rgb:0000/0000/0000\x1b\\"));
+        assert!(!da1_done(b"\x1b]11;rgb:0/0/0\x07\x1b[?62;2"));
+        assert!(da1_done(b"\x1b]11;rgb:0/0/0\x07\x1b[?62;22c"));
+        assert!(da1_done(b"\x1b[?1;2c"));
         assert_eq!(colorfgbg_light("0;15"), Some(true));
         assert_eq!(colorfgbg_light("15;default;0"), Some(false));
         assert_eq!(colorfgbg_light("x"), None);

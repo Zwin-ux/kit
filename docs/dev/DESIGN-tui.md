@@ -51,7 +51,7 @@ ANSI16 maps the accent to red, RUNNING to bright cyan and FAIL to bright red.
 
 ### Light terminals
 
-Line output asks the terminal for its background (`COLORFGBG`, then an OSC 11 query with a 300 ms limit; `KIT_BACKGROUND=light|dark` skips the question). On a light background it uses `Theme::kit_light()`: ink `#1C1F24`, accent `#E04814`, live `#00867A`, success `#0F8A4C`, danger `#C81D52`, warn `#A86200`. Grok's cream-on-black tile keeps its own dark square, and the fox's cream muzzle turns peach so it still shows.
+Line output asks the terminal for its background (`COLORFGBG`, then an OSC 11 query answered within a second, never over SSH or inside tmux or screen; `KIT_BACKGROUND=light|dark` skips the question). A reply that comes later is dropped from `Continue?` answers. On a light background it uses `Theme::kit_light()`: ink `#1C1F24`, accent `#E04814`, live `#00867A`, success `#0F8A4C`, danger `#C81D52`, warn `#A86200`. Grok's cream-on-black tile keeps its own dark square, and the fox's cream muzzle turns peach so it still shows.
 
 ### Wide glyphs
 

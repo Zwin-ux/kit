@@ -288,7 +288,7 @@ cargo run -p kitctl -- --demo
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
 | `KIT_THEME=high` | High-contrast palette |
 | `KIT_LOGOS=off` | Text marks instead of agent logos in `kit setup` (logos show in kitty, Ghostty, WezTerm and iTerm2, never inside tmux) |
-| `KIT_BACKGROUND=light` / `dark` | Skip asking the terminal for its background colour |
+| `KIT_BACKGROUND=light` / `dark` | Skip asking the terminal for its background colour (Kit never asks over SSH or inside tmux or screen) |
 | `KIT_WIDE=1` | Lay out for terminals where `●` and `⊘` take two cells (set for Chinese, Japanese and Korean locales) |
 
 JSON output for scripts: commands take `--json` ([contract](docs/json-contract.md)).

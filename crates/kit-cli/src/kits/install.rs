@@ -689,11 +689,51 @@ fn ask(code: bool) -> Result<Answer> {
     std::io::stdout().flush()?;
     let mut line = String::new();
     std::io::stdin().lock().read_line(&mut line)?;
-    Ok(match line.trim().to_ascii_lowercase().as_str() {
+    Ok(match typed(&line).to_ascii_lowercase().as_str() {
         "y" | "yes" => Answer::Yes,
         "s" if code => Answer::NoCode,
         _ => Answer::No,
     })
+}
+
+/// What the person typed, without any terminal reply that arrived in the
+/// same line (a late answer to the background-colour query, say): escape
+/// sequences are dropped and the rest trimmed.
+fn typed(line: &str) -> String {
+    let mut out = String::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            if !c.is_control() || c == ' ' {
+                out.push(c);
+            }
+            continue;
+        }
+        match chars.next() {
+            // OSC: up to BEL or ESC \.
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\x07' {
+                        break;
+                    }
+                    if c == '\x1b' {
+                        chars.next_if_eq(&'\\');
+                        break;
+                    }
+                }
+            }
+            // CSI: up to its final byte.
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out.trim().to_string()
 }
 
 /// Exactly what an action will run: the MCP server's command line, for
@@ -1295,7 +1335,7 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         std::io::stdout().flush()?;
         let mut line = String::new();
         std::io::stdin().lock().read_line(&mut line)?;
-        if !matches!(line.trim(), "y" | "Y" | "yes") {
+        if !matches!(typed(&line).as_str(), "y" | "Y" | "yes") {
             println!("Nothing was changed.");
             return Ok(());
         }
@@ -1546,4 +1586,20 @@ pub(crate) fn skill_names(e: &Entry) -> BTreeSet<String> {
             _ => None,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::typed;
+
+    #[test]
+    fn a_late_terminal_reply_is_not_read_as_the_answer() {
+        assert_eq!(typed("y\n"), "y");
+        assert_eq!(
+            typed("\x1b]11;rgb:0b0b/0e0e/1212\x1b\\\x1b[?62;22cy\n"),
+            "y"
+        );
+        assert_eq!(typed("\x1b]11;rgb:ffff/ffff/ffff\x07 yes \n"), "yes");
+        assert_eq!(typed("\x1b[?1;2c\n"), "");
+    }
 }
