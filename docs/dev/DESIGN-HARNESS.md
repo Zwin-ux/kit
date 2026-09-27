@@ -118,24 +118,42 @@ steer it, and only keep what passes.
      symlinks) outside the run's worktree: that gets one prompt, or a
      reject when there is no TTY. Normal work never sees it. It can't stop
      a shell command doing the same (§7).
-   - **Per-agent switch, recorded (Y7).** Over ACP, Kit sets the agent's
-     most permissive mode via `session/set_mode` where offered. Headless,
-     it passes the agent's own flag: Claude
-     `--permission-mode bypassPermissions`, Cursor `--force`, Grok
-     `--always-approve`, Codex its full-auto sandbox setting **(flags
-     unverified per agent version)**. The receipt records
-     `permissions: yolo` plus the flag used or the mode the agent reports.
+   - **Per-agent switch, recorded (Y7).** Over ACP, YOLO **leaves the agent
+     in a mode that asks**, and Kit answers every prompt at once. The user
+     still sees no prompts and gets full speed, and every edit passes
+     through Y1's path check. (An agent in a bypass mode never sends
+     `request_permission`, so Kit would never see the edit.) The
+     permissive flag is used only on headless paths, where Kit sees no
+     prompts anyway: Claude `--permission-mode bypassPermissions`, Cursor
+     `--force`, Grok `--always-approve`, Codex its full-auto sandbox
+     setting **(flags unverified per agent version)**. The receipt records
+     `permissions: yolo` plus which applied: "ACP, Kit answered" with the
+     mode the agent reports, or the headless flag. As a second net, Kit
+     checks the locations in every `tool_call` update (and in headless
+     streams that report tool calls) and marks any edit outside the
+     worktree `flagged` after the fact.
    - **Label only risky rows (Y4).** `execute` rows matching push,
      publish, deploy, `curl … | sh`, `sudo`, or `rm` of an absolute path,
      and any `fetch`, get a `flagged` tag. The receipt ends with one line
      ("ran 14 commands, 2 flagged: git push, curl"), and `kit land` prints
      it above the gate result. "Anything that runs code is labelled" stays
      true under YOLO.
-   - **Trimmed environment (Y5).** Agents get PATH, HOME, USER, LANG, TERM,
-     TMPDIR, their own auth variables (`CURSOR_API_KEY`,
-     `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) and the `$VAR`s the kit's
-     MCP servers name. Anything else needs `--env NAME`. Logins still work;
-     a stray `AWS_SECRET_ACCESS_KEY` no longer rides along.
+   - **Trimmed environment (Y5, slice 2c).** A per-OS allowlist:
+     - everywhere: PATH, HOME, USER, LANG, `LC_*`, TERM, TMPDIR, the
+       network variables `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`,
+       `SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`;
+     - Linux: the `XDG_*` dirs;
+     - Windows: `SystemRoot`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`,
+       `PATHEXT`, `COMSPEC`, `TEMP`, `TMP`;
+     - each agent's own auth variables (`CURSOR_API_KEY`,
+       `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …), and its provider's
+       credentials when that agent's provider switch is set (e.g.
+       `CLAUDE_CODE_USE_BEDROCK` passes the AWS variables,
+       `CLAUDE_CODE_USE_VERTEX` the Google ones);
+     - the `$VAR`s the kit's MCP servers name.
+     Anything else needs `--env NAME`. `kit doctor` lists the names passed,
+     never the values. Logins still work; a stray `AWS_SECRET_ACCESS_KEY`
+     no longer rides along to an agent that isn't on Bedrock.
    - **Setup asks once (Y8)**, before the first run, default yes: "Agents
      can run any command without asking. Kit's gate still decides what
      lands in your branch. Use YOLO mode? [Y/n]". Without a TTY the answer
@@ -147,6 +165,14 @@ steer it, and only keep what passes.
      deploy, an upload, an `rm` outside the tree.
    - Today's per-agent workarounds go: Claude's approvals were
      all-or-nothing in headless mode, and Grok needed `KIT_FULL_AUTO=1`.
+   - **When `kit run` changes (F4).** Until slice 6, `kit run` keeps 2.0's
+     behaviour: headless Claude uses `acceptEdits` and can't run shell
+     unasked, and Grok needs `KIT_FULL_AUTO=1`. Slice 6 flips the default
+     to YOLO for `kit run` too, CI included, with a changelog line ("`kit
+     run` now lets agents run commands without asking; `--careful` keeps
+     the old behaviour") and the mode in every receipt. From slice 6 Grok
+     becomes auto-pickable under YOLO, last in the pick order (Claude,
+     Codex, Cursor, Grok, Ollama).
    - **Careful mode** (`--careful`, slice 3b) sets each agent's asking
      mode and turns prompts on. It refuses to start an agent that can't
      ask (Grok headless, and Cursor headless if M2 holds): "Grok can't ask
@@ -307,14 +333,20 @@ Contract files are Claude-only; each change below is called out.
    - Evaluated in `kit-core`, answered by the ACP client, every answer
      recorded in the receipt.
 7. **Adapter install.** Never `npx`. Kit ships a lockfile per adapter and
-   installs it with `npm ci` into `~/.kit/adapters/<name>-<version>/`,
+   installs it into `~/.kit/adapters/<name>-<version>/` by running npm's own
+   JS entry with node (`node <npm-cli.js> ci --ignore-scripts`), never
+   `npm.cmd`, so nothing runs through cmd.exe and no install script runs
+   before the user has seen the label. Slice 2c checks that both adapters
+   work without scripts (the SDK's per-platform binaries arrive as
+   optional dependencies). Kit
    records its hash like any kit entry, and spawns `node <resolved bin>`
    directly. That pins every transitive dependency (the SDK, and Codex
    despite its caret range), downloads once instead of per session, needs
    no network at session start, and avoids `npx.cmd`, which on Windows
    would run through cmd.exe, the shell Kit promises never to use.
    `kit setup` offers the install and labels it as code that runs; `kit
-   doctor` reports each adapter's version, hash and deprecation.
+   doctor` reports each adapter's version, hash and deprecation, and
+   checks that Node is 22 or later (the Claude adapter needs it).
 
 ADR-0001's "output is text, not a rich shared protocol" is what this
 changes; write **ADR-0004: drive agents over ACP where offered** before
@@ -364,7 +396,7 @@ Thin slices, each shippable and each skeptic-reviewed by another thread.
 | # | Slice | Proves | Size |
 |---|---|---|---|
 | 0 | ADR-0004 + this doc reviewed | Direction agreed | doc |
-| 1 | Cursor as a 4th agent, headless (`agent -p --output-format stream-json`) on today's adapter. First check whether print mode can edit without also running shell unasked (`--force`); if not, Cursor sits behind the YOLO switch like Grok, and the row says so **(unverified)** | Cursor works in Kit at all | S if edit-only exists, else M |
+| 1 | Cursor as a 4th agent, headless (`agent -p --output-format stream-json`) on today's adapter. First check whether print mode can edit without also running shell unasked (`--force`); if not, Cursor sits behind the YOLO switch like Grok, and the row says so **(unverified)** | Cursor works in Kit at all | S (edit-only matters only for careful mode, 3b) |
 | 2a | ACP client in `kit-agents` behind `KIT_ACP=1`, run mode, YOLO answers with the Y1 path check, `Output` deltas only, plus a **fake ACP agent fixture** in the repo (CI can't log into Cursor and the container can't run real agents). Cursor first only if M1's auth check passes, else the fixture only | ACP maps onto runs | M |
 | 2b | `RunDelta` additions, mode and flag recording, risky-row flags and the receipt count line, private transcript | Receipts carry the proof | M |
 | 2c | Adapter install from a Kit lockfile into `~/.kit/adapters` (§6.7), env allowlist | Pinned, shell-free launch | M |
@@ -372,7 +404,7 @@ Thin slices, each shippable and each skeptic-reviewed by another thread.
 | 3b | Careful mode and the permissions config (§6.6): tighten-only from repos and kits, refuse agents that can't ask | Careful is honest | S |
 | 4 | Steer view in the TUI, `ASK`/`IDLE` states, follow-ups, focus model, frame-rate test | The harness experience | L |
 | 5 | `kit run --watch` plain-CLI parity, non-TTY answers, JSON lines | Not TUI-only | S |
-| 6 | ACP on by default where an adapter is installed; headless stays fallback | Ship | S |
+| 6 | ACP on by default where an adapter is installed; headless stays fallback. `kit run` defaults to YOLO (F4), changelog line, Grok auto-pickable | Ship | S |
 
 Kill criteria (stop and rethink if any hold after slice 3):
 
@@ -388,8 +420,8 @@ Kill criteria (stop and rethink if any hold after slice 3):
 ## 9. Decisions (Mazen, 2026-09-27)
 
 1. Cursor is in: slice 1.
-2. YOLO is the default: Kit sets every agent to its most permissive mode
-   and allows everything inside the worktree; careful mode is opt-in.
+2. YOLO is the default: Kit allows everything inside the worktree without
+   asking you; careful mode is opt-in.
 3. Grok stays on its headless adapter until xAI ships ACP. The YOLO switch
    replaces its own `KIT_FULL_AUTO=1`.
 
@@ -406,7 +438,7 @@ Skeptic review by the product and design thread, 2026-09-27
 - H4 kits can't grant shell → §6.6.
 - M1 Cursor auth **(unverified)** → §3, §7, slice 2a. M2 Cursor headless
   corner → slice 1. M3 secrets → §7, §5 JSON. M4 permission options by
-  kind → §3. M5 slice split → 2a–2d. M6 steering, not chat → §4.
+  kind → §3. M5 slice split → 2a–2c, 3b. M6 steering, not chat → §4.
 - D1 ASK colour → §5. D2 focus model → §5. D3 frame coalescing → §5.
   D4 non-TTY → §5 Plain CLI.
 - L1 wording, L2 probe test, L3 Ollama out of scope, L4 receipt field tied
@@ -425,3 +457,14 @@ fixed above. Added:
 - Design: mockup is the YOLO default, prompt in a second mock; `a answer`
   only while a run is in ASK; `YOLO` in the Control Room header only.
 - Careful mode and the allowlist moved to slice 3b.
+
+Final check on 6643135, same thread: approved for ADR-0004 after F1.
+
+- F1 Y7 switched Y1 off → over ACP YOLO keeps the agent asking and Kit
+  answers; permissive flags on headless paths only; after-the-fact flag on
+  out-of-worktree edits; decision 9.2 reworded.
+- F2 per-OS env allowlist, provider credentials by switch → §4.2.
+- F3 npm via node, `--ignore-scripts`, Node ≥ 22 check → §6.7.
+- F4 `kit run` flips to YOLO in slice 6 with a changelog line; Grok
+  auto-pickable from then → §4.2, slice 6.
+- L-a, L-b fixed.
