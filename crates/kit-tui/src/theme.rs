@@ -14,6 +14,9 @@ pub struct Theme {
     pub fg: Color,
     pub muted: Color,
     pub accent: Color,
+    /// Work in flight (RUN): cool, so it never reads as the red accent or
+    /// the red FAIL, whatever the viewer's colour vision.
+    pub live: Color,
     pub success: Color,
     pub danger: Color,
     pub warn: Color,
@@ -36,10 +39,28 @@ impl Theme {
             fg: Color::Rgb(0xf0, 0xf1, 0xe3),
             muted: Color::Rgb(0x6b, 0x72, 0x80),
             accent: Color::Rgb(0xff, 0x5a, 0x1f),
+            live: Color::Rgb(0x00, 0xe6, 0xcc),
             success: Color::Rgb(0x39, 0xff, 0x9e),
             danger: Color::Rgb(0xff, 0x2d, 0x6f),
             warn: Color::Rgb(0xff, 0xba, 0x3d),
             fail_wash: Color::Rgb(0x2a, 0x12, 0x16),
+            monochrome: false,
+        }
+    }
+
+    /// The Kit palette for light terminal backgrounds (line output only):
+    /// the same roles, darkened to read on white.
+    pub fn kit_light() -> Self {
+        Self {
+            bg: Color::Reset,
+            fg: Color::Rgb(0x1c, 0x1f, 0x24),
+            muted: Color::Rgb(0x6b, 0x72, 0x80),
+            accent: Color::Rgb(0xe0, 0x48, 0x14),
+            live: Color::Rgb(0x00, 0x86, 0x7a),
+            success: Color::Rgb(0x0f, 0x8a, 0x4c),
+            danger: Color::Rgb(0xc8, 0x1d, 0x52),
+            warn: Color::Rgb(0xa8, 0x62, 0x00),
+            fail_wash: Color::Rgb(0xfd, 0xe8, 0xee),
             monochrome: false,
         }
     }
@@ -51,6 +72,7 @@ impl Theme {
             fg: Color::Reset,
             muted: Color::Reset,
             accent: Color::Reset,
+            live: Color::Reset,
             success: Color::Reset,
             danger: Color::Reset,
             warn: Color::Reset,
@@ -66,6 +88,7 @@ impl Theme {
             fg: Color::White,
             muted: Color::Gray,
             accent: Color::Cyan,
+            live: Color::LightBlue,
             success: Color::LightGreen,
             danger: Color::LightRed,
             warn: Color::Yellow,
@@ -82,6 +105,7 @@ impl Theme {
             muted: Color::Gray,
             // Fox red; FAIL keeps the brighter red.
             accent: Color::Red,
+            live: Color::LightCyan,
             success: Color::LightGreen,
             danger: Color::LightRed,
             warn: Color::Yellow,
@@ -164,7 +188,7 @@ impl Theme {
         }
         let fg = match state {
             RunState::Queued => self.warn,
-            RunState::Running => self.accent,
+            RunState::Running => self.live,
             RunState::Gating => self.warn,
             RunState::Pass => self.success,
             RunState::Fail => self.danger,

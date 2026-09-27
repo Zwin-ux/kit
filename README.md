@@ -99,6 +99,7 @@ runtime through the [sosumi](https://github.com/NSHipster/sosumi.ai) MCP server,
 ```bash
 kit show                              # the kits
 kit show frontend-design              # what it installs, before anything is written
+kit add                               # pick kits from a list
 kit add frontend-design --global      # all your projects
 kit add llm-engineer --agent codex    # this repo only, Codex only
 kit add backend-engineer --print      # the plan, nothing written
@@ -287,6 +288,8 @@ cargo run -p kitctl -- --demo
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
 | `KIT_THEME=high` | High-contrast palette |
 | `KIT_LOGOS=off` | Text marks instead of agent logos in `kit setup` (logos show in kitty, Ghostty, WezTerm and iTerm2, never inside tmux) |
+| `KIT_BACKGROUND=light` / `dark` | Skip asking the terminal for its background colour |
+| `KIT_WIDE=1` | Lay out for terminals where `●` and `⊘` take two cells (set for Chinese, Japanese and Korean locales) |
 
 JSON output for scripts: commands take `--json` ([contract](docs/json-contract.md)).
 Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md).
@@ -300,6 +303,40 @@ kept in `packages/` for history; Kit is now the Rust binary above. See
 
 </details>
 
+<details>
+<summary>Third-party notices</summary>
+
+The agent logos in `kit setup` come from
+[lobehub/lobe-icons](https://github.com/lobehub/lobe-icons). They are
+trademarks of their owners (Anthropic, OpenAI, xAI); Kit shows them only to
+name the agent it sets up. The icon set's licence:
+
+```text
+MIT License
+
+Copyright (c) 2023 LobeHub
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
 <p align="center">
-  <sub><a href="LICENSE">MIT</a></sub>
+  <sub><a href="LICENSE">MIT</a> · <a href="THIRD-PARTY-NOTICES.md">third-party notices</a></sub>
 </p>

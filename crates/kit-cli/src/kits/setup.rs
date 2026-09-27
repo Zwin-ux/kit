@@ -71,7 +71,7 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
             };
             (short_version(st.version.as_deref()).to_string(), login)
         } else {
-            ("not installed".to_string(), "")
+            ("not found".to_string(), "")
         };
         rows.push((agent, version, login));
         if st.installed {
@@ -241,6 +241,10 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
         ))
     );
     let not_now: Vec<&String> = saved.kits.iter().filter(|k| !kits.contains(k)).collect();
+    if !paint.enabled() {
+        plain_ending(&not_now, &kits, &agents, &found, &scope, tty);
+        return Ok(());
+    }
     for k in not_now {
         println!(
             "{}{k}  {}",
@@ -288,14 +292,9 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
             ),
         }
     }
-    if tty && paint.enabled() {
-        // The fox signs off after the last step, with what bare `kit` does
-        // from now on. Terminals only.
-        sign_off(&paint);
-    } else if tty {
-        println!();
-        println!("From now on, kit opens the Control Room, where you watch your runs.");
-    }
+    // The fox signs off after the last step, with what bare `kit` does
+    // from now on.
+    sign_off(&paint);
     Ok(())
 }
 
@@ -358,6 +357,46 @@ pub fn pick_kits(
     }))
 }
 
+/// Setup's ending without colour (piped, `TERM=dumb`): the text it has
+/// always printed, so scripts and logs read the same.
+fn plain_ending(
+    not_now: &[&String],
+    kits: &[String],
+    agents: &[Agent],
+    found: &[Agent],
+    scope: &Scope,
+    tty: bool,
+) {
+    for k in not_now {
+        println!("still installed   {k} (kit remove {k} to remove it)");
+    }
+    if let Some(example) = kits
+        .iter()
+        .filter_map(|k| catalog::find(k).ok())
+        .find_map(|k| k.manifest.kit.example)
+    {
+        println!();
+        println!("Try it:");
+        if let Some(first) = agents.iter().find(|a| found.contains(a)) {
+            println!("  {} \"{example}\"", first.id());
+        }
+        match scope {
+            Scope::Repo(root) if !root.join("kit.toml").exists() => {
+                println!("  kit init   (the checks that prove a run; kit run needs them)");
+                println!("  kit run \"{example}\"   (in its own worktree)");
+            }
+            _ => println!("  kit run \"{example}\"   (in its own worktree, proven by your checks)"),
+        }
+    }
+    if tty {
+        // The fox, resting, signs off after the last step. Terminals only.
+        println!();
+        for line in kit_tui::fox::lines(0) {
+            println!("  {}", line.trim_end());
+        }
+    }
+}
+
 /// The fox head beside the one thing setup has not said yet.
 fn sign_off(paint: &Paint) {
     let beside = [
@@ -388,7 +427,12 @@ fn banner(paint: &Paint, tty: bool) {
         paint.muted(env!("CARGO_PKG_VERSION"))
     );
     let wide = crossterm::terminal::size().is_ok_and(|(w, _)| w >= 66);
-    if !(tty && paint.enabled() && wide) {
+    if !(tty && paint.enabled()) {
+        // Piped: the one line it has always been.
+        println!("Kit sets your coding agents up for one job, then proves what they do.\n");
+        return;
+    }
+    if !wide {
         println!("{name}");
         println!("Kit sets your coding agents up for one job, then proves what they do.\n");
         return;

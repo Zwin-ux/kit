@@ -33,6 +33,9 @@ pub struct Brand {
     logo: Option<&'static [u8]>,
 }
 
+/// An RGB colour.
+pub type Rgb = (u8, u8, u8);
+
 /// A three-cell text logo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tile {
@@ -43,6 +46,9 @@ pub struct Tile {
     pub bg: [(u8, u8, u8); 3],
     /// Foreground and background in the 16 named colours.
     pub ansi: (Color, Color),
+    /// Foreground and background on a light terminal, for a tile whose
+    /// own background would vanish there.
+    pub on_light: Option<(Rgb, Rgb)>,
 }
 
 const CLAUDE: Brand = Brand {
@@ -55,6 +61,7 @@ const CLAUDE: Brand = Brand {
         fg: (0xff, 0xf6, 0xf0),
         bg: [(0xd9, 0x77, 0x57); 3],
         ansi: (Color::White, Color::Red),
+        on_light: None,
     },
     logo: Some(include_bytes!("../assets/logos/claude.png")),
 };
@@ -68,6 +75,7 @@ const CODEX: Brand = Brand {
         fg: (0xff, 0xff, 0xff),
         bg: [(0xb1, 0xa7, 0xff), (0x7a, 0x9d, 0xff), (0x39, 0x41, 0xff)],
         ansi: (Color::White, Color::Blue),
+        on_light: None,
     },
     logo: Some(include_bytes!("../assets/logos/codex.png")),
 };
@@ -81,6 +89,7 @@ const GROK: Brand = Brand {
         fg: (0x0a, 0x0a, 0x0a),
         bg: [(0xf0, 0xf1, 0xe3); 3],
         ansi: (Color::Black, Color::White),
+        on_light: Some(((0xf0, 0xf1, 0xe3), (0x0a, 0x0a, 0x0a))),
     },
     logo: Some(include_bytes!("../assets/logos/grok.png")),
 };
@@ -94,6 +103,7 @@ const OLLAMA: Brand = Brand {
         fg: (0x0a, 0x0a, 0x0a),
         bg: [(0xc8, 0xc8, 0xc8); 3],
         ansi: (Color::Black, Color::Gray),
+        on_light: Some(((0xff, 0xff, 0xff), (0x55, 0x55, 0x55))),
     },
     logo: None,
 };

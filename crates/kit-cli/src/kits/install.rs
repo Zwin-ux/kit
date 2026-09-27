@@ -381,7 +381,7 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
             .iter()
             .any(|k| k.manifest.skill.iter().any(|s| s.source.is_some()))
     {
-        eprintln!("Fetching pinned skills (cached after the first time)");
+        eprintln!("Fetching  pinned skills (cached after the first time)");
     }
     let resolved: Vec<Resolved<'_>> = chosen
         .kits
@@ -540,8 +540,9 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         scope.label()
     );
     match super::lock::shared_path(scope) {
-        // The record's own path has a hash in it; `kit list` shows it.
-        Some(shared) => println!(
+        // In a terminal, the record's hashed folder stays out of sight
+        // (`kit list` shows it); piped output keeps the exact path.
+        Some(shared) if paint.enabled() => println!(
             "{}",
             paint.muted(&format!(
                 "Kit keeps its record in {}; {} is a copy to commit for your team.",
@@ -550,6 +551,11 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
                     .file_name()
                     .map_or_else(|| tilde(&shared), |n| n.to_string_lossy().into_owned())
             ))
+        ),
+        Some(shared) => println!(
+            "Recorded in {}; {} is a copy to commit for your team.",
+            tilde(&super::lock::path(scope)),
+            tilde(&shared)
         ),
         None => println!(
             "{}",

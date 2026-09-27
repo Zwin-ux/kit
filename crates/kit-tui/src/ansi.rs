@@ -2,7 +2,9 @@
 //! CLI and the Control Room speak one palette.
 //!
 //! Colour goes only to a terminal: piped output, `TERM=dumb` and tests get
-//! plain text. `NO_COLOR` keeps bold and dim and drops hue, as the TUI does.
+//! plain text, and agent marks and tiles are left out there entirely, so
+//! scripts and logs read exactly what they did before marks existed.
+//! `NO_COLOR` keeps bold and dim and drops hue, as the TUI does.
 
 use crate::brand;
 use crate::theme::Theme;
@@ -15,6 +17,10 @@ use std::io::IsTerminal;
 pub struct Paint {
     theme: Theme,
     on: bool,
+    /// East Asian ambiguous-width glyphs take two cells here.
+    wide: bool,
+    /// The terminal's background is light.
+    light: bool,
 }
 
 impl Paint {
@@ -23,9 +29,16 @@ impl Paint {
         let on = std::io::stdout().is_terminal()
             && std::env::var("TERM").map_or(true, |t| t != "dumb")
             && vt_ready();
+        let light = on && light_background();
+        let theme = match Theme::resolve() {
+            t if light && t == Theme::kit() => Theme::kit_light(),
+            t => t,
+        };
         Self {
-            theme: Theme::resolve(),
+            theme,
             on,
+            wide: ambiguous_is_wide(|k| std::env::var(k).ok()),
+            light,
         }
     }
 
@@ -34,12 +47,53 @@ impl Paint {
         Self {
             theme: Theme::monochrome(),
             on: false,
+            wide: false,
+            light: false,
         }
     }
 
     /// Always paints with `theme` (tests, previews).
     pub fn with(theme: Theme) -> Self {
-        Self { theme, on: true }
+        Self {
+            theme,
+            on: true,
+            wide: false,
+            light: false,
+        }
+    }
+
+    /// As if on a light background (tests, previews).
+    pub fn light(mut self, light: bool) -> Self {
+        self.light = light;
+        self
+    }
+
+    /// As if ambiguous-width glyphs took two cells (a CJK locale).
+    pub fn wide(mut self, wide: bool) -> Self {
+        self.wide = wide;
+        self
+    }
+
+    /// True where `●`, `○`, `⊘` and `◉` take two cells.
+    pub fn is_wide(&self) -> bool {
+        self.wide
+    }
+
+    /// `s` laid out for this terminal: where ambiguous-width glyphs take two
+    /// cells, the space after each is dropped, so columns still line up.
+    pub fn fit(&self, s: &str) -> String {
+        if !self.wide {
+            return s.to_string();
+        }
+        let mut out = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            out.push(c);
+            if AMBIGUOUS.contains(&c) && chars.peek() == Some(&' ') {
+                chars.next();
+            }
+        }
+        out
     }
 
     pub fn enabled(&self) -> bool {
@@ -87,17 +141,26 @@ impl Paint {
 
     /// The agent's three-cell text logo: its mark on the brand's own
     /// background. Monochrome keeps the glyph, bracketed by spaces.
+    /// Empty when not painting, so piped output has no marks.
     pub fn tile(&self, kind: AgentKind) -> String {
         let t = brand::of(kind).tile;
-        if !self.on || self.theme.monochrome {
-            return self.paint(t.text, Style::default().add_modifier(Modifier::BOLD));
+        if !self.on {
+            return String::new();
+        }
+        if self.theme.monochrome {
+            return self.paint(
+                &self.fit(t.text),
+                Style::default().add_modifier(Modifier::BOLD),
+            );
         }
         let truecolor = matches!(self.theme.fg, Color::Rgb(..));
         let mut out = String::new();
-        for (i, ch) in t.text.chars().enumerate() {
+        for (i, ch) in self.fit(t.text).chars().enumerate() {
             let style = if truecolor {
-                let (fr, fg, fb) = t.fg;
-                let (br, bg, bb) = t.bg[i.min(2)];
+                let ((fr, fg, fb), (br, bg, bb)) = match t.on_light {
+                    Some(pair) if self.light => pair,
+                    _ => (t.fg, t.bg[i.min(2)]),
+                };
                 Style::default()
                     .fg(Color::Rgb(fr, fg, fb))
                     .bg(Color::Rgb(br, bg, bb))
@@ -120,19 +183,155 @@ impl Paint {
         } else {
             Color::Black
         };
+        // Cream reads on dark; on a light background the muzzle is peach,
+        // or it would vanish into the page.
+        let cream = match (self.light, t.fg) {
+            (true, Color::Rgb(..)) => Color::Rgb(0xf6, 0xc0, 0x9a),
+            (true, _) => Color::Yellow,
+            (false, fg) => fg,
+        };
         pixels(self, &crate::fox::HEAD, |c| match c {
             'O' => Some(t.accent),
-            'F' => Some(t.fg),
+            'F' => Some(cream),
             'K' => Some(ink),
             _ => None,
         })
     }
 
     /// The agent's two-cell mark in its brand colour.
+    /// Empty when not painting, so piped output has no marks.
     pub fn mark(&self, kind: AgentKind) -> String {
+        if !self.on {
+            return String::new();
+        }
         let b = brand::of(kind);
-        self.paint(b.mark, b.style(&self.theme))
+        self.paint(&self.fit(b.mark), b.style(&self.theme))
     }
+}
+
+/// True when the terminal's background is light, asked once per process.
+/// `KIT_BACKGROUND=light|dark` decides; otherwise `COLORFGBG`, then the
+/// terminal itself (OSC 11); dark when nothing answers.
+pub fn light_background() -> bool {
+    static LIGHT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *LIGHT.get_or_init(|| {
+        match std::env::var("KIT_BACKGROUND").as_deref() {
+            Ok("light") => return true,
+            Ok("dark") => return false,
+            _ => {}
+        }
+        if let Some(light) = std::env::var("COLORFGBG")
+            .ok()
+            .as_deref()
+            .and_then(colorfgbg_light)
+        {
+            return light;
+        }
+        query_background().is_some_and(|rgb| luminance(rgb) > 0.5)
+    })
+}
+
+/// `COLORFGBG` is `fg;bg` (sometimes `fg;x;bg`) in the 16 colours: 7 and
+/// 15 are light backgrounds.
+fn colorfgbg_light(v: &str) -> Option<bool> {
+    let bg: u8 = v.rsplit(';').next()?.trim().parse().ok()?;
+    Some(matches!(bg, 7 | 15))
+}
+
+fn luminance((r, g, b): (f32, f32, f32)) -> f32 {
+    0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/// `rgb:RRRR/GGGG/BBBB` (1 to 4 hex digits each) from an OSC 11 reply.
+fn parse_osc11(reply: &str) -> Option<(f32, f32, f32)> {
+    let rest = &reply[reply.find("rgb:")? + 4..];
+    let mut parts = rest.split('/').map(|p| {
+        let hex: String = p.chars().take_while(char::is_ascii_hexdigit).collect();
+        let max = 16f32.powi(hex.len() as i32) - 1.0;
+        u32::from_str_radix(&hex, 16).ok().map(|v| v as f32 / max)
+    });
+    Some((parts.next()??, parts.next()??, parts.next()??))
+}
+
+/// Ask the terminal for its background colour. The OSC 11 query is
+/// followed by a device-attributes query every terminal answers, so a
+/// terminal that ignores OSC 11 costs one round trip, not a timeout.
+#[cfg(unix)]
+fn query_background() -> Option<(f32, f32, f32)> {
+    use std::io::{IsTerminal, Read, Write};
+    use std::os::fd::AsRawFd;
+    let stdin = std::io::stdin();
+    if !stdin.is_terminal() || !std::io::stdout().is_terminal() {
+        return None;
+    }
+    let was_raw = crossterm::terminal::is_raw_mode_enabled().unwrap_or(false);
+    if !was_raw {
+        crossterm::terminal::enable_raw_mode().ok()?;
+    }
+    let mut out = std::io::stdout();
+    let _ = out.write_all(b"\x1b]11;?\x1b\\\x1b[c");
+    let _ = out.flush();
+    let fd = stdin.as_raw_fd();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
+    let mut reply = Vec::new();
+    let mut lock = stdin.lock();
+    // Read until the device-attributes answer (`ESC [ ? … c`) ends it.
+    loop {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            break;
+        }
+        let mut pfd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one valid pollfd for the duration of the call.
+        let ready = unsafe { libc::poll(&mut pfd, 1, left.as_millis() as libc::c_int) };
+        if ready <= 0 {
+            break;
+        }
+        let mut byte = [0u8; 64];
+        let Ok(n) = lock.read(&mut byte) else { break };
+        if n == 0 {
+            break;
+        }
+        reply.extend_from_slice(&byte[..n]);
+        let text = String::from_utf8_lossy(&reply);
+        if let Some(i) = text.find("\x1b[?")
+            && text[i..].contains('c')
+        {
+            break;
+        }
+    }
+    if !was_raw {
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
+    parse_osc11(&String::from_utf8_lossy(&reply))
+}
+
+#[cfg(not(unix))]
+fn query_background() -> Option<(f32, f32, f32)> {
+    None
+}
+
+/// Glyphs Kit draws that are East Asian ambiguous width: one cell in most
+/// terminals, two in CJK locales. (`❯` and `✻` are neutral, always one.)
+const AMBIGUOUS: [char; 4] = ['●', '○', '⊘', '◉'];
+
+/// A CJK locale, where terminals draw ambiguous-width glyphs two cells
+/// wide. `KIT_WIDE=1|0` overrides.
+pub fn ambiguous_is_wide(env: impl Fn(&str) -> Option<String>) -> bool {
+    match env("KIT_WIDE").as_deref() {
+        Some("1" | "on" | "true") => return true,
+        Some("0" | "off" | "false") => return false,
+        _ => {}
+    }
+    let locale = ["LC_ALL", "LC_CTYPE", "LANG"]
+        .into_iter()
+        .find_map(|k| env(k).filter(|v| !v.is_empty()))
+        .unwrap_or_default();
+    ["ja", "zh", "ko"].iter().any(|l| locale.starts_with(l))
 }
 
 /// Windows consoles draw escape codes only once virtual terminal
@@ -281,10 +480,62 @@ mod tests {
     use super::*;
 
     #[test]
-    fn plain_passes_text_through() {
+    fn plain_passes_text_through_and_drops_marks() {
         let p = Paint::plain();
         assert_eq!(p.accent("kit"), "kit");
-        assert_eq!(p.mark(AgentKind::Claude), "✻ ");
+        assert_eq!(p.mark(AgentKind::Claude), "");
+        assert_eq!(p.tile(AgentKind::Claude), "");
+    }
+
+    #[test]
+    fn background_answers_parse() {
+        let dark = parse_osc11("\x1b]11;rgb:0b0b/0e0e/1212\x1b\\").unwrap();
+        assert!(luminance(dark) < 0.1);
+        let light = parse_osc11("\x1b]11;rgb:ffff/ffff/ffff\x07\x1b[?62;22c").unwrap();
+        assert!(luminance(light) > 0.9);
+        assert!(parse_osc11("rgb:f/f/f").is_some_and(|c| luminance(c) > 0.9));
+        assert_eq!(parse_osc11("\x1b[?62;22c"), None);
+        assert_eq!(colorfgbg_light("0;15"), Some(true));
+        assert_eq!(colorfgbg_light("15;default;0"), Some(false));
+        assert_eq!(colorfgbg_light("x"), None);
+    }
+
+    #[test]
+    fn light_backgrounds_keep_the_fox_and_grok_visible() {
+        let dark = Paint::with(Theme::kit());
+        let light = Paint::with(Theme::kit_light()).light(true);
+        // The muzzle is cream on dark, peach on light.
+        assert!(dark.fox_head()[4].contains("240;241;227"));
+        assert!(light.fox_head()[4].contains("246;192;154"));
+        // Grok's cream tile turns black on light.
+        assert!(dark.tile(AgentKind::Grok).contains("48;2;240;241;227"));
+        assert!(light.tile(AgentKind::Grok).contains("48;2;10;10;10"));
+    }
+
+    #[test]
+    fn wide_locales_drop_the_space_after_ambiguous_glyphs() {
+        let p = Paint::with(Theme::monochrome()).wide(true);
+        assert_eq!(p.fit("● x ⊘ ✻ "), "●x ⊘✻ ");
+        assert_eq!(p.mark(AgentKind::Grok), "\x1b[1m⊘\x1b[0m");
+        assert_eq!(p.mark(AgentKind::Claude), "\x1b[1m✻ \x1b[0m");
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| {
+                pairs
+                    .iter()
+                    .find(|(n, _)| *n == k)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        assert!(ambiguous_is_wide(env(&[("LANG", "ja_JP.UTF-8")])));
+        assert!(ambiguous_is_wide(env(&[
+            ("LC_ALL", "zh_CN.UTF-8"),
+            ("LANG", "en_US")
+        ])));
+        assert!(!ambiguous_is_wide(env(&[("LANG", "en_US.UTF-8")])));
+        assert!(!ambiguous_is_wide(env(&[
+            ("LANG", "ko_KR"),
+            ("KIT_WIDE", "0")
+        ])));
     }
 
     #[test]
@@ -333,7 +584,6 @@ mod tests {
     #[test]
     fn tiles_are_three_cells_in_every_theme() {
         for p in [
-            Paint::plain(),
             Paint::with(Theme::kit()),
             Paint::with(Theme::ansi16()),
             Paint::with(Theme::monochrome()),

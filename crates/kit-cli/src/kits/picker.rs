@@ -14,7 +14,7 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::{cursor, terminal};
 use kit_core::AgentKind;
-use kit_tui::ansi::Paint;
+use kit_tui::ansi::{Paint, visible_len};
 use kit_tui::brand;
 use std::io::Write;
 
@@ -175,9 +175,35 @@ impl Picker {
         lead + if self.has_marks() { 4 } else { 0 }
     }
 
+    /// The rows shown when the terminal is `height` rows tall: all of them,
+    /// or a window that keeps the cursor in view with the question and key
+    /// line still on screen.
+    fn window(&self, height: usize) -> std::ops::Range<usize> {
+        let n = self.items.len();
+        // Question and key line, plus a spare row so nothing scrolls.
+        let room = height.saturating_sub(3).max(1);
+        if n <= room {
+            return 0..n;
+        }
+        let start = self.cursor.saturating_sub(room - 1).min(n - room);
+        start..start + room
+    }
+
+    /// True when not every option fits in `height` rows.
+    fn windowed(&self, height: usize) -> bool {
+        self.window(height).len() < self.items.len()
+    }
+
     /// The lines to draw: question, one per option, key line. `logos`
     /// leaves the mark cells blank for images to fill.
+    #[cfg(test)]
     pub fn lines(&self, width: usize, paint: &Paint, logos: bool) -> Vec<String> {
+        self.lines_in(width, usize::MAX, paint, logos)
+    }
+
+    /// As [`Picker::lines`], in a terminal `height` rows tall.
+    pub fn lines_in(&self, width: usize, height: usize, paint: &Paint, logos: bool) -> Vec<String> {
+        let shown = self.window(height);
         let mut out = vec![paint.bold(&clip(&self.question, width.saturating_sub(1)))];
         let label_w = self
             .items
@@ -193,18 +219,26 @@ impl Picker {
             .max()
             .unwrap_or(0);
         for (i, item) in self.items.iter().enumerate() {
-            out.push(self.row(i, item, width, label_w, detail_w, paint, logos));
+            if shown.contains(&i) {
+                out.push(self.row(i, item, width, label_w, detail_w, paint, logos));
+            }
         }
         let keys = if self.multi {
             "↑↓ move · space select · enter confirm · esc cancel"
         } else {
             "↑↓ move · enter confirm · esc cancel"
         };
+        let more = self.items.len() - shown.len();
+        let keys = if more > 0 {
+            format!("{keys} · {more} more")
+        } else {
+            keys.to_string()
+        };
         let room = width.saturating_sub(3);
         let foot = match (&self.error, &self.hint) {
             (Some(e), _) => paint.warn(&clip(e, room)),
             (None, Some(h)) => paint.muted(&clip(&format!("{keys} · {h}"), room)),
-            (None, None) => paint.muted(&clip(keys, room)),
+            (None, None) => paint.muted(&clip(&keys, room)),
         };
         out.push(format!("  {foot}"));
         out
@@ -227,16 +261,22 @@ impl Picker {
         } else {
             " ".into()
         };
+        let gap = if paint.is_wide() { "" } else { " " };
         let dot = match (self.multi, self.chosen[i]) {
             (false, _) => String::new(),
-            (true, true) => format!("{} ", paint.accent("●")),
-            (true, false) => format!("{} ", paint.muted("○")),
+            // Where ● takes two cells it fills the space after it too.
+            (true, true) => format!("{}{gap}", paint.accent("●")),
+            (true, false) => format!("{}{gap}", paint.muted("○")),
         };
         // Four cells: the logo image in the first two, or the text tile.
         let mark = match item.agent {
             _ if !self.has_marks() => String::new(),
             Some(_) if logos => "    ".into(),
-            Some(a) => format!("{} ", paint.tile(a)),
+            // Unpainted there is no tile, only its cells.
+            Some(a) => match paint.tile(a) {
+                t if t.is_empty() => "    ".into(),
+                t => format!("{t} "),
+            },
             None => "    ".into(),
         };
         let mut s = format!("  {caret} {dot}{mark}");
@@ -324,15 +364,22 @@ pub fn run(mut picker: Picker) -> Result<Option<Vec<usize>>> {
         );
     }
     let paint = Paint::stdout();
-    let graphics = brand::graphics().filter(|_| picker.has_marks());
+    // Images sit at a fixed cell; where ● takes two cells, tiles do instead.
+    let graphics = brand::graphics().filter(|_| picker.has_marks() && !paint.is_wide());
     let mut out = std::io::stdout();
     terminal::enable_raw_mode()?;
     let _raw = Raw;
     crossterm::execute!(out, cursor::Hide)?;
 
-    let width = || terminal::size().map_or(80, |(w, _)| w as usize).max(20);
-    let draw = |p: &Picker, out: &mut std::io::Stdout, first: bool| -> Result<usize> {
-        let lines = p.lines(width(), &paint, graphics.is_some());
+    let size = || {
+        terminal::size().map_or((80, 24), |(w, h)| {
+            ((w as usize).max(20), (h as usize).max(4))
+        })
+    };
+    let draw = |p: &Picker, out: &mut std::io::Stdout, first: bool| -> Result<Drawn> {
+        let (width, height) = size();
+        let g = graphics.filter(|_| !p.windowed(height));
+        let lines = p.lines_in(width, height, &paint, g.is_some());
         let mut buf = String::new();
         if !first {
             // Back to the question line; logo cells are skipped, not
@@ -342,7 +389,7 @@ pub fn run(mut picker: Picker) -> Result<Option<Vec<usize>>> {
         for (n, line) in lines.iter().enumerate() {
             buf.push('\r');
             let row = n.checked_sub(1).and_then(|i| p.items.get(i));
-            match (graphics, row.and_then(|r| r.agent)) {
+            match (g, row.and_then(|r| r.agent)) {
                 (Some(_), Some(_)) if !first => {
                     // Prefix, skip the logo cells, then the rest.
                     let (head, tail) = split_at_cells(line, LOGO_COL as usize);
@@ -357,7 +404,7 @@ pub fn run(mut picker: Picker) -> Result<Option<Vec<usize>>> {
                 buf.push_str("\r\n");
             }
         }
-        if first && let Some(g) = graphics {
+        if first && let Some(g) = g {
             // Draw each logo once, from the bottom line upward.
             let last = lines.len() - 1;
             for (i, item) in p.items.iter().enumerate() {
@@ -377,13 +424,45 @@ pub fn run(mut picker: Picker) -> Result<Option<Vec<usize>>> {
         }
         out.write_all(buf.as_bytes())?;
         out.flush()?;
-        Ok(lines.len())
+        Ok(Drawn {
+            widths: lines.iter().map(|l| visible_len(l)).collect(),
+            logos: g.is_some(),
+        })
     };
 
-    let height = draw(&picker, &mut out, true)?;
+    // Back to the top of what is on screen and clear it, logos included.
+    let rows = picker.items.len();
+    let wipe = |shown: &Drawn| -> String {
+        let mut buf = String::new();
+        if shown.logos
+            && let Some(g) = graphics
+        {
+            for i in 0..rows {
+                buf.push_str(&brand::clear_logo(g, logo_id(i)));
+            }
+        }
+        let up = shown.rows(size().0) - 1;
+        buf.push('\r');
+        if up > 0 {
+            buf.push_str(&format!("\x1b[{up}A"));
+        }
+        buf.push_str("\x1b[J");
+        buf
+    };
+
+    // What is on screen: its lines' widths and whether logos were drawn.
+    let mut shown = draw(&picker, &mut out, true)?;
     let step = loop {
-        let Event::Key(k) = event::read()? else {
-            continue;
+        let k = match event::read() {
+            Ok(Event::Key(k)) => k,
+            Ok(Event::Resize(..)) => {
+                // The terminal may have rewrapped the rows: start over.
+                out.write_all(wipe(&shown).as_bytes())?;
+                shown = draw(&picker, &mut out, true)?;
+                continue;
+            }
+            Ok(_) => continue,
+            Err(e) => break Err(e),
         };
         if k.kind != KeyEventKind::Press {
             continue;
@@ -399,24 +478,18 @@ pub fn run(mut picker: Picker) -> Result<Option<Vec<usize>>> {
         };
         match picker.on_key(key) {
             Step::Continue => {
-                draw(&picker, &mut out, false)?;
+                shown = draw(&picker, &mut out, false)?;
             }
-            done => break done,
+            done => break Ok(done),
         }
     };
 
-    // Fold the list into its summary line.
-    let mut buf = String::new();
-    if let Some(g) = graphics {
-        for i in 0..picker.items.len() {
-            buf.push_str(&brand::clear_logo(g, logo_id(i)));
-        }
-    }
-    buf.push_str(&format!("\r\x1b[{}A\x1b[J", height - 1));
-    let result = match step {
-        Step::Done(picked) => {
-            buf.push_str(&picker.summary_line(&picked, &paint));
-            Some(picked)
+    // Fold the list into its summary line, even when reading keys failed.
+    let mut buf = wipe(&shown);
+    let result = match &step {
+        Ok(Step::Done(picked)) => {
+            buf.push_str(&picker.summary_line(picked, &paint));
+            Some(picked.clone())
         }
         _ => {
             buf.push_str(&format!(
@@ -430,7 +503,27 @@ pub fn run(mut picker: Picker) -> Result<Option<Vec<usize>>> {
     buf.push_str("\r\n");
     out.write_all(buf.as_bytes())?;
     out.flush()?;
+    step?;
     Ok(result)
+}
+
+/// The picker's lines as last drawn.
+#[derive(Debug)]
+struct Drawn {
+    widths: Vec<usize>,
+    logos: bool,
+}
+
+impl Drawn {
+    /// Terminal rows the lines take at `width`, if the terminal rewrapped
+    /// them after a resize (a line is always drawn one cell short).
+    fn rows(&self, width: usize) -> usize {
+        self.widths
+            .iter()
+            .map(|&w| w.div_ceil(width.max(1)).max(1))
+            .sum::<usize>()
+            .max(1)
+    }
 }
 
 /// A kitty image id per row, clear of ids other programs tend to use.
@@ -486,7 +579,6 @@ fn skip_cells(s: &str, cells: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kit_tui::ansi::visible_len;
     use kit_tui::theme::Theme;
 
     fn agents() -> Picker {
@@ -512,9 +604,40 @@ mod tests {
         .select(&[0])
     }
 
+    /// The text a terminal shows, escapes dropped.
+    fn strip(s: &str) -> String {
+        let mut out = String::new();
+        let mut esc = false;
+        for c in s.chars() {
+            match c {
+                '\x1b' => esc = true,
+                c if esc => esc = !c.is_ascii_alphabetic(),
+                c => out.push(c),
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn unpainted_rows_keep_the_mark_cells_empty() {
+        let lines = agents().lines(100, &Paint::plain(), false);
+        assert_eq!(
+            lines[1],
+            "  ❯ ●     Claude Code   2.1.283             logged in"
+        );
+        assert_eq!(
+            lines[2],
+            "    ○     Codex         codex-cli 0.155.0   not logged in"
+        );
+    }
+
     #[test]
     fn rows_line_up_with_marks() {
-        let lines = agents().lines(100, &Paint::plain(), false);
+        let lines: Vec<String> = agents()
+            .lines(100, &Paint::with(Theme::monochrome()), false)
+            .iter()
+            .map(|l| strip(l))
+            .collect();
         assert_eq!(
             lines,
             vec![
@@ -536,6 +659,43 @@ mod tests {
     }
 
     #[test]
+    fn wide_dots_fill_their_own_gap() {
+        let p = agents();
+        let paint = Paint::with(Theme::monochrome()).wide(true);
+        let row = strip(&p.lines(100, &paint, false)[1]);
+        // ● takes two cells here, so the tile and label stay put.
+        assert!(row.starts_with("  ❯ ● ✻  Claude Code"), "{row:?}");
+    }
+
+    #[test]
+    fn short_terminals_show_a_window_around_the_cursor() {
+        let mut p = agents();
+        let lines = p.lines_in(100, 5, &Paint::plain(), false);
+        assert_eq!(lines.len(), 4, "{lines:?}");
+        assert!(lines[1].contains("Claude Code"));
+        assert!(lines[2].contains("Codex"));
+        assert!(lines[3].ends_with("· 1 more"), "{:?}", lines[3]);
+        p.on_key(Key::Down);
+        p.on_key(Key::Down);
+        let lines = p.lines_in(100, 5, &Paint::plain(), false);
+        assert_eq!(lines.len(), 4);
+        assert!(lines[1].contains("Codex") && lines[2].contains("Grok"));
+        assert!(p.windowed(5) && !p.windowed(6));
+        // Tiny terminals still show the cursor row.
+        assert_eq!(p.lines_in(100, 1, &Paint::plain(), false).len(), 3);
+    }
+
+    #[test]
+    fn rewrapped_rows_are_counted_after_a_resize() {
+        let d = Drawn {
+            widths: vec![31, 70, 0, 52],
+            logos: false,
+        };
+        assert_eq!(d.rows(100), 4);
+        assert_eq!(d.rows(40), 1 + 2 + 1 + 2);
+    }
+
+    #[test]
     fn narrow_terminals_cut_with_an_ellipsis_never_wrap() {
         for width in [30, 44, 60] {
             for line in agents().lines(width, &Paint::plain(), false) {
@@ -549,7 +709,7 @@ mod tests {
         let lines = agents().lines(60, &Paint::plain(), false);
         assert!(lines[3].ends_with("still…"), "{:?}", lines[3]);
         let lines = agents().lines(44, &Paint::plain(), false);
-        assert_eq!(lines[3], "    ○  ⊘  Grok          not installed");
+        assert_eq!(lines[3], "    ○     Grok          not installed");
     }
 
     #[test]

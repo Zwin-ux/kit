@@ -731,6 +731,7 @@ dependencies = [
  "kitctl-agents",
  "kitctl-core",
  "kitctl-gate",
+ "libc",
  "ratatui",
  "serde_json",
  "tokio",
