@@ -921,9 +921,10 @@ fn print_doctor(version: &str, start_mcp: bool, json: bool) {
         return;
     }
 
-    println!("kit doctor {version}");
+    let paint = kit_tui::ansi::Paint::stdout();
+    println!("{} {}", paint.title("kit doctor"), paint.muted(version));
     println!();
-    println!("status:");
+    println!("{}", paint.bold("status:"));
     println!("  binary          ok (rust)");
     // Text shows `~/…` like `kit home`; --json keeps the absolute path.
     let binary_text = binary_path
@@ -956,33 +957,81 @@ fn print_doctor(version: &str, start_mcp: bool, json: bool) {
         }
     }
     println!();
-    println!("agents:");
+    println!("{}", paint.bold("agents:"));
+    if !paint.enabled() {
+        // Piped: the rows scripts and logs have always read.
+        for st in statuses {
+            let flag = if st.is_ready() {
+                "ready"
+            } else if st.installed {
+                "not ready"
+            } else {
+                "missing"
+            };
+            let ver = st.version.as_deref().unwrap_or("-");
+            println!("  {:8}  {flag:9}  {ver}", st.kind.label());
+            if let Some(r) = st.remedy {
+                println!("            → {r}");
+            }
+            if st.kind == AgentKind::Grok && st.installed && !kit_agents::full_auto() {
+                println!(
+                    "            → kit run starts grok only with KIT_FULL_AUTO=1 (it never asks before a command)"
+                );
+            }
+        }
+        kits::doctor::print(&kits);
+        return print_doctor_tail(&kits, kit_toml.is_some(), kits_ok, &paint);
+    }
+    // One order everywhere: claude, codex, grok, ollama.
+    let rank = |k: AgentKind| match k {
+        AgentKind::Claude => 0,
+        AgentKind::Codex => 1,
+        AgentKind::Grok => 2,
+        AgentKind::Ollama => 3,
+    };
+    let mut statuses = statuses;
+    statuses.sort_by_key(|st| rank(st.kind));
     for st in statuses {
         let flag = if st.is_ready() {
-            "ready"
+            paint.success(&format!("{:9}", "ready"))
         } else if st.installed {
-            "not ready"
+            paint.warn(&format!("{:9}", "not ready"))
         } else {
-            "missing"
+            paint.muted(&format!("{:9}", "missing"))
         };
         let ver = st.version.as_deref().unwrap_or("-");
-        println!("  {:8}  {flag:9}  {ver}", st.kind.label());
+        println!(
+            "  {} {:8}  {flag}  {}",
+            paint.mark(st.kind),
+            st.kind.label(),
+            // `2.1.283 (Claude Code)`: the name is already on the line.
+            paint.muted(ver.split(" (").next().unwrap_or(ver))
+        );
         if let Some(r) = st.remedy {
-            println!("            → {r}");
+            println!("               → {r}");
         }
         if st.kind == AgentKind::Grok && st.installed && !kit_agents::full_auto() {
             println!(
-                "            → kit run starts grok only with KIT_FULL_AUTO=1 (it never asks before a command)"
+                "               → kit run starts grok only with KIT_FULL_AUTO=1 (it never asks before a command)"
             );
         }
     }
     kits::doctor::print(&kits);
+    print_doctor_tail(&kits, kit_toml.is_some(), kits_ok, &paint);
+}
+
+fn print_doctor_tail(
+    kits: &[kits::doctor::KitReport],
+    has_kit_toml: bool,
+    kits_ok: bool,
+    paint: &kit_tui::ansi::Paint,
+) {
     println!();
-    println!("try:");
+    println!("{}", paint.bold("try:"));
     if kits.is_empty() {
         println!("  kit setup");
     }
-    if kit_toml.is_none() {
+    if !has_kit_toml {
         println!("  kit init");
     }
     println!("  kit run \"describe a task\"");

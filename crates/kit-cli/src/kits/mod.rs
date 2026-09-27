@@ -12,6 +12,7 @@ pub mod install;
 pub mod lock;
 pub mod manifest;
 pub mod new;
+mod picker;
 pub mod plan;
 pub mod remote;
 pub mod search;

@@ -7,6 +7,7 @@ use super::plan::{self, Action, Applied, tilde};
 use super::writers::{self, Agent, Options, Resolved, Scope};
 use crate::cli::{AddArgs, ListKitsArgs, RemoveArgs};
 use anyhow::{Context, Result, bail};
+use kit_tui::ansi::Paint;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::io::{BufRead, IsTerminal, Write as _};
@@ -301,10 +302,36 @@ pub enum Outcome {
 }
 
 pub fn cmd_add(args: AddArgs, json: bool) -> Result<()> {
+    let scope = scope(args.global)?;
+    let agents = agents(&args.agent)?;
+    let kits = if args.kits.is_empty() {
+        // Bare `kit add` in a terminal: the same list as setup, with what
+        // this scope already has marked installed.
+        let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+        if !tty || json || args.print {
+            bail!(
+                "kit add needs a kit name, for example kit add frontend-design. See them all with kit show"
+            );
+        }
+        let have: Vec<String> = Lock::load(&scope)?
+            .kits
+            .iter()
+            .map(|k| k.name.clone())
+            .collect();
+        match super::setup::pick_kits("Which kits should Kit add?", "Kits", &[], &have)? {
+            Some(kits) => kits,
+            None => {
+                println!("Nothing was changed.");
+                return Ok(());
+            }
+        }
+    } else {
+        args.kits
+    };
     let req = Request {
-        scope: scope(args.global)?,
-        agents: agents(&args.agent)?,
-        kits: args.kits,
+        scope,
+        agents,
+        kits,
         no_code: args.no_code,
         yes: args.yes,
         print: args.print,
@@ -395,7 +422,7 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
             .iter()
             .any(|(_, a)| !matches!(a, Action::Skip { .. }));
     if !json {
-        print!("{text}");
+        print!("{}", paint_plan(&text, &Paint::stdout()));
     }
     if let Some(first) = prepared.edited.first()
         && !req.force
@@ -499,32 +526,60 @@ pub fn add_to(req: &Request, json: bool, mut lock: Lock, expect: &Expect) -> Res
         .map(|k| k.manifest.kit.title.as_str())
         .collect();
     let who: Vec<&str> = agents.iter().map(|a| a.title()).collect();
+    let paint = Paint::stdout();
     println!(
-        "Done. {} {} {} in {}.",
-        super::setup::and_list(&who),
+        "{}Done. {} {} {} in {}.",
+        if paint.enabled() {
+            format!("{} ", paint.success("✓"))
+        } else {
+            String::new()
+        },
+        paint.bold(&super::setup::and_list(&who)),
         if who.len() == 1 { "has" } else { "have" },
-        super::setup::and_list(&titles),
+        paint.bold(&super::setup::and_list(&titles)),
         scope.label()
     );
     match super::lock::shared_path(scope) {
+        // In a terminal, the record's hashed folder stays out of sight
+        // (`kit list` shows it); piped output keeps the exact path.
+        Some(shared) if paint.enabled() => println!(
+            "{}",
+            paint.muted(&format!(
+                "Kit keeps its record in {}; {} is a copy to commit for your team.",
+                tilde(&crate::engine::paths::kit_home()),
+                shared
+                    .file_name()
+                    .map_or_else(|| tilde(&shared), |n| n.to_string_lossy().into_owned())
+            ))
+        ),
         Some(shared) => println!(
             "Recorded in {}; {} is a copy to commit for your team.",
             tilde(&super::lock::path(scope)),
             tilde(&shared)
         ),
-        None => println!("Recorded in {}.", tilde(&super::lock::path(scope))),
+        None => println!(
+            "{}",
+            paint.muted(&format!(
+                "Recorded in {}.",
+                tilde(&super::lock::path(scope))
+            ))
+        ),
     }
     let flag = if matches!(scope, Scope::Global { .. }) {
         " --global"
     } else {
         ""
     };
-    println!("check     kit list{flag}");
+    let label = |l: &str| paint.muted(&format!("{l:10}"));
+    println!("{}kit list{flag}", label("check"));
     if matches!(scope, Scope::Repo(_)) {
         // `kit run` works in a fresh worktree of the last commit.
-        println!("commit    these files, so kit run's worktree has them too");
+        println!(
+            "{}these files, so kit run's worktree has them too",
+            label("commit")
+        );
     }
-    println!("undo      kit remove {}{flag}", names.join(" "));
+    println!("{}kit remove {}{flag}", label("undo"), names.join(" "));
     Ok(Outcome::Installed)
 }
 
@@ -624,20 +679,61 @@ fn ask(code: bool) -> Result<Answer> {
             "Kit needs your yes before it writes anything. Run it in a terminal, or add --yes (and --no-code to skip anything that runs code)"
         );
     }
-    let prompt = if code {
-        "Continue? [y/N], or s for skills and rules only (no code): "
+    let paint = Paint::stdout();
+    let options = if code {
+        "[y/N], or s for skills and rules only (no code): "
     } else {
-        "Continue? [y/N] "
+        "[y/N] "
     };
-    print!("{prompt}");
+    print!("{} {}", paint.bold("Continue?"), paint.muted(options));
     std::io::stdout().flush()?;
     let mut line = String::new();
     std::io::stdin().lock().read_line(&mut line)?;
-    Ok(match line.trim().to_ascii_lowercase().as_str() {
+    Ok(match typed(&line).to_ascii_lowercase().as_str() {
         "y" | "yes" => Answer::Yes,
         "s" if code => Answer::NoCode,
         _ => Answer::No,
     })
+}
+
+/// What the person typed, without any terminal reply that arrived in the
+/// same line (a late answer to the background-colour query, say): escape
+/// sequences are dropped and the rest trimmed.
+fn typed(line: &str) -> String {
+    let mut out = String::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            if !c.is_control() || c == ' ' {
+                out.push(c);
+            }
+            continue;
+        }
+        match chars.next() {
+            // OSC: up to BEL or ESC \.
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\x07' {
+                        break;
+                    }
+                    if c == '\x1b' {
+                        chars.next_if_eq(&'\\');
+                        break;
+                    }
+                }
+            }
+            // CSI: up to its final byte.
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out.trim().to_string()
 }
 
 /// Exactly what an action will run: the MCP server's command line, for
@@ -794,6 +890,61 @@ fn doctor_commands(chosen: &Chosen, p: &Prepared, opts: Options) -> Vec<(String,
                 .map(|c| (k.name().to_string(), c.clone()))
         })
         .collect()
+}
+
+/// The plan as printed to a terminal: kit headers bold, labels and
+/// provenance muted, and everything that runs code in the warning colour.
+/// The words are exactly [`render_plan`]'s; only colour is added.
+fn paint_plan(text: &str, paint: &Paint) -> String {
+    if !paint.enabled() {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len() * 2);
+    let mut after_header = false;
+    for line in text.lines() {
+        let painted = if line.contains("  →  ") {
+            after_header = true;
+            out.push_str(&paint.bold(line));
+            out.push('\n');
+            continue;
+        } else if after_header {
+            after_header = false;
+            paint.muted(line)
+        } else if line.starts_with("Runs code on your machine") {
+            paint.warn(line)
+        } else if let Some(rest) = line.strip_prefix("            ") {
+            // A skill row (name, origin, licence) or a runs/when line.
+            match rest.split_once("  ") {
+                Some((name @ ("runs" | "when"), tail)) => {
+                    format!("            {}", paint.muted(&format!("{name}  {tail}")))
+                }
+                Some((name, tail)) => {
+                    let tail = match tail.strip_suffix("no licence") {
+                        Some(t) => format!("{}{}", paint.muted(t), paint.warn("no licence")),
+                        None => paint.muted(tail),
+                    };
+                    format!("            {name}  {tail}")
+                }
+                None => paint.muted(line),
+            }
+        } else if line.len() > 10
+            && line.as_bytes()[0].is_ascii_lowercase()
+            && line.is_char_boundary(10)
+            && line[..10].ends_with("  ")
+        {
+            let (label, rest) = line.split_at(10);
+            let rest = match rest.strip_suffix("   RUNS CODE") {
+                Some(r) => format!("{r}   {}", paint.warn("RUNS CODE")),
+                None => rest.to_string(),
+            };
+            format!("{}{rest}", paint.muted(label))
+        } else {
+            line.to_string()
+        };
+        out.push_str(&painted);
+        out.push('\n');
+    }
+    out
 }
 
 fn render_plan(
@@ -1184,7 +1335,7 @@ pub fn cmd_remove(args: RemoveArgs, json: bool) -> Result<()> {
         std::io::stdout().flush()?;
         let mut line = String::new();
         std::io::stdin().lock().read_line(&mut line)?;
-        if !matches!(line.trim(), "y" | "Y" | "yes") {
+        if !matches!(typed(&line).as_str(), "y" | "Y" | "yes") {
             println!("Nothing was changed.");
             return Ok(());
         }
@@ -1435,4 +1586,20 @@ pub(crate) fn skill_names(e: &Entry) -> BTreeSet<String> {
             _ => None,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::typed;
+
+    #[test]
+    fn a_late_terminal_reply_is_not_read_as_the_answer() {
+        assert_eq!(typed("y\n"), "y");
+        assert_eq!(
+            typed("\x1b]11;rgb:0b0b/0e0e/1212\x1b\\\x1b[?62;22cy\n"),
+            "y"
+        );
+        assert_eq!(typed("\x1b]11;rgb:ffff/ffff/ffff\x07 yes \n"), "yes");
+        assert_eq!(typed("\x1b[?1;2c\n"), "");
+    }
 }

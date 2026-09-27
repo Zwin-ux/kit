@@ -48,6 +48,24 @@ const REST: [&str; 24] = [
     ".....#########....",
 ];
 
+/// The fox's head, Kit's mark in line output (`kit setup`'s banner): 16×12
+/// pixels, 16 columns by 6 rows. `O` fox red, `o` ear shade, `F` cream,
+/// `K` ink, `.` clear.
+pub const HEAD: [&str; 12] = [
+    ".O............O.",
+    ".OO..........OO.",
+    ".OKO........OKO.",
+    ".OKOO......OOKO.",
+    ".OOOOOOOOOOOOOO.",
+    "OOOOOOOOOOOOOOOO",
+    "OOOKKOOOOOOKKOOO",
+    "FFOOOOOOOOOOOOFF",
+    ".FFFFFOOOOFFFFF.",
+    "..FFFFFFFFFFFF..",
+    "....FFFFFFFF....",
+    "......FKKF......",
+];
+
 /// Rows that differ from [`REST`] in each frame of the wag: the tail rises,
 /// peaks, and settles. Frame 0 is the rest pose.
 const TAIL: [&[(usize, &str)]; 6] = [

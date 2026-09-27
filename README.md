@@ -22,22 +22,23 @@ every file first, and can take it all out again.
 ```console
 $ npm install -g @mzwin/kit
 $ kit
-Kit sets your coding agents up for one job, then proves what they do.
+                    kit  2.0.0            (beside Kit's fox, in fox red)
+                    Kit sets your coding agents up for one job,
+                    then proves what they do.
 
-Looking for agents on this machine…
-  Claude Code   2.1.283
-  Codex         not found
-  Grok          not found
+Which agents should Kit set up?
+  ❯ ●  ✻  Claude Code   2.1.283         logged in
+    ○  >_ Codex         not installed   Kit can still write its files
+    ○  ⊘  Grok          not installed   Kit can still write its files
+  ↑↓ move · space select · enter confirm · esc cancel
+```
 
-> Which agents should Kit set up? Claude Code
-? What should your agents focus on?
-> [x] Frontend Design      UI, design systems, accessibility, browser testing
-  [ ] Full-stack Design    Frontend Design plus APIs, data, security, end-to-end tests
-  [ ] Backend Engineer     APIs, databases, security, performance, observability
-  [ ] LLM Engineer         Prompts, evals, RAG, model APIs, cost and latency
-  [ ] iOS / Apple Design   Native iOS apps that feel like Apple's: SwiftUI, HIG, Liquid Glass
-  [ ] Essentials           Spec, plan, build in small steps, test, review, ship
-> Install for All my projects   your agents use it everywhere
+Each question folds into one line once answered:
+
+```console
+✓ Agents       Claude Code
+✓ Focus        Frontend Design
+✓ Install for  All my projects
 
 Frontend Design 0.1.0  (extends essentials)  →  Claude Code, all projects
 Official
@@ -54,12 +55,13 @@ hook      PostToolUse → ~/.claude/settings.json   RUNS CODE
 Runs code on your machine: 2 (MCP servers, hooks and checks, each shown above).
 
 Continue? [y/N], or s for skills and rules only (no code): y
-Done. Claude Code has Frontend Design in all projects.
+✓ Done. Claude Code has Frontend Design in all projects.
 undo      kit remove frontend-design --global
 
-Try it:
-  claude "build a pricing page with three tiers"
-  kit run "build a pricing page with three tiers"   (in its own worktree, proven by your checks)
+try       claude "build a pricing page with three tiers"
+then      kit run "build a pricing page with three tiers"   runs it in its own worktree, proven by your checks
+
+From now on, kit opens the Control Room, where you watch your runs.
 ```
 
 </details>
@@ -97,6 +99,7 @@ runtime through the [sosumi](https://github.com/NSHipster/sosumi.ai) MCP server,
 ```bash
 kit show                              # the kits
 kit show frontend-design              # what it installs, before anything is written
+kit add                               # pick kits from a list
 kit add frontend-design --global      # all your projects
 kit add llm-engineer --agent codex    # this repo only, Codex only
 kit add backend-engineer --print      # the plan, nothing written
@@ -284,6 +287,9 @@ cargo run -p kitctl -- --demo
 | `KIT_OLLAMA_MODEL` | Model for the Ollama adapter (default `llama3.2`) |
 | `NO_COLOR` / `KIT_MOTION=off` | Monochrome / reduced motion |
 | `KIT_THEME=high` | High-contrast palette |
+| `KIT_LOGOS=off` | Text marks instead of agent logos in `kit setup` (logos show in kitty, Ghostty, WezTerm and iTerm2, never inside tmux) |
+| `KIT_BACKGROUND=light` / `dark` | Skip asking the terminal for its background colour (Kit never asks over SSH or inside tmux or screen) |
+| `KIT_WIDE=1` | Lay out for terminals where `●` and `⊘` take two cells (set for Chinese, Japanese and Korean locales) |
 
 JSON output for scripts: commands take `--json` ([contract](docs/json-contract.md)).
 Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md).
@@ -297,6 +303,40 @@ kept in `packages/` for history; Kit is now the Rust binary above. See
 
 </details>
 
+<details>
+<summary>Third-party notices</summary>
+
+The agent logos in `kit setup` come from
+[lobehub/lobe-icons](https://github.com/lobehub/lobe-icons). They are
+trademarks of their owners (Anthropic, OpenAI, xAI); Kit shows them only to
+name the agent it sets up. The icon set's licence:
+
+```text
+MIT License
+
+Copyright (c) 2023 LobeHub
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
 <p align="center">
-  <sub><a href="LICENSE">MIT</a></sub>
+  <sub><a href="LICENSE">MIT</a> · <a href="THIRD-PARTY-NOTICES.md">third-party notices</a></sub>
 </p>

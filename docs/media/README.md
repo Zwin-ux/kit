@@ -21,9 +21,9 @@ These keep the set looking like one product, and like the product as designed (`
 | bg | `#0B0E12` | Terminal background (the TUI paints none of its own) |
 | fg | `#F0F1E3` | Text |
 | muted | `#6B7280` | Footer, column headers, the prompt path |
-| accent | `#00E6CC` | Title, focus, selection rail, RUN, setup's cursor |
+| accent | `#FF5A1F` | Title, focus, selection rail, RUN, setup's cursor |
 | success | `#39FF9E` | PASS, setup's `?` and ticks |
-| danger | `#FF3B4E` | FAIL, errors |
+| danger | `#FF2D6F` | FAIL, errors |
 | warn | `#FFBA3D` | QUEUED, GATING |
 | fail wash | `#2A1216` | Background of a failed row |
 

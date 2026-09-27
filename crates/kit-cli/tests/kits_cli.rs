@@ -262,6 +262,20 @@ fn outside_a_repo_the_error_names_global() {
     );
 }
 
+/// Bare `kit add` opens a picker only in a terminal; piped, it names the fix.
+#[test]
+fn bare_add_without_a_terminal_asks_for_a_kit_name() {
+    let root = scratch("bareadd");
+    let repo = root.join("repo");
+    git_repo(&repo);
+    let env = Env::new(&root);
+    let out = env.kit(&repo, &["add", "-a", "claude"]);
+    assert!(!out.status.success());
+    let err = text(&out.stderr);
+    assert!(err.contains("kit add needs a kit name"), "{err}");
+    assert!(err.contains("kit show"), "{err}");
+}
+
 /// Global MCP goes through `claude mcp add-json`, and remove undoes it.
 #[cfg(unix)]
 #[test]

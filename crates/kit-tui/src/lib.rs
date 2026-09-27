@@ -19,7 +19,9 @@
 //!
 //! Agent skills: `.agents/skills` (addyosmani/agent-skills). See root `AGENTS.md`.
 
+pub mod ansi;
 pub mod app;
+pub mod brand;
 pub mod event;
 #[path = "loop.rs"]
 pub mod event_loop;
