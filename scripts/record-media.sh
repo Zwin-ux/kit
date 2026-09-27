@@ -107,6 +107,8 @@ Env GIT_AUTHOR_EMAIL "you@example.com"
 Env GIT_COMMITTER_NAME "you"
 Env GIT_COMMITTER_EMAIL "you@example.com"
 Env KIT_FAKE_SECS "12"
+# The Kit VHS theme is dark; say so rather than have Kit ask the terminal.
+Env KIT_BACKGROUND "dark"
 EOT
   # The stand-in grok counts as logged in only with a key in the environment.
   [ "$1" = fake ] && echo 'Env XAI_API_KEY "recording"' >> "$work/env.tape"
