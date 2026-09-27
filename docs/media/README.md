@@ -38,7 +38,7 @@ These keep the set looking like one product, and like the product as designed (`
 | `control-room` | 120×16 | Header keeps its flash and counts; four rows plus the error line fill the table |
 | `control-room-empty` | 120×26 | The fox shows only in an empty table at about 19 rows or more |
 | `fleet` | 120×18 | 10–12 visible rows plus `↓ N more below` |
-| `setup` | 110×44 | The whole plan and prompts; the ending (`undo`, `Try it`) scrolls the top off |
+| `setup` | 110×66 | The whole run on one screen, from the fox banner to the fox's sign-off. VHS's `Wait` reads only the visible screen, so a shorter terminal never sees the ending |
 | `add` | 110×32 | Backend Engineer's licence column (`Apache-2.0 AND CC-BY-SA-4.0`) reaches 105 columns |
 | `doctor` | 100×32 | Widest line is about 80 columns |
 | `run` | 110×32 | Worktree paths are about 75 columns plus the home |
