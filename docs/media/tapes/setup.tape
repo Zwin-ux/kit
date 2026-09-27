@@ -2,7 +2,7 @@
 # shows every file it will write, and installs only after a yes.
 Output "out/setup.gif"
 Set Width 1180
-Set Height 920
+Set Height 1320
 Source "kit-theme.tape"
 Source "env.tape"
 
@@ -23,7 +23,7 @@ Wait+Screen@120s /Continue/
 Sleep 3.5s
 Screenshot "out/setup-plan.png"
 Type "y" Sleep 300ms Enter
-Wait+Screen@120s /undo +kit remove/
+Wait+Screen@120s /where you watch your runs/
 Sleep 4s
 Screenshot "out/setup-done.png"
 # VHS writes a screenshot asynchronously; let it land before the tape ends.

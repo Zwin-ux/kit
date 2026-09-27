@@ -14,7 +14,7 @@ MCP server so the agent can look at the page, and a hook that formats each
 file it edits. Kit writes each piece in the format your agent reads, shows you
 every file first, and can take it all out again.
 
-<p align="center"><img src="docs/media/setup.gif" width="880" alt="kit setup: finds Claude Code, asks which kit and where, shows every file and skill it will install with its pinned source and licence, then installs after y" /></p>
+<p align="center"><img src="docs/media/setup.gif" width="880" alt="kit setup: the fox banner, then one picker each for agents, focus and where to install, each folding into a single line; every file and skill with its pinned source and licence; yes; and the fox signing off" /></p>
 
 <details>
 <summary>The same first run as text</summary>
