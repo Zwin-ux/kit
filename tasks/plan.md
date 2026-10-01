@@ -1,3 +1,7 @@
+# Current native Claude work (2026-10-02)
+
+The active native Mods plan and checkpoint are in [CLAUDE-NATIVE.md](../docs/dev/CLAUDE-NATIVE.md). Implement four real specialist categories inside Claude's host, with explicit invocation, session-local status and result review. The native UI is pending the parent-reviewed character-grid specification. The older Control Room plan below is retained as history, not a restriction on this explicitly requested feature.
+
 # Implementation Plan: Daily-driver Kit (from SPEC-next)
 
 **Spec:** [`docs/dev/SPEC-next.md`](../docs/dev/SPEC-next.md)  

@@ -1,5 +1,17 @@
 # Kit execution board
 
+## Native Claude Mods (current request, 2026-10-02)
+
+- [x] Verify installed Claude 2.1.287 and generate its Mods declarations without a model call.
+- [x] Add native Rust check/install/launch and a shared plugin source/exporter.
+- [x] Verify four actual agent files and eight first-party skills load; package regression covers discovery.
+- [x] Add explicit visible draft selection and session-local jobs/result review.
+- [ ] Finish full Rust gates and native UI checks after the final changes.
+- [ ] Implement parent-reviewed four-bucket strip, compact right Pane, red theme and anchored fox.
+- [ ] Verify live native execution and isolation on a user-requested task; curated upstream suites remain uninstalled.
+
+See [native checkpoint](../docs/dev/CLAUDE-NATIVE.md). Historical Control Room work follows.
+
 Spec (all items + parked): [`docs/dev/SPEC-next.md`](../docs/dev/SPEC-next.md)  
 Plan (order + task cards): [`tasks/plan.md`](plan.md)
 

@@ -1,84 +1,45 @@
 #!/usr/bin/env node
-/**
- * Build a local Claude Code plugin package from Kit skills.
- * Output: dist/claude-plugin/
- */
-import { cp, mkdir, rm, writeFile, access } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+/** Package the same native plugin the Rust CLI embeds. No installs or startup. */
+import { cp, lstat, mkdir, rm } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const out = path.join(root, "dist", "claude-plugin");
-const skillsSrc = path.join(root, "skills");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+export const pluginSource = path.join(root, 'crates', 'kit-cli', 'claude-plugin');
+export const bundleEntries = ['.claude-plugin/plugin.json', 'hooks', 'agents', 'skills', 'README.md', 'LICENSE', 'provenance.json'];
 
-async function exists(p) {
-  try {
-    await access(p);
-    return true;
-  } catch {
-    return false;
+export async function packagePlugin(destination = path.join(root, 'dist', 'claude-plugin')) {
+  const out = path.resolve(destination);
+  for (let dir = out; ; dir = path.dirname(dir)) {
+    const entry = await lstat(dir).catch(error => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+    if (entry?.isSymbolicLink()) throw new Error(`Refusing linked output path: ${dir}`);
+    if (dir === path.dirname(dir)) break;
   }
+  await mkdir(path.dirname(out), { recursive: true });
+  // A fresh directory preserves both hand-edited and older generated bundles.
+  await mkdir(out).catch(error => {
+    if (error.code === 'EEXIST') throw new Error(`${out} exists; choose a fresh --out directory.`);
+    throw error;
+  });
+  try {
+    for (const entry of bundleEntries) {
+      await mkdir(path.dirname(path.join(out, entry)), { recursive: true });
+      await cp(path.join(pluginSource, entry), path.join(out, entry), { recursive: true });
+    }
+  } catch (error) {
+    // Only the directory this invocation just created is removed.
+    await rm(out, { recursive: true, force: true });
+    throw error;
+  }
+  return out;
 }
 
-await rm(out, { recursive: true, force: true });
-await mkdir(path.join(out, ".claude-plugin"), { recursive: true });
-await mkdir(path.join(out, "skills"), { recursive: true });
-
-if (!(await exists(skillsSrc))) {
-  throw new Error("skills/ missing");
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const args = process.argv.slice(2);
+  if (args.length && (args.length !== 2 || args[0] !== '--out')) {
+    throw new Error('Usage: node scripts/sync-claude-plugin.mjs [--out <fresh-directory>]');
+  }
+  console.log('wrote', await packagePlugin(args[1]));
 }
-
-await cp(skillsSrc, path.join(out, "skills"), {
-  recursive: true,
-  filter: (src) => {
-    const base = path.basename(src);
-    return base !== "README.md" && base !== "node_modules" && base !== ".git";
-  },
-});
-
-const pluginJson = {
-  name: "kit",
-  version: "0.1.0",
-  description:
-    "Portable Kit agent skills — essentials workflows for Claude Code",
-  author: { name: "Zwin-ux" },
-};
-
-await writeFile(
-  path.join(out, ".claude-plugin", "plugin.json"),
-  JSON.stringify(pluginJson, null, 2) + "\n",
-  "utf8",
-);
-
-await writeFile(
-  path.join(out, "README.md"),
-  `# Kit Claude plugin
-
-Local Claude Code plugin built from the Kit skill catalog.
-
-## Install (local path)
-
-From Claude Code, add this plugin from the repo:
-
-\`\`\`text
-${out}
-\`\`\`
-
-Or after clone:
-
-\`\`\`bash
-node scripts/sync-claude-plugin.mjs
-# point Claude plugin install at dist/claude-plugin
-\`\`\`
-
-Skills also install via:
-
-\`\`\`bash
-npm i -g @mzwin/kit
-kit link --to claude-code --write
-\`\`\`
-`,
-  "utf8",
-);
-
-console.log("wrote", out);

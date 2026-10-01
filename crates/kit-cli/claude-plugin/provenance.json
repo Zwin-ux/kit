@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "name": "kit-native-starters",
+  "version": "2.0.0",
+  "origin": "original Kit content",
+  "repository": "https://github.com/Zwin-ux/kit",
+  "license": "MIT",
+  "upstreamInstalled": false,
+  "skills": {
+    "ui-craft": "Frontend",
+    "accessibility": "Frontend",
+    "api-design": "Backend",
+    "backend-verification": "Backend",
+    "security-review": "Security",
+    "dependency-review": "Security",
+    "product-spec": "Product",
+    "acceptance-review": "Product"
+  }
+}

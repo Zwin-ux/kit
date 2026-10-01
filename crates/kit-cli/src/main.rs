@@ -8,6 +8,7 @@ mod engine;
 mod init;
 mod kits;
 mod land;
+mod native;
 
 use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser};
@@ -71,6 +72,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
         anyhow::bail!("--demo opens the Control Room. Use `kit --demo` on its own");
     }
     match cli.command {
+        Some(Command::Claude { action }) => native::run(action, json),
         None if !cli.demo && kits::setup::first_run() => {
             kits::setup::cmd_setup(cli::SetupArgs::default(), json).await
         }

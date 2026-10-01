@@ -1,0 +1,14 @@
+{
+  "name": "kit",
+  "version": "2.0.0",
+  "description": "Frontend, Backend, Security and Product specialists inside native Claude Code",
+  "author": { "name": "Zwin-ux" },
+  "repository": "https://github.com/Zwin-ux/kit",
+  "license": "MIT",
+  "agents": [
+    "./agents/frontend-ui-builder.md",
+    "./agents/backend-api-builder.md",
+    "./agents/security-reviewer.md",
+    "./agents/product-spec-writer.md"
+  ]
+}

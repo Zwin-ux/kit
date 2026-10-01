@@ -56,6 +56,12 @@ pub struct GlobalArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Prepare and open Kit inside native interactive Claude Code
+    Claude {
+        #[command(subcommand)]
+        action: ClaudeCommand,
+    },
+
     /// List kits, or show what one kit installs
     #[command(
         after_help = "Example:\n  kit show                   list the kits\n  kit show frontend-design   skills, rules, MCP servers and hooks it brings"
@@ -140,6 +146,28 @@ pub enum Command {
     Completions {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ClaudeCommand {
+    /// Check the installed Claude Code version without checking login or starting a session
+    Check,
+    /// Write the bundled native plugin to a new local directory; does not enable it
+    Install {
+        #[arg(long = "dir", default_value = ".kit/claude-plugin", value_name = "DIR")]
+        plugin_dir: PathBuf,
+        /// Show the files without writing
+        #[arg(long)]
+        print: bool,
+    },
+    /// Open native Claude interactively with the local Kit plugin
+    Launch {
+        #[arg(long, default_value = ".kit/claude-plugin", value_name = "DIR")]
+        plugin_dir: PathBuf,
+        /// Show the argument vector without starting Claude
+        #[arg(long)]
+        print: bool,
     },
 }
 
@@ -322,6 +350,10 @@ pub fn command_name(args: &[String]) -> String {
         }
     }
     match first {
+        Some("claude") => match second {
+            Some(sub @ ("check" | "install" | "launch")) => format!("claude.{sub}"),
+            _ => "claude".to_string(),
+        },
         Some("receipt" | "receipts") => {
             let sub = match second {
                 Some("show" | "get") => "show",
@@ -423,6 +455,11 @@ mod tests {
         assert_eq!(command_name(&argv("run --task x --json")), "run");
         assert_eq!(command_name(&argv("-C dir run x --json")), "run");
         assert_eq!(command_name(&argv("doctor --json")), "doctor");
+        assert_eq!(
+            command_name(&argv("claude install --json")),
+            "claude.install"
+        );
+        assert_eq!(command_name(&argv("claude launch --json")), "claude.launch");
         assert_eq!(
             command_name(&argv("receipt show 01M --json")),
             "receipt.show"
