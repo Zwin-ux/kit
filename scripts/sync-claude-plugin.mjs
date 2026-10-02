@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const pluginSource = path.join(root, 'crates', 'kit-cli', 'claude-plugin');
-export const bundleEntries = ['.claude-plugin/plugin.json', 'hooks', 'agents', 'skills', 'README.md', 'LICENSE', 'provenance.json'];
+export const bundleEntries = ['.claude-plugin/plugin.json', 'hooks', 'agents', 'skills', 'themes', 'README.md', 'LICENSE', 'provenance.json'];
 
 export async function packagePlugin(destination = path.join(root, 'dist', 'claude-plugin')) {
   const out = path.resolve(destination);

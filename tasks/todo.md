@@ -7,7 +7,7 @@
 - [x] Verify four actual agent files and eight first-party skills load; package regression covers discovery.
 - [x] Add explicit visible draft selection and session-local jobs/result review.
 - [ ] Finish full Rust gates and native UI checks after the final changes.
-- [ ] Implement parent-reviewed four-bucket strip, compact right Pane, red theme and anchored fox.
+- [x] Implement parent-reviewed four-bucket strip, native Pane, red theme and anchored fox; offline UI tests pass.
 - [ ] Verify live native execution and isolation on a user-requested task; curated upstream suites remain uninstalled.
 
 See [native checkpoint](../docs/dev/CLAUDE-NATIVE.md). Historical Control Room work follows.

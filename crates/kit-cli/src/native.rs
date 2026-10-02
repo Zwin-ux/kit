@@ -73,6 +73,10 @@ fn payload() -> BTreeMap<PathBuf, Vec<u8>> {
         ("README.md", include_str!("../claude-plugin/README.md")),
         ("LICENSE", include_str!("../claude-plugin/LICENSE")),
         (
+            "themes/kit-red.json",
+            include_str!("../claude-plugin/themes/kit-red.json"),
+        ),
+        (
             "provenance.json",
             include_str!("../claude-plugin/provenance.json"),
         ),
@@ -259,6 +263,7 @@ mod tests {
         assert_eq!(files.keys().filter(|p| p.starts_with("agents")).count(), 4);
         assert_eq!(files.keys().filter(|p| p.starts_with("skills")).count(), 8);
         assert!(files.contains_key(Path::new("agents/frontend-ui-builder.md")));
+        assert!(files.contains_key(Path::new("themes/kit-red.json")));
         assert!(!files.keys().any(|p| p.to_string_lossy().contains("types")));
         assert!(!files.keys().any(|p| p.to_string_lossy().contains(".mcp")));
         let manifest: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();

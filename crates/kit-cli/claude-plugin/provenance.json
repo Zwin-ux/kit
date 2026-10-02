@@ -15,5 +15,10 @@
     "dependency-review": "Security",
     "product-spec": "Product",
     "acceptance-review": "Product"
+  },
+  "art": {
+    "fox": "Original parent-reviewed editable 22x16 palette-grid interpretation; not a pixel-exact extraction",
+    "source": "hooks/fox.ts",
+    "license": "MIT"
   }
 }

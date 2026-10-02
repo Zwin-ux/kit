@@ -54,3 +54,13 @@ test('result review preserves a fixed result and does not send it', async ($, on
   expect(draft).toContain('fixed result a@t')
   expect(draft).toContain('Artifact: change.patch; tests unverified.')
 })
+
+test('clear drops prior session attempts and captured review results', async ($, on) => {
+  on('turn.complete', () => ({ text: '' }))
+  on('session.end', () => ({ sessionId: 'session-1' }))
+  on('agent.list', () => ({ value: [{ id: 'old', type: 'kit:frontend-ui-builder', description: 'Old task', status: 'completed' }] }))
+  await $.turn.complete({ agentId: 'old', turnId: 't', answer: 'Old result', isAborted: false, durationMs: 1, reason: 'answer' })
+  await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
+  expect((await $.command.run(command('review old@t'))).text).toContain('No captured result')
+  expect((await $.command.run(command('catalog'))).text).toContain('kit:frontend-ui-builder')
+})

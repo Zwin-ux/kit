@@ -26,6 +26,16 @@ Installation creates a fresh local directory. An existing destination is preserv
 
 Alternatively load this source directory explicitly with `claude --plugin-dir <directory>`. The Node exporter packages the same source with `node scripts/sync-claude-plugin.mjs`; use `--out <fresh-directory>` for another output location.
 
+## Native interface
+
+The compact band above Claude's prompt shows Frontend, Backend, Security and Product. Click a bucket (or focus the band with Claude's native focus shortcut) to inspect its real specialist and skills. Selection never starts work and no bare-letter/digit hotkeys intercept prompt typing. At narrow widths the strip uses two rows.
+
+`/kit open` opens the native **Kit · Skills** pane. **Prepare draft** fills the native prompt; review it and press Enter yourself. The pane shows all observed Kit work regardless of the selected catalog bucket. **Refresh status** reads current native status; the display is a last-observed snapshot, not a global fleet monitor. Each observed native execution gets its own local task ID, separate specialist ID, native attempt ID and native parent owner. Repeated descriptions are not treated as retries of the same task.
+
+Choose **Kit Red** in Claude's `/theme` picker for the native crimson accent. The plugin ships the theme without changing saved theme preferences or permission styling. Claude controls pane docking, prompt width and scroll regions; the Mod cannot force a full-width prompt beneath a docked pane.
+
+The original 22×16 fox grid renders as one fixed 22×8 terminal Raster in the expanded empty pane when there is room. It stays out of the compact band and hides while attempts are present. Ear/blink gestures return to idle; no body translation or full-screen clearing occurs. **Hide fox**, **Pause motion**, `KIT_MOTION=off`, `NO_COLOR`, or `REDUCE_MOTION=1` reduce motion. The native 100 ms animation clock quantizes the suggested gesture durations. Desktop uses the text/control view without the terminal Raster.
+
 ## Explicit task workflow
 
 - `/kit catalog` shows categories, specialists and their two preloaded skills.
@@ -33,7 +43,7 @@ Alternatively load this source directory explicitly with `claude --plugin-dir <d
 - `/kit jobs` lists native Kit executions in this session. Native execution IDs remain distinct from specialist roles. Completed means **Needs review**. Missing execution data means **Not attached**, with no automatic restart.
 - `/kit review <agentId@turnId>` prepares Security's review of that fixed result. `/kit handoff <agentId@turnId> <category>` prepares an explicit continuation. Both require an empty draft and retain the original result; neither sends anything.
 
-Results exist only in this running Mod session. A review must check original acceptance criteria and the exact artifact or commit; result text is not proof. Writer agents request native worktree isolation and must stop editing if it is unavailable. Security has read-only tools. No global fleet, automatic task dispatch, Stop control or experimental agent teams are implemented.
+Results and local task IDs exist only in this running Mod instance; reload, clear, resume, branch or session exit resets them. A review must check original acceptance criteria and the exact artifact or commit; result text is not proof. Writer agents request native worktree isolation and must stop editing if it is unavailable. Security has read-only tools. No global fleet, automatic task dispatch, Stop control or experimental agent teams are implemented.
 
 ## Offline verification
 

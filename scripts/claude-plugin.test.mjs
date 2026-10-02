@@ -36,6 +36,9 @@ test('packaged agent declarations, IDs and preloaded skills match the catalog', 
       }
       if (name !== 'security-reviewer') assert.match(contents, /isolation: worktree/);
     }
+    const theme = JSON.parse(await readFile(path.join(bundle, 'themes/kit-red.json'), 'utf8'));
+    assert.equal(theme.name, 'Kit Red');
+    assert.equal(theme.overrides.claude, '#FF3B46');
     assert.equal((await readdir(path.join(bundle, 'skills'))).length, 8);
     assert.deepEqual(await readdir(path.join(bundle, '.claude-plugin')), ['plugin.json']);
     assert.equal(JSON.parse(await readFile(path.join(bundle, 'provenance.json'), 'utf8')).upstreamInstalled, false);

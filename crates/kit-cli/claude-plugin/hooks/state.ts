@@ -14,10 +14,11 @@ export type State = {
   selected: string
   jobs: AgentInfo[]
   results: ResultSnapshot[]
+  tasks: { id: string; specialistId: string; attemptId: string }[]
   statusError?: string
 }
 export function initialState(): State {
-  return { selected: agents[0]!.id, jobs: [], results: [] }
+  return { selected: agents[0]!.id, jobs: [], results: [], tasks: [] }
 }
 export function statusLabel(status: string): string {
   const known: Record<string, string> = {
@@ -32,7 +33,13 @@ export function reconcile(state: State, current: AgentInfo[]): State {
   for (const previous of state.jobs) {
     if (!jobs.some(j => j.id === previous.id)) jobs.push({ ...previous, status: 'not-attached' })
   }
-  return { ...state, jobs, statusError: undefined }
+  const tasks = [...state.tasks]
+  for (const job of jobs) {
+    if (!tasks.some(t => t.attemptId === job.id)) tasks.push({
+      id: `kit-task-${tasks.length + 1}`, specialistId: job.type, attemptId: job.id,
+    })
+  }
+  return { ...state, jobs, tasks, statusError: undefined }
 }
 export function recordResult(state: State, result: Omit<ResultSnapshot, 'key'>): State {
   const key = `${result.agentId}@${result.turnId}`
