@@ -16,6 +16,7 @@
 mod auth;
 mod claude;
 mod codex;
+pub mod connection;
 mod grok;
 mod ollama;
 mod process;

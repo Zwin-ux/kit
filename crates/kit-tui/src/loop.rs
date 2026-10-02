@@ -55,13 +55,7 @@ pub async fn run_configured(
     let mut terminal = setup_terminal()?;
     let mut app = App::new();
     if config.probe_agents {
-        let probe = kit_agents::probe_all().await;
-        app.set_agents_probe(
-            probe
-                .into_iter()
-                .map(|s| (s.kind.binary().to_string(), s.is_ready()))
-                .collect(),
-        );
+        app.set_agent_statuses(kit_agents::probe_all().await);
     }
     app.runs_dir = config.runs_dir;
     if config.demo {
@@ -72,7 +66,10 @@ pub async fn run_configured(
     }
     let result = run_with_terminal(&mut terminal, app, run_rx, config.engine_tx).await;
     restore_terminal(&mut terminal)?;
-    result
+    if let Some(message) = result? {
+        println!("{message}");
+    }
+    Ok(())
 }
 
 /// Event loop body, factored so tests can inject a backend later if needed.
@@ -81,8 +78,11 @@ async fn run_with_terminal(
     mut app: App,
     mut run_rx: mpsc::Receiver<(RunId, RunDelta)>,
     engine_tx: Option<mpsc::Sender<crate::app::EngineCommand>>,
-) -> Result<()> {
-    let mut term_events = EventStream::new();
+) -> Result<Option<String>> {
+    let mut term_events = Some(EventStream::new());
+    let (probe_tx, mut probe_rx) = mpsc::channel(1);
+    let mut probe_task: Option<tokio::task::JoinHandle<()>> = None;
+    let mut land_task: Option<LandTask> = None;
     let mut tick = interval(TICK_INTERVAL);
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
     // First tick completes immediately; skip it so we do not double-advance on start.
@@ -100,7 +100,19 @@ async fn run_with_terminal(
 
     loop {
         let event = tokio::select! {
-            maybe = term_events.next() => {
+            result = async { (&mut land_task.as_mut().expect("land task present").1).await }, if land_task.is_some() => {
+                let (id,_)=land_task.take().expect("completed land task");
+                app.complete_land(id,result.unwrap_or_else(|e|Err(format!("Kit land task failed: {e}"))));
+                terminal.draw(|f|ui::draw(f,&app))?;app.clear_dirty();continue;
+            }
+            probe = probe_rx.recv(), if probe_task.is_some() => {
+                if let Some(probe)=probe { app.set_agent_statuses(probe); }
+                probe_task=None;
+                terminal.draw(|f| ui::draw(f, &app))?;
+                app.clear_dirty();
+                continue;
+            }
+            maybe = term_events.as_mut().expect("event reader restored").next() => {
                 match maybe {
                     Some(Ok(ev)) => map_crossterm(ev),
                     Some(Err(err)) => Some(AppEvent::Error(err.to_string())),
@@ -124,6 +136,54 @@ async fn run_with_terminal(
 
         // Engine seams — forward start/kill/retry when a channel is wired (kit-cli).
         match &action {
+            Action::RefreshAgents => {
+                if probe_task.is_none() {
+                    let tx = probe_tx.clone();
+                    probe_task = Some(tokio::spawn(async move {
+                        let _ = tx.send(kit_agents::probe_all().await).await;
+                    }));
+                    app.set_flash("checking provider sign-in…");
+                }
+            }
+            Action::ConnectAgent { kind } => {
+                if app.active_run_ids().is_empty() {
+                    stop_probe(&mut probe_task, &mut probe_rx).await;
+                    release_event_reader(&mut term_events);
+                    restore_terminal(terminal)?;
+                    let result = kit_agents::connection::connect(*kind).await;
+                    *terminal = setup_terminal()?;
+                    term_events = Some(EventStream::new());
+                    app.set_agent_statuses(kit_agents::probe_all().await);
+                    app.error = result.err().map(|e| e.to_string());
+                    app.set_flash("native sign-in ended; status checked again");
+                } else {
+                    app.set_flash("finish or stop active runs before native sign-in");
+                }
+            }
+            Action::LandSelected { id } => {
+                if land_task.is_none() {
+                    let id = id.clone();
+                    if let Some(dir) = app.runs_dir.clone() {
+                        let diff = app
+                            .selected_run()
+                            .filter(|r| r.id == id)
+                            .map(|r| r.diff.clone())
+                            .unwrap_or_default();
+                        let worker_id = id.clone();
+                        land_task = Some((
+                            id,
+                            tokio::spawn(async move {
+                                crate::accept::land(&worker_id, &dir, &diff).await
+                            }),
+                        ));
+                    } else {
+                        app.complete_land(
+                            id,
+                            Err("No saved receipt directory is configured".into()),
+                        );
+                    }
+                }
+            }
             Action::DispatchSubmitted { jobs } => {
                 if let Some(tx) = &engine_tx {
                     for job in jobs {
@@ -157,19 +217,56 @@ async fn run_with_terminal(
         }
 
         if matches!(action, Action::Quit) || app.should_quit {
-            stop_active_runs(
+            let stopped = stop_active_runs(
                 terminal,
                 &mut app,
                 &mut run_rx,
                 runs_open,
                 engine_tx.as_ref(),
             )
-            .await?;
+            .await;
+            // An approved branch operation must finish and report before Kit exits.
+            await_land_on_quit(&mut app, &mut land_task).await;
+            stopped?;
             break;
         }
     }
 
-    Ok(())
+    stop_probe(&mut probe_task, &mut probe_rx).await;
+    Ok(app
+        .land_result
+        .map(|(id, message)| format!("{id}: {message}")))
+}
+
+type LandTask = (
+    RunId,
+    tokio::task::JoinHandle<Result<crate::accept::Accepted, String>>,
+);
+async fn await_land_on_quit(app: &mut App, task: &mut Option<LandTask>) {
+    if let Some((id, task)) = task.take() {
+        app.complete_land(
+            id,
+            task.await
+                .unwrap_or_else(|e| Err(format!("Kit land task failed: {e}"))),
+        );
+    }
+}
+
+/// Join cancellation before draining: a cancelled sender may enqueue while dropping.
+async fn stop_probe(
+    task: &mut Option<tokio::task::JoinHandle<()>>,
+    rx: &mut mpsc::Receiver<Vec<kit_agents::AgentStatus>>,
+) {
+    if let Some(task) = task.take() {
+        task.abort();
+        let _ = task.await;
+    }
+    while rx.try_recv().is_ok() {}
+}
+
+/// Stop reading stdin before handing the restored terminal to the provider.
+fn release_event_reader<T>(reader: &mut Option<T>) {
+    drop(reader.take());
 }
 
 /// How long quitting waits for stopped runs to write their receipts.
@@ -274,6 +371,68 @@ mod tests {
     use super::*;
     use crate::event::AppEvent;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+    #[tokio::test]
+    async fn quitting_waits_for_approved_acceptance_and_keeps_its_receipt() {
+        let mut app = App::with_motion(false);
+        let id = RunId::new();
+        app.landing = Some(id.clone());
+        let commit = "a".repeat(40);
+        let expected = commit.clone();
+        let mut task = Some((
+            id.clone(),
+            tokio::spawn(async move {
+                tokio::task::yield_now().await;
+                Ok(crate::accept::Accepted {
+                    branch: "kit/review".into(),
+                    commit,
+                })
+            }),
+        ));
+        await_land_on_quit(&mut app, &mut task).await;
+        assert!(task.is_none());
+        assert!(app.landing.is_none());
+        let (result_id, message) = app.land_result.unwrap();
+        assert_eq!(result_id, id);
+        assert!(message.contains("kit/review") && message.contains(&expected));
+    }
+
+    #[tokio::test]
+    async fn probe_cancellation_finishes_before_old_statuses_are_drained() {
+        struct LastSend(mpsc::Sender<Vec<kit_agents::AgentStatus>>);
+        impl Drop for LastSend {
+            fn drop(&mut self) {
+                let _ = self.0.try_send(Vec::new());
+            }
+        }
+        let (tx, mut rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let mut task = Some(tokio::spawn(async move {
+            let _guard = LastSend(tx);
+            let _ = ready_tx.send(());
+            std::future::pending::<()>().await;
+        }));
+        ready_rx.await.unwrap();
+        stop_probe(&mut task, &mut rx).await;
+        assert!(task.is_none());
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn native_sign_in_releases_event_reader_before_provider_can_read_stdin() {
+        struct Reader(std::rc::Rc<std::cell::Cell<bool>>);
+        impl Drop for Reader {
+            fn drop(&mut self) {
+                self.0.set(true);
+            }
+        }
+        let released = std::rc::Rc::new(std::cell::Cell::new(false));
+        let mut reader = Some(Reader(released.clone()));
+        release_event_reader(&mut reader);
+        // This is the point at which native provider execution resumes.
+        assert!(released.get());
+        assert!(reader.is_none());
+    }
 
     #[test]
     fn map_key_press_only() {

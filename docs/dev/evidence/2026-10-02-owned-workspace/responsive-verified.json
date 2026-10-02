@@ -1,0 +1,17 @@
+{
+  "runId": "01M3ZG8RQ1D5J45Y922TCRXMZB",
+  "realModelExecution": true,
+  "gatePassed": true,
+  "nonVacuous": true,
+  "changedFiles": [
+    "index.html"
+  ],
+  "testFileUnchanged": true,
+  "parentHeadUnchanged": true,
+  "parentWorktreeClean": true,
+  "acceptedBranch": "kit/01M3ZG8RQ1D5",
+  "acceptedCommit": "dc03d867cee77ce8836e191f508ef67136e83cc3",
+  "landedChecksPassed": true,
+  "artifactSha256": "46e620977d8a07d95ea346be6aea60613102a270b3b1e19d9ae6cdcc8186cacd",
+  "uiRecording": false
+}

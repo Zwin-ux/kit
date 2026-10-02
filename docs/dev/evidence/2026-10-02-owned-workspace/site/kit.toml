@@ -1,0 +1,6 @@
+[gate]
+test = "node --test acceptance.test.cjs"
+timeout = "45s"
+[gate.scope]
+allow = ["index.html"]
+deny = ["acceptance.test.cjs", "kit.toml", ".github/**"]

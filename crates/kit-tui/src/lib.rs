@@ -19,6 +19,7 @@
 //!
 //! Agent skills: `.agents/skills` (addyosmani/agent-skills). See root `AGENTS.md`.
 
+mod accept;
 pub mod ansi;
 pub mod app;
 pub mod brand;

@@ -10,7 +10,7 @@ use super::store::{ensure_layout, load_kit_config, write_receipt};
 use super::worktree::{self, branch_name, create_worktree, remove_if_clean, resolve_repo};
 use anyhow::{Context, Result};
 use kit_agents::{Agent, adapter};
-use kit_core::{AgentKind, Bounds, Gate, GateOutcome, Receipt, RunDelta, RunId, RunSpec, RunState};
+use kit_core::{AgentKind, Bounds, GateOutcome, Receipt, RunDelta, RunId, RunSpec, RunState};
 use kit_gate::KitGate;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -383,7 +383,7 @@ async fn agent_and_gate(
         // children (`kill_on_drop`). A check the user interrupted is not a
         // verdict, so the run ends Killed, never a FAIL it did not earn.
         let kit_gate = KitGate::new();
-        let evaluate = kit_gate.evaluate(wt_path, &config.gate);
+        let evaluate = kit_gate.evaluate_against_base(wt_path, &config.gate, base);
         let gate = match cancel {
             Some(c) => tokio::select! {
                 gate = evaluate => Some(gate),
@@ -568,12 +568,33 @@ async fn write_terminal(
     })
 }
 
-/// Refuse a live run whose agent is not installed.
+/// Refuse a live run whose agent is not installed or signed in.
 ///
 /// A silent dry-run fallback runs no agent, so the gate checks an unchanged
 /// tree and can PASS: a receipt that proves nothing. Stop before any worktree.
 fn require_agent(status: kit_agents::AgentStatus) -> Result<()> {
     if status.installed {
+        if !status.authenticated {
+            if !matches!(status.kind, AgentKind::Claude | AgentKind::Codex) {
+                anyhow::bail!(
+                    "{} is not ready. {}. Choose another agent",
+                    status.kind,
+                    status
+                        .remedy
+                        .as_deref()
+                        .unwrap_or("check the agent with `kit doctor`"),
+                );
+            }
+            anyhow::bail!(
+                "{} is not authenticated. {}. Connect it with `kit connect {}` or choose another agent",
+                status.kind,
+                status
+                    .remedy
+                    .as_deref()
+                    .unwrap_or("sign in through the agent's native CLI"),
+                status.kind.binary(),
+            );
+        }
         return Ok(());
     }
     let agent = status.kind;
@@ -809,7 +830,43 @@ mod tests {
         assert!(err.contains("--dry-run"), "{err}");
         let mut ready = kit_agents::AgentStatus::missing(AgentKind::Codex);
         ready.installed = true;
+        ready.authenticated = true;
+        ready.remedy = None;
         assert!(require_agent(ready).is_ok());
+    }
+
+    #[test]
+    fn signed_out_agent_is_refused_before_creating_worktree() {
+        let status = kit_agents::AgentStatus {
+            kind: AgentKind::Claude,
+            installed: true,
+            authenticated: false,
+            version: Some("2.1.288".into()),
+            remedy: Some("not logged in: run `claude auth login`".into()),
+        };
+        let err = require_agent(status).unwrap_err().to_string();
+        assert!(err.contains("not authenticated"), "{err}");
+        assert!(err.contains("claude auth login"), "{err}");
+    }
+
+    #[test]
+    fn unavailable_local_agent_keeps_its_actual_remedy() {
+        let status = kit_agents::AgentStatus {
+            kind: AgentKind::Ollama,
+            installed: true,
+            authenticated: false,
+            version: None,
+            remedy: Some("start the server with `ollama serve`".into()),
+        };
+        let err = require_agent(status).unwrap_err().to_string();
+        assert!(
+            err.contains("not ready") && err.contains("ollama serve"),
+            "{err}"
+        );
+        assert!(
+            !err.contains("kit connect") && !err.contains("authenticated"),
+            "{err}"
+        );
     }
 
     /// Holding a std Mutex across await is intentional here: tests must not
@@ -1196,6 +1253,8 @@ mod tests {
         async fn probe(&self) -> kit_agents::AgentStatus {
             let mut status = kit_agents::AgentStatus::missing(AgentKind::Grok);
             status.installed = true;
+            status.authenticated = true;
+            status.remedy = None;
             status
         }
 
@@ -1295,6 +1354,8 @@ mod tests {
         async fn probe(&self) -> kit_agents::AgentStatus {
             let mut status = kit_agents::AgentStatus::missing(AgentKind::Codex);
             status.installed = true;
+            status.authenticated = true;
+            status.remedy = None;
             status
         }
 

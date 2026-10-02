@@ -25,6 +25,28 @@ npm install -g @mzwin/kit
 kit
 ```
 
+### Current development workspace
+
+The account connection and four-role workspace below are available in this
+local source build. They have not been published to npm by this change.
+
+```bash
+cargo build --locked -p kitctl
+./target/debug/kit connect claude   # or: connect codex
+./target/debug/kit -C /path/to/your/project
+```
+
+Bare `kit` opens Kit's own Control Room. Press `c` to inspect/connect providers,
+`r` to refresh their status, and `1`–`4` for Frontend, Backend, Security or
+Product. Native provider sign-in owns the credentials; your provider's plan
+and usage limits apply. A signed-out or unchecked Claude/Codex account cannot
+start a run. Select a finished PASS run and press `l` to review its diff;
+a fresh Enter creates a review branch, and Esc cancels. Kit leaves your current
+branch and working files in place.
+
+`kit setup` explicitly opens the optional skill installer illustrated below.
+The separate Claude Mod integration remains available through `kit claude`.
+
 <p align="center"><img src="docs/media/setup.gif" width="880" alt="kit setup: the fox banner, then one picker each for agents, focus and where to install, each folding into a single line; every file and skill with its pinned source and licence; yes; and the fox signing off" /></p>
 
 <details>
@@ -32,7 +54,7 @@ kit
 
 ```console
 $ npm install -g @mzwin/kit
-$ kit
+$ kit setup
                     kit  2.0.0            (beside Kit's fox, in fox red)
                     Kit sets your coding agents up for one job,
                     then proves what they do.
@@ -77,7 +99,7 @@ From now on, kit opens the Control Room, where you watch your runs.
 
 </details>
 
-That is the first run. After it, bare `kit` opens the Control Room.
+That is the optional `kit setup` flow. Bare `kit` opens the Control Room.
 
 ---
 

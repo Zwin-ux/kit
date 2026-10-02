@@ -28,6 +28,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // header
+            Constraint::Length(1), // primary roles
             Constraint::Min(3),    // table
             Constraint::Length(1), // footer
         ])
@@ -44,6 +45,23 @@ pub fn draw(frame: &mut Frame, app: &App) {
         app.error.as_deref(),
     );
 
+    let roles = crate::persona::Persona::ALL
+        .iter()
+        .enumerate()
+        .map(|(i, role)| {
+            let name = role.label();
+            let mut chars = name.chars();
+            let title = chars
+                .next()
+                .map(|c| c.to_uppercase().to_string())
+                .unwrap_or_default()
+                + chars.as_str();
+            format!("[{}] {}", i + 1, title)
+        })
+        .collect::<Vec<_>>()
+        .join("  ");
+    frame.render_widget(Paragraph::new(roles).style(theme.body()), chunks[1]);
+
     if app.runs.is_empty() {
         let (message, hint) = empty_room_copy(app);
         // The resting fox belongs to a ready room, not to the missing-agents error.
@@ -52,30 +70,37 @@ pub fn draw(frame: &mut Frame, app: &App) {
         } else {
             Vec::new()
         };
-        draw_empty_state(frame, chunks[1], &theme, &fox, message, hint);
+        draw_empty_state(frame, chunks[2], &theme, &fox, message, hint);
     } else if app.display_order().is_empty() {
         // A filter left on must say it is hiding runs.
         draw_empty_state(
             frame,
-            chunks[1],
+            chunks[2],
             &theme,
             &[],
             filtered_out_message(app.run_filter),
             "press f to change the filter",
         );
     } else {
-        draw_table(frame, app, chunks[1], &theme);
+        draw_table(frame, app, chunks[2], &theme);
     }
 
-    draw_footer(frame, chunks[2], &theme, &footer_hints(app), "");
+    let hints = footer_hints(app);
+    let hints = if area.width < 80 {
+        hints.replace("[↑↓] select", "[↑↓]")
+    } else {
+        hints
+    };
+    draw_footer(frame, chunks[3], &theme, &hints, "");
 }
 
 /// Footer keys for what is selected: no `[k]ill` on a past run, and
 /// `[l]and` on a proven run with changes.
 fn footer_hints(app: &App) -> String {
     let selected = app.selected_run();
-    let mut hints =
-        String::from(" [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate");
+    let mut hints = String::from(
+        " [↑↓] select  [d]ispatch  [c]agents  [b]oard  [f]ilter  [enter] open  [g]ate",
+    );
     if !selected.is_some_and(|r| r.past) {
         hints.push_str("  [k]ill");
     }
@@ -171,7 +196,19 @@ fn header_stats(app: &App, width: usize) -> String {
 /// Empty Control Room copy — cold-start cockpit, not a blank form.
 fn empty_room_copy(app: &App) -> (&'static str, &'static str) {
     let ready = app.agents_ready_count();
-    if ready == 0 && !app.agents_probe.is_empty() {
+    if ready == 0 && !app.agent_statuses.is_empty() {
+        if app.agent_statuses.iter().any(|status| status.installed) {
+            (
+                "No ready agents",
+                "press c to connect or check agent status  ·  ? help",
+            )
+        } else {
+            (
+                "No coding agents installed",
+                "press c for install guidance  ·  kit doctor  ·  or try kit --demo",
+            )
+        }
+    } else if ready == 0 && !app.agents_probe.is_empty() {
         (
             "No coding agents on PATH",
             "install claude, codex or grok  ·  kit doctor  ·  or try kit --demo",
@@ -179,7 +216,7 @@ fn empty_room_copy(app: &App) -> (&'static str, &'static str) {
     } else {
         (
             "No runs yet",
-            "press d to give your agents a task  ·  ? help  ·  or try kit --demo",
+            "press 1–4 to choose a role  ·  d dispatch  ·  ? help  ·  or try kit --demo",
         )
     }
 }

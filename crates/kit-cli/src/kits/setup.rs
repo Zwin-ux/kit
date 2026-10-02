@@ -71,7 +71,7 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
                 .is_some_and(|r| r.starts_with("login not checked"));
             let login = match (st.authenticated, unchecked) {
                 (true, false) => "logged in",
-                (true, true) => "login not checked",
+                (_, true) => "login not checked",
                 (false, _) => "not logged in",
             };
             (short_version(st.version.as_deref()).to_string(), login)
@@ -456,24 +456,6 @@ fn banner(paint: &Paint, tty: bool) {
         println!("{}", line.trim_end());
     }
     println!();
-}
-
-/// Bare `kit` with no saved setup, in a terminal: run setup first. Someone
-/// who already added a kit or ran `kit run` is past that, so they get the
-/// Control Room.
-pub fn first_run() -> bool {
-    std::io::stdin().is_terminal()
-        && std::io::stdout().is_terminal()
-        && !super::config::path().exists()
-        && !used_before()
-}
-
-fn used_before() -> bool {
-    let has_entries =
-        |dir: std::path::PathBuf| std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_some());
-    has_entries(crate::engine::paths::runs_dir())
-        || has_entries(crate::engine::paths::kit_home().join("repos"))
-        || crate::engine::paths::kit_home().join("kit.lock").exists()
 }
 
 /// `2.1.283 (Claude Code)` → `2.1.283`: the name is already on the line.

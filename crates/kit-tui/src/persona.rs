@@ -7,6 +7,9 @@
 /// Role a run is acting as. Orthogonal to agent CLI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Persona {
+    Frontend,
+    Backend,
+    Security,
     Product,
     Design,
     #[default]
@@ -15,10 +18,13 @@ pub enum Persona {
 }
 
 impl Persona {
-    pub const ALL: [Persona; 4] = [Self::Eng, Self::Product, Self::Design, Self::Qa];
+    pub const ALL: [Persona; 4] = [Self::Frontend, Self::Backend, Self::Security, Self::Product];
 
     pub fn label(self) -> &'static str {
         match self {
+            Self::Frontend => "frontend",
+            Self::Backend => "backend",
+            Self::Security => "security",
             Self::Product => "product",
             Self::Design => "design",
             Self::Eng => "eng",
@@ -28,6 +34,9 @@ impl Persona {
 
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
+            "frontend" | "front-end" | "ui" => Some(Self::Frontend),
+            "backend" | "back-end" | "api" => Some(Self::Backend),
+            "security" | "sec" => Some(Self::Security),
             "product" | "prod" | "pm" => Some(Self::Product),
             "design" | "des" | "ux" => Some(Self::Design),
             "eng" | "engineer" | "engineering" => Some(Self::Eng),
@@ -40,6 +49,15 @@ impl Persona {
     /// the user's project only: nothing in it may be about Kit's own code.
     pub fn brief(self) -> &'static str {
         match self {
+            Self::Frontend => {
+                "Act as the frontend builder. Build usable interfaces in this project's conventions, including responsive layouts, clear states and keyboard access. Verify the requested user flow."
+            }
+            Self::Backend => {
+                "Act as the backend builder. Implement the smallest reliable data and API change. Enforce server-derived identity, validate inputs, and prove persistence and failure paths."
+            }
+            Self::Security => {
+                "Act as the security reviewer. Inspect the exact requested artifacts for access-control, input and credential risks. Report actionable findings with evidence and limits. Do not edit files."
+            }
             Self::Product => {
                 "Act as the product owner. Decide what should exist and why, keep the \
                  scope small, and write acceptance criteria in the user's terms. Do not \
@@ -74,17 +92,32 @@ impl Persona {
     }
 }
 
-/// Default Dispatch persona toggles — ENG on so a single-agent submit stays 1×.
+/// Default Dispatch role toggles — one role on so a submit stays 1×.
 pub fn default_persona_toggles() -> Vec<(Persona, bool)> {
     Persona::ALL
         .into_iter()
-        .map(|p| (p, p == Persona::Eng))
+        .map(|p| (p, p == Persona::Frontend))
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn primary_roles_match_the_owned_workspace() {
+        assert_eq!(
+            default_persona_toggles()
+                .iter()
+                .map(|(p, _)| p.label())
+                .collect::<Vec<_>>(),
+            ["frontend", "backend", "security", "product"]
+        );
+        assert_eq!(Persona::parse("frontend").unwrap().label(), "frontend");
+        assert_eq!(Persona::parse("backend").unwrap().label(), "backend");
+        assert_eq!(Persona::parse("security").unwrap().label(), "security");
+        assert_eq!(Persona::parse("eng"), Some(Persona::Eng));
+    }
 
     #[test]
     fn wrap_keeps_user_task_first_and_names_role() {

@@ -73,10 +73,25 @@ async fn dispatch(cli: Cli) -> Result<()> {
     }
     match cli.command {
         Some(Command::Claude { action }) => native::run(action, json),
-        None if !cli.demo && kits::setup::first_run() => {
-            kits::setup::cmd_setup(cli::SetupArgs::default(), json).await
-        }
         None => launch_tui(cli.demo).await,
+        Some(Command::Connect { agent }) => {
+            if json {
+                anyhow::bail!(
+                    "native sign-in is interactive and cannot use --json; run `kit connect {}` in a terminal",
+                    AgentKind::from(agent)
+                );
+            }
+            let status = kit_agents::connection::connect(agent.into()).await?;
+            println!(
+                "{}: {}",
+                status.kind,
+                kit_agents::connection::state(&status).label()
+            );
+            if let Some(remedy) = status.remedy {
+                println!("{remedy}");
+            }
+            Ok(())
+        }
         Some(Command::Setup(args)) => kits::setup::cmd_setup(args, json).await,
         Some(Command::Show { kit }) => kits::cmd_show(kit.as_deref(), json),
         Some(Command::Add(args)) => kits::install::cmd_add(args, json),

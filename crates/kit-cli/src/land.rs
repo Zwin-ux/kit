@@ -71,7 +71,10 @@ fn default_branch(id: &str) -> String {
 }
 
 fn is_proven(r: &Receipt) -> bool {
-    r.state == RunState::Pass && r.gate.as_ref().is_some_and(|g| !infer::is_vacuous(g))
+    r.state == RunState::Pass
+        && r.gate
+            .as_ref()
+            .is_some_and(|g| g.passed && !infer::is_vacuous(g))
 }
 
 /// Refuse a run the gate did not prove, unless `--force`.
@@ -79,24 +82,25 @@ fn check_proof(r: &Receipt, force: bool, warnings: &mut Vec<String>) -> Result<(
     let id = &r.id;
     let state = format!("{:?}", r.state).to_ascii_lowercase();
     let short = id.0.get(..12).unwrap_or(&id.0);
-    let (problem, fix) =
-        if r.state == RunState::Unconfigured || (r.state == RunState::Pass && !is_proven(r)) {
-            (
-                format!("run {id} has no gate checks (UNCONFIGURED), so nothing proved it"),
-                "run `kit init`, then `kit run` again".to_string(),
-            )
-        } else if r.state != RunState::Pass {
-            let what = match r.state {
-                RunState::Fail => "failed the gate".to_string(),
-                _ => format!("ended {state}"),
-            };
-            (
-                format!("run {id} {what}. Kit lands only runs that pass the gate"),
-                format!("see why with `kit receipt show {short} --output`, then `kit run` again"),
-            )
-        } else {
-            return Ok(());
+    let (problem, fix) = if r.state == RunState::Unconfigured
+        || (r.state == RunState::Pass && r.gate.as_ref().is_none_or(infer::is_vacuous))
+    {
+        (
+            format!("run {id} has no gate checks (UNCONFIGURED), so nothing proved it"),
+            "run `kit init`, then `kit run` again".to_string(),
+        )
+    } else if !is_proven(r) {
+        let what = match r.state {
+            RunState::Pass | RunState::Fail => "failed the gate".to_string(),
+            _ => format!("ended {state}"),
         };
+        (
+            format!("run {id} {what}. Kit lands only runs that pass the gate"),
+            format!("see why with `kit receipt show {short} --output`, then `kit run` again"),
+        )
+    } else {
+        return Ok(());
+    };
     if !force {
         bail!("{problem}. Next: {fix}. Or use --force to land it anyway");
     }
@@ -110,7 +114,15 @@ fn check_proof(r: &Receipt, force: bool, warnings: &mut Vec<String>) -> Result<(
 fn read_patch(dir: &Path, r: &Receipt) -> Result<String> {
     let path = dir.join("diff.patch");
     if path.is_file() {
-        return std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()));
+        let patch =
+            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        if patch != r.diff {
+            bail!(
+                "run {} diff.patch differs from the receipt. Run the task again to prove the changed artifact",
+                r.id
+            );
+        }
+        return Ok(patch);
     }
     Ok(r.diff.clone())
 }

@@ -1,16 +1,21 @@
 //! Native installation and launch preview need neither Claude nor authentication.
 use std::path::PathBuf;
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path =
-            std::env::temp_dir().join(format!("kit-native-cli-{}-{nonce}", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "kit-native-cli-{}-{nonce}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
         std::fs::create_dir(&path).unwrap();
         // Match the real working directory reported by child processes on macOS,
         // where the temporary directory's /var prefix is a symlink.
@@ -34,6 +39,67 @@ impl Drop for Scratch {
 }
 fn json(output: &Output) -> serde_json::Value {
     serde_json::from_slice(&output.stdout).expect("one JSON envelope on stdout")
+}
+
+#[test]
+fn parallel_scratch_directories_remain_independent() {
+    let scratches = std::thread::scope(|scope| {
+        (0..8)
+            .map(|_| scope.spawn(|| (0..64).map(|_| Scratch::new()).collect::<Vec<_>>()))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flat_map(|thread| thread.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(
+        scratches
+            .iter()
+            .map(|scratch| &scratch.0)
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        scratches.len()
+    );
+    assert!(scratches.iter().all(|scratch| scratch.0.is_dir()));
+}
+
+#[cfg(unix)]
+#[test]
+fn version_probe_does_not_claim_mod_activation_or_execution() {
+    use std::os::unix::fs::PermissionsExt;
+    let scratch = Scratch::new();
+    let host = scratch.0.join("claude");
+    std::fs::write(
+        &host,
+        "#!/bin/sh\n[ \"$1\" = \"--version\" ] || exit 9\nprintf '2.1.287 (Claude Code)\\n'\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&host, std::fs::Permissions::from_mode(0o755)).unwrap();
+    for structured in [true, false] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kit"));
+        command.args(["claude", "check"]);
+        if structured {
+            command.arg("--json");
+        }
+        let output = command
+            .current_dir(&scratch.0)
+            .env("PATH", &scratch.0)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        if structured {
+            let data = json(&output)["data"].clone();
+            assert_eq!(data["versionCompatible"], true);
+            assert_eq!(data["modsEnabled"], "unknown");
+            assert_eq!(data["loginChecked"], false);
+            assert_eq!(data["executionVerified"], false);
+            assert!(data.get("mods").is_none());
+        } else {
+            let text = String::from_utf8(output.stdout).unwrap();
+            assert!(text.contains("version compatible"));
+            assert!(text.contains("Mods activation, login and execution were not checked"));
+            assert!(!text.contains("Mods supported"));
+        }
+    }
 }
 
 #[test]

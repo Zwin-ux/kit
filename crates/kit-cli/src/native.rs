@@ -162,8 +162,10 @@ pub fn run(action: ClaudeCommand, json: bool) -> Result<()> {
             emit(
                 json,
                 "claude.check",
-                serde_json::json!({ "version": version, "mods": true, "loginChecked": false }),
-                &format!("{version}: Mods supported. Login was not checked."),
+                serde_json::json!({ "version": version, "versionCompatible": true, "modsEnabled": "unknown", "loginChecked": false, "executionVerified": false }),
+                &format!(
+                    "{version}: version compatible. Mods activation, login and execution were not checked."
+                ),
             );
         }
         ClaudeCommand::Install { plugin_dir, print } => {
@@ -261,10 +263,19 @@ mod tests {
     fn bundle_contains_declared_agents_and_knowledge() {
         let files = payload();
         assert_eq!(files.keys().filter(|p| p.starts_with("agents")).count(), 4);
-        assert_eq!(files.keys().filter(|p| p.starts_with("skills")).count(), 8);
+        assert_eq!(
+            files
+                .keys()
+                .filter(|p| p.starts_with("skills") && p.ends_with("SKILL.md"))
+                .count(),
+            16
+        );
         assert!(files.contains_key(Path::new("agents/frontend-ui-builder.md")));
         assert!(files.contains_key(Path::new("themes/kit-red.json")));
-        assert!(!files.keys().any(|p| p.to_string_lossy().contains("types")));
+        assert!(!files.keys().any(|p| p.starts_with(".claude-plugin/types")));
+        assert!(files.contains_key(Path::new(
+            "skills/supabase-postgres-best-practices/references/schema-data-types.md"
+        )));
         assert!(!files.keys().any(|p| p.to_string_lossy().contains(".mcp")));
         let manifest: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();
         for agent in manifest["agents"].as_array().unwrap() {

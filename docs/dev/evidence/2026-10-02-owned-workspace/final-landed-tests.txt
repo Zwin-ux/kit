@@ -1,0 +1,10 @@
+✔ Kit provides truthful connection commands for both providers on each desktop platform (1.754875ms)
+✔ page is branded, keyboard usable, and avoids collecting credentials or promising unlimited usage (0.519958ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 52.698208

@@ -1,3 +1,61 @@
+## Actual-use acceptance — 2026-10-02
+
+- [x] Run native Backend task with an actual mention, isolated worktree, independent acceptance checks and immutable Kit capture.
+- [x] Submit Kit-generated exact-result Security draft through ordinary headless user input; preserve native no_composer refusal.
+- [x] Diagnose real completed Security result missing after foreground pruning; retain failed acceptance evidence.
+- [x] Verify passive native-start identity capture on exact alpha.3 and alpha.4 headless task/review/result loops; both answers discoverable, 22 artifact assertions pass, native exit 0. Initial written alpha.4 TypeError omission was closed by supplemental actual native Security reading/assessment/capture; original failed coverage check retained, no automatic acceptance claimed.
+- [ ] Complete owner native visual/composer/focus acceptance and exact candidate CI before public beta.
+
+## Native alpha / beta / stable — 2026-10-02
+
+- [x] Define private-alpha / public-beta / stable audiences, scope and promotion evidence.
+- [x] Correct version-only CLI readiness claim with a failing-then-passing regression.
+- [x] Prepare local 2.0.0-alpha.1 folder/archive/checksums through existing packaging; verify clean extraction/loader and 229-file Rust/Node parity.
+- [x] Record a short owner review walkthrough and public-beta blockers.
+- [x] Execute all four native roles on immutable alpha.1; verify three writer worktrees and separate read-only exact-artifact Security review.
+- [x] Repair native test startup ordering; record 38 native fixture passes and 27 initial UI source regression passes.
+- [x] Resolve UI engine-composition/stale-close/structured-denial findings; prepare repeatable alpha.2 and verify clean extraction, 229-file Rust/Node/source parity, checksums and actual loader.
+- [ ] Complete actual native visual/draft/captured-result review acceptance and exact committed candidate CI before public beta.
+- [ ] Publish only an explicitly approved, verified candidate through the selected channel.
+
+## Native lifecycle repairs — 2026-10-02
+
+- [x] Preserve typing during delayed prepare/review/handoff; test concurrent action and session reset behavior.
+- [x] Yield Kit command/UI after failed registration and start no clock.
+- [x] Prevent older status responses and failures overwriting newer results.
+- [x] Preserve completion capture during overlapping refresh; cancel stale pane opens; keep startup working on motion-setting denial.
+- [x] Run twenty source regressions, installed-version types/validation/real loader and Rust checks; rebuild fresh 229-file payload and update docs. The continuation native runner passes 39 fixtures; owner visual/draft/result-review acceptance remains pending.
+
+## Four-skill bundle and environment — 2026-10-02
+
+- [x] Bundle four full skills for each approved role with pinned provenance and licenses.
+- [x] Verify declarations, packaged payload, actual native loader and unchanged role permissions.
+- [x] Prepare local tools and reproducible cloud setup/check scripts.
+- [x] Create Kit Codex Cloud environment; remote PR37 baseline verified independently of local sixteen-skill changes.
+- [x] Review integrated changes and update evidence/readiness docs.
+
+# Native Claude preparation — 2026-10-02
+
+See [current continuation plan](../docs/superpowers/plans/2026-10-02-kit-native.md).
+
+- [x] Recover exact PR #37 in an isolated checkout; preserve the dirty sibling.
+- [x] Engineering, design and integration source reviews; runnable reproduction of three defects.
+- [x] Strict validation, exact installed-type check, Rust formatting/lint and six focused Rust tests.
+- [x] Four-agent/eight-skill loading with zero model turns; two packaging tests pass under a canonical temporary parent.
+- [x] Record ordinary macOS fixture failure, native runner rollout gate, and full-workspace NO_COLOR TUI failure separately.
+- [x] User approved Frontend / Backend / Security / Product from yesterday's cloud version (2026-10-02).
+- [x] Repair ordinary macOS Node test fixtures without relaxing path checks.
+- [x] Prevent user-typing loss through append-only preparation with documented native race boundaries.
+- [x] Verify actual native mention routing on submission in exact-alpha same-session headless acceptance; visible native composer remains separate.
+- [x] Preserve downstream /kit ownership and newest status refresh.
+- [ ] Verify and refine short-pane, narrow, color and Desktop behavior.
+- [x] Make version readiness truthful and include host-free bundle/lifecycle checks in existing CI; remote execution of these unpushed changes remains unverified.
+- [ ] Complete allowed native keyboard/paint and scoped live execution checks before taking PR out of draft.
+
+Historical execution board follows.
+
+---
+
 # Kit execution board
 
 ## Native Claude Mods (current request, 2026-10-02)
@@ -6,7 +64,7 @@
 - [x] Add native Rust check/install/launch and a shared plugin source/exporter.
 - [x] Verify four actual agent files and eight first-party skills load; package regression covers discovery.
 - [x] Add explicit visible draft selection and session-local jobs/result review.
-- [ ] Finish full Rust gates and native UI checks after the final changes.
+- [x] Finish native Rust gates and automated native UI checks on current source; retain standalone TUI baseline failure and pending owner interaction acceptance.
 - [x] Implement parent-reviewed four-bucket strip, native Pane, red theme and anchored fox; offline UI tests pass.
 - [ ] Verify live native execution and isolation on a user-requested task; curated upstream suites remain uninstalled.
 

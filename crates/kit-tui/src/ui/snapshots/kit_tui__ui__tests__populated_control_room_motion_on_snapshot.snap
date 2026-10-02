@@ -1,8 +1,10 @@
 ---
 source: crates/kit-tui/src/ui/mod.rs
+assertion_line: 1061
 expression: frame
 ---
 "KIT / CONTROL ROOM  · enter open · r retry    [ALL]  1 RUNNING  1 GATING  1 FAIL"
+"[1] Frontend  [2] Backend  [3] Security  [4] Product                            "
 "┌ runs ────────────────────────────────────────────────────────────────────────┐"
 "│REPO           AGENT        TASK                    STATE        GATE         │"
 "│  kit          codex·eng    port guard.js           ⠋ RUN 2m     --           │"
@@ -13,6 +15,5 @@ expression: frame
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
-"│                                                                              │"
 "└──────────────────────────────────────────────────────────────────────────────┘"
-" [↑↓] select  [d]ispatch  [b]oard  [g]ate  [k]ill  [r]etry  [?]help             "
+" [↑↓] select  [d]ispatch  [c]agents  [b]oard  [g]ate  [k]ill  [r]etry  [?]help  "

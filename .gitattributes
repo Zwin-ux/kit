@@ -1,0 +1,3 @@
+# Preserve the pinned native skill/resource hashes on every checkout.
+crates/kit-cli/claude-plugin/** -text
+docs/dev/NATIVE-ALPHA.md text eol=lf

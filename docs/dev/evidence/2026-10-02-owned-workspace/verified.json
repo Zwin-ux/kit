@@ -1,0 +1,19 @@
+{
+  "provider": "claude",
+  "subscription": "native user login",
+  "runId": "01M3ZG27M1PTKNM2XT2KZQEAB2",
+  "realModelExecution": true,
+  "gatePassed": true,
+  "nonVacuous": true,
+  "changedFiles": [
+    "index.html"
+  ],
+  "testFileUnchanged": true,
+  "parentHeadUnchanged": true,
+  "parentWorktreeClean": true,
+  "acceptedBranch": "kit/01M3ZG27M1PT",
+  "acceptedCommit": "40b7cd50c5d83204e3c3494c7e544971aaa2d95b",
+  "landedChecksPassed": true,
+  "artifactSha256": "bc1e2c1fd49d37e4823961ef9953f2ad0352d77ddbe7f0925e2ce807c30cdd06",
+  "uiRecording": false
+}

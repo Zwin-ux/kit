@@ -97,7 +97,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 // Refused before the run starts, in the words `kit doctor` uses.
                 Some(why) => (format!("{label}  {why}"), *on, true),
                 None => (
-                    agent_display_label(&label, id, &app.agents_probe),
+                    if app.agent_statuses.is_empty() {
+                        agent_display_label(&label, id, &app.agents_probe)
+                    } else {
+                        format!("{label}  {}", app.agent_status_label(id))
+                    },
                     *on,
                     false,
                 ),
@@ -129,7 +133,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_toggle_list(
         frame,
         body[2],
-        " personas (space) ",
+        " roles (space) ",
         &persona_items,
         app.dispatch.focus == DispatchFocus::Personas,
         app.dispatch.list_cursor,

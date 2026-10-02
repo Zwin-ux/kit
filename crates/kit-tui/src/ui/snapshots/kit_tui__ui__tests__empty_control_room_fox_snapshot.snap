@@ -1,8 +1,10 @@
 ---
 source: crates/kit-tui/src/ui/mod.rs
+assertion_line: 257
 expression: frame
 ---
 "KIT / CONTROL ROOM                                                [ALL]  0 RUNNING  0 GATING  0 FAIL"
+"[1] Frontend  [2] Backend  [3] Security  [4] Product                                                "
 "┌──────────────────────────────────────────────────────────────────────────────────────────────────┐"
 "│                                                                                                  │"
 "│                                                                                                  │"
@@ -23,12 +25,11 @@ expression: frame
 "│                                           ▀▀█████████▀▀                                          │"
 "│                                                                                                  │"
 "│                                            No runs yet                                           │"
-"│                press d to give your agents a task  ·  ? help  ·  or try kit --demo               │"
-"│                                                                                                  │"
+"│            press 1–4 to choose a role  ·  d dispatch  ·  ? help  ·  or try kit --demo            │"
 "│                                                                                                  │"
 "│                                                                                                  │"
 "│                                                                                                  │"
 "│                                                                                                  │"
 "│                                                                                                  │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
-" [↑↓] select  [d]ispatch  [b]oard  [f]ilter  [enter] open  [g]ate  [k]ill  [r]etry  [?]help         "
+" [↑↓] select  [d]ispatch  [c]agents  [b]oard  [enter] open  [g]ate  [k]ill  [r]etry  [?]help        "

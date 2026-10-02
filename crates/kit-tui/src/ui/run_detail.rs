@@ -20,11 +20,26 @@ pub fn draw(frame: &mut Frame, app: &App, pane: DetailPane) {
         return;
     }
 
+    let status =
+        if app.pending_land.as_ref() == app.selected_id.as_ref() && app.pending_land.is_some() {
+            Some("Review this diff. Enter creates a review branch; Esc cancels.".to_string())
+        } else if app.landing.as_ref() == app.selected_id.as_ref() && app.landing.is_some() {
+            Some("Creating review branch… You can keep inspecting runs.".to_string())
+        } else {
+            app.land_result
+                .as_ref()
+                .filter(|(id, _)| Some(id) == app.selected_id.as_ref())
+                .map(|(_, message)| message.clone())
+        };
+    let status_height = status.as_ref().map_or(0, |s| {
+        (s.chars().count().div_ceil(area.width as usize) + 1).min(5) as u16
+    });
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(2), // header
             Constraint::Length(1), // tab bar
+            Constraint::Length(status_height),
             Constraint::Min(3),    // body
             Constraint::Length(1), // footer
         ])
@@ -40,9 +55,22 @@ pub fn draw(frame: &mut Frame, app: &App, pane: DetailPane) {
 
     draw_run_header(frame, app, run, chunks[0], &theme);
     draw_tabs(frame, pane, chunks[1], &theme);
-    draw_body(frame, app, run, pane, chunks[2], &theme);
+    if let Some(status) = status {
+        frame.render_widget(
+            Paragraph::new(status)
+                .style(theme.accent())
+                .wrap(Wrap { trim: false }),
+            chunks[2],
+        );
+    }
+    draw_body(frame, app, run, pane, chunks[3], &theme);
     let follow = if app.stream_follow { "follow" } else { "" };
-    draw_footer(frame, chunks[3], &theme, &footer_hints(run), follow);
+    let hints = if app.pending_land.as_ref() == Some(&run.id) {
+        " [enter] create review branch  [esc] cancel  [↑↓] inspect".into()
+    } else {
+        footer_hints(run)
+    };
+    draw_footer(frame, chunks[4], &theme, &hints, follow);
 }
 
 /// Run detail keys: no `[k]ill` on a past run, `[l]and` on a proven run

@@ -1,5 +1,6 @@
 ---
 source: crates/kit-tui/src/ui/mod.rs
+assertion_line: 1301
 expression: frame
 ---
 "┌ help ────────────────────────────────────────────────────────────────────────┐"
@@ -11,8 +12,8 @@ expression: frame
 "│  ↑↓         move selection                                                   │"
 "│  Enter      open run detail (stream)                                         │"
 "│  g          open gate log                                                    │"
-"│  d          dispatch fan-out                                                 │"
+"│  1–4 / d    choose role / dispatch fan-out                                   │"
 "│  k / r      kill · retry (FAIL, or run a past run again)                     │"
-"│  l          show the kit land command (PASS with changes)                    │"
-"│  b / f      board · filter ALL → FAIL → RUN → DONE                           │"
+"│  l          review diff and create branch (PASS with changes)                │"
+"│  b / f / c  board · filter ALL → FAIL → RUN → DONE · agents                  │"
 "└──────────────────────────────────────────────────────────────────────────────┘"

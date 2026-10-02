@@ -107,7 +107,7 @@ fn ctrl_c_ends_the_run_as_killed_with_a_receipt() {
     let agent = bin.join("claude");
     std::fs::write(
         &agent,
-        "#!/bin/sh\ncase \"$1\" in\n  --version) echo 0.0.0 fake ;;\n  auth) exit 1 ;;\n  *) sleep 30 ;;\nesac\n",
+        "#!/bin/sh\ncase \"$1\" in\n  --version) echo 0.0.0 fake ;;\n  auth) echo '{\"loggedIn\":true}' ;;\n  *) sleep 30 ;;\nesac\n",
     )
     .unwrap();
     std::fs::set_permissions(&agent, std::fs::Permissions::from_mode(0o755)).unwrap();

@@ -26,9 +26,8 @@ pub(crate) enum Login {
 
 /// Build the probe result for an installed agent from its login check.
 ///
-/// `Unknown` keeps `authenticated: true` (kit-core has no third state) and
-/// says in the remedy that the login was not checked, so doctor never claims
-/// more than kit knows.
+/// An unchecked Claude/Codex login is not ready. Agents without a reliable
+/// native status command retain their existing opt-in behavior and remedy.
 pub(crate) fn installed_status(
     kind: AgentKind,
     version: Option<String>,
@@ -39,7 +38,7 @@ pub(crate) fn installed_status(
         Login::In => (true, None),
         Login::Out => (false, Some(format!("not logged in: run `{login_cmd}`"))),
         Login::Unknown(why) => (
-            true,
+            !matches!(kind, AgentKind::Claude | AgentKind::Codex),
             Some(format!(
                 "login not checked ({why}); if a run fails, run `{login_cmd}`"
             )),
@@ -213,5 +212,15 @@ mod tests {
         );
         assert!(unknown.is_ready());
         assert!(unknown.remedy.unwrap().starts_with("login not checked"));
+        for kind in [AgentKind::Claude, AgentKind::Codex] {
+            let unknown = installed_status(
+                kind,
+                None,
+                Login::Unknown("native status command timed out"),
+                "provider login",
+            );
+            assert!(!unknown.is_ready());
+            assert!(unknown.remedy.unwrap().starts_with("login not checked"));
+        }
     }
 }

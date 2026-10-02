@@ -1,20 +1,459 @@
 {
-  "schema": 1,
-  "name": "kit-native-starters",
-  "version": "2.0.0",
-  "origin": "original Kit content",
+  "schema": 2,
+  "name": "kit-native-specialists",
+  "version": "2.0.0-alpha.4",
+  "origin": "Kit code and guidance plus explicitly attributed upstream skills",
   "repository": "https://github.com/Zwin-ux/kit",
-  "license": "MIT",
-  "upstreamInstalled": false,
+  "license": "MIT AND CC-BY-SA-4.0",
+  "upstreamInstalled": true,
   "skills": {
-    "ui-craft": "Frontend",
-    "accessibility": "Frontend",
-    "api-design": "Backend",
-    "backend-verification": "Backend",
-    "security-review": "Security",
-    "dependency-review": "Security",
-    "product-spec": "Product",
-    "acceptance-review": "Product"
+    "animate-ui": {
+      "bucket": "Frontend",
+      "origin": "original Kit integration guidance",
+      "repository": "https://github.com/Zwin-ux/kit",
+      "license": "MIT",
+      "adaptations": [],
+      "documentationSource": {
+        "repository": "https://github.com/imskyleen/animate-ui",
+        "revision": "efeb96ffd7a3b7a4868667e4ac3c346620fb3044",
+        "license": "MIT + Commons Clause",
+        "componentCodeBundled": false
+      },
+      "files": {
+        "LICENSE": "87c9a7bf488eec0122e67344a80b440a094102b3517bd2d6392ac3bbc9eee373",
+        "SKILL.md": "411623cb5fdf762340e0d718529e53d418cd85748ec0c16b72f9f8b6f7f0267c"
+      }
+    },
+    "vercel-react-best-practices": {
+      "bucket": "Frontend",
+      "origin": "upstream skill",
+      "repository": "https://github.com/vercel-labs/agent-skills",
+      "revision": "063bee94c3f4df8453406c830b0a7df0f2860278",
+      "path": "skills/react-best-practices",
+      "license": "MIT",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading.",
+        "Correct three compiled AGENTS.md links to existing rules/ files."
+      ],
+      "upstreamSkillSha256": "71ed7794962fa6e803ee83030517b5b93a9f70fbfeb431ec4535c5480a8d8355",
+      "files": {
+        "AGENTS.md": "ce68d80fe31809dcca2a3ce4bb0c8fea9cd391a2af5789d06878509629d62938",
+        "README.md": "9eafb2123d3b8b2aef41fba0db2648a3f4f49996f8c7c8bb2c86263befd8b48a",
+        "SKILL.md": "ad34622447eea6816c9b2a4c197880f6046d9ee0e4b13ae3d046975dffe3dbac",
+        "UPSTREAM.md": "54b962467fb3ce432274e2b563fad13e717f94278a3441e1e0928575ab7bf133",
+        "metadata.json": "c4e18bac3290fbe1b471a605867d4df68b03144ea26b8befdbe8f9d8fd124354",
+        "rules/_sections.md": "01c59969e4e867f0708c8f8ef9c6d87fab9a07d0586244f429ff84013db8a115",
+        "rules/_template.md": "99df2a3ea088c6c22de2484ddc7e964d0e9923846f44c63380343ecc64455442",
+        "rules/advanced-effect-event-deps.md": "55ed8f9f27a1bff803d6fa55828176207714b02123cbb97ddb8a90d88024a723",
+        "rules/advanced-event-handler-refs.md": "a3097edeecfb2ff6851cd66ed8cdf0617c3c88180504bee824aa6e75a215bbbc",
+        "rules/advanced-init-once.md": "3e4dc22173eb0e2b6dcf583e3babd862b8696328f8f59aee7c4d746c5bc05f6c",
+        "rules/advanced-use-latest.md": "8a3f64dfe5a77d1564248faf17fe662ae75b55d497a243cb30b38eb07ccbbf9a",
+        "rules/async-api-routes.md": "523338540d73427dc14c0cbb19f2741ebccdf8b105a7b2c1b33d2905cf237a42",
+        "rules/async-cheap-condition-before-await.md": "03107c1f70a293cd58a8abc5474c5548e20ea4efdf01b6d45aae7ad0ac1cb32c",
+        "rules/async-defer-await.md": "f3c142d090615abdcc99d31c123be37b31f0f1ed8d9ec9f7789a3bc6883ae0fb",
+        "rules/async-dependencies.md": "16ef469f877e30c6b8e1e1b4bc3e527312fa3c6318cb785a4eca186ea236131a",
+        "rules/async-parallel.md": "6d2f841896279e976dfcdc1ac89e70771ac188baadfd43c096b5706cb838b961",
+        "rules/async-suspense-boundaries.md": "de05fedac2eb7ae563b887b5a424464ec3dfaf84e5b7797467ebe2a796ac8afc",
+        "rules/bundle-analyzable-paths.md": "62090b5c815fd71bf1133dce754f51abc16a9456d0ccd025fd627de27726e92a",
+        "rules/bundle-barrel-imports.md": "e648f6d54525f07a691357040ca5bff6ea3424788a91ff63812adb29622a671b",
+        "rules/bundle-conditional.md": "09c8259c3efb04fc0abb8e412ccbda217c222ae8118516283e571c995fe3a7d4",
+        "rules/bundle-defer-third-party.md": "3719fb47b191e8db4fe22686ec88448ad5af9e6838585425abbe103d0b642e37",
+        "rules/bundle-dynamic-imports.md": "401817a7369f315fc5a68a1095742ff7d53d0461906880dc9d64a41495ee1986",
+        "rules/bundle-preload.md": "d1f7cc28da7cd5ab249acd287edc5b761afcfb194e9cb62cd44c5f3543db2de2",
+        "rules/client-event-listeners.md": "242a873349febc1ce685e85617994784dbab92c2eaa68aed7fed5a83e7680e93",
+        "rules/client-localstorage-schema.md": "0fb7cdf9dc93fdf22f87e3669f953fb9d4ac9b0be42eec4a29fe9a2560610b88",
+        "rules/client-passive-event-listeners.md": "1f35016f9053de69e884ee9be00654e37979c2ca85f5e57764dc2626ff7acb4b",
+        "rules/client-swr-dedup.md": "644652c39c6cc00de8d1c77a7273612e868dc3f7edda30764164c12ec0f764a3",
+        "rules/js-batch-dom-css.md": "480b891b9eaf96e929dc1e964274a4828e3a78009b7d00ccd965a0d425215959",
+        "rules/js-cache-function-results.md": "3daaa11d24f4295cb6be8bc6f407f2ce83cc7b5bd1f0e68891ea8ab835721dc7",
+        "rules/js-cache-property-access.md": "73e47431e74878a927061bf0ddc7cd91a7556cb35d2573f3421e82300d9ae311",
+        "rules/js-cache-storage.md": "11b826b0433898c1ece2d3547010d8e77db9fb240185748c45db91493de9b6cc",
+        "rules/js-combine-iterations.md": "71add08aeeb43091d4ff4c0b2842cce8b4bdef8ad3e732cc034bb5a84827e746",
+        "rules/js-early-exit.md": "925ce5ce87f3347186ca62212f29cc6baa2b8c85a96d2720ad07c3d0abf781c0",
+        "rules/js-flatmap-filter.md": "9e5b166a41914d975bef7635467f8fb32cd98b5c3126c0bc6f163490812fb5f0",
+        "rules/js-hoist-regexp.md": "f9e9aef2f7c2307dd7310f283df85dcada45fc43e9bb941b0c3aa414dec21ec4",
+        "rules/js-index-maps.md": "5df1bdc2cfabb2c98abd55d26762e5c18189535c2e686184f426082e62920391",
+        "rules/js-length-check-first.md": "8b54a311c826b299272f29187fc58bc55772a04c4a72eeb29456ee96dc9fc624",
+        "rules/js-min-max-loop.md": "87dfb67e2f39df6ad8bcfb5b78c5fb364d3c07554ad188a202408d99f3763421",
+        "rules/js-request-idle-callback.md": "ee08f83905b4011abbc33d594033157d77561b5bbd9b36b04f0f409581ffec32",
+        "rules/js-set-map-lookups.md": "a7fd781a6ba9ad49065961b6f9a90ef486bf6b648390e1a08704025f98e1642b",
+        "rules/js-tosorted-immutable.md": "d0a5e1b0fec48a0a81397957e2f068e224329f7c42cb5feeed8aae6fa64025e8",
+        "rules/rendering-activity.md": "1e5e7eaf3555e61d6a2e900089c676527d26259501db5594f59544b6c664f85a",
+        "rules/rendering-animate-svg-wrapper.md": "9c6ae0ca7a51434e803887c64cded760956579a1452ccb80a461a03f9c937c77",
+        "rules/rendering-conditional-render.md": "2ec2fa23c4148285144687050c52369adba3da2fbe3d486f8d3e0aad8f06f2bc",
+        "rules/rendering-content-visibility.md": "64eee6d5b916fe74df33363994b27fc7f71bea3bcedc7ee04bda23107ca3e6e4",
+        "rules/rendering-hoist-jsx.md": "93b229560fae92005ed9a2a829064607b39b2e984e92d221d05b2d41df2b7c0e",
+        "rules/rendering-hydration-no-flicker.md": "dc7ab358c67c177bca6e6f360fbc935ebe4efa928c0ba3ebd3f9f3d9e2000ca3",
+        "rules/rendering-hydration-suppress-warning.md": "915bacb934e2927d84b37a3f3d225a47b309ac8f9e494ed2bcb66ce07c5676a2",
+        "rules/rendering-resource-hints.md": "351b1095d641717b930f1b2253282b7120af3023bc74e06c17675168d4286864",
+        "rules/rendering-script-defer-async.md": "4cea07b7875ba7fc2c7465ff23b63a2bb334f90aaf2d9293d38d67b05fdb32ab",
+        "rules/rendering-svg-precision.md": "ed468533f6e95f622859c884b122cf21f9f593ed6bb3d500a54de4b9f9bcb9fb",
+        "rules/rendering-usetransition-loading.md": "3a1249c3f13026b6f54ab5712c388df219d6af01b12aa542749acd99a46f4bc1",
+        "rules/rerender-defer-reads.md": "234050a77faf50cb306be10a9e15bd4421134ab5907e75f13e6d78e2bd262dc9",
+        "rules/rerender-dependencies.md": "17eb5830956fb56486fd3cfc7431f5849d39751730c05ad9e77dd4f0c27169c5",
+        "rules/rerender-derived-state-no-effect.md": "cb11ec76f50aa7b6847269f02d79b120c889a30d9ecd2c1d578f75144419c77a",
+        "rules/rerender-derived-state.md": "1c326bb67b01fb084eb00c8911b0a7cff54681c2315b629f88e49b64eaa6481d",
+        "rules/rerender-functional-setstate.md": "5e68df6b2ae8058e67f476ff1ac67bde159f5a9d18df439e46eabcdeb7b52e58",
+        "rules/rerender-lazy-state-init.md": "4ae844740f266fc8cbf050701230286624a2440ec5be67b9a63d9edc3c580573",
+        "rules/rerender-memo-with-default-value.md": "81c47476564ad8a79fc68fc442734255ca7d6829424359464503fda0a9f9a0dd",
+        "rules/rerender-memo.md": "1f258990c2f27ff6256b3cc5c43300631bb3f0d81f749aed08d07fcdcc131dd1",
+        "rules/rerender-move-effect-to-event.md": "abc2cbf167bee056743023351e96806a411d3398da8802093620aecf0721f029",
+        "rules/rerender-no-inline-components.md": "1cc32907a770272524ba682eef9e7efdd8ad4533b6f89b718a1fcd7d1d0eb6a3",
+        "rules/rerender-simple-expression-in-memo.md": "5bdcf2d1558ba5204e643c887b7b4060f89630969425651eb68e96427d97f800",
+        "rules/rerender-split-combined-hooks.md": "6f45d703343484ef9acef9388397f3642966ae6a5a258899a0cf1f9977cfbf6c",
+        "rules/rerender-transitions.md": "60f4033909a62df5e5b8c601494f9e50a562e2f8c1c2d81eac24f38142265f1c",
+        "rules/rerender-use-deferred-value.md": "8c3579576a61a949884167745dcfaf1d5426ba305cc61fd0a79602d70fda4909",
+        "rules/rerender-use-ref-transient-values.md": "f1a649af9d1d0b5c762f6c9c4c1c70c90d7df82aa10296ee87aadb78c1b76c54",
+        "rules/server-after-nonblocking.md": "d0b8d24a3db9f0f65f9e2bddbf230b0e03a5f60e1229d93a4a18f5e7a991c7c2",
+        "rules/server-auth-actions.md": "a2ca8aa102839251c7971ec784560fab943c20b36fe6f80365d4110c13260c23",
+        "rules/server-cache-lru.md": "1924b64561841923b88a657085097a0aeba3e0ba2d5470b9f5c15cc10d6ae70f",
+        "rules/server-cache-react.md": "fddeea6c870bb3da4134b61d54b7d09b83d2603f929b7547cd3dc1dc269edd5c",
+        "rules/server-dedup-props.md": "c2747424cdac46be62f835f245a0aa887b0090b416d28e2ac8676702645eeb37",
+        "rules/server-hoist-static-io.md": "5abea4dd882b13661bd5f7dfb93f9e547d5f08176c61c448ade91b210ed5d49f",
+        "rules/server-no-shared-module-state.md": "4d869bf1cd2f1632e5ca4c0e64b1cf0e71c5f5a0f940bc8a22174d205e735ed7",
+        "rules/server-parallel-fetching.md": "569a2e9fc04f9606686cd75c5894ef8781b502786a7fffe241396846c7733472",
+        "rules/server-parallel-nested-fetching.md": "ad5d9656984d4a959997a2367bf59cc6632297b4634a1dd13a087939d83f30b3",
+        "rules/server-serialization.md": "f4c7d68b29c82381baad059c4a7f09e868e71ec9c3115a26ad3ae7d24c0dfe1f"
+      }
+    },
+    "vercel-composition-patterns": {
+      "bucket": "Frontend",
+      "origin": "upstream skill",
+      "repository": "https://github.com/vercel-labs/agent-skills",
+      "revision": "063bee94c3f4df8453406c830b0a7df0f2860278",
+      "path": "skills/composition-patterns",
+      "license": "MIT",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading."
+      ],
+      "upstreamSkillSha256": "e38e0eaa609316b10423a9a138ed95e35099accd3f735585295c8a8f165c28a3",
+      "files": {
+        "AGENTS.md": "89e3ddd58fcf99a53a50e25dfd21b8cde1be5f10b7df6bacd3dfa6796932f516",
+        "README.md": "85915a43a6f0b4efe525e3cf6398dd866166da2025837c4460468a24a940da94",
+        "SKILL.md": "0f80286570a4e386153efbcf5b6c14c980a27c41958e42cfc610bf6d3d81c1d0",
+        "UPSTREAM.md": "4b914362eb5ee3f4c0854490bdc48615349866a53c21df19be4d3541d56010ac",
+        "metadata.json": "49262ed5cb4186f31ee980cf8d990be0170c51efed4908d0464a1cff9905bd05",
+        "rules/_sections.md": "a174213b87e6911e2b766995a2cbaf8d1534057076e82fb79fe3f0ecb38047df",
+        "rules/_template.md": "587f7d16b0660eb61fee4a4d3d7df2b3077d6835de170602c7d6e60bee559131",
+        "rules/architecture-avoid-boolean-props.md": "007555ebb020f4d552582a2c4db194db71a1fd33094012e5187bcfa4f8c392d5",
+        "rules/architecture-compound-components.md": "f246af13dc269b521cf20eb8ad99a0cb645beac381c8c9b117262c34612c8457",
+        "rules/patterns-children-over-render-props.md": "7c45a0d21b3c4126a32cba916ee31adeae195386ad1dbbe6634aedb7457aa0ad",
+        "rules/patterns-explicit-variants.md": "8c19e596e61807549d01ce8c6954c6358199f97a8511c0c02c625ec0efda8c0e",
+        "rules/react19-no-forwardref.md": "881830adb7534c4b2d70db426556646ad9837f5478f744f35641f635ada22227",
+        "rules/state-context-interface.md": "09e73afbf9285fa416679cc864a287b9e8b821d0969272ab784295386d8c9bc3",
+        "rules/state-decouple-implementation.md": "76a8c1eb29a70d8996ab3f71260345af2f7bc89deab815a421d6c87c6591a9c3",
+        "rules/state-lift-state.md": "74c54038a6c554c748fe31cec673b80861b5d920b7553cf78cdf10d18b4b759b"
+      }
+    },
+    "accessibility": {
+      "bucket": "Frontend",
+      "origin": "upstream skill",
+      "repository": "https://github.com/addyosmani/web-quality-skills",
+      "revision": "afa8da942115f2961fdbfa80807ea0b232ff6c00",
+      "path": "skills/accessibility",
+      "license": "MIT",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading.",
+        "Replace optional unbundled web-quality-audit backlink with pinned upstream URL.",
+        "Remove inherited trailing whitespace from SKILL.md."
+      ],
+      "upstreamSkillSha256": "267fb2a0707d6142f2871f22688203a42ba21291a2aa200fb740936e41362b5d",
+      "files": {
+        "LICENSE": "c122223ac43e86421958e18623979942c21b642951e2e3736dcb63eff13587c3",
+        "SKILL.md": "f9c30c94042da4d30c3ab82877402618fdc6f2b9bb8ced4b90a1ef26914a3ef2",
+        "UPSTREAM.md": "2e9340fd78ddc2914559bfe2a4b0c7a09cf1d7c6426317d03817f50ccc330a0e",
+        "references/A11Y-PATTERNS.md": "f10e238dd4dd3c4f51134c2056bc02d3dd4f8fb6ccc9145c2c1ba7aab4d58140",
+        "references/WCAG.md": "16683e025e3833d931c9d880645d98a448827f97e10189b6c8f12c832e7a2361"
+      }
+    },
+    "api-and-interface-design": {
+      "bucket": "Backend",
+      "origin": "upstream skill",
+      "repository": "https://github.com/addyosmani/agent-skills",
+      "revision": "9d0c60d406b454a78ccc0a175b19932047aa4dac",
+      "path": "skills/api-and-interface-design",
+      "license": "MIT",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading.",
+        "Link optional deprecation-and-migration reference to pinned upstream URL."
+      ],
+      "upstreamSkillSha256": "5dafd0c44a3aabf11cae5bcb34f6fcc24dfa5c01ba6e0d3176bce997f4d68bc8",
+      "files": {
+        "LICENSE": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+        "SKILL.md": "86f4f8a6ade2c3272ad8d8587310b432188935848aeac71b19e7132d99f0b064",
+        "UPSTREAM.md": "4a152e45719911af2dca7adece6aa14e2f617cf9211ec8aa4199b42ab62c5b1f"
+      }
+    },
+    "test-driven-development": {
+      "bucket": "Backend",
+      "origin": "upstream skill",
+      "repository": "https://github.com/obra/superpowers",
+      "revision": "8ca22dba9a94f28898bbce59f2537ff4d87c747d",
+      "path": "skills/test-driven-development",
+      "license": "MIT",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading."
+      ],
+      "upstreamSkillSha256": "64b03fce4aee5a97a93160cea8111f3ba13a17b7c001db4bd5836d67fd10705d",
+      "files": {
+        "LICENSE": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+        "SKILL.md": "1f1eb87ac7ae34269c1e10e9d0e912371de099663a70480b7b58de9ec218dcb5",
+        "UPSTREAM.md": "b504ab1d89cd202c195eb55d220e257139432f3623ec9d15ef8d19b5c8af47a2",
+        "writing-good-tests.md": "51471c853306ff92ca8bb41dcaea05f31c0e46b03651f8f3c99754b7172f4ae1"
+      }
+    },
+    "systematic-debugging": {
+      "bucket": "Backend",
+      "origin": "upstream skill",
+      "repository": "https://github.com/obra/superpowers",
+      "revision": "8ca22dba9a94f28898bbce59f2537ff4d87c747d",
+      "path": "skills/systematic-debugging",
+      "license": "MIT",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading.",
+        "Retarget TDD invocation to kit:test-driven-development.",
+        "Bundle verification-before-completion as references/verification-before-completion.md and retarget its instruction; no fifth discoverable skill."
+      ],
+      "upstreamSkillSha256": "808fc5717aa88ad65efff312b11c186294d3e6ee301afb584e2f86599b137787",
+      "files": {
+        "CREATION-LOG.md": "c24733a5b1821bd6bed1fc950261f0b9f4e90097e0bbb96459d8179713730789",
+        "LICENSE": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+        "SKILL.md": "8fdb3e14ba381fb06598d8425331c0ac07decf6ba3d3b00b953de2eec492c74b",
+        "UPSTREAM.md": "d1f93d8da0a58dd5864851f5bcc64f2daec64e6bdaeb6daf1fea2bf1fc985a71",
+        "condition-based-waiting-example.ts": "40ae5ebe497fdf310200e43fe986552546d0a22837c0d39e855db1cfd33eb88e",
+        "condition-based-waiting.md": "e89fec8400d6cd50f43407cec9fab50976ba4d55d0ec2eb51c0bd68036b54c26",
+        "defense-in-depth.md": "1e175fb86fc357e58c6aebf5441e481e1b7868b4380c0456b63a17eefbd18ba7",
+        "find-polluter.sh": "dd7b8f13c4cc2a24b33ff87b18da9248f3e1c80a085c3316224f69ff0fa5c43c",
+        "references/verification-before-completion.md": "2befe7fc55bcadaa3d97dd9e8efeb633d2561c0ebe74c5a8b17c4d9e7e4520b3",
+        "root-cause-tracing.md": "75b933b6a8c40bdb2031b10f21654395b56ec6ab6bc7b018c18d3fe57aeb7fb8",
+        "test-academic.md": "fe2ba480d78ac0d686dc025f41c2a32a43d642bf533f91b0c6053a04d35d6486",
+        "test-pressure-1.md": "0b6a915db0054577819834c79be9eb614e97bddba10d73768e1fbe91cfed048a",
+        "test-pressure-2.md": "b2030aeffba07050e8ad573ddf87486457c4a016a786bb326235bebd856f2016",
+        "test-pressure-3.md": "96b50a52e2c7989c9cf20fb752c47c1e9a3a70dc362f8f7989f8f5b64dac7708"
+      }
+    },
+    "supabase-postgres-best-practices": {
+      "bucket": "Backend",
+      "origin": "upstream skill",
+      "repository": "https://github.com/supabase/agent-skills",
+      "revision": "c9be0e931b7930f7d02126d04774d904c381e7d7",
+      "path": "skills/supabase-postgres-best-practices",
+      "license": "MIT",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading."
+      ],
+      "upstreamSkillSha256": "ad65e776f45e761bafc609d3f506c77c1032225aa65e0c4c02f241b8071e5855",
+      "files": {
+        "CHANGELOG.md": "751ad110037c85d400018c9894716a04fa46357ff55c22b1169b280752e19e88",
+        "LICENSE": "b65e575eb4f04a13c187d64e958321298e2ab84d67aa8428819f362056ba292c",
+        "SKILL.md": "1d99d6bd70bd07740e9eeaf47a34e539096d792f7f67f5fffbef068cce1ffa98",
+        "UPSTREAM.md": "fbd83b162a6b73d586d937159fe8d684f0d0259fc94450fac2431d41a9ed8472",
+        "references/_contributing.md": "191e039e7d94764e6073410b513b559f9a594e0fdf0252a30c2a2986df2ab3bc",
+        "references/_sections.md": "c9e992612b422c7122de0b7542ebc2450db283edaab08cfe86c6d657fcccccd5",
+        "references/_template.md": "6299954250f212caabe339d752c3e5313a8e07d1a182a4e4b425baee91df1bd2",
+        "references/advanced-full-text-search.md": "40c2606bbb4c4dce31308f201b24cc7f58c7df05b1d9c6856fe2b888d3b7cf28",
+        "references/advanced-jsonb-indexing.md": "24cacf6a8bc35901dd566d24502ce8e57f810a5c196b897e61d52726e521d106",
+        "references/conn-idle-timeout.md": "630588902c00fcec59a5988cc5d042f76dcf2c923a535abfd8c47dca205eaed5",
+        "references/conn-limits.md": "11b2a67a7c7679cbbc5d807bbb17e69c98484a581d0c8b929c03408f412b81b2",
+        "references/conn-pooling.md": "88cf086bf98ba865d2e9d0579974e1366b14157619d6a93e7da77be91084e4a5",
+        "references/conn-prepared-statements.md": "174e9332fe3dda5c99b2b00159fb1915ae36c00bab3a7882c14e73e4344e946e",
+        "references/data-batch-inserts.md": "531933b82d6a622d0fae29e0ea80be6fe5d78655adf2804c271ea84a1930de37",
+        "references/data-n-plus-one.md": "21a44905e5b16a42741892ec34bb1bfef124d049b140a76934a9acd0f46f5fc2",
+        "references/data-pagination.md": "73c9fa10a3d439bedea0e11b640bd25bf30dd50f0d9006cf85baf7c3151543fa",
+        "references/data-upsert.md": "2612af83b20a2701dde30ef1f8d7efd26b7e9eef84717226b8f038a2d2150ff7",
+        "references/lock-advisory.md": "c88d259dbf81c3771438f59a165f7eab8acd09999dd370bdf807521c73f35aab",
+        "references/lock-deadlock-prevention.md": "09aee46f51d7178c8e55fe056cd5a94a64ba2c122fe418e6900cd99f297b2347",
+        "references/lock-short-transactions.md": "5aa7f61095916986d39644b446cdbcd2bacca7ef698a3bb50b3f82dd60207602",
+        "references/lock-skip-locked.md": "6c45077f430f29cd9cd8f448c94d578e827e7bd023fcdaf717a756acb116fa4b",
+        "references/monitor-explain-analyze.md": "4cb67ffbf8e57f2e5b380b0beb4242528b513723ce314a2c2ffcf083bd4203d7",
+        "references/monitor-pg-stat-statements.md": "89dca99d4e894fcbdcac136be7ad9fbc03d1342904f065c1b198dc9cf495f098",
+        "references/monitor-vacuum-analyze.md": "2892272011710eb49b3f185ec12f15ce9ce4c365792c672f6e2a9c90da426a1a",
+        "references/query-composite-indexes.md": "73e42424e671f0266e74fdb220db3196790f69fb43e2b19c7b9483eb4971b554",
+        "references/query-covering-indexes.md": "daf2a7f0477fb7357b62b5fb5b185b1995a77a186347e45cb780e25e7a7589b6",
+        "references/query-index-types.md": "472a74f22c2df203bd0154999b3a5a0187cca2ab3d9a3978e305bb7c32f1a282",
+        "references/query-missing-indexes.md": "91ad8b0ff4365704b4830a7f077c6f140f7140fd5d3ce5cd0b92b160cf9e25f1",
+        "references/query-partial-indexes.md": "6448982bc8558c6555284958edc331b29239c6a0130e6b4501dd6d4da607a6dd",
+        "references/schema-constraints.md": "90e8efda3e9e81095e642911ad4aae2809d160f29414338fa997253238f510f8",
+        "references/schema-data-types.md": "e01b58c14c7f3f65d8ead580b9a4fcf70b83baaab0f9a5f83c569c9fd113e8c8",
+        "references/schema-foreign-key-indexes.md": "7587713d12a65a212365459b3d39e4717d8a79e4073b10bd62f1054d8192c0dd",
+        "references/schema-lowercase-identifiers.md": "4bc80f70865f2390872591f326c8a6be6456a0aeb5a7e5a2475d7cd9d43059ab",
+        "references/schema-partitioning.md": "541e13fbeaf4bb1485c9059d4c9417dbdb766cf16f4237cd63a04ada7ec45b90",
+        "references/schema-primary-keys.md": "3c8beabef82066f9a0838b926da0885117fd2d9a263aaf84cb5ca9e5f0d400e9",
+        "references/security-privileges.md": "095909274a4fb43df785d7144cf674eeb40284d2d45628f14af4108737b93663",
+        "references/security-rls-basics.md": "e04dd1a3a382aafdaaa73fe9f7976352acdde6e90c2a2470d281b94d4f44b096",
+        "references/security-rls-performance.md": "2e1faeca7d5746e246b1c78f9492fe2a9cfa41c4d7fa1e23c402d58fa18ea014"
+      }
+    },
+    "audit-context-building": {
+      "bucket": "Security",
+      "origin": "upstream skill",
+      "repository": "https://github.com/trailofbits/skills",
+      "revision": "debfb29c8e992894f86f8263a6ffbc28c5bc45ad",
+      "path": "plugins/audit-context-building/skills/audit-context-building",
+      "license": "CC-BY-SA-4.0",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading."
+      ],
+      "upstreamSkillSha256": "98e8d493f75456b7c7a5b6a4ad0b383e266ca5e550d3c627f5a4357fd1bf1cd2",
+      "files": {
+        "LICENSE": "7abe19ec9bb73b36141b999b861d24ad855e808bafe0f81e84cce28556f6c297",
+        "SKILL.md": "503dc0b7d5a5dab5abe477250f0ca2f380dc4f7f8fc8cdb340e21175c68f5e97",
+        "UPSTREAM.md": "34d60631ae4a7616f60ef113e781d1213fd26b6604f1089f3260bfd57a33d994",
+        "resources/COMPLETENESS_CHECKLIST.md": "b0acac41b4a1b77836400e66018914e939724b22d84f39bbb882b8cef9fb09f2",
+        "resources/FUNCTION_MICRO_ANALYSIS_EXAMPLE.md": "49024fff7893c383618ae71e969a6ac1b9d96f672348e1810383b04f8b265d7c",
+        "resources/OUTPUT_REQUIREMENTS.md": "ee50a4f690fc94e017260613cb6e837fc1b3399b7cb617b4ce54ef02c912ae8f"
+      }
+    },
+    "insecure-defaults": {
+      "bucket": "Security",
+      "origin": "upstream skill",
+      "repository": "https://github.com/trailofbits/skills",
+      "revision": "debfb29c8e992894f86f8263a6ffbc28c5bc45ad",
+      "path": "plugins/insecure-defaults/skills/insecure-defaults",
+      "license": "CC-BY-SA-4.0",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading.",
+        "Remove allowed-tools metadata; native role permissions remain authoritative."
+      ],
+      "upstreamSkillSha256": "b1b95a2fa5b661a20c3812912f49d1063533dc7dbef726e70c9757424b6cdcbc",
+      "files": {
+        "LICENSE": "7abe19ec9bb73b36141b999b861d24ad855e808bafe0f81e84cce28556f6c297",
+        "SKILL.md": "990924bb0c088e9a90f27e51966e0e6b78baa9f94c660698ca0cbc09c30ddf45",
+        "UPSTREAM.md": "f8449eaf5cc9a71b19e9c47f897a4f2d1004d34c9ad82eb672e53ff601299a1c",
+        "references/examples.md": "1d47703f84b6c5866e299e46f7f797c6178c2896fe37e02759fec5bfbf5b8d1f"
+      }
+    },
+    "sharp-edges": {
+      "bucket": "Security",
+      "origin": "upstream skill",
+      "repository": "https://github.com/trailofbits/skills",
+      "revision": "debfb29c8e992894f86f8263a6ffbc28c5bc45ad",
+      "path": "plugins/sharp-edges/skills/sharp-edges",
+      "license": "CC-BY-SA-4.0",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading.",
+        "Remove allowed-tools metadata; native role permissions remain authoritative."
+      ],
+      "upstreamSkillSha256": "7e083213680834ed675a8681d30ff86748071ad2519cf74171e58335913f671b",
+      "files": {
+        "LICENSE": "7abe19ec9bb73b36141b999b861d24ad855e808bafe0f81e84cce28556f6c297",
+        "SKILL.md": "086b3f9d6d28908fd2569c9168739b5e30e4070e7db952d08221d119b787b740",
+        "UPSTREAM.md": "c25e1f984fb9c0ba1c5f9c1f3607b8197bd7f6187dd3b0633a1add6c7bcbc59d",
+        "references/auth-patterns.md": "1fbf526ca1db7204f9ebb1bf4eb3c48c544676623d23e5d28e01f6f63c355be2",
+        "references/case-studies.md": "2e81a320728b4597bf84c490176d5bf212f1e6ba6f87aafba61ad1734de35332",
+        "references/config-patterns.md": "1d99f2716f7bef18efe71015ce0c56e0f4961c042faa503d796d6d4d1626fdc6",
+        "references/crypto-apis.md": "8baddc83a1f964d6d8b15678d60a37c93029c18dc162bd7c00895e585ff1a825",
+        "references/lang-c.md": "d077d711c73749c924eae81c06018b14bbf1ec9b93d71723c472b43df5d7d5ae",
+        "references/lang-csharp.md": "8fa9e93d36c0e1397b7ca81307163370fc43cf700215b7c6d7aa1b09fdb91fb4",
+        "references/lang-go.md": "839c0e7b4e3fa2f3b37c651e926aa59d69d20bfef5e67f569eedacf11354844d",
+        "references/lang-java.md": "3b93b6049f7e0e356a1ffebc0b4642f3cef315d90be45b63e15c8c4814f9ebeb",
+        "references/lang-javascript.md": "cf72f55d31318666942a8d1d64340befc3c4e7223afc2ca196e6a776ffa4c895",
+        "references/lang-kotlin.md": "c891148c10a4941c3396416a10ac64512eb3a9e13ea5eeaec3902da4b51501dd",
+        "references/lang-php.md": "7960d9773874cf06c5b470a5ca3ab406d896e66b71e713d809bc1ecfcab63485",
+        "references/lang-python.md": "36543becc25b4e3f41eaedcab62e9b204657e6742b8ac95e405bcd040d33bf03",
+        "references/lang-ruby.md": "d9ba749caaccb8a3bb39e2199b2062c0957cf48739218ba8022d49be5cba2088",
+        "references/lang-rust.md": "3d14993ea70b2b2df3fc0f388cbd1631470895c27ccbd9d764296d1da8f5b6ee",
+        "references/lang-swift.md": "a64ab8692db0f3e43526088c63c7fdcb7354d1b24e6fe7ca759aea3260890e04",
+        "references/language-specific.md": "4522b4a37cfd7d3aa689209dfd4569f3b39074bd1f5987a36a6e819f501141b6"
+      }
+    },
+    "variant-analysis": {
+      "bucket": "Security",
+      "origin": "upstream skill",
+      "repository": "https://github.com/trailofbits/skills",
+      "revision": "debfb29c8e992894f86f8263a6ffbc28c5bc45ad",
+      "path": "plugins/variant-analysis/skills/variant-analysis",
+      "license": "CC-BY-SA-4.0",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading."
+      ],
+      "upstreamSkillSha256": "b0b94dec027087b25bae609a8104b496314b34c5095f474593597bac9639e333",
+      "files": {
+        "LICENSE": "7abe19ec9bb73b36141b999b861d24ad855e808bafe0f81e84cce28556f6c297",
+        "METHODOLOGY.md": "bbe15a7e6edf419f348564542fec22200b4f0ce30a0f801d620fbd2e406c14f3",
+        "SKILL.md": "08a73763f04cafd32d9358c534cf8b3767513c7b1a1a1e57cca1255df54eaeae",
+        "UPSTREAM.md": "e6846bb5a011b8292381c33070bdcc025526c84afa371d569b3293a9e6874482",
+        "resources/codeql/cpp.ql": "efd574081969d2bdd19e1756302d843fdbf936968a72de62eb24d66db43efc0c",
+        "resources/codeql/go.ql": "d3fa419af29bb15bf81510c54bc1ce0cf55f5b7adbdbf79cc2c8cd922d2365fb",
+        "resources/codeql/java.ql": "ee4a92a5cbde67304d17a2c5fb739fe9acf1d39ebac9406e3d3a2c1cbbbb19c1",
+        "resources/codeql/javascript.ql": "b6ceaa3acb6ba6fa89903c14c8fd3aa7cf48316e6b2588dcacae51bb423b3526",
+        "resources/codeql/python.ql": "135ec55760e1e827065e34b002c6d954b4c4293d07233a93d7ff31d9d97528a9",
+        "resources/semgrep/cpp.yaml": "41f034c9a5967cc3b87bf5880243ed21f633017111489ee843dd5d002271b10a",
+        "resources/semgrep/go.yaml": "8a8257eb8e0a7150cb7dffa2b64813691fd560de24b0f85fa6640ec2bfc6595f",
+        "resources/semgrep/java.yaml": "5be3990b052bc9ce5e1aa203d1f3c93cb3cde7d46eba463c24c661fc6b342902",
+        "resources/semgrep/javascript.yaml": "2f97e3545fcac449820c2d058bcb9cc36822e238b6249efa3a5dcb4f5f576912",
+        "resources/semgrep/python.yaml": "c1ce15574569d45555d582707db030b226763d81b2d521d9e61d6067440948f2",
+        "resources/variant-report-template.md": "03333c762318a89dd819784a62695f7660713479a5009a15189314400836202f"
+      }
+    },
+    "create-prd": {
+      "bucket": "Product",
+      "origin": "upstream skill",
+      "repository": "https://github.com/phuryn/pm-skills",
+      "revision": "8607e3b077817f89bf4a9b623246219734ac3be0",
+      "path": "pm-execution/skills/create-prd",
+      "license": "MIT",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading."
+      ],
+      "upstreamSkillSha256": "2a4059f16301c5559e10d0dfd00c9bdcde04d2cd964d8c360dbe43bd0161ed32",
+      "files": {
+        "LICENSE": "a2c922f9b81b4f40347ddfa79c38eda0f1278b5a6d108bd4099b4da254c774ee",
+        "SKILL.md": "2ecd461798bc5f451c7d04a23686edee83dde0189227200ac6fdfd0027a8f4f8",
+        "UPSTREAM.md": "790d0d1e417a2bce168ccf6114cb3fe5194ddc2710aedbc485111934e138d144"
+      }
+    },
+    "product-strategy": {
+      "bucket": "Product",
+      "origin": "upstream skill",
+      "repository": "https://github.com/phuryn/pm-skills",
+      "revision": "8607e3b077817f89bf4a9b623246219734ac3be0",
+      "path": "pm-product-strategy/skills/product-strategy",
+      "license": "MIT",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading."
+      ],
+      "upstreamSkillSha256": "50d4bfe62ae71a321271a491148e8dca4715a6a7550f82ffba2ded06f036d5b8",
+      "files": {
+        "LICENSE": "a2c922f9b81b4f40347ddfa79c38eda0f1278b5a6d108bd4099b4da254c774ee",
+        "SKILL.md": "82ad0773e936bc7abf5fe28662b6e689be1d489e98322016ff27e0571271eaca",
+        "UPSTREAM.md": "0cb87b4fbb0127e416bb8c63d669a0b4b6f682374ae142bf44ec2ccea16cb0a8"
+      }
+    },
+    "opportunity-solution-tree": {
+      "bucket": "Product",
+      "origin": "upstream skill",
+      "repository": "https://github.com/phuryn/pm-skills",
+      "revision": "8607e3b077817f89bf4a9b623246219734ac3be0",
+      "path": "pm-product-discovery/skills/opportunity-solution-tree",
+      "license": "MIT",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading."
+      ],
+      "upstreamSkillSha256": "6b23e44a5ace86aa20d64cc130322265ace6a53a29831cc403b974098a379bcc",
+      "files": {
+        "LICENSE": "a2c922f9b81b4f40347ddfa79c38eda0f1278b5a6d108bd4099b4da254c774ee",
+        "SKILL.md": "59ddeb18cbc490af042894690760ddc5d8e1d15aa8cd39cda41d06d2dce84e25",
+        "UPSTREAM.md": "693be4ec9331c1c39f2a2364de177847a13a0bffe0c8329a83b7b5848cadf44b"
+      }
+    },
+    "prioritization-frameworks": {
+      "bucket": "Product",
+      "origin": "upstream skill",
+      "repository": "https://github.com/phuryn/pm-skills",
+      "revision": "8607e3b077817f89bf4a9b623246219734ac3be0",
+      "path": "pm-execution/skills/prioritization-frameworks",
+      "license": "MIT",
+      "adaptations": [
+        "Set user-invocable: false for native specialist preloading."
+      ],
+      "upstreamSkillSha256": "5dab45be9e46397ec1c35a6a6aaa85233843184fd1e9d8e5f279dd02d6e4fc21",
+      "files": {
+        "LICENSE": "a2c922f9b81b4f40347ddfa79c38eda0f1278b5a6d108bd4099b4da254c774ee",
+        "SKILL.md": "5fd7016e5fc08f6cb9c1a73a55edbadd101570fb169ee34eb5b8c07b92fbf61f",
+        "UPSTREAM.md": "00ee178ab69a592e9b214914acdf4f1574c1a8040150f1e2929c954110f7370b"
+      }
+    }
   },
   "art": {
     "fox": "Original parent-reviewed editable 22x16 palette-grid interpretation; not a pixel-exact extraction",

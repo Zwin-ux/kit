@@ -1,0 +1,18 @@
+{
+  "artifact": "final-site/index.html",
+  "acceptedCommit": "dc03d867cee77ce8836e191f508ef67136e83cc3",
+  "browser": "Chrome",
+  "widths": [
+    320,
+    390
+  ],
+  "pageScrollWidths": [
+    320,
+    390
+  ],
+  "allCopyButtonsWithinViewport": true,
+  "platform": "windows",
+  "provider": "codex",
+  "copyFeedback": "Copied: kit connect codex",
+  "nativeKitUiRecording": false
+}

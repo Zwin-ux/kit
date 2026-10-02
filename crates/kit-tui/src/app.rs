@@ -10,7 +10,11 @@
 use crate::event::{AppEvent, Clock, TICK_HZ, motion_enabled};
 use crate::persona::{Persona, default_persona_toggles};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
-use kit_core::{GateOutcome, RunDelta, RunId, RunState};
+use kit_agents::{
+    AgentStatus,
+    connection::{self, ConnectionState},
+};
+use kit_core::{AgentKind, GateOutcome, RunDelta, RunId, RunState};
 use std::path::{Path, PathBuf};
 
 /// Known neighbor checkouts shown on Dispatch when they are git repos.
@@ -61,13 +65,27 @@ pub enum Action {
     Quit,
     /// User submitted the dispatch form (queued rows already in state).
     /// Forward to the run engine when wired.
-    DispatchSubmitted { jobs: Vec<DispatchJob> },
+    DispatchSubmitted {
+        jobs: Vec<DispatchJob>,
+    },
     /// Request kill of the selected active run.
-    KillSelected { id: RunId },
+    KillSelected {
+        id: RunId,
+    },
     /// Request retry of a failed run (new job already queued in UI state).
-    RetrySelected { source_id: RunId, job: DispatchJob },
+    RetrySelected {
+        source_id: RunId,
+        job: DispatchJob,
+    },
     /// Request PTY attach for the selected run (B2-pty).
     AttachSelected,
+    ConnectAgent {
+        kind: AgentKind,
+    },
+    RefreshAgents,
+    LandSelected {
+        id: RunId,
+    },
 }
 
 /// Which body pane is focused inside run detail.
@@ -120,6 +138,7 @@ pub enum Screen {
     Dispatch,
     /// Shared work queue (orchestrator view).
     Board,
+    Agents,
 }
 
 /// Which field is focused in the dispatch form.
@@ -385,6 +404,12 @@ pub struct App {
     pub help_open: bool,
     /// Agent readiness from launch-time probe (`name`, ready). Empty until set.
     pub agents_probe: Vec<(String, bool)>,
+    pub agent_statuses: Vec<AgentStatus>,
+    pub agent_selected: usize,
+    pub pending_land: Option<RunId>,
+    pending_land_diff: String,
+    pub landing: Option<RunId>,
+    pub land_result: Option<(RunId, String)>,
     /// Control Room table filter (`f`).
     pub run_filter: RunFilter,
     /// Where receipts live. A run's diff is read from `<id>/diff.patch` here
@@ -659,6 +684,12 @@ impl App {
             board_seq: 1,
             help_open: false,
             agents_probe: Vec::new(),
+            agent_statuses: Vec::new(),
+            agent_selected: 0,
+            pending_land: None,
+            pending_land_diff: String::new(),
+            landing: None,
+            land_result: None,
             run_filter: RunFilter::All,
             runs_dir: None,
             quit_armed: false,
@@ -714,6 +745,92 @@ impl App {
         self.dirty = true;
     }
 
+    /// Retain the provider's login result and remedy, not just installation.
+    pub fn set_agent_statuses(&mut self, statuses: Vec<AgentStatus>) {
+        let previous_agents =
+            (!self.agent_statuses.is_empty()).then(|| self.dispatch.agents.clone());
+        let probe = statuses
+            .iter()
+            .map(|s| {
+                (
+                    s.kind.binary().to_string(),
+                    s.is_ready()
+                        && (!matches!(s.kind, AgentKind::Claude | AgentKind::Codex)
+                            || connection::state(s) == ConnectionState::Ready),
+                )
+            })
+            .collect();
+        self.agent_statuses = statuses;
+        self.set_agents_probe(probe);
+        if let Some(mut previous) = previous_agents {
+            for (name, on) in &mut previous {
+                *on &= self
+                    .agents_probe
+                    .iter()
+                    .any(|(n, ready)| n == name && self.startable(n, *ready));
+            }
+            if previous.iter().any(|(_, on)| *on) {
+                self.dispatch.agents = previous;
+            }
+        }
+    }
+
+    pub fn agent_status_label(&self, name: &str) -> &'static str {
+        if let Some(status) = self.agent_statuses.iter().find(|s| s.kind.binary() == name) {
+            connection::state(status).label()
+        } else if self
+            .agents_probe
+            .iter()
+            .any(|(n, ready)| n == name && *ready)
+        {
+            "ready"
+        } else {
+            "not installed"
+        }
+    }
+
+    fn on_agents_key(&mut self, key: KeyEvent) -> Action {
+        match key.code {
+            KeyCode::Esc => {
+                self.screen = Screen::ControlRoom;
+                Action::None
+            }
+            KeyCode::Up => {
+                self.agent_selected = self.agent_selected.saturating_sub(1);
+                Action::None
+            }
+            KeyCode::Down => {
+                self.agent_selected = (self.agent_selected + 1).min(AGENT_ORDER.len() - 1);
+                Action::None
+            }
+            KeyCode::Char('r') => Action::RefreshAgents,
+            KeyCode::Enter | KeyCode::Char('c') => {
+                if !self.active_run_ids().is_empty() {
+                    self.set_flash("finish or stop active runs before native sign-in");
+                    return Action::None;
+                }
+                let kind = match AGENT_ORDER[self.agent_selected] {
+                    "claude" => AgentKind::Claude,
+                    "codex" => AgentKind::Codex,
+                    _ => {
+                        self.set_flash("native sign-in is supported for Claude and Codex only");
+                        return Action::None;
+                    }
+                };
+                if self
+                    .agent_statuses
+                    .iter()
+                    .any(|s| s.kind == kind && !s.installed)
+                {
+                    self.set_flash("install the provider CLI, then press r to check again");
+                    return Action::None;
+                }
+                Action::ConnectAgent { kind }
+            }
+            _ => Action::None,
+        }
+    }
+
     /// When a probe is present, select the first ready agent and deselect the rest.
     /// Empty probe (tests / `--demo` without probe) keeps the form default (claude on).
     pub fn apply_dispatch_agent_defaults(&mut self) {
@@ -747,6 +864,21 @@ impl App {
             .filter(|(_, ok)| !*ok)
             .map(|(n, _)| n.as_str())
             .collect();
+        if !self.agent_statuses.is_empty() {
+            let other = self
+                .agent_statuses
+                .iter()
+                .filter(|s| {
+                    !self.startable(s.kind.binary(), s.is_ready())
+                        || connection::state(s) != ConnectionState::Ready
+                })
+                .count();
+            return match (ready.is_empty(), other) {
+                (true, _) => "agents need attention — c to connect".into(),
+                (false, 0) => format!("{} ready", ready.join("·")),
+                (false, n) => format!("{} ready · {n} need attention", ready.join("·")),
+            };
+        }
         match (ready.is_empty(), missing.is_empty()) {
             (true, true) => String::new(),
             (false, true) => format!("{} ready", ready.join("·")),
@@ -771,7 +903,17 @@ impl App {
             .map(|(n, _)| n.as_str())
             .collect();
         let missing = self.agents_probe.iter().filter(|(_, ok)| !*ok).count();
+        if !self.agent_statuses.is_empty() {
+            return if ready.is_empty() {
+                "agents need attention · c".into()
+            } else if missing == 0 {
+                format!("{} ✓", ready.join("·"))
+            } else {
+                format!("{} ✓  {missing} need attention", ready.join("·"))
+            };
+        }
         match (ready.is_empty(), missing) {
+            (true, _) if !self.agent_statuses.is_empty() => "agents need attention · c".into(),
             (true, _) => "no agents — kit doctor".into(),
             (false, 0) => format!("{} ✓", ready.join("·")),
             (false, n) => format!("{} ✓  {n} missing", ready.join("·")),
@@ -909,6 +1051,35 @@ impl App {
         if key.kind == KeyEventKind::Release {
             return Action::None;
         }
+        if let Some(id) = self.pending_land.clone() {
+            if key.code == KeyCode::Enter {
+                if key.kind != KeyEventKind::Press {
+                    return Action::None;
+                }
+                self.pending_land = None;
+                let valid = self.selected_run().is_some_and(|r| {
+                    r.id == id && r.landable() && r.diff == self.pending_land_diff
+                });
+                if valid {
+                    self.landing = Some(id.clone());
+                    return Action::LandSelected { id };
+                }
+                self.set_flash("run or diff changed; reopen it before accepting");
+                return Action::None;
+            }
+            if !matches!(
+                key.code,
+                KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::PageUp
+                    | KeyCode::PageDown
+                    | KeyCode::Home
+                    | KeyCode::End
+                    | KeyCode::Char('G')
+            ) {
+                self.pending_land = None;
+            }
+        }
         // Help overlay captures all keys until dismissed.
         if self.help_open {
             match key.code {
@@ -932,6 +1103,7 @@ impl App {
             Screen::Attached => self.on_attached_key(key),
             Screen::Dispatch => self.on_dispatch_key(key),
             Screen::Board => self.on_board_key(key),
+            Screen::Agents => self.on_agents_key(key),
         }
     }
 
@@ -954,6 +1126,20 @@ impl App {
         // The second `q` counts only while its warning is still showing.
         let armed = std::mem::take(&mut self.quit_armed) && self.flash_message().is_some();
         match key.code {
+            KeyCode::Char(digit @ '1'..='4') => {
+                self.prepare_dispatch_repos();
+                let role = Persona::ALL[(digit as u8 - b'1') as usize];
+                for (persona, on) in &mut self.dispatch.personas {
+                    *on = *persona == role;
+                }
+                self.dispatch.focus = DispatchFocus::Task;
+                self.screen = Screen::Dispatch;
+                Action::None
+            }
+            KeyCode::Char('c') => {
+                self.screen = Screen::Agents;
+                Action::None
+            }
             KeyCode::Char('q') | KeyCode::Char('Q') => {
                 let n = self.active_run_ids().len();
                 if n > 0 && !armed {
@@ -1169,7 +1355,11 @@ impl App {
             && self.agents_ready_count() == 0
             && !self.agents_probe.is_empty()
         {
-            Some("no coding agent installed — run kit doctor")
+            Some(if self.agent_statuses.is_empty() {
+                "no coding agent installed — run kit doctor"
+            } else {
+                "no ready agent — Esc, then c to connect"
+            })
         } else if agents.is_empty() {
             Some("no agent ticked — Tab to agents, Space to tick one")
         } else if personas.is_empty() {
@@ -1317,6 +1507,15 @@ impl App {
                 let blocked = self.agent_blocked(&item.agent_hint).is_some();
                 for (name, on) in &mut self.dispatch.agents {
                     *on = *name == item.agent_hint && !blocked;
+                }
+                if !self
+                    .dispatch
+                    .personas
+                    .iter()
+                    .any(|(persona, _)| *persona == item.persona)
+                {
+                    // Older Board items and receipts keep their original role.
+                    self.dispatch.personas.push((item.persona, false));
                 }
                 for (persona, on) in &mut self.dispatch.personas {
                     *on = *persona == item.persona;
@@ -1593,8 +1792,8 @@ impl App {
         }
     }
 
-    /// A proven run with changes: say the command that lands it. The TUI
-    /// never runs git itself.
+    /// Review the selected proven patch before requesting branch acceptance.
+    /// The existing CLI owns proof validation and git operations.
     fn show_land_command(&mut self) {
         let Some(row) = self.selected_run() else {
             self.set_flash("no run selected");
@@ -1604,8 +1803,24 @@ impl App {
             self.set_flash(DEMO_ROW_FLASH);
             return;
         }
+        if self.landing.is_some() {
+            self.set_flash("review branch creation is still running");
+            return;
+        }
         let msg = if row.landable() {
-            format!("land it: kit land {}", land_id(&row.id))
+            let id = row.id.clone();
+            let diff = row.diff.clone();
+            if diff.len() > OUTPUT_DISPLAY_CAP_BYTES {
+                self.set_flash(
+                    "diff too large for in-UI acceptance; inspect the receipt and use kit land",
+                );
+                return;
+            }
+            self.pending_land = Some(id.clone());
+            self.pending_land_diff = diff;
+            self.open_detail(DetailPane::Diff);
+            self.stream_follow = false;
+            format!("review diff: kit land {}", land_id(&id))
         } else if row.no_changes() {
             "nothing to land: the agent changed no files".into()
         } else if row.state == RunState::Pass || row.state.is_active() {
@@ -1614,6 +1829,20 @@ impl App {
             "only a PASS run can land".into()
         };
         self.set_flash(msg);
+    }
+
+    pub(crate) fn complete_land(
+        &mut self,
+        id: RunId,
+        result: Result<crate::accept::Accepted, String>,
+    ) {
+        self.landing = None;
+        let message = match result {
+            Ok(proof) => format!("Review branch {} · commit {}", proof.branch, proof.commit),
+            Err(error) => format!("Branch creation failed: {error}"),
+        };
+        self.land_result = Some((id, message));
+        self.dirty = true;
     }
 
     pub(crate) fn set_flash(&mut self, msg: impl Into<String>) {
@@ -2813,6 +3042,78 @@ mod tests {
         assert!(app.runs[0].no_changes());
     }
 
+    #[test]
+    fn land_requires_review_then_explicit_confirmation_of_the_same_run() {
+        let tmp = crate::past::tests::TempRuns::new("land-confirm");
+        let mut app = past_app(&tmp);
+        let row = app
+            .runs
+            .iter()
+            .find(|r| r.task == "add a greeting file")
+            .unwrap()
+            .clone();
+        app.selected_id = Some(row.id.clone());
+        assert_eq!(app.update(key('l')), Action::None);
+        assert_eq!(
+            app.screen,
+            Screen::RunDetail {
+                pane: DetailPane::Diff
+            }
+        );
+        assert_eq!(app.pending_land, Some(row.id.clone()));
+        for _ in 0..100 {
+            app.update(AppEvent::AnimationTick);
+        }
+        app.update(code(KeyCode::PageDown));
+        assert_eq!(app.pending_land, Some(row.id.clone()));
+        let mut repeated = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        repeated.kind = KeyEventKind::Repeat;
+        assert_eq!(app.update(AppEvent::Key(repeated)), Action::None);
+        assert_eq!(app.pending_land, Some(row.id.clone()));
+        assert!(app.landing.is_none());
+        assert_eq!(
+            app.update(code(KeyCode::Enter)),
+            Action::LandSelected { id: row.id.clone() }
+        );
+        assert_eq!(app.pending_land, None);
+        assert_eq!(app.landing, Some(row.id));
+        assert_eq!(app.update(code(KeyCode::Enter)), Action::None);
+    }
+
+    #[test]
+    fn land_confirmation_cancels_on_escape_navigation_or_changed_identity() {
+        for code in [KeyCode::Esc, KeyCode::Tab, KeyCode::Char('d')] {
+            let tmp = crate::past::tests::TempRuns::new("land-cancel");
+            let mut app = past_app(&tmp);
+            app.selected_id = Some(
+                app.runs
+                    .iter()
+                    .find(|r| r.task == "add a greeting file")
+                    .unwrap()
+                    .id
+                    .clone(),
+            );
+            app.update(key('l'));
+            app.update(AppEvent::Key(KeyEvent::new(code, KeyModifiers::NONE)));
+            assert!(app.pending_land.is_none());
+            assert!(app.landing.is_none());
+        }
+        let tmp = crate::past::tests::TempRuns::new("land-stale");
+        let mut app = past_app(&tmp);
+        app.selected_id = Some(
+            app.runs
+                .iter()
+                .find(|r| r.task == "add a greeting file")
+                .unwrap()
+                .id
+                .clone(),
+        );
+        app.update(key('l'));
+        app.selected_id = Some(RunId::new());
+        assert_eq!(app.update(code(KeyCode::Enter)), Action::None);
+        assert!(app.landing.is_none());
+    }
+
     /// D12: a proven run with changes points at `kit land`; the TUI runs no git.
     #[test]
     fn l_shows_the_land_command() {
@@ -2825,7 +3126,10 @@ mod tests {
             .unwrap();
         app.selected_id = Some(app.runs[pass].id.clone());
         assert_eq!(app.update(key('l')), Action::None);
-        assert_eq!(app.flash_message(), Some("land it: kit land 01PASTA00000"));
+        assert_eq!(
+            app.flash_message(),
+            Some("review diff: kit land 01PASTA00000")
+        );
         assert!(
             gate_log_lines(&app.runs[pass])
                 .last()
@@ -3067,6 +3371,147 @@ mod tests {
     }
 
     #[test]
+    fn primary_role_keys_open_task_focused_dispatch_without_losing_draft() {
+        for (digit, role) in [
+            ('1', Persona::Frontend),
+            ('2', Persona::Backend),
+            ('3', Persona::Security),
+            ('4', Persona::Product),
+        ] {
+            let mut app = App::with_motion(false);
+            app.dispatch.task = "preserved task".into();
+            app.dispatch.agents = vec![("claude".into(), false), ("codex".into(), true)];
+            let agents = app.dispatch.agents.clone();
+            app.update(key(digit));
+            assert_eq!(app.screen, Screen::Dispatch);
+            assert_eq!(app.dispatch.focus, DispatchFocus::Task);
+            assert_eq!(app.dispatch.selected_personas(), vec![role]);
+            assert_eq!(app.dispatch.task, "preserved task");
+            assert_eq!(app.dispatch.agents, agents);
+            app.update(key('!'));
+            assert_eq!(app.dispatch.task, "preserved task!");
+        }
+    }
+
+    #[test]
+    fn c_opens_connections_and_esc_preserves_the_draft() {
+        let mut app = App::with_motion(false);
+        app.dispatch.task = "keep this draft".into();
+        assert_eq!(app.update(key('c')), Action::None);
+        assert_eq!(format!("{:?}", app.screen), "Agents");
+        app.update(AppEvent::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
+        assert_eq!(app.screen, Screen::ControlRoom);
+        assert_eq!(app.dispatch.task, "keep this draft");
+    }
+
+    #[test]
+    fn connections_block_login_during_runs_but_allow_status_refresh() {
+        let mut app = App::with_motion(false);
+        let mut row = RunRow::new(RunId::new(), "repo", "claude", "task");
+        row.state = RunState::Running;
+        app.upsert_run(row);
+        app.update(key('c'));
+        assert_eq!(app.update(code(KeyCode::Enter)), Action::None);
+        assert!(app.flash_message().unwrap().contains("active runs"));
+        assert_eq!(app.update(key('r')), Action::RefreshAgents);
+        app.update(code(KeyCode::Esc));
+        assert_eq!(
+            app.update(key('k')),
+            Action::KillSelected {
+                id: app.runs[0].id.clone()
+            }
+        );
+    }
+
+    #[test]
+    fn reprobe_preserves_draft_selection_and_completed_results() {
+        let mut app = App::with_motion(false);
+        let status = |kind, authenticated| AgentStatus {
+            kind,
+            installed: true,
+            authenticated,
+            version: None,
+            remedy: None,
+        };
+        app.set_agent_statuses(vec![
+            status(AgentKind::Claude, true),
+            status(AgentKind::Codex, true),
+        ]);
+        app.dispatch.agents[0].1 = false;
+        app.dispatch.agents[1].1 = true;
+        app.dispatch.task = "keep my task".into();
+        let mut row = RunRow::new(RunId::new(), "repo", "codex", "completed");
+        row.state = RunState::Pass;
+        row.diff = "exact patch".into();
+        app.upsert_run(row.clone());
+        app.set_agent_statuses(vec![
+            status(AgentKind::Claude, true),
+            status(AgentKind::Codex, true),
+        ]);
+        assert!(!app.dispatch.agents[0].1);
+        assert!(app.dispatch.agents[1].1);
+        assert_eq!(app.dispatch.task, "keep my task");
+        assert_eq!(app.runs[0].diff, row.diff);
+        assert_eq!(app.runs[0].state, RunState::Pass);
+    }
+
+    #[test]
+    fn reprobe_selects_first_ready_after_first_login_and_deselects_signed_out() {
+        let status = |kind, authenticated| AgentStatus {
+            kind,
+            installed: true,
+            authenticated,
+            version: None,
+            remedy: None,
+        };
+        let mut app = App::with_motion(false);
+        app.set_agent_statuses(vec![
+            status(AgentKind::Claude, false),
+            status(AgentKind::Codex, false),
+        ]);
+        assert!(app.dispatch.selected_agents().is_empty());
+        app.set_agent_statuses(vec![
+            status(AgentKind::Claude, false),
+            status(AgentKind::Codex, true),
+        ]);
+        assert_eq!(app.dispatch.selected_agents(), vec!["codex"]);
+        app.set_agent_statuses(vec![
+            status(AgentKind::Claude, true),
+            status(AgentKind::Codex, false),
+        ]);
+        assert_eq!(app.dispatch.selected_agents(), vec!["claude"]);
+    }
+
+    #[test]
+    fn rich_status_does_not_call_signed_out_or_unchecked_agents_missing() {
+        let mut app = App::with_motion(false);
+        app.set_agent_statuses(vec![
+            AgentStatus {
+                kind: AgentKind::Claude,
+                installed: true,
+                authenticated: false,
+                version: None,
+                remedy: Some("not logged in: run `claude auth login`".into()),
+            },
+            AgentStatus {
+                kind: AgentKind::Codex,
+                installed: true,
+                authenticated: true,
+                version: None,
+                remedy: Some("login not checked (timeout)".into()),
+            },
+        ]);
+        assert_eq!(app.agent_status_label("claude"), "not signed in");
+        assert_eq!(app.agent_status_label("codex"), "login unchecked");
+        assert_eq!(app.agents_ready_count(), 0);
+        assert!(!app.agents_strip_short().contains("missing"));
+        assert!(!app.agents_strip().contains("ready"));
+    }
+
+    #[test]
     fn b_opens_board() {
         let mut app = App::with_motion(false);
         app.load_prd_fixture();
@@ -3241,7 +3686,7 @@ mod tests {
         app.dispatch.repos = vec![("kit".into(), true)];
         app.dispatch.agents = vec![("grok".into(), true)];
         for (p, on) in &mut app.dispatch.personas {
-            *on = matches!(*p, Persona::Product | Persona::Design | Persona::Eng);
+            *on = matches!(*p, Persona::Product | Persona::Backend | Persona::Frontend);
         }
         app.dispatch.task = "empty room first paint".into();
         app.screen = Screen::Dispatch;
@@ -3251,8 +3696,8 @@ mod tests {
                 assert!(jobs.iter().all(|j| j.agent == "grok"));
                 assert!(jobs.iter().all(|j| j.task.contains("\n---\nRole (")));
                 assert!(jobs.iter().any(|j| j.task.contains("Role (product)")));
-                assert!(jobs.iter().any(|j| j.task.contains("Role (design)")));
-                assert!(jobs.iter().any(|j| j.task.contains("Role (eng)")));
+                assert!(jobs.iter().any(|j| j.task.contains("Role (backend)")));
+                assert!(jobs.iter().any(|j| j.task.contains("Role (frontend)")));
                 // The user's task leads: it titles the receipt and the land commit.
                 assert!(
                     jobs.iter()
@@ -3265,8 +3710,8 @@ mod tests {
         assert!(app.runs.iter().all(|r| r.task == "empty room first paint"));
         let roles: Vec<_> = app.runs.iter().map(|r| r.persona).collect();
         assert!(roles.contains(&Persona::Product));
-        assert!(roles.contains(&Persona::Design));
-        assert!(roles.contains(&Persona::Eng));
+        assert!(roles.contains(&Persona::Backend));
+        assert!(roles.contains(&Persona::Frontend));
     }
 
     #[test]

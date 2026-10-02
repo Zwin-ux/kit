@@ -1,5 +1,6 @@
 //! Control Room, Run Detail, Dispatch, and Board frames.
 
+mod agents;
 mod board;
 mod common;
 mod control_room;
@@ -23,6 +24,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Screen::Attached => run_detail::draw_attached(frame, app),
         Screen::Dispatch => dispatch::draw(frame, app),
         Screen::Board => board::draw(frame, app),
+        Screen::Agents => agents::draw(frame, app),
     }
     if app.help_open {
         let theme = Theme::resolve();
@@ -74,10 +76,10 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
                 Line::from("  ↑↓         move selection"),
                 Line::from("  Enter      open run detail (stream)"),
                 Line::from("  g          open gate log"),
-                Line::from("  d          dispatch fan-out"),
+                Line::from("  1–4 / d    choose role / dispatch fan-out"),
                 Line::from("  k / r      kill · retry (FAIL, or run a past run again)"),
-                Line::from("  l          show the kit land command (PASS with changes)"),
-                Line::from("  b / f      board · filter ALL → FAIL → RUN → DONE"),
+                Line::from("  l          review diff and create branch (PASS with changes)"),
+                Line::from("  b / f / c  board · filter ALL → FAIL → RUN → DONE · agents"),
             ]);
         }
         Screen::RunDetail { .. } => {
@@ -85,7 +87,7 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
                 Line::from("Run detail"),
                 Line::from("  Tab / 1 2 3   stream · gate · diff"),
                 Line::from("  k / r         kill / retry"),
-                Line::from("  l             show the kit land command"),
+                Line::from("  l             review diff and create branch"),
                 Line::from("  End           follow stream tail"),
             ]);
         }
@@ -113,6 +115,14 @@ fn help_lines(app: &App) -> Vec<Line<'static>> {
                 Line::from("  Enter      send the task to Dispatch"),
                 Line::from("  Space      toggle done"),
                 Line::from("  x          remove"),
+            ]);
+        }
+        Screen::Agents => {
+            lines.extend([
+                Line::from("Agents"),
+                Line::from("  ↑↓         select provider"),
+                Line::from("  Enter / c  native sign-in (no active runs)"),
+                Line::from("  r          check agent status again"),
             ]);
         }
     }
@@ -158,6 +168,45 @@ mod tests {
             .rev()
             .find(|line| line.contains('['))
             .unwrap_or(frame)
+    }
+
+    #[test]
+    fn signed_out_control_room_points_to_connect_and_primary_roles() {
+        let mut app = App::with_motion(false);
+        app.set_agent_statuses(vec![kit_agents::AgentStatus {
+            kind: kit_core::AgentKind::Claude,
+            installed: true,
+            authenticated: false,
+            version: None,
+            remedy: Some("run claude auth login".into()),
+        }]);
+        let frame = render_to_string(&app, 80, 14);
+        assert!(frame.contains("No ready agents"), "{frame}");
+        assert!(frame.contains("press c to connect"), "{frame}");
+        assert!(!frame.contains("No coding agents on PATH"), "{frame}");
+        for role in ["[1] Frontend", "[2] Backend", "[3] Security", "[4] Product"] {
+            assert!(frame.contains(role), "{frame}");
+        }
+    }
+
+    #[test]
+    fn connections_narrow_screen_keeps_status_and_remedy_visible() {
+        let mut app = App::with_motion(false);
+        app.screen = Screen::Agents;
+        app.set_agent_statuses(vec![kit_agents::AgentStatus {
+            kind: kit_core::AgentKind::Claude,
+            installed: true,
+            authenticated: false,
+            version: None,
+            remedy: Some("not logged in: run claude auth login".into()),
+        }]);
+        let frame = render_to_string(&app, 80, 14);
+        assert!(
+            frame.contains("not signed in") && frame.contains("run claude auth login"),
+            "{frame}"
+        );
+        assert!(!frame.contains("claude    not installed"), "{frame}");
+        assert!(snapshot_footer(&frame).contains("[r]efresh"), "{frame}");
     }
 
     #[test]
@@ -642,13 +691,17 @@ mod tests {
             .find(|&y| text(y).contains("make the parser"))
             .unwrap();
         for x in 1..w - 1 {
-            assert_ne!(buf[(x, y)].bg, theme.fail_wash, "wash at ({x},{y})");
-            assert_ne!(
-                buf[(x, y + 1)].bg,
-                theme.fail_wash,
-                "wash at ({x},{})",
-                y + 1
-            );
+            for row in [y, y + 1] {
+                if theme.fail_wash == ratatui::style::Color::Reset {
+                    assert_eq!(
+                        buf[(x, row)].bg,
+                        ratatui::style::Color::Reset,
+                        "background at ({x},{row})"
+                    );
+                } else {
+                    assert_ne!(buf[(x, row)].bg, theme.fail_wash, "wash at ({x},{row})");
+                }
+            }
         }
         let gate_x = text(y)
             .find("FAIL")
@@ -742,12 +795,49 @@ mod tests {
                 .lines()
                 .nth(1)
                 .unwrap()
-                .contains("land it: kit land 01PASTA00000"),
+                .contains("review diff: kit land 01PASTA00000"),
             "{frame}"
         );
     }
 
     /// D3/P4: no unfinished feature or version number on any screen.
+    #[test]
+    fn acceptance_confirmation_and_result_persist_after_flash_expires() {
+        let (_tmp, mut app) = past_app();
+        let id = app
+            .runs
+            .iter()
+            .find(|r| r.task == "add a greeting file")
+            .unwrap()
+            .id
+            .clone();
+        app.selected_id = Some(id.clone());
+        app.update(code(KeyCode::Char('l')));
+        for _ in 0..100 {
+            app.update(AppEvent::AnimationTick);
+        }
+        let frame = render_to_string(&app, 80, 16);
+        assert!(
+            frame.contains("Enter creates a review branch") && frame.contains("[esc] cancel"),
+            "{frame}"
+        );
+        assert!(frame.contains("+hello"), "{frame}");
+        let commit = "b".repeat(40);
+        app.complete_land(
+            id,
+            Ok(crate::accept::Accepted {
+                branch: "kit/review".into(),
+                commit: commit.clone(),
+            }),
+        );
+        app.pending_land = None;
+        let frame = render_to_string(&app, 80, 16);
+        assert!(
+            frame.contains("Review branch kit/review") && frame.contains(&commit),
+            "{frame}"
+        );
+    }
+
     #[test]
     fn no_stub_or_version_copy_anywhere() {
         let mut app = App::with_motion(false);
@@ -843,10 +933,7 @@ mod tests {
         let mut app = App::with_motion(false);
         app.set_agents_probe(vec![("claude".into(), true)]);
         let frame = render_to_string(&app, 60, 12);
-        assert!(
-            frame.contains("press d to give your agents a task"),
-            "{frame}"
-        );
+        assert!(frame.contains("press 1–4 to choose a role"), "{frame}");
         assert!(frame.contains("? help"), "{frame}");
         assert!(frame.contains("or try kit --demo"), "{frame}");
     }
@@ -1184,15 +1271,15 @@ mod tests {
             *on = matches!(
                 *p,
                 crate::persona::Persona::Product
-                    | crate::persona::Persona::Design
-                    | crate::persona::Persona::Eng
+                    | crate::persona::Persona::Frontend
+                    | crate::persona::Persona::Backend
             );
         }
         app.screen = Screen::Dispatch;
         app.dispatch.focus = crate::app::DispatchFocus::Personas;
         let frame = render_to_string(&app, 80, 16);
         assert!(
-            frame.contains("product") && frame.contains("design") && frame.contains("eng"),
+            frame.contains("product") && frame.contains("frontend") && frame.contains("backend"),
             "persona column must be visible: {frame}"
         );
         insta::assert_snapshot!(frame);

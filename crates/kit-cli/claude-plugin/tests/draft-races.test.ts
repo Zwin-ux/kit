@@ -1,4 +1,5 @@
-import { expect, test } from 'claude-code/testing'
+import { expect } from 'claude-code/testing'
+import { readyTest as test } from './ready.ts'
 import type { CommandRunInput } from 'claude-code'
 
 const command = (args: string): CommandRunInput => ({
@@ -17,13 +18,14 @@ function deferred() {
 
 // Official Mods reference maps /branch to resume; the 2.1.287 reason type has no branch value.
 for (const [label, reason] of [['clear', 'clear'], ['resume', 'resume'], ['branch', 'resume']] as const) {
-  test(`pending Prepare draft cannot fill after ${label}`, async ($, on) => {
+  test(`pending Prepare draft cannot fill after ${label}`, async ($, on, ready) => {
     const started = deferred()
     const release = deferred()
     let fills = 0
     on('prompt.read', async () => { started.resolve(); await release.promise; return { value: { text: 'Discarded task', cursor: 14 } } })
     on('prompt.fill', () => { fills++; return { isFilled: true } })
     on('session.end', () => ({ sessionId: 'old' }))
+    await ready()
     const ui = await $.ui.mount(pane)
     const pending = ui.press({ key: 'prepare-draft' })
     await started.promise
@@ -35,7 +37,7 @@ for (const [label, reason] of [['clear', 'clear'], ['resume', 'resume'], ['branc
 }
 
 for (const action of ['use backend', 'review a@t', 'handoff a@t product']) {
-  test(`pending /kit ${action} cannot restore an old-session draft`, async ($, on) => {
+  test(`pending /kit ${action} cannot restore an old-session draft`, async ($, on, ready) => {
     const started = deferred()
     const release = deferred()
     let fills = 0
@@ -44,6 +46,7 @@ for (const action of ['use backend', 'review a@t', 'handoff a@t product']) {
     on('prompt.read', async () => { started.resolve(); await release.promise; return { value: { text: '', cursor: 0 } } })
     on('prompt.fill', () => { fills++; return { isFilled: true } })
     on('session.end', () => ({ sessionId: 'old' }))
+    await ready()
     await $.turn.complete({ agentId: 'a', turnId: 't', answer: 'Old artifact', isAborted: false, durationMs: 1, reason: 'answer' })
     const pending = $.command.run(command(action))
     await started.promise
@@ -55,13 +58,14 @@ for (const action of ['use backend', 'review a@t', 'handoff a@t product']) {
   })
 }
 
-test('double-click locks draft preparation before prompt.read', async ($, on) => {
+test('double-click locks draft preparation before prompt.read', async ($, on, ready) => {
   const started = deferred()
   const release = deferred()
   let reads = 0
   let fills = 0
   on('prompt.read', async () => { reads++; started.resolve(); await release.promise; return { value: { text: 'Task', cursor: 4 } } })
   on('prompt.fill', () => { fills++; return { isFilled: true } })
+  await ready()
   const ui = await $.ui.mount(pane)
   const first = ui.press({ key: 'prepare-draft' })
   await started.promise
@@ -74,7 +78,7 @@ test('double-click locks draft preparation before prompt.read', async ($, on) =>
   expect(fills).toBe(1)
 })
 
-test('an old transaction finishing cannot unlock a new session transaction', async ($, on) => {
+test('an old transaction finishing cannot unlock a new session transaction', async ($, on, ready) => {
   const entered = [deferred(), deferred()]
   const released = [deferred(), deferred()]
   let reads = 0
@@ -87,6 +91,7 @@ test('an old transaction finishing cannot unlock a new session transaction', asy
   })
   on('prompt.fill', ($, e) => { fills.push(e.text); return { isFilled: true } })
   on('session.end', () => ({ sessionId: 'old' }))
+  await ready()
   const old = $.command.run(command('use backend'))
   await entered[0]!.promise
   await $.session.end({ reason: 'resume', sessionId: 'old', resume: { id: 'old' } })
@@ -99,5 +104,5 @@ test('an old transaction finishing cannot unlock a new session transaction', asy
   expect(reads).toBe(2)
   released[1]!.resolve()
   await current
-  expect(fills).toEqual(['@agent-kit:product-spec-writer\nNew task'])
+  expect(fills).toEqual(['\n@agent-kit:product-spec-writer\n'])
 })

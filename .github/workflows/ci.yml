@@ -7,19 +7,25 @@ on:
     branches: [main]
     paths:
       - "packages/**"
+      - "crates/kit-cli/claude-plugin/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - "scripts/**"
+      - "docs/dev/NATIVE-*.md"
+      - ".gitattributes"
       - ".github/workflows/ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "packages/**"
+      - "crates/kit-cli/claude-plugin/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - "scripts/**"
+      - "docs/dev/NATIVE-*.md"
+      - ".gitattributes"
       - ".github/workflows/ci.yml"
 
 # Only cancel overlapping runs of THIS workflow on the same ref.
@@ -59,6 +65,20 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Setup Python for native archive checks
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Native Claude bundle integrity (no host required)
+        run: node --test --test-name-pattern="packaged agent declarations" scripts/claude-plugin.test.mjs
+
+      - name: Native lifecycle regressions (controlled host doubles)
+        run: node --test scripts/native-lifecycle.test.mjs
+
+      - name: Native alpha archive roundtrip and preservation (no host required)
+        run: python scripts/package-native-alpha.test.py
 
       - name: Build packages
         run: pnpm build

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { lstat, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -10,7 +11,7 @@ const expectedAgents = ['backend-api-builder', 'frontend-ui-builder', 'product-s
 const claude = process.env.KIT_TEST_CLAUDE ?? (process.platform === 'win32' ? 'claude.exe' : 'claude');
 
 async function withBundle(body) {
-  const temp = await mkdtemp(path.join(os.tmpdir(), 'kit-plugin-test-'));
+  const temp = await realpath(await mkdtemp(path.join(os.tmpdir(), 'kit-plugin-test-')));
   try { await body(await packagePlugin(path.join(temp, 'plugin')), temp); }
   finally { await rm(temp, { recursive: true, force: true }); }
 }
@@ -19,8 +20,10 @@ test('packaged agent declarations, IDs and preloaded skills match the catalog', 
   await withBundle(async bundle => {
     const manifest = JSON.parse(await readFile(path.join(bundle, '.claude-plugin/plugin.json'), 'utf8'));
     const catalog = await readFile(path.join(bundle, 'hooks/catalog.ts'), 'utf8');
-    assert.equal(manifest.version, '2.0.0');
+    assert.equal(manifest.version, '2.0.0-alpha.4');
+    assert.ok((await readFile(path.join(bundle, 'README.md'), 'utf8')).includes(`Private alpha candidate — ${manifest.version}.`), 'README candidate version must match the manifest');
     assert.deepEqual(manifest.agents.map(file => path.basename(file, '.md')).sort(), expectedAgents);
+    const allPreloads = [];
     for (const file of manifest.agents) {
       const contents = await readFile(path.join(bundle, file), 'utf8');
       assert.equal(contents, await readFile(path.join(pluginSource, file), 'utf8'));
@@ -28,20 +31,49 @@ test('packaged agent declarations, IDs and preloaded skills match the catalog', 
       assert.equal(name, path.basename(file, '.md'));
       assert.ok(catalog.includes(`id: 'kit:${name}'`));
       const preload = [...contents.matchAll(/^  - kit:(.+)$/gm)].map(match => match[1].trim());
-      assert.equal(preload.length, 2);
+      assert.equal(preload.length, 4);
+      allPreloads.push(...preload);
+      if (name === 'security-reviewer') assert.match(contents, /^tools: Read, Glob, Grep$/m);
       for (const skill of preload) {
         const text = await readFile(path.join(bundle, 'skills', skill, 'SKILL.md'), 'utf8');
         assert.match(text, /user-invocable: false/);
         assert.doesNotMatch(text, /disable-model-invocation: true/);
+        assert.doesNotMatch(text.split('---')[1], /^allowed-tools:/m);
       }
       if (name !== 'security-reviewer') assert.match(contents, /isolation: worktree/);
+    }
+    const provenance = JSON.parse(await readFile(path.join(bundle, 'provenance.json'), 'utf8'));
+    assert.equal(new Set(allPreloads).size, 16);
+    assert.deepEqual(allPreloads.slice().sort(), Object.keys(provenance.skills).sort());
+    for (const [id, source] of Object.entries(provenance.skills)) {
+      assert.ok(source.files['SKILL.md']);
+      const folder = path.join(bundle, 'skills', id);
+      const actualFiles = [];
+      for (const file of await readdir(folder, { recursive: true })) {
+        const info = await lstat(path.join(folder, file));
+        assert.equal(info.isSymbolicLink(), false, `${id}/${file}`);
+        if (info.isFile()) actualFiles.push(file.split(path.sep).join('/'));
+      }
+      assert.deepEqual(actualFiles.sort(), Object.keys(source.files).sort(), id);
+      if (source.origin === 'upstream skill') {
+        assert.match(source.revision, /^[a-f0-9]{40}$/);
+        assert.match(source.upstreamSkillSha256, /^[a-f0-9]{64}$/);
+      }
+      assert.equal(source.license, source.bucket === 'Security' ? 'CC-BY-SA-4.0' : 'MIT');
+      for (const [file, digest] of Object.entries(source.files)) {
+        assert.ok(!path.isAbsolute(file) && !file.split(/[\\/]/).includes('..'));
+        const bytes = await readFile(path.join(bundle, 'skills', id, file));
+        assert.equal(createHash('sha256').update(bytes).digest('hex'), digest, `${id}/${file}`);
+        assert.deepEqual(bytes, await readFile(path.join(pluginSource, 'skills', id, file)));
+      }
     }
     const theme = JSON.parse(await readFile(path.join(bundle, 'themes/kit-red.json'), 'utf8'));
     assert.equal(theme.name, 'Kit Red');
     assert.equal(theme.overrides.claude, '#FF3B46');
-    assert.equal((await readdir(path.join(bundle, 'skills'))).length, 8);
+    assert.equal((await readdir(path.join(bundle, 'skills'))).length, 16);
     assert.deepEqual(await readdir(path.join(bundle, '.claude-plugin')), ['plugin.json']);
-    assert.equal(JSON.parse(await readFile(path.join(bundle, 'provenance.json'), 'utf8')).upstreamInstalled, false);
+    assert.equal(provenance.upstreamInstalled, true);
+    assert.equal(provenance.version, manifest.version);
     await writeFile(path.join(bundle, 'user-note.txt'), 'preserve me');
     await assert.rejects(packagePlugin(bundle), /exists/);
     assert.equal(await readFile(path.join(bundle, 'user-note.txt'), 'utf8'), 'preserve me');
@@ -69,8 +101,12 @@ test('installed Claude loads all four packaged agents without a model call', asy
     const validation = JSON.parse(run(['plugin', 'validate', bundle, '--strict', '--json']));
     assert.equal(validation.success, true);
     const logPath = path.join(temp, 'discovery.log');
-    const reply = run(['--setting-sources', '', '--strict-mcp-config', '--no-chrome',
-      '--plugin-dir', bundle, '--debug-file', logPath, '--no-session-persistence', '-p', '/kit catalog']);
+    const output = JSON.parse(run(['--setting-sources', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', '', '--no-chrome',
+      '--plugin-dir', bundle, '--debug-file', logPath, '--no-session-persistence', '--output-format', 'json', '-p', '/kit catalog']));
+    assert.equal(output.num_turns, 0);
+    assert.equal(output.duration_api_ms, 0);
+    assert.equal(output.total_cost_usd, 0);
+    const reply = output.result;
     const log = await readFile(logPath, 'utf8');
     // 2.1.287 plugin details incorrectly displays Agents (0), even for flat files.
     // Startup records each file loaded by the real agent loader.
@@ -79,8 +115,8 @@ test('installed Claude loads all four packaged agents without a model call', asy
       assert.ok(reply.includes(`kit:${name}`), name);
     }
     assert.match(log, /Total plugin agents loaded: 4/);
-    assert.match(log, /Loaded 8 skills from plugin kit default directory/);
+    assert.match(log, /Loaded 16 skills from plugin kit default directory/);
     assert.match(reply, /Selected for next task/);
-    t.diagnostic(`${version.stdout.trim()}: four agent files and eight skills loaded; local command executed.`);
+    t.diagnostic(`${version.stdout.trim()}: four agent files and sixteen skills loaded; local command executed.`);
   });
 });

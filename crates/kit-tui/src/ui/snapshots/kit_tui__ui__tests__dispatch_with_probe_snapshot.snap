@@ -1,13 +1,14 @@
 ---
 source: crates/kit-tui/src/ui/mod.rs
+assertion_line: 1221
 expression: frame
 ---
 "KIT / DISPATCH                                                         fan-out 1"
-"┌ repos (space) ───┐┌ agents (space) ────────────┐┌ personas (space) ──────────┐"
-"│▶ [x] kit         ││  [x] ✻  claude  ready      ││  [x] eng                   │"
-"│  [ ] guardian    ││  [ ] >_ codex   missing    ││  [ ] product               │"
-"│                  ││  [ ] ⊘  grok    needs KIT_…││  [ ] design                │"
-"│                  ││  [ ] ◉  ollama  missing    ││  [ ] qa                    │"
+"┌ repos (space) ───┐┌ agents (space) ────────────┐┌ roles (space) ─────────────┐"
+"│▶ [x] kit         ││  [x] ✻  claude  ready      ││  [x] frontend              │"
+"│  [ ] guardian    ││  [ ] >_ codex   missing    ││  [ ] backend               │"
+"│                  ││  [ ] ⊘  grok    needs KIT_…││  [ ] security              │"
+"│                  ││  [ ] ◉  ollama  missing    ││  [ ] product               │"
 "│                  ││                            ││                            │"
 "│                  ││                            ││                            │"
 "│                  ││                            ││                            │"

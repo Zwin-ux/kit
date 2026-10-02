@@ -10,7 +10,9 @@ use std::time::Duration;
 
 const AFTER_HELP: &str = "\
 Start here:
-  kit setup                    Pick your agents and a focus, then install its kit
+  kit                          Open the Kit workspace
+  kit connect claude           Sign in through the provider's native CLI
+  kit setup                    Optionally install skills for a focus
   kit show                     See the kits you can add
   kit add frontend-design      Add a kit to this repo (shows every file first)
 
@@ -22,9 +24,7 @@ Docs: https://github.com/Zwin-ux/kit#readme";
 
 /// Set your coding agents up for one job, then prove what they do.
 ///
-/// The first time, bare `kit` asks which agents and which focus, then
-/// installs that kit. After that it opens the Control Room: dispatch many
-/// runs and watch them in one place.
+/// Bare `kit` opens the Control Room. `kit setup` remains an explicit skill setup.
 #[derive(Debug, Parser)]
 #[command(
     name = "kit",
@@ -56,6 +56,11 @@ pub struct GlobalArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Sign in through Claude or Codex's native interactive CLI
+    Connect {
+        #[arg(value_enum)]
+        agent: ConnectAgent,
+    },
     /// Prepare and open Kit inside native interactive Claude Code
     Claude {
         #[command(subcommand)]
@@ -74,7 +79,7 @@ pub enum Command {
 
     /// Set your coding agents up for a job: pick agents, focus and scope
     #[command(
-        after_help = "Bare `kit` runs this the first time. Every question is also a flag.\n\nExample:\n  kit setup\n  kit setup --agent claude --kit frontend-design --global --yes"
+        after_help = "Optional skill setup. Every question is also a flag.\n\nExample:\n  kit setup\n  kit setup --agent claude --kit frontend-design --global --yes"
     )]
     Setup(SetupArgs),
 
@@ -147,6 +152,20 @@ pub enum Command {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ConnectAgent {
+    Claude,
+    Codex,
+}
+impl From<ConnectAgent> for AgentKind {
+    fn from(value: ConnectAgent) -> Self {
+        match value {
+            ConnectAgent::Claude => Self::Claude,
+            ConnectAgent::Codex => Self::Codex,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -370,6 +389,13 @@ pub fn command_name(args: &[String]) -> String {
 mod tests {
     use super::*;
     use clap::CommandFactory;
+
+    #[test]
+    fn connect_grammar_accepts_native_providers_only() {
+        assert!(parse("connect claude").is_ok());
+        assert!(parse("connect codex").is_ok());
+        assert!(parse("connect grok").is_err());
+    }
 
     fn parse(line: &str) -> Result<Cli, clap::Error> {
         Cli::try_parse_from(std::iter::once("kit").chain(line.split_whitespace()))

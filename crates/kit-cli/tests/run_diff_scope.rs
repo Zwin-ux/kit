@@ -39,14 +39,14 @@ fn fake_claude(bin: &Path) {
     if cfg!(windows) {
         std::fs::write(
             bin.join("claude.cmd"),
-            "@echo off\r\nif \"%1\"==\"--version\" (echo 0.0.0 fake& exit /b 0)\r\nif \"%1\"==\"auth\" exit /b 1\r\necho hello> created.txt\r\nexit /b 0\r\n",
+            "@echo off\r\nif \"%1\"==\"--version\" (echo 0.0.0 fake& exit /b 0)\r\nif \"%1\"==\"auth\" (echo {\"loggedIn\":true}& exit /b 0)\r\necho hello> created.txt\r\nexit /b 0\r\n",
         )
         .unwrap();
     } else {
         let path = bin.join("claude");
         std::fs::write(
             &path,
-            "#!/bin/sh\ncase \"$1\" in\n  --version) echo 0.0.0 fake ;;\n  auth) exit 1 ;;\n  *) echo hello > created.txt ;;\nesac\n",
+            "#!/bin/sh\ncase \"$1\" in\n  --version) echo 0.0.0 fake ;;\n  auth) echo '{\"loggedIn\":true}' ;;\n  *) echo hello > created.txt ;;\nesac\n",
         )
         .unwrap();
         #[cfg(unix)]

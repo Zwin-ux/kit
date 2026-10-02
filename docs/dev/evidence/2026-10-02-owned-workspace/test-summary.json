@@ -1,0 +1,12 @@
+{
+  "workspace-tests.txt": {
+    "passed": 446,
+    "failed": 0,
+    "allOk": true
+  },
+  "workspace-color-tests.txt": {
+    "passed": 446,
+    "failed": 0,
+    "allOk": true
+  }
+}

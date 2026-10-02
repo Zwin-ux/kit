@@ -61,7 +61,7 @@ fn fake_agent(bin: &Path, writes: bool) {
             ""
         };
         let body = format!(
-            "@echo off\r\nif \"%1\"==\"--version\" (echo 0.0.0 fake& exit /b 0)\r\nif \"%1\"==\"auth\" exit /b 1\r\n{edits}exit /b 0\r\n"
+            "@echo off\r\nif \"%1\"==\"--version\" (echo 0.0.0 fake& exit /b 0)\r\nif \"%1\"==\"auth\" (echo {{\"loggedIn\":true}}& exit /b 0)\r\n{edits}exit /b 0\r\n"
         );
         std::fs::write(bin.join("claude.cmd"), body).unwrap();
     } else {
@@ -71,7 +71,7 @@ fn fake_agent(bin: &Path, writes: bool) {
             "true"
         };
         let body = format!(
-            "#!/bin/sh\ncase \"$1\" in\n  --version) echo 0.0.0 fake ;;\n  auth) exit 1 ;;\n  *) {edits} ;;\nesac\n"
+            "#!/bin/sh\ncase \"$1\" in\n  --version) echo 0.0.0 fake ;;\n  auth) echo '{{\"loggedIn\":true}}' ;;\n  *) {edits} ;;\nesac\n"
         );
         let path = bin.join("claude");
         std::fs::write(&path, body).unwrap();
@@ -249,6 +249,53 @@ fn land_makes_a_branch_with_new_and_binary_files_and_leaves_the_user_alone() {
 }
 
 #[test]
+fn land_refuses_a_changed_patch_even_with_force_before_touching_git() {
+    let fx = Fixture::new("patch-mismatch", true);
+    let id = fx.run();
+    let dir = fx.home.join("runs").join(&id);
+    let patch = std::fs::read_to_string(dir.join("diff.patch")).unwrap();
+    // A valid patch that applies to the same base, but was never gated.
+    let alternate = patch.replace("+hello", "+not the tested greeting");
+    assert_ne!(alternate, patch);
+    std::fs::write(dir.join("diff.patch"), alternate).unwrap();
+    let head = git(&fx.repo, &["rev-parse", "HEAD"]);
+    let branches = git(&fx.repo, &["for-each-ref", "refs/heads"]);
+    let status = git(&fx.repo, &["status", "--porcelain"]);
+    let readme = std::fs::read(fx.repo.join("README.md")).unwrap();
+    for flags in [
+        vec![id.as_str()],
+        vec![id.as_str(), "--force"],
+        vec![id.as_str(), "--apply", "--force"],
+    ] {
+        let (out, env) = land_json(&fx, &flags);
+        assert_eq!(out.status.code(), Some(2), "{env}");
+        assert_eq!(env["ok"], false);
+        assert!(
+            env["error"]
+                .as_str()
+                .unwrap()
+                .contains("diff.patch differs from the receipt"),
+            "{env}"
+        );
+        assert_eq!(git(&fx.repo, &["rev-parse", "HEAD"]), head);
+        assert_eq!(git(&fx.repo, &["for-each-ref", "refs/heads"]), branches);
+        assert_eq!(git(&fx.repo, &["status", "--porcelain"]), status);
+        assert_eq!(std::fs::read(fx.repo.join("README.md")).unwrap(), readme);
+        assert!(!fx.repo.join("created.txt").exists());
+        assert!(fx.home.join("worktrees").join(&id).is_dir());
+    }
+    // Legacy receipts without the sidecar still land their recorded diff.
+    std::fs::remove_file(dir.join("diff.patch")).unwrap();
+    let (out, env) = land_json(&fx, &[&id]);
+    assert!(out.status.success(), "{env}");
+    let branch = env["data"]["branch"].as_str().unwrap();
+    assert_eq!(
+        git(&fx.repo, &["show", &format!("{branch}:created.txt")]),
+        "hello"
+    );
+}
+
+#[test]
 fn land_refuses_fail_vacuous_and_empty_runs() {
     let fx = Fixture::new("refuse", true);
     let id = fx.run();
@@ -259,9 +306,13 @@ fn land_refuses_fail_vacuous_and_empty_runs() {
     fx.craft(&id, "01TESTLANDVACUOUS000000001", |v| {
         v["gate"]["checks"] = Value::Array(Vec::new());
     });
+    fx.craft(&id, "01TESTLANDGATEFALSE0000001", |v| {
+        v["gate"]["passed"] = false.into();
+    });
     for (rid, why) in [
         ("01TESTLANDFAIL0000000000001", "failed the gate"),
         ("01TESTLANDVACUOUS000000001", "UNCONFIGURED"),
+        ("01TESTLANDGATEFALSE0000001", "failed the gate"),
     ] {
         let (out, env) = land_json(&fx, &[rid]);
         assert_eq!(out.status.code(), Some(2));

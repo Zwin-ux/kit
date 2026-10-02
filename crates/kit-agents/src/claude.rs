@@ -23,7 +23,7 @@ impl Agent for ClaudeAgent {
             return AgentStatus::missing(AgentKind::Claude);
         }
         let login = match auth::run_status("claude", &["auth", "status", "--json"]).await {
-            Some(out) => auth::parse_claude_status(&out.stdout),
+            Some(out) => login_from_status(&out),
             None => auth::Login::Unknown("`claude auth status` did not answer"),
         };
         auth::installed_status(AgentKind::Claude, version, login, "claude auth login")
@@ -84,6 +84,15 @@ impl Agent for ClaudeAgent {
 
         let cmd = claude_command("claude", worktree, bypass, &allowed);
         spawn_streaming_with_stdin(AgentKind::Claude, cmd, prompt, tx).await
+    }
+}
+
+fn login_from_status(out: &auth::StatusOutput) -> auth::Login {
+    match auth::parse_claude_status(&out.stdout) {
+        auth::Login::In if !out.success => {
+            auth::Login::Unknown("`claude auth status` exited without success")
+        }
+        login => login,
     }
 }
 
@@ -212,6 +221,31 @@ fn safe_on_command_line(c: char) -> bool {
 mod tests {
     use super::*;
     use std::ffi::OsStr;
+
+    #[test]
+    fn failed_native_status_cannot_make_claude_ready() {
+        let out = auth::StatusOutput {
+            success: false,
+            stdout: r#"{"loggedIn":true}"#.into(),
+            stderr: "status check failed".into(),
+        };
+        let login = login_from_status(&out);
+        assert!(matches!(login, auth::Login::Unknown(_)), "{login:?}");
+        assert!(
+            !auth::installed_status(AgentKind::Claude, None, login, "claude auth login").is_ready()
+        );
+        let signed_out = auth::StatusOutput {
+            stdout: r#"{"loggedIn":false}"#.into(),
+            ..out
+        };
+        assert_eq!(login_from_status(&signed_out), auth::Login::Out);
+        let signed_in = auth::StatusOutput {
+            success: true,
+            stdout: r#"{"loggedIn":true}"#.into(),
+            ..signed_out
+        };
+        assert_eq!(login_from_status(&signed_in), auth::Login::In);
+    }
 
     /// A prompt that closes cmd.exe's quoting and chains a host command.
     #[cfg(unix)]

@@ -15,7 +15,7 @@ name = "kit_agents"
 kit-core.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }
 serde_json.workspace = true
 
 # Process-tree kill for agent grandchildren (cmd → node → tools).

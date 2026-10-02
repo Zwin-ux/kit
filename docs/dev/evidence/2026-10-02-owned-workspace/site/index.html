@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kit — get started</title>
+<style>
+  :root {
+    --bg: #faf7f2; --fg: #1d1a16; --muted: #5d554b; --card: #fff; --line: #e4ddd2;
+    --fox: #d9622b; --fox-dark: #a8461a; --code-bg: #1d1a16; --code-fg: #f6efe4; --ok: #1f7a3d; --err: #b3261e;
+    --focus: #1b5fd1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15130f; --fg: #f1ebe2; --muted: #b3aa9d; --card: #1f1c17; --line: #3a342c;
+      --code-bg: #0c0b09; --ok: #6fd28f; --err: #ff8a80; --focus: #7fb0ff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+  .skip { position: absolute; left: -999px; top: 0; background: var(--fg); color: var(--bg); padding: .5rem 1rem; }
+  .skip:focus { left: 1rem; top: 1rem; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 1.25rem; }
+  header { border-bottom: 1px solid var(--line); }
+  header .wrap { display: flex; align-items: center; gap: .75rem; padding-block: 1rem; }
+  .brand { font-weight: 800; font-size: 1.25rem; letter-spacing: -.02em; }
+  .tag { margin-left: auto; font-size: .8rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: .15rem .65rem; }
+
+  /* Fox mark: pure CSS, two ears + face + snout */
+  .fox { position: relative; width: 36px; height: 32px; flex: none; }
+  .fox::before, .fox::after { content: ""; position: absolute; top: 0; width: 0; height: 0;
+    border-left: 8px solid transparent; border-right: 8px solid transparent; border-bottom: 14px solid var(--fox-dark); }
+  .fox::before { left: 1px; transform: rotate(-14deg); }
+  .fox::after { right: 1px; transform: rotate(14deg); }
+  .fox span { position: absolute; left: 3px; right: 3px; top: 9px; bottom: 0; background: var(--fox);
+    clip-path: polygon(0 0, 100% 0, 50% 100%); }
+  .fox span::before, .fox span::after { content: ""; position: absolute; top: 30%; width: 4px; height: 4px; border-radius: 50%; background: var(--fg); }
+  .fox span::before { left: 30%; } .fox span::after { right: 30%; }
+  .fox.big { transform: scale(2.2); transform-origin: left center; margin-right: 46px; }
+
+  .hero { padding: 3.5rem 0 2rem; }
+  .hero .wrap { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; margin: 0; letter-spacing: -.03em; }
+  .lede { color: var(--muted); font-size: 1.15rem; max-width: 38rem; margin: .75rem 0 0; }
+  h2 { font-size: 1.4rem; margin: 2.5rem 0 1rem; letter-spacing: -.01em; }
+
+  .notice { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--fox); border-radius: 8px; padding: 1rem 1.25rem; }
+  .notice p { margin: .25rem 0; }
+
+  .roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; padding: 0; list-style: none; margin: 0; }
+  .roles li { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; }
+  .roles strong { display: block; color: var(--fox-dark); }
+  @media (prefers-color-scheme: dark) { .roles strong { color: var(--fox); } }
+  .roles p { margin: .35rem 0 0; color: var(--muted); font-size: .95rem; }
+
+  .pickers { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem; }
+  .pickers div { display: flex; flex-direction: column; gap: .3rem; min-width: 180px; }
+  label { font-weight: 600; font-size: .9rem; }
+  select { font: inherit; padding: .5rem .6rem; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+
+  ol.steps { padding: 0; margin: 0; list-style: none; counter-reset: s; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  ol.steps > li { min-width: 0; counter-increment: s;background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.25rem; }
+  ol.steps > li h3 { margin: 0 0 .25rem; font-size: 1.05rem; }
+  ol.steps > li h3::before { content: counter(s) ". "; color: var(--fox); }
+  ol.steps > li p { margin: 0 0 .6rem; color: var(--muted); }
+  .cmd { display: flex; gap: .5rem; align-items: stretch; flex-wrap: wrap; }
+  .cmd code { flex: 1 1 260px; min-width: 0; background: var(--code-bg); color: var(--code-fg); padding: .65rem .85rem; border-radius: 6px;
+    font: .95rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-x: auto; white-space: pre; }
+  button { font: inherit; font-weight: 600; cursor: pointer; border: 1px solid var(--fox-dark); background: var(--fox); color: #fff;
+    border-radius: 6px; padding: .5rem 1rem; }
+  button:hover { background: var(--fox-dark); }
+  #copy-status { min-height: 1.6em; margin-top: .75rem; font-weight: 600; }
+  #copy-status.ok { color: var(--ok); } #copy-status.err { color: var(--err); }
+
+  footer { border-top: 1px solid var(--line); margin-top: 3rem; padding: 1.5rem 0; color: var(--muted); font-size: .9rem; }
+  @media (prefers-reduced-motion: no-preference) { button { transition: background .15s; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#start">Skip to setup</a>
+<header>
+  <div class="wrap">
+    <div class="fox" aria-hidden="true"><span></span></div>
+    <span class="brand">Kit</span>
+    <span class="tag">Local build</span>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" aria-labelledby="title">
+    <div class="wrap">
+      <div class="fox big" aria-hidden="true"><span></span></div>
+      <div>
+        <h1 id="title">Kit — your owned coding workspace</h1>
+        <p class="lede">Dispatch coding agents in parallel, watch them in one control room, and land only work that has been proven.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <section class="notice" aria-labelledby="honest">
+      <h2 id="honest" style="margin-top:0;font-size:1.1rem">Before you start</h2>
+      <p>This is a <strong>local build</strong> of Kit running from your own machine. There is no hosted service and no download on this page.</p>
+      <p>You sign in through the provider's official CLI (Claude Code or Codex). Your credentials stay with that CLI — Kit never asks for, stores, or sees them.</p>
+      <p>Your provider's plan and usage limits apply to every agent Kit dispatches.</p>
+    </section>
+
+    <section aria-labelledby="roles-title">
+      <h2 id="roles-title">One workspace, four roles</h2>
+      <ul class="roles">
+        <li><strong>Frontend</strong><p>UI, layout, accessibility and interaction work.</p></li>
+        <li><strong>Backend</strong><p>APIs, data, services and the engine underneath.</p></li>
+        <li><strong>Security</strong><p>Scope, secrets hygiene and hardening review.</p></li>
+        <li><strong>Product</strong><p>Specs, priorities and the call on what ships.</p></li>
+      </ul>
+    </section>
+
+    <section id="start" aria-labelledby="start-title">
+      <h2 id="start-title">Get started</h2>
+      <div class="pickers">
+        <div>
+          <label for="platform">Platform</label>
+          <select id="platform">
+            <option value="macos">macOS</option>
+            <option value="linux">Linux</option>
+            <option value="windows">Windows</option>
+          </select>
+        </div>
+        <div>
+          <label for="provider">Provider</label>
+          <select id="provider">
+            <option value="claude">Claude</option>
+            <option value="codex">Codex</option>
+          </select>
+        </div>
+      </div>
+      <p id="platform-note" style="color:var(--muted)">Run these in Terminal.</p>
+
+      <ol class="steps">
+        <li>
+          <h3>Connect your provider</h3>
+          <p>Kit hands off to the provider's official CLI to sign in. Credentials stay with it.</p>
+          <div class="cmd"><code id="connect-command">kit connect claude</code><button type="button" data-copy="connect-command" aria-label="Copy connect command">Copy</button></div>
+        </li>
+        <li>
+          <h3>Open the control room</h3>
+          <p>Launch Kit to see every run in one table.</p>
+          <div class="cmd"><code id="launch-command">kit</code><button type="button" data-copy="launch-command" aria-label="Copy launch command">Copy</button></div>
+        </li>
+        <li>
+          <h3>Dispatch a run</h3>
+          <p>Give an agent a task in your project.</p>
+          <div class="cmd"><code id="run-command">kit run "add a test for X" --agent claude</code><button type="button" data-copy="run-command" aria-label="Copy run command">Copy</button></div>
+        </li>
+      </ol>
+      <p id="copy-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section aria-labelledby="proof-title">
+      <h2 id="proof-title">Nothing ships unproven</h2>
+      <p>An agent finishing is not a result. A real result must pass your project's checks and be reviewed by you. Only then does <code>kit land</code> create a branch with the change — Kit does not merge or push for you.</p>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">Kit — local build. Provider usage limits apply.</div>
+</footer>
+
+<script>
+function getCommands(platform, provider) {
+  if (!['macos', 'linux', 'windows'].includes(platform)) throw new Error('Unknown platform: ' + platform);
+  if (!['claude', 'codex'].includes(provider)) throw new Error('Unknown provider: ' + provider);
+  return {
+    connect: 'kit connect ' + provider,
+    launch: 'kit',
+    run: 'kit run "add a test for X" --agent ' + provider
+  };
+}
+
+(function () {
+  var platformEl = document.getElementById('platform');
+  var providerEl = document.getElementById('provider');
+  var status = document.getElementById('copy-status');
+  var notes = { macos: 'Run these in Terminal.', linux: 'Run these in your shell.', windows: 'Run these in PowerShell or Windows Terminal.' };
+
+  function render() {
+    var c = getCommands(platformEl.value, providerEl.value);
+    document.getElementById('connect-command').textContent = c.connect;
+    document.getElementById('launch-command').textContent = c.launch;
+    document.getElementById('run-command').textContent = c.run;
+    document.getElementById('platform-note').textContent = notes[platformEl.value];
+  }
+
+  function say(msg, cls) {
+    status.className = cls;
+    status.textContent = msg;
+  }
+
+  platformEl.addEventListener('change', render);
+  providerEl.addEventListener('change', render);
+
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = document.getElementById(btn.getAttribute('data-copy')).textContent;
+      if (!navigator.clipboard || !navigator.clipboard.writeText) return say('Copy failed: clipboard unavailable. Select the command and copy it manually.', 'err');
+      navigator.clipboard.writeText(text).then(
+        function () { say('Copied: ' + text, 'ok'); },
+        function () { say('Copy failed. Select the command and copy it manually.', 'err'); }
+      );
+    });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
