@@ -12,6 +12,10 @@ impl Scratch {
         let path =
             std::env::temp_dir().join(format!("kit-native-cli-{}-{nonce}", std::process::id()));
         std::fs::create_dir(&path).unwrap();
+        // Match the real working directory reported by child processes on macOS,
+        // where the temporary directory's /var prefix is a symlink.
+        #[cfg(unix)]
+        let path = path.canonicalize().unwrap();
         Self(path)
     }
     fn run(&self, args: &[&str]) -> Output {
