@@ -1,0 +1,4 @@
+{
+  "description": "Kit's native catalog and explicit draft actions; Claude owns execution and permissions",
+  "modules": ["./register.ts"]
+}

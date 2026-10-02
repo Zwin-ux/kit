@@ -9,6 +9,7 @@ description = "Set up Claude Code, Codex and Grok for one job with kits of skill
 readme = "../../README.md"
 keywords = ["agents", "claude", "codex", "worktree", "cli"]
 categories = ["command-line-utilities", "development-tools"]
+exclude = ["claude-plugin/.claude-plugin/types/**"]
 
 [[bin]]
 name = "kit"

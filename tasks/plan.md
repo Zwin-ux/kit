@@ -1,3 +1,7 @@
+# Current native Claude work (2026-10-02)
+
+The active native Mods plan and checkpoint are in [CLAUDE-NATIVE.md](../docs/dev/CLAUDE-NATIVE.md). Implement four real specialist categories inside Claude's host, with explicit invocation, session-local status and result review. The parent-reviewed 22×16 fox grid and four-bucket layout are approved. Cloud starts from Mason checkpoint 8244c43. Implement (1) fixed-cell fox and responsive native strip/pane, (2) explicit drafts and separate task/attempt identities with session reset, (3) offline UI/behavior, type and packaging validation. Native terminal paint, live execution and full Rust gates remain separate evidence requirements. The older Control Room plan below is retained as history, not a restriction on this explicitly requested feature.
+
 # Implementation Plan: Daily-driver Kit (from SPEC-next)
 
 **Spec:** [`docs/dev/SPEC-next.md`](../docs/dev/SPEC-next.md)  

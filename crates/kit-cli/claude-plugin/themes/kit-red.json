@@ -1,0 +1,10 @@
+{
+  "name": "Kit Red",
+  "base": "dark",
+  "overrides": {
+    "claude": "#FF3B46",
+    "text": "#F0F1F2",
+    "inactive": "#A6AFBF",
+    "subtle": "#788292"
+  }
+}

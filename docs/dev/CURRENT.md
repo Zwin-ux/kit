@@ -1,4 +1,8 @@
-# Kit 1.0 — Current architecture state
+# Current native Claude work (2026-10-02)
+
+The native Claude Mods feature and current verification limits are recorded in [CLAUDE-NATIVE.md](CLAUDE-NATIVE.md). It uses Kit 2.0.0 source, four explicitly declared specialists, eight first-party starter skills and native host-owned input/auth/permissions. The older architecture record below describes the separate Control Room/headless path and is retained for context.
+
+# Kit 1.0 - Current architecture state
 
 **Date:** 2026-08-16  
 **Ground truth:** [`docs/dev/design-package/00-HONEST-STATE.md`](design-package/00-HONEST-STATE.md)  
