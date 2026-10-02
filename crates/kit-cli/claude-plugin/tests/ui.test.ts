@@ -14,6 +14,7 @@ const pane = {
 } as const
 
 test('bucket selection opens real catalog without filling or invoking anything', async ($, on) => {
+  on('ui.render', () => ({ type: 'Box', props: {}, children: [] }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('agent.list', () => ({ value: [] }))
   const ui = await $.ui.mount(band())
@@ -66,6 +67,7 @@ test('fox uses fixed native raster only when expanded and enough room exists', a
 
 
 test('catalog selection never hides another bucket’s observed work', async ($, on) => {
+  on('ui.render', () => ({ type: 'Box', props: {}, children: [] }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('agent.list', () => ({ value: [
     { id: 'native-1', type: 'kit:frontend-ui-builder', description: 'Build settings', status: 'completed', parentId: 'owner-7' },
@@ -129,4 +131,26 @@ test('a result review refuses to overwrite ordinary draft text', async ($, on) =
   await ui.press({ key: 'review-a@t' })
   expect(await ui.find({ type: 'Text', text: /Your draft contains text/ })).toBeDefined()
   // No fill stub: the existing prompt must never be replaced.
+})
+
+test('downstream band and all four Kit buttons compose inside 3 and 4 row narrow budgets', async ($, on) => {
+  on('ui.render', () => ({ type: 'Text', props: {}, children: ['Downstream band'] }))
+  for (const maxRows of [3, 4, 5, 12]) {
+    const ui = await $.ui.mount({ ...band(20), props: { ...band(20).props, maxRows } })
+    expect(await ui.find({ type: 'Text', text: 'Downstream band' })).toBeDefined()
+    const root = await ui.find({ key: 'kit-composed-band' })
+    expect(root).toBeDefined()
+    expect(root!.props.height).toBeLessThanOrEqual(maxRows)
+    for (const bucket of ['Frontend', 'Backend', 'Security', 'Product']) {
+      expect(await ui.find({ key: `bucket-${bucket}` })).toBeDefined()
+    }
+    await ui.unmount()
+  }
+})
+
+test('a full downstream band is preserved instead of clipped to make room for Kit', async ($, on) => {
+  on('ui.render', () => ({ type: 'Text', props: {}, children: ['One\nTwo\nThree'] }))
+  const ui = await $.ui.mount({ ...band(20), props: { ...band(20).props, maxRows: 3 } })
+  expect(await ui.find({ type: 'Text', text: 'One\nTwo\nThree' })).toBeDefined()
+  expect(await ui.find({ key: 'bucket-Frontend' })).toBeUndefined()
 })

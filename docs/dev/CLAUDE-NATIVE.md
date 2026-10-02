@@ -39,9 +39,17 @@ Implemented:
 
 [Rendered fox cells](../assets/kit-native-fox-proof.png) are an offline visual proof from implementation data, **not** a live terminal screenshot. The interactive cloud probe stopped at first-run onboarding; no onboarding choice, agreement or authentication was completed.
 
-Cloud verification: **25 offline Mods tests pass**, **2 packaging/runtime-discovery tests pass**, TypeScript no-emit against generated 2.1.287 types passes, strict plugin validation reports no warnings/errors, and completeness inventory reports 12 public symbols, zero stubs and zero heuristically untested symbols. Validation lists only agent-list, clock, command registration, environment reads, prompt read/fill and native UI calls. No model/spawn/submit/permission/auth/network calls are added.
+Cloud verification: **37 offline Mods tests pass**, **2 packaging/runtime-discovery tests pass**, TypeScript no-emit against generated 2.1.287 types passes, strict plugin validation reports no warnings/errors, and completeness inventory reports 2 public symbols in the current follow-up diff, zero stubs and zero heuristically untested symbols. Validation lists only agent-list, clock, command registration, environment reads, prompt read/fill and native UI calls. No model/spawn/submit/permission/auth/network calls are added.
 
 Rust/Cargo is unavailable in cloud and was not installed. The small new Rust theme inclusion and assertion therefore need Mason's formatting/build/unit/integration rerun; foundation Rust results do not verify this new diff. Keep the existing `NO_COLOR` baseline failure separate. Parent also reported foundation CI run [36970881268](https://github.com/Zwin-ux/kit/actions/runs/36970881268) failing Clippy on all three operating systems under Rust 1.99 (`double_must_use` from the `async_trait` Gate at `kit-core/src/gate.rs:105`), despite Mason's Rust 1.97.1 local pass. Mason owns that isolated diagnosis; this UI change does not touch Gate or claim CI green. Real terminal paint, keyboard/focus, narrow/short-window scrolling, native theme selection and live worktree execution remain unverified.
+
+## Independent-review fixes after 1046498
+
+The AbovePrompt handler now awaits `next(e)` with the original read-only props and retains the returned tree. It reserves a conservative row bound for plain text/vertical boxes, then fits four Kit buttons into the remaining budget. Narrow 3–4-row bands drop optional rules/padding; one-row budgets abbreviate labels. A full or opaque downstream drawing is returned unchanged rather than clipped or suppressed; `/kit open` remains the fallback. Regression tests preserve a downstream sentinel alongside all four buttons and cover a full downstream band.
+
+All UI and command draft paths now share a read→fill transaction whose lock is acquired **before** `prompt.read`. A session-generation check stops a delayed old read before `prompt.fill`; a unique transaction token prevents an old `finally` block from unlocking a newer action. Tests reproduce the former failures for clear/resume/branch, use/review/handoff, double-click and overlapping sessions. These are offline control-flow proofs, not claims about live host cancellation of a fill already submitted to the host.
+
+[Installed-type excerpts and reviewer notes](CLAUDE-MODS-REVIEW-NOTES.md) record the exact 2.1.287 contracts used. No Rust or Gate files are changed in this follow-up.
 
 ## Remaining terminal QA
 

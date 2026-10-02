@@ -28,7 +28,7 @@ Alternatively load this source directory explicitly with `claude --plugin-dir <d
 
 ## Native interface
 
-The compact band above Claude's prompt shows Frontend, Backend, Security and Product. Click a bucket (or focus the band with Claude's native focus shortcut) to inspect its real specialist and skills. Selection never starts work and no bare-letter/digit hotkeys intercept prompt typing. At narrow widths the strip uses two rows.
+The compact band above Claude's prompt shows Frontend, Backend, Security and Product. Click a bucket (or focus the band with Claude's native focus shortcut) to inspect its real specialist and skills. Selection never starts work and no bare-letter/digit hotkeys intercept prompt typing. At narrow widths the strip uses two rows when room permits. Short bands omit rules/padding before abbreviating into one row. Kit composes with downstream bands when their row bounds are known; a full or opaque downstream layout keeps the band unchanged, with `/kit open` still available.
 
 `/kit open` opens the native **Kit · Skills** pane. **Prepare draft** fills the native prompt; review it and press Enter yourself. The pane shows all observed Kit work regardless of the selected catalog bucket. **Refresh status** reads current native status; the display is a last-observed snapshot, not a global fleet monitor. Each observed native execution gets its own local task ID, separate specialist ID, native attempt ID and native parent owner. Repeated descriptions are not treated as retries of the same task.
 
@@ -39,7 +39,7 @@ The original 22×16 fox grid renders as one fixed 22×8 terminal Raster in the e
 ## Explicit task workflow
 
 - `/kit catalog` shows categories, specialists and their two preloaded skills.
-- `/kit use frontend` (or backend/security/product) fills the visible prompt with an explicit `@agent-kit:...` invocation and preserves the task draft. Review and send it yourself. Selection is only intent for the next task.
+- `/kit use frontend` (or backend/security/product) fills the visible prompt with an explicit `@agent-kit:...` invocation and preserves the task draft. Review and send it yourself. Selection is only intent for the next task. Draft preparation locks before reading the prompt; clear/resume/branch cancel a pending read before it can restore discarded text.
 - `/kit jobs` lists native Kit executions in this session. Native execution IDs remain distinct from specialist roles. Completed means **Needs review**. Missing execution data means **Not attached**, with no automatic restart.
 - `/kit review <agentId@turnId>` prepares Security's review of that fixed result. `/kit handoff <agentId@turnId> <category>` prepares an explicit continuation. Both require an empty draft and retain the original result; neither sends anything.
 

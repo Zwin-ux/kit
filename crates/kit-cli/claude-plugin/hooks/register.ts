@@ -1,10 +1,12 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { agents, buckets, skills, catalogText, findAgent, invocation } from './catalog.ts'
-import { initialState, reconcile, recordResult, resultDraft, resultStatus, statusLabel } from './state.ts'
+import { agents, buckets, skills, catalogText, findAgent, invocation, type Specialist } from './catalog.ts'
+import { initialState, reconcile, recordResult, resultDraft, resultStatus, statusLabel, type ResultSnapshot } from './state.ts'
+import { bandLayout, bandRows } from './band.ts'
 import { foxFrameAt, foxRaster, reduceMotion, type FoxFrame } from './fox.ts'
 // Keep API-calling helpers in this file: 2.1.287's static analyzer cannot follow $ across imports.
 let state = initialState()
-let filling = false
+let draftTransaction: number | undefined
+let nextDraftTransaction = 0
 let generation = 0
 
 async function refresh($: EngineInterface) {
@@ -17,30 +19,40 @@ async function refresh($: EngineInterface) {
   }
 }
 
-async function fill($: EngineInterface, text: string) {
-  if (filling) return 'A draft action is already in progress.'
-  filling = true
+type DraftOutcome = { text: string; filled: boolean }
+
+// Lock the whole read → fill transaction. A reset invalidates the generation,
+// while the unique token prevents an old finally block from unlocking a newer draft.
+async function prepareDraft($: EngineInterface, agent: Specialist, source?: ResultSnapshot, action: 'review' | 'handoff' = 'review'): Promise<DraftOutcome> {
+  if (draftTransaction !== undefined) return { text: 'A draft action is already in progress.', filled: false }
+  const transaction = ++nextDraftTransaction
+  const current = generation
+  draftTransaction = transaction
+  const cancelled = 'Session changed. Draft preparation cancelled; no old task was restored.'
   try {
+    const draft = await $.prompt.read()
+    if (current !== generation || draftTransaction !== transaction) return { text: cancelled, filled: false }
+    if (source && draft.text.trim()) return { text: 'Your draft contains text. Send or clear it before preparing a result handoff.', filled: false }
+    const text = source ? resultDraft(source, agent, action) : invocation(agent, draft.text)
     const result = await $.prompt.fill({ text, mode: 'replace' })
-    return result.isFilled
+    if (current !== generation || draftTransaction !== transaction) return { text: 'Session changed while the native fill was pending. Inspect the current prompt.', filled: false }
+    return { filled: result.isFilled, text: result.isFilled
       ? 'Selected for next task. Review the visible draft and press Enter to invoke the native agent.'
-      : 'Claude could not fill the draft here. Nothing started. Use this in an interactive session.'
+      : 'Claude could not fill the draft here. Nothing started. Use this in an interactive session.' }
   } finally {
-    filling = false
+    if (draftTransaction === transaction) draftTransaction = undefined
   }
 }
 
-
 function select(bucket: string) { state = { ...state, selected: findAgent(bucket)!.id } }
-function resetState() { generation++; state = initialState(); filling = false }
+function resetState() { generation++; state = initialState(); draftTransaction = undefined }
 async function prepare($: EngineInterface) {
-  return fill($, invocation(findAgent(state.selected)!, (await $.prompt.read()).text))
+  return (await prepareDraft($, findAgent(state.selected)!)).text
 }
 async function review($: EngineInterface, key: string) {
   const result = state.results.find(r => r.key === key)
   if (!result) return 'This result is no longer available.'
-  if ((await $.prompt.read()).text.trim()) return 'Your draft contains text. Send or clear it before preparing a result handoff.'
-  return fill($, resultDraft(result, findAgent('Security')!, 'review'))
+  return (await prepareDraft($, findAgent('Security')!, result, 'review')).text
 }
 const paneId = 'kit-specialists';
 const colors = { active: '#FF3B46', text: '#F0F1F2', muted: '#788292', inactive: '#A6AFBF', divider: '#3C434E' };
@@ -66,43 +78,48 @@ function registerUi(on: Parameters<Register>[0]) {
         expanded = true; frame = 'idle'; notice = '';
     };
     on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-        if (e.props.hasSurvey || e.props.bodyColumns < 12 || e.props.maxRows < 3)
-            return next(e);
+        // The host props are read-only: call downstream unchanged and preserve its tree.
+        // Source: official interface docs, "Band above the prompt".
+        const downstream = await next(e);
+        if (e.props.hasSurvey || e.props.bodyColumns < 12 || e.props.maxRows < 1)
+            return downstream;
+        const downstreamRows = bandRows(downstream, e.props.bodyColumns);
+        if (downstreamRows === undefined || downstreamRows >= e.props.maxRows)
+            return downstream;
         const { Box, Text, Button } = $.ui.resolve(e);
         const selected = agents.find(a => a.id === state.selected)!;
         const padding = e.props.bodyColumns >= 44 ? 2 : 0;
-        const widths = bucketWidths(e.props.bodyColumns - padding * 2);
-        // At narrow widths labels form two rows; at normal widths exactly four equal segments.
-        const narrow = widths[0]! < 10;
-        const rows = narrow ? [buckets.slice(0, 2), buckets.slice(2)] : [buckets];
+        const usable = e.props.bodyColumns - padding * 2;
+        const layout = bandLayout(usable, e.props.maxRows - downstreamRows);
+        const rows = layout.rows === 2 ? [buckets.slice(0, 2), buckets.slice(2)] : [buckets];
+        const widths = bucketWidths(usable);
         return Box({
-            flexDirection: 'column', paddingX: padding, paddingBottom: 1,
-            children: [
-                ...rows.map(row => Box({
-                    flexDirection: 'row',
-                    children: [
-                        ...row.map(bucket => {
-                            const index = buckets.indexOf(bucket);
-                            const width = narrow ? Math.floor(e.props.bodyColumns / 2) : widths[index]!;
-                            const active = selected.bucket === bucket;
-                            return Box({
-                                flexDirection: 'column', width, flexShrink: 0,
-                                children: [
-                                    Button({ key: `bucket-${bucket}`, plain: true,
-                                        label: `${active ? '›' : ' '} ${bucket}`.slice(0, width), dimColor: !active,
-                                        onPress: async () => { select(bucket); $.ui.invalidate('ui.render'); await refresh($); await openKit($); } }),
-                                    Text({
-                                        color: active ? colors.active : colors.divider, wrap: 'truncate',
-                                        children: [
-                                            (active ? '━' : '─').repeat(width)
-                                        ]
-                                    })
-                                ]
-                            });
-                        })
-                    ]
-                }))
-            ]
+            key: 'kit-composed-band', flexDirection: 'column', height: downstreamRows + layout.height,
+            children: [downstream, Box({
+                key: 'kit-bucket-strip', flexDirection: 'column', paddingX: padding,
+                paddingBottom: layout.padding, flexShrink: 0,
+                children: rows.map(row => Box({
+                    flexDirection: 'row', flexShrink: 0,
+                    children: row.map((bucket, i) => {
+                        const width = layout.rows === 2
+                            ? (i === 0 ? Math.floor(usable / 2) : usable - Math.floor(usable / 2))
+                            : widths[buckets.indexOf(bucket)]!;
+                        const active = selected.bucket === bucket;
+                        return Box({
+                            flexDirection: 'column', width, flexShrink: 0,
+                            children: [
+                                Button({ key: `bucket-${bucket}`, plain: true,
+                                    label: `${active ? '›' : ' '} ${bucket}`.slice(0, width), dimColor: !active,
+                                    onPress: async () => { select(bucket); $.ui.invalidate('ui.render'); await refresh($); await openKit($); } }),
+                                ...(layout.rules ? [Text({
+                                    color: active ? colors.active : colors.divider, wrap: 'truncate',
+                                    children: [(active ? '━' : '─').repeat(width)],
+                                })] : []),
+                            ],
+                        });
+                    }),
+                })),
+            })],
         });
     });
     on('ui.render', { component: 'Pane' }, async ($, e, next) => {
@@ -299,12 +316,12 @@ export const register: Register = on => {
     if (action === 'use') {
       const agent = findAgent(target)
       if (!agent) return { text: 'Choose Frontend, Backend, Security or Product.' }
-      const draft = await $.prompt.read()
-      const text = await fill($, invocation(agent, draft.text))
-      // Selection describes intent only, never a running task.
-      select(agent.id)
+      const current = generation
+      const draft = await prepareDraft($, agent)
+      // Selection describes intent only and never carries into another session.
+      if (current === generation && draft.filled) select(agent.id)
       $.ui.invalidate('ui.render')
-      return { text }
+      return { text: draft.text }
     }
     if (action === 'jobs') {
       await refresh($)
@@ -321,9 +338,7 @@ export const register: Register = on => {
       if (!result) return { text: 'No captured result with that exact key. Run /kit jobs; results from before this mod loaded are unavailable.' }
       const agent = action === 'review' ? findAgent('Security') : findAgent(bucket)
       if (!agent) return { text: 'Choose the receiving bucket after the result key.' }
-      const draft = await $.prompt.read()
-      if (draft.text.trim()) return { text: 'Your draft contains text. Send or clear it before preparing a result handoff.' }
-      return { text: await fill($, resultDraft(result, agent, action)) }
+      return { text: (await prepareDraft($, agent, result, action)).text }
     }
     return { text: 'Use /kit open, /kit catalog, /kit use <bucket>, /kit jobs, /kit review <result>, or /kit handoff <result> <bucket>.' }
   })
