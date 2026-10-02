@@ -285,6 +285,10 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("kit-native-test-{}-{nonce}", std::process::id()));
         std::fs::create_dir(&root).unwrap();
+        // macOS temporary directories use /var, a symlink to /private/var.
+        // Exercise installation with a real directory, as the installer requires.
+        #[cfg(unix)]
+        let root = root.canonicalize().unwrap();
         let dest = root.join("plugin");
         install(&dest).unwrap();
         assert_eq!(
