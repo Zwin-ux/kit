@@ -512,6 +512,10 @@ for skills and rules, the five starter kits, `kit.lock`, `[check]` in
 **After v0.1:** `kit update`, `kit sync`, `kit search` and the public
 index, `kit new`, the next kits, the server.
 
+**After 2.0.0:** the Control Room as an ACP harness (Claude Code, Codex,
+Cursor) is specified in [`DESIGN-HARNESS.md`](DESIGN-HARNESS.md). That
+doc does not change this kits cut.
+
 **Where the code stands (2026-09-26, PR #18 plus `claude/kit-ios-apple-design`):**
 
 - Built: `kit setup | add | remove | list | show`, `~/.kit/config.toml`,
