@@ -5,6 +5,8 @@ These notes support people changing Kit itself. End users can ignore this folder
 | Doc | Topic |
 |-----|--------|
 | [AGENTS.md](AGENTS.md) | Context for coding agents working in this repo |
+| [DESIGN-KITS.md](DESIGN-KITS.md) | Kits product design (2.0 lead) |
+| [DESIGN-HARNESS.md](DESIGN-HARNESS.md) | After 2.0: ACP harness for Claude, Codex, Cursor |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Package layout and data flow |
 | [ROADMAP.md](ROADMAP.md) | What’s next |
 | [SKILL_SCHEMA.md](SKILL_SCHEMA.md) | SKILL.md front matter rules |
