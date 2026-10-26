@@ -107,7 +107,14 @@ jobs:
           hyperfine -N --warmup 3 --runs 50 --export-json startup.json "$BIN --version"
           python3 - <<'PY'
           import json, os, sys
-          mean_ms = json.load(open('startup.json'))['results'][0]['mean'] * 1000
+          result = json.load(open('startup.json'))['results'][0]
+          # hyperfine 1.x: results[0].mean; 2.x (JSON schema 2):
+          # results[0].summary.time_wall_clock.mean. Both are in seconds.
+          if 'mean' in result:
+              mean_s = result['mean']
+          else:
+              mean_s = result['summary']['time_wall_clock']['mean']
+          mean_ms = mean_s * 1000
           budget = float(os.environ['BUDGET_MS'])
           print(f"cold start: {mean_ms:.1f}ms (budget {budget:.0f}ms)")
           if mean_ms > budget:
