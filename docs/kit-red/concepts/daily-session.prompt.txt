@@ -1,0 +1,31 @@
+Use the provided Kit icon refinement as an ARTWORK reference only. New image: a realistic clean TERMINAL CODING SESSION for "Kit", inspired by Claude Code's restrained text-first conversation and prompt. This is Kit as a coding agent, NOT a setup screen. No catalogue, sidebar, cards, dashboard, four tabs, providers roster, scope questionnaire, setup tagline or metrics.
+Preserve the reference's small pointed red/cream pixel FOX HEAD and carefully crafted small pixel browser icon. Flat uniform #151515 background, off-white monospace text, muted gray metadata and warm red #E45F59 accents. No glow, texture, gradient, shadow or window chrome. Landscape 1536x1024. Compact readable terminal text, realistic line spacing, left aligned with moderate margins, no giant brand heading.
+
+Top-left a small 60px crisp fox head beside:
+Kit
+~/code/shop · Claude Code
+Modest welcome header, not a panel.
+
+Below it a natural coding conversation with EXACT fixture text and terminal tool hierarchy:
+> Build a pricing page with three tiers.
+
+● I'll check the existing components and styles first.
+
+● Read(src/app/page.tsx)
+  └ 84 lines
+● Read(src/components/button.tsx)
+  └ 46 lines
+
+● The app already has a shared button and spacing tokens.
+  I'll reuse those for the three plans and the billing toggle.
+
+No claims tests passed, no fake percentages, no animation or pending approvals. This is an illustrative moment after reading, before editing.
+
+At the bottom below the conversation, one tiny browser pixel icon and text "Frontend Design" in an understated single line. This is the only Kit-specific context control, not a tab bar. Below this place the Claude-like thin horizontal neutral terminal rule, prompt:
+> Add a monthly / annual toggle
+then another thin neutral horizontal rule.
+Small bottom hint: "/kit to change focus". This command is proposed and not claimed implemented.
+Leave natural dark breathing room between conversation and input but do not put big graphics there.
+A tiny external bottom-edge caption: "KIT · DAILY SESSION CONCEPT · ILLUSTRATIVE CONTENT".
+
+Design judgment: user should immediately feel this is a familiar agent CLI working on their code, with Kit's own refined fox and one small role indicator. Conversation takes priority. Do not show the four roles simultaneously. Keep the fox small and sophisticated, never a giant mascot. Icon must look intentionally pixel-drawn, not ordinary emoji. No extra controls.

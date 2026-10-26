@@ -1,0 +1,15 @@
+Create a realistic production-quality concept for Kit first launch, playful human-computer interaction in a CLAUDE CODE-LIKE TERMINAL. 1536x1024. References show existing Kit daily session and refined four role icons: preserve that sparse monospace coding CLI visual language, pointed red/cream pixel fox, and crisp browser/layers/server/nodes role miniatures. Uniform solid dark #151515, offwhite main text, readable gray secondary, warm red #E45F59. No web cards, sidebar, dashboard, gradients, texture, glow, huge typography, XP gauges or badges everywhere. One focused primary screen, one clear primary action and optional skip/back. Text rendered cleanly. Gamification is tasteful chosen identity, meaningful progress, charming fox reactions and first real work; never fake install status or passed tests. Product controls remain keyboard-first. Date anchor 2026-10-01, no visible dates required. Bottom small caption "KIT · FIRST-LAUNCH CONCEPT · NOT A RUNNING BUILD". This is proposed UX, no implemented claim.
+Direction name: "Equip your Kit". Show a focused four-role selection as choosing equipment in a quiet developer game, still a terminal list.
+Small fox header "Kit" and one sentence "What are we building?"
+Small discrete top progress "Agent  ✓    Focus  •    Review  ○".
+Four compact rows with exact names and beautiful pixel icons, first selected:
+Frontend Design — Interfaces people enjoy using
+Full-stack Design — From the screen to the database
+Backend Engineer — APIs and reliable services
+LLM Engineer — Prompts, models and evaluations
+Separate cursor and checkbox, multiselect available.
+Under the four rows show ONE small selected-kit inspection area without enclosing box: miniature browser icon, "Frontend Design", "UI skills · browser tools · formatting", "Example: Build a pricing page with three tiers".
+Tiny note "Choosing a kit does not install it."
+Primary text action "> Review this kit" supporting "Choose several · More kits available".
+Footer "↑↓ explore · space select · enter review · esc back".
+Fox sits beside title with tiny pack accessory; sophisticated pixel craft, no costume parade. No mission starts here. User learns by browsing real role outcomes.

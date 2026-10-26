@@ -1,0 +1,15 @@
+Edit this Kit terminal concept. User rejected the low-quality ASCII category symbols and crude wide fox. Improve ONLY the identity artwork and its necessary spacing. Preserve the original understated terminal layout, four kit names/order, descriptions, extra iOS/Essentials rows, selected checkbox, agent summary, question, keyboard hints and small kit wordmark.
+
+ART DIRECTION: beautifully hand-crafted small pixel-art icons, like the very best intentional terminal/indie developer-tool branding. Precise pixel grids, clean flat fills, purposeful negative space, balanced optical weight, no blur, gradients, texture, glow, 3D, glossy emoji bubbles, enclosing tiles, cards or decorative borders. Flat solid near-black background #0B0E12. Monospaced type.
+
+FOX: replace the huge wide flat face with a considerably smaller sophisticated 24x24-pixel fox-head logo displayed around 105x105 pixels, aligned beside the kit wordmark/tagline. It should clearly be a fox, not a cat or a space invader: high pointed ears with dark inset shapes, tapered cheeks, bright warm red fur, cream cheeks converging into a tapered muzzle, tiny charcoal nose, alert dark eyes; subtle red-orange side planes using only 4 flat colors. Symmetry with precise silhouette, friendly intelligent expression, no smile, no clothing. Strong red/cream Kit heritage, no generic emoji rendering. Avoid excessive width and empty broad forehead. Smaller header footprint.
+
+FOUR ROLE ICONS: replace tiny ASCII symbols [_], ===, { }, (*) with four distinct impeccably drawn matching 16x16-pixel mini illustrations, each displayed around 28–32px in a fixed left icon column between checkbox and full title. One icon per row, keep row spacing compact around 40px.
+Frontend Design: tiny browser window with a clear top bar and two unequal content blocks, warm coral and cream.
+Full-stack Design: three neatly stacked offset layers, warm coral upper layer and muted cream/slate lower layers; recognizable depth with flat pixel shapes.
+Backend Engineer: compact pair of server drawers, cream/slate with tiny coral status pixels, clear server silhouette.
+LLM Engineer: small branching three-node neural diagram centered on a coral core with cream connection lines; sharp and legible, not a brain blob, no sparkle or generic robot.
+All four same scale, crisp pixels, consistent red/cream/charcoal palette, distinct silhouettes that work without color. These are illustrative bitmap-capable terminal marks, NOT claimed literal ASCII. Full labels remain the meaning.
+
+Keep caption but change to "KIT RED · ICON REFINEMENT · CONCEPT ONLY".
+Fit the whole scene in a clean landscape 1536x1024 composition. Reduce empty space modestly; keep generous terminal breathing room. This is a focused refinement of existing Kit, not a dashboard redesign.

@@ -1,0 +1,19 @@
+Use case: ui-mockup. Create ONE precise terminal concept image for Kit Red, based on reference image 1, the ACTUAL original Kit setup screenshot. Preserve its terminal monospaced text, dark near-black background, left-aligned simple flow, and exact pixel fox silhouette. Change the orange fox/title/cursor accent to restrained warm red #E45F59; retain offwhite fox cheek pixels. No new app chrome, cards, panels, sidebar, gradients, glow, background texture, giant typography, tabs, or settings.
+
+This concept is an earlier moment in the SAME setup flow: the FOCUS picker after agents were chosen. Crop to a comfortable landscape terminal screenshot around 120 columns by 28 rows; do not keep the reference's long empty vertical space. Top line ~/code/shop $ kit. Original fox alongside small "kit" and existing tagline "Kit sets your coding agents up for one job," / "then proves what they do." Use original fox dimensions and text proportions.
+
+Below banner show completed choice "✓ Agents       Claude Code, Codex" (illustrative selection, not login status).
+Then question "What should your agents focus on?"
+Render a flat multi-select list, aligned monospace columns. First row has > cursor and [x], other rows [ ]. Tiny three-character ASCII category marks are literal text in their own column and must be EXACT:
+> [x] [_] Frontend Design     UI, design systems, accessibility, browser testing
+  [ ] === Full-stack Design  Frontend plus APIs, data, security, end-to-end tests
+  [ ] { } Backend Engineer   APIs, databases, security, performance
+  [ ] (*) LLM Engineer       Prompts, evals, RAG, model APIs, cost and latency
+  [ ]     iOS / Apple Design Native iOS, SwiftUI, accessibility
+  [ ]     Essentials         Shared base: plan, build, test, review
+
+Titles offwhite, descriptions muted readable gray, tiny marks red. Cursor distinct from selection. No full-row colored background. Four main rows same height as extra two. No dividing border.
+Then existing key hint "↑↓ move · space select · enter confirm · esc cancel"
+then muted "kit show <kit> for details".
+Small bottom external caption "KIT RED · FOCUS CONCEPT · NOT A RUNNING BUILD".
+Do not show Installed, Running, Ready, Verified or fake activity. No scope selector until next question. Preserve understated original terminal aesthetic. All text crisp readable and aligned. Output one screenshot, not a presentation board.

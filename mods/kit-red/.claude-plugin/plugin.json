@@ -1,0 +1,7 @@
+{
+  "name": "kit-red",
+  "version": "0.1.0",
+  "description": "Kit's four coding specialties inside Claude: choose the work, keep the conversation.",
+  "author": { "name": "Kit contributors" },
+  "license": "MIT"
+}

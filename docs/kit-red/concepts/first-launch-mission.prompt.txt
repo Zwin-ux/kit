@@ -1,0 +1,17 @@
+Create realistic production-quality UI concept for Kit, gamified FIRST MISSION welcome in a Claude Code-like terminal. 1536x1024. Use attached existing daily session + refined role-icon images as actual style/art references. Preserve sparse monospace CLI typography, red/cream small pointed pixel fox, warm red #E45F59, offwhite text, uniform solid #151515 background, gray secondary. No web cards, dashboard, sidebar, gradients, texture, giant typography, XP points, coins or leaderboards. Focus one screen, one primary action. First-launch fun comes from choosing a small real goal and learning by doing. Current date 2026-10-01; no visible dates.
+Direction name "First mission". Small Kit fox header, "Kit" then "~/code/shop". Small fox holding a tiny rolled blueprint, a tasteful crafted pixel detail. Welcome title ordinary terminal-size "Let's make your first thing."
+Subline "Pick a small goal. I'll help you set up what it needs."
+Four keyboard-selectable prompt rows with beautiful tiny role icons:
+> Build a page               Frontend Design
+  Connect a form to data     Full-stack Design
+  Create an API endpoint     Backend Engineer
+  Test a prompt              LLM Engineer
+Below list muted "Or describe your own task."
+A thin separator then a normal CLI input:
+> Build a pricing page with three tiers
+Thin separator.
+One tiny three-stage path under input "Choose a goal  →  Review setup  →  Make it work"
+Supporting copy "Enter reviews the required kit before anything is installed."
+Footer "enter continue · tab choose a goal · esc skip guide".
+Bottom external caption "KIT · FIRST MISSION · CONCEPT ONLY".
+No fake READY or PASS, no installed claim, no storybook map. The eventual familiar conversation should be obvious from this screen: selecting example pre-fills input, not auto-executes. Personal agency and first useful result matter. Strong composition, crisp refined pixel assets at small scale, enough dark breathing room.

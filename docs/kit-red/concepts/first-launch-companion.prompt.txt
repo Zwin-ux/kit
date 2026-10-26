@@ -1,0 +1,21 @@
+Create realistic production-quality UI concept for Kit FIRST LAUNCH, direction "Fox companion". 1536x1024. Ground in attached existing Kit daily session and refined role-icon art. Preserve Claude Code-like terminal: sparse monospace, dark flat #151515, warm red #E45F59, offwhite text, readable muted metadata, small refined red/cream pointed fox. No background texture, glow, gradients, rounded web panels, dashboard, sidebar, points, streaks, health meter or fake achievements. This is a developer tool, not a children's game. Date anchor 2026-10-01; no dates visible.
+Show an onboarding conversation that already IS the coding interface. Small Kit fox header and "~/code/shop".
+Natural transcript:
+"Kit"
+"Hey. What would you like to make?"
+User line "> A better frontend for my app."
+Assistant response with tiny fox cue:
+"Frontend Design fits. It brings UI skills, browser tools,"
+"and formatting. You can add another kit whenever you need it."
+Then one inline selected-kit line with exquisitely pixel-drawn browser icon:
+"Frontend Design"
+Below:
+"Next I'll show the files and tools it would add."
+"No changes yet."
+Then thin terminal rules around the ordinary prompt input:
+"> Show me the setup"
+Below low-key suggested replies as text, not buttons or pills:
+"Choose another kit    Use my current setup"
+Bottom keyboard hint "enter send · tab suggestions · esc skip guide".
+Fox companion has a subtly attentive head tilt, tiny footprint; same serious-cute character as reference, no giant speech balloon, no emotive pleading. The distinguishing interaction is goal-driven conversational guidance instead of a form/list wizard. One precise choice at a time, reversible, anchored to four real kits but only relevant one appears here. No actual capability claims. Bottom external caption "KIT · COMPANION START · CONCEPT ONLY".
+Give this screen a coherent premium editorial terminal rhythm, compact welcome and comfortable conversational spacing.

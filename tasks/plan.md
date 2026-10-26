@@ -56,3 +56,21 @@ into every worktree and prompt — Codex-like headless workflow, multi-agent.
 
 - Skill multi-select in Dispatch UI → later (F4.1)
 - Attach/PTY → B2-pty
+
+## Proposed follow-on: Kit Red (2026-10-01)
+
+Independent of the existing B2 plan above. Planning only; no implementation started.
+- [Product specification](../docs/superpowers/specs/2026-10-01-kit-red.md)
+- [Phased implementation plan](../docs/superpowers/plans/2026-10-01-kit-red.md)
+
+Updated scope: [Kit Red versioned build pack](../docs/kit-red/README.md) is authoritative: V1 visual-only first, V2 Kit inside Claude second.
+
+2026-10-01 correction: user rejected expanded Kit Red concepts/plans. Do not execute the proposed A–D/V1–V2 tasks above. Follow docs/kit-red/README.md: native Claude with only a subtle accent/mark; expanded integration parked.
+
+### Current Kit mod slice — 2026-10-01
+
+Concept direction provisionally approved. Current implementation and proof requirements: [MOD-BUILD](../docs/kit-red/MOD-BUILD.md) and [HANDOFF](../docs/kit-red/HANDOFF.md). The small mod is implemented under `mods/kit-red`; three offline scenario tests and plugin validation pass. Native execution remains blocked by the remotely disabled hooks rollout. Keep Claude conversation/prompt, four real coding roles, and no visible stage/progress labels. This supersedes earlier Kit Red summaries only; the existing B2/engine roadmap is unchanged.
+
+### Kit mod continuation evidence — native runner available
+
+Five local scenarios, three native Claude tests and plugin validation pass on 2.1.287. Real headless `/kit frontend` loads successfully with zero model turns/API cost. Fox and role assets refined; exact-code preview is docs/kit-red/production-sprites.html. The old remote rollout error stopped recurring; physical Terminal painting/focus inspection remains blocked by computer-control app restrictions. Read the current MOD-BUILD/HANDOFF rather than older blockers or rejected scopes.
