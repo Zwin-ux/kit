@@ -1,6 +1,6 @@
 # Kit — Agent Context
 
-**Product (1.0):** Kit is the **control room for parallel agent work**.  
+**Product (2.x):** Kit is the **control room for parallel agent work**.  
 Dispatch many agents. Watch them in one place. Nothing ships unproven.
 
 **Not the product:** skill marketplace, registry social, Ink TUI (archived).  
@@ -107,7 +107,7 @@ cargo test --workspace
 Living status: `docs/dev/CURRENT.md`
 
 Rust workspace: `crates/kit-{core,agents,gate,tui,cli}`  
-Legacy Node packages still exist under `packages/` (0.1.x); 1.0 is the Rust binary.
+Legacy Node packages still exist under `packages/` (0.1.x); Kit 2.x is the Rust binary.
 
 ---
 
