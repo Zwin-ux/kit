@@ -630,25 +630,42 @@ mod tests {
     }
 
     /// A past FAIL keeps its red words but not the wash; the rest is muted.
+    /// Under `NO_COLOR` the wash is the row's BOLD band (`fail_row`), so the
+    /// muted cells before STATE must not be bold; the FAIL words still are.
     #[test]
     fn past_fail_row_has_no_wash() {
+        use ratatui::style::Modifier;
         let theme = crate::theme::Theme::resolve();
         let (_tmp, mut app) = past_app();
         app.selected_id = None;
         let (w, h) = (80, 16);
         let buf = render_to_buffer(&app, w, h);
         let text = |y: u16| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>();
+        let washed = |x: u16, y: u16| {
+            let cell = &buf[(x, y)];
+            if theme.monochrome {
+                cell.modifier.contains(Modifier::BOLD)
+            } else {
+                cell.bg == theme.fail_wash
+            }
+        };
         let y = (0..h)
             .find(|&y| text(y).contains("make the parser"))
             .unwrap();
+        let row_end = if theme.monochrome {
+            let header = (0..h).map(text).find(|t| t.contains("STATE")).unwrap();
+            header
+                .find("STATE")
+                .map(|i| header[..i].chars().count())
+                .unwrap() as u16
+        } else {
+            w - 1
+        };
+        for x in 1..row_end {
+            assert!(!washed(x, y), "wash at ({x},{y})");
+        }
         for x in 1..w - 1 {
-            assert_ne!(buf[(x, y)].bg, theme.fail_wash, "wash at ({x},{y})");
-            assert_ne!(
-                buf[(x, y + 1)].bg,
-                theme.fail_wash,
-                "wash at ({x},{})",
-                y + 1
-            );
+            assert!(!washed(x, y + 1), "wash at ({x},{})", y + 1);
         }
         let gate_x = text(y)
             .find("FAIL")
@@ -658,6 +675,34 @@ mod tests {
             buf[(gate_x, y)].style(),
             buf[(gate_x, y)].style().patch(theme.danger())
         );
+    }
+
+    /// The gate runs with `NO_COLOR=1`, and the theme is read from the
+    /// environment, so the no-wash check runs again in a child process
+    /// under each theme rather than racing `set_var` across threads.
+    #[test]
+    fn past_fail_row_has_no_wash_under_every_theme() {
+        let exe = std::env::current_exe().unwrap();
+        let themes: [&[(&str, &str)]; 3] = [
+            &[("NO_COLOR", "1")],
+            &[("COLORTERM", "truecolor")],
+            &[("TERM", "xterm")],
+        ];
+        for env in themes {
+            let mut cmd = std::process::Command::new(&exe);
+            cmd.args(["ui::tests::past_fail_row_has_no_wash", "--exact"])
+                .env_remove("NO_COLOR")
+                .env_remove("KIT_THEME")
+                .env_remove("COLORTERM")
+                .envs(env.iter().copied());
+            let out = cmd.output().unwrap();
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                out.status.success() && stdout.contains("1 passed"),
+                "{env:?}\n{stdout}\n{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
     }
 
     /// P2 (design): NO CHANGES fits STATE whole at every width, in amber,

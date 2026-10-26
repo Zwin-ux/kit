@@ -30,6 +30,15 @@ fn git(repo: &Path, args: &[&str]) -> String {
 
 impl Fixture {
     fn new(edits: &str, gate: &str) -> Self {
+        Self::with_scope(
+            edits,
+            gate,
+            "allow = [\"src/**\"]\ndeny = [\".github/**\"]\n",
+        )
+    }
+
+    /// `scope` is the body of the fixture's `[gate.scope]` table.
+    fn with_scope(edits: &str, gate: &str, scope: &str) -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let root = std::env::temp_dir().join(format!(
             "kit-run-scope-{}-{}",
@@ -45,9 +54,7 @@ impl Fixture {
         std::fs::write(repo.join(".github/original.txt"), "original\n").unwrap();
         std::fs::write(
             repo.join("kit.toml"),
-            format!(
-                "[gate]\ntest = '{gate}'\n[gate.scope]\nallow = [\"src/**\"]\ndeny = [\".github/**\"]\n"
-            ),
+            format!("[gate]\ntest = '{gate}'\n[gate.scope]\n{scope}"),
         )
         .unwrap();
         git(&repo, &["init", "-q", "-b", "main"]);
@@ -168,6 +175,26 @@ fn gate_cannot_erase_a_denied_receipt_change_before_scope_check() {
     let (out, run) = fx.kit(&["run", "--agent", "claude", "change fixture"]);
     assert_eq!(out.status.code(), Some(1), "{run}");
     assert_eq!(run["data"]["state"], "fail");
+}
+
+/// Kit's own `kit.toml` scope lets a dependency bump through: a committed
+/// change to `Cargo.lock`, the root `Cargo.toml` and a crate manifest passes.
+#[test]
+fn kits_own_scope_allows_a_dependency_bump() {
+    let own =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../kit.toml")).unwrap();
+    let scope = own.split_once("[gate.scope]").unwrap().1;
+    let scope = scope.split_once("\n[").map_or(scope, |(body, _)| body);
+    let fx = Fixture::with_scope(
+        &format!(
+            "echo bump >> Cargo.lock\necho bump >> Cargo.toml\nmkdir -p crates/kit-core\necho bump > crates/kit-core/Cargo.toml\n{COMMIT}"
+        ),
+        "git --version",
+        scope,
+    );
+    let (out, run) = fx.kit(&["run", "--agent", "claude", "bump a dependency"]);
+    assert!(out.status.success(), "{run}");
+    assert_eq!(run["data"]["state"], "pass", "{run}");
 }
 
 /// Before: a scope check that could not run read as "no violations".
