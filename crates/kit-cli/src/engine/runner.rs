@@ -10,7 +10,7 @@ use super::store::{ensure_layout, load_kit_config, write_receipt};
 use super::worktree::{self, branch_name, create_worktree, remove_if_clean, resolve_repo};
 use anyhow::{Context, Result};
 use kit_agents::{Agent, adapter};
-use kit_core::{AgentKind, Bounds, Gate, GateOutcome, Receipt, RunDelta, RunId, RunSpec, RunState};
+use kit_core::{AgentKind, Bounds, GateOutcome, Receipt, RunDelta, RunId, RunSpec, RunState};
 use kit_gate::KitGate;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -383,7 +383,7 @@ async fn agent_and_gate(
         // children (`kill_on_drop`). A check the user interrupted is not a
         // verdict, so the run ends Killed, never a FAIL it did not earn.
         let kit_gate = KitGate::new();
-        let evaluate = kit_gate.evaluate(wt_path, &config.gate);
+        let evaluate = kit_gate.evaluate_against_base(wt_path, &config.gate, base);
         let gate = match cancel {
             Some(c) => tokio::select! {
                 gate = evaluate => Some(gate),

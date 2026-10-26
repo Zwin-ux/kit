@@ -8,7 +8,7 @@
 use crate::{AgentHandle, SpawnError};
 use kit_core::{AgentKind, RunDelta};
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 
@@ -167,8 +167,9 @@ fn spawn_stream_tasks(
     if let Some(out) = stdout {
         let tx = tx.clone();
         tokio::spawn(async move {
-            let mut lines = BufReader::new(out).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            let mut out = BufReader::new(out);
+            let mut buf = Vec::new();
+            while let Some(line) = next_line(&mut out, &mut buf).await {
                 let pretty = prettify_line(&line);
                 let _ = tx.send(RunDelta::Output(format!("{pretty}\n"))).await;
             }
@@ -176,13 +177,56 @@ fn spawn_stream_tasks(
     }
     if let Some(err) = stderr {
         tokio::spawn(async move {
-            let mut lines = BufReader::new(err).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            let mut err = BufReader::new(err);
+            let mut buf = Vec::new();
+            while let Some(line) = next_line(&mut err, &mut buf).await {
                 let pretty = prettify_line(&line);
                 let _ = tx.send(RunDelta::Output(format!("[err] {pretty}\n"))).await;
             }
         });
     }
+}
+
+/// Longest line of agent output Kit keeps; the rest of that line is dropped.
+const MAX_LINE_BYTES: usize = 64 * 1024;
+const LINE_TRUNCATED: &str = "…[line truncated]";
+
+/// The next line of agent output, or `None` at end of stream or on a read
+/// error. Invalid UTF-8 becomes U+FFFD instead of ending the stream, and a
+/// line over [`MAX_LINE_BYTES`] keeps its start plus a marker while the rest
+/// is drained unbuffered, so a newline-free flood cannot grow memory.
+async fn next_line(reader: &mut (impl AsyncBufRead + Unpin), buf: &mut Vec<u8>) -> Option<String> {
+    buf.clear();
+    let mut truncated = false;
+    loop {
+        let chunk = reader.fill_buf().await.ok()?;
+        if chunk.is_empty() {
+            if buf.is_empty() && !truncated {
+                return None;
+            }
+            break;
+        }
+        let newline = chunk.iter().position(|&b| b == b'\n');
+        let take = newline.map_or(chunk.len(), |i| i + 1);
+        let keep = take.min(MAX_LINE_BYTES - buf.len());
+        buf.extend_from_slice(&chunk[..keep]);
+        truncated |= keep < take;
+        reader.consume(take);
+        if newline.is_some() {
+            break;
+        }
+    }
+    if buf.ends_with(b"\n") {
+        buf.pop();
+        if buf.ends_with(b"\r") {
+            buf.pop();
+        }
+    }
+    let mut line = String::from_utf8_lossy(buf).into_owned();
+    if truncated {
+        line.push_str(LINE_TRUNCATED);
+    }
+    Some(line)
 }
 
 /// OS handle that can terminate the whole process tree.
@@ -729,6 +773,27 @@ mod tests {
             prettify_line(r#"{"type":"end","stopReason":"end_turn"}"#),
             "event:end"
         );
+    }
+
+    #[tokio::test]
+    async fn next_line_replaces_invalid_utf8_and_bounds_long_lines() {
+        let mut input = b"ok\r\n\xff\xfe bad\n".to_vec();
+        input.extend(std::iter::repeat_n(b'x', 1024 * 1024));
+        let mut reader: &[u8] = &input;
+        let mut buf = Vec::new();
+        assert_eq!(
+            next_line(&mut reader, &mut buf).await.as_deref(),
+            Some("ok")
+        );
+        assert_eq!(
+            next_line(&mut reader, &mut buf).await.as_deref(),
+            Some("\u{FFFD}\u{FFFD} bad")
+        );
+        let long = next_line(&mut reader, &mut buf).await.expect("long line");
+        assert_eq!(long.len(), MAX_LINE_BYTES + LINE_TRUNCATED.len());
+        assert!(long.ends_with(LINE_TRUNCATED));
+        assert!(buf.capacity() <= 2 * MAX_LINE_BYTES, "{}", buf.capacity());
+        assert_eq!(next_line(&mut reader, &mut buf).await, None);
     }
 
     /// ollama gets its prompt on stdin. A prompt bigger than the pipe buffer,

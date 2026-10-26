@@ -98,45 +98,11 @@ fn run_outside_a_repo_says_so_once_and_writes_no_receipt() {
 #[cfg(unix)]
 #[test]
 fn ctrl_c_ends_the_run_as_killed_with_a_receipt() {
-    use std::os::unix::fs::PermissionsExt;
     use std::time::{Duration, Instant};
 
-    let home = scratch("home");
-    let repo = scratch("repo");
-    let bin = scratch("bin");
-    let agent = bin.join("claude");
-    std::fs::write(
-        &agent,
+    let (home, repo, path) = live_repo(
         "#!/bin/sh\ncase \"$1\" in\n  --version) echo 0.0.0 fake ;;\n  auth) exit 1 ;;\n  *) sleep 30 ;;\nesac\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&agent, std::fs::Permissions::from_mode(0o755)).unwrap();
-    std::fs::write(repo.join("kit.toml"), "[gate]\ntest = 'git --version'\n").unwrap();
-    for args in [
-        &["init", "-q", "-b", "main"][..],
-        &["add", "."],
-        &[
-            "-c",
-            "user.name=kit",
-            "-c",
-            "user.email=kit@test",
-            "commit",
-            "-q",
-            "-m",
-            "init",
-        ],
-    ] {
-        let ok = Command::new("git")
-            .args(args)
-            .current_dir(&repo)
-            .status()
-            .unwrap();
-        assert!(ok.success(), "git {args:?}");
-    }
-
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    let path =
-        std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&path))).unwrap();
+    );
     let child = kit(&home, &repo)
         .args(["run", "--agent", "claude", "--json", "--task", "wait"])
         .env("PATH", path)
@@ -168,4 +134,93 @@ fn ctrl_c_ends_the_run_as_killed_with_a_receipt() {
     let env = envelope(&out.stdout);
     assert_eq!(env["ok"], false, "{env}\n{}", text(&out.stderr));
     assert_receipt(&env, "killed");
+}
+
+/// A git repo whose gate is `git --version`, and a `PATH` that finds a fake
+/// `claude` running the shell script `agent` first.
+#[cfg(unix)]
+fn live_repo(agent: &str) -> (PathBuf, PathBuf, std::ffi::OsString) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = scratch("home");
+    let repo = scratch("repo");
+    let bin = scratch("bin");
+    let fake = bin.join("claude");
+    std::fs::write(&fake, agent).unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::write(repo.join("kit.toml"), "[gate]\ntest = 'git --version'\n").unwrap();
+    for args in [
+        &["init", "-q", "-b", "main"][..],
+        &["add", "."],
+        &[
+            "-c",
+            "user.name=kit",
+            "-c",
+            "user.email=kit@test",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ],
+    ] {
+        let ok = Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        assert!(ok.success(), "git {args:?}");
+    }
+
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let path =
+        std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&path))).unwrap();
+    (home, repo, path)
+}
+
+/// Before: the first invalid UTF-8 line ended the output reader, so the rest
+/// of the agent's output was lost and its pipe closed under it.
+#[cfg(unix)]
+#[test]
+fn invalid_utf8_and_overlong_lines_do_not_stop_agent_output() {
+    use std::time::{Duration, Instant};
+
+    let (home, repo, path) = live_repo(concat!(
+        "#!/bin/sh\n",
+        "case \"$1\" in\n  --version) echo 0.0.0 fake; exit 0 ;;\n  auth) exit 1 ;;\nesac\n",
+        "echo before\n",
+        "printf '\\377\\376 bad\\n'\n",
+        "head -c 100000 /dev/zero | tr '\\0' x; echo\n",
+        "i=0; while [ $i -lt 2000 ]; do echo \"line $i\"; i=$((i+1)); done\n",
+        "echo after\n",
+        "echo changed > changed.txt\n",
+    ));
+    let started = Instant::now();
+    let out = kit(&home, &repo)
+        .args(["run", "--agent", "claude", "--json", "--task", "noisy"])
+        .env("PATH", &path)
+        .output()
+        .expect("run kit");
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "run took too long"
+    );
+    let env = envelope(&out.stdout);
+    assert_receipt(&env, "pass");
+
+    let id = env["data"]["id"].as_str().expect("id");
+    let show = kit(&home, &repo)
+        .args(["receipt", "show", id, "--output"])
+        .output()
+        .expect("receipt show");
+    // `--output` shows the tail; the whole log is in the receipt dir.
+    let shown = text(&show.stdout);
+    assert!(shown.contains("line 1999\nafter"), "the last lines arrive");
+    let dir = env["data"]["receiptDir"].as_str().expect("receiptDir");
+    let log = std::fs::read_to_string(Path::new(dir).join("output.log")).unwrap();
+    assert!(
+        log.contains("\u{FFFD}\u{FFFD} bad"),
+        "invalid bytes are replaced"
+    );
+    assert!(log.contains("x…[line truncated]"), "the long line is cut");
+    assert!(log.contains("line 0\n"), "lines after the bad ones arrive");
 }

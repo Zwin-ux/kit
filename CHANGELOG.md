@@ -2,6 +2,18 @@
 
 All notable changes to Kit. Versions follow [Semantic Versioning](https://semver.org/): the public API is the `kit` command, `KIT.toml` / `kit.toml`, `kit.lock`, `--json` output and receipts. The Rust library crates carry no semver promise of their own.
 
+## Unreleased
+
+### Fixed
+- The `[gate.scope]` check now covers everything the run changed since its base commit, including commits the agent made, and both sides of a rename. Before, a denied path the agent committed passed the gate and `kit land` accepted it
+- A scope check that cannot run (git fails in the worktree, the base commit is missing) fails the gate with `scope check could not run: …`. It used to read as no violations
+- Scope is checked before the gate's commands run, so a check that resets the worktree cannot hide a denied change that is in the receipt
+- A file name with a literal backslash no longer counts as inside an allowed directory
+- Agent output no longer stops at the first line of invalid UTF-8. Invalid bytes show as `�`, a line longer than 64 KiB keeps its start and ends with `…[line truncated]`, and the agent keeps running. Before, the rest of the output was lost and the agent's next write hit a closed pipe
+
+### Changed
+- Dependencies: `async-trait` 0.1.92 (Clippy on Rust 1.99), `lru` 0.18.5 (RUSTSEC-2026-0253) and `tokio` 1.54.1 (RUSTSEC-2026-0386). `cargo audit` is clean
+
 ## 2.0.0 — Kits
 
 Kit 2.0.0 is the first release of the Rust `kit` as the default install everywhere. It sets your coding agents up for one job, then proves what they do. (0.1.x was the Node workbench; 1.0.0-alpha.1 was an npm-only preview of the Control Room.)
