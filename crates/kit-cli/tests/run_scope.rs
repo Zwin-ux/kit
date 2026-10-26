@@ -76,6 +76,11 @@ impl Fixture {
             .current_dir(&self.repo)
             .env("PATH", path)
             .env("KIT_HOME", self.root.join("kit-home"))
+            // `kit land` commits; CI runners have no git identity.
+            .env("GIT_AUTHOR_NAME", "kit")
+            .env("GIT_AUTHOR_EMAIL", "kit@test")
+            .env("GIT_COMMITTER_NAME", "kit")
+            .env("GIT_COMMITTER_EMAIL", "kit@test")
             .env_remove("KIT_FULL_AUTO")
             .env_remove("KIT_AGENT_RUNS_CHECKS")
             .env_remove("GIT_DIR")
