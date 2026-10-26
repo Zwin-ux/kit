@@ -104,14 +104,35 @@ impl KitGate {
     }
 }
 
-#[async_trait::async_trait]
-impl Gate for KitGate {
-    async fn evaluate(&self, worktree: &Path, config: &GateConfig) -> GateOutcome {
+impl KitGate {
+    /// Evaluate a run's worktree. Scope covers every path changed since the
+    /// run's `base` commit, so commits the agent made are checked too.
+    pub async fn evaluate_against_base(
+        &self,
+        worktree: &Path,
+        config: &GateConfig,
+        base: &str,
+    ) -> GateOutcome {
+        self.evaluate_scoped(worktree, config, Some(base)).await
+    }
+
+    async fn evaluate_scoped(
+        &self,
+        worktree: &Path,
+        config: &GateConfig,
+        base: Option<&str>,
+    ) -> GateOutcome {
         // All helpers return conservative values instead of propagating errors;
         // this outer shape remains useful even when a worktree is malformed.
         let started = Instant::now();
         let checks = config.checks();
         let mut results = Vec::with_capacity(checks.len());
+
+        // Scope is listed before the checks, so a check cannot erase what it
+        // judges. A listing that cannot run fails closed.
+        let scope_violations =
+            scope_violations(worktree, &config.scope.allow, &config.scope.deny, base)
+                .unwrap_or_else(|why| vec![format!("scope check could not run: {why}")]);
 
         for (index, (label, command)) in checks.iter().enumerate() {
             let elapsed = started.elapsed();
@@ -126,8 +147,6 @@ impl Gate for KitGate {
             results.push(run_check(label, command, worktree, remaining).await);
         }
 
-        let scope_violations =
-            scope_violations(worktree, &config.scope.allow, &config.scope.deny).unwrap_or_default();
         let passed = results.iter().all(GateCheck::passed) && scope_violations.is_empty();
 
         GateOutcome {
@@ -137,6 +156,13 @@ impl Gate for KitGate {
             firewall_blocks: Vec::new(),
             duration: started.elapsed(),
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl Gate for KitGate {
+    async fn evaluate(&self, worktree: &Path, config: &GateConfig) -> GateOutcome {
+        self.evaluate_scoped(worktree, config, None).await
     }
 
     fn screen(&self, command: &str) -> FirewallVerdict {
@@ -1222,16 +1248,62 @@ fn strip_ansi(text: &str) -> std::borrow::Cow<'_, str> {
     out.into()
 }
 
-fn scope_violations(worktree: &Path, allow: &[String], deny: &[String]) -> Result<Vec<String>, ()> {
-    let output = std::process::Command::new("git")
-        .args(["status", "--porcelain=v1", "-z"])
-        .current_dir(worktree)
-        .output()
-        .map_err(|_| ())?;
-    if !output.status.success() {
-        return Err(());
+/// Changed paths that break the scope policy: uncommitted changes, untracked
+/// files, and, with `base`, everything committed since it. Renames count on
+/// both sides. An error means the paths could not be listed.
+fn scope_violations(
+    worktree: &Path,
+    allow: &[String],
+    deny: &[String],
+    base: Option<&str>,
+) -> Result<Vec<String>, String> {
+    if allow.is_empty() && deny.is_empty() {
+        return Ok(Vec::new());
     }
-    let changed = porcelain_paths(&output.stdout);
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(worktree)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .output()
+            .map_err(|e| format!("git {}: {e}", args[0]))?;
+        if !output.status.success() {
+            return Err(format!(
+                "git {} failed: {}",
+                args[0],
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        Ok(output.stdout)
+    };
+    let mut changed = porcelain_paths(&git(&[
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+    ])?);
+    if let Some(base) = base {
+        // `--no-renames` lists a rename as a delete plus an add: both sides.
+        let diff = git(&[
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--no-ext-diff",
+            "--end-of-options",
+            base,
+            "--",
+        ])?;
+        changed.extend(
+            diff.split(|byte| *byte == 0)
+                .filter(|path| !path.is_empty())
+                .map(|path| String::from_utf8_lossy(path).into_owned()),
+        );
+        changed.sort();
+        changed.dedup();
+    }
     Ok(changed
         .into_iter()
         .filter(|path| {
@@ -1253,10 +1325,15 @@ fn porcelain_paths(raw: &[u8]) -> Vec<String> {
     while let Some(field) = fields.get(index) {
         if field.len() >= 4 {
             let status = &field[..2];
-            let path = String::from_utf8_lossy(&field[3..]).replace('\\', "/");
-            paths.push(path);
-            if matches!(status.first(), Some(b'R' | b'C')) {
+            // Git uses '/' even on Windows; a literal backslash in a Unix
+            // file name must not turn into an allowed directory.
+            paths.push(String::from_utf8_lossy(&field[3..]).into_owned());
+            if status.iter().any(|b| matches!(b, b'R' | b'C')) {
+                // The next field is the rename or copy source.
                 index += 1;
+                if let Some(source) = fields.get(index) {
+                    paths.push(String::from_utf8_lossy(source).into_owned());
+                }
             }
         }
         index += 1;
@@ -1808,8 +1885,151 @@ mod tests {
             .current_dir(&root)
             .status()
             .unwrap();
-        let violations = scope_violations(&root, &["src/**".to_owned()], &[]).unwrap();
+        let violations = scope_violations(&root, &["src/**".to_owned()], &[], None).unwrap();
         assert_eq!(violations, vec!["outside.txt"]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A git runner for scope fixtures that ignores the caller's git env.
+    fn scope_repo(tag: &str) -> (std::path::PathBuf, impl Fn(&[&str]) -> String) {
+        let root = env::temp_dir().join(format!("kit-gate-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir(&root).unwrap();
+        let dir = root.clone();
+        let git = move |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(["-c", "user.name=kit", "-c", "user.email=kit@test"])
+                .args(["-c", "commit.gpgsign=false"])
+                .args(args)
+                .current_dir(&dir)
+                .env_remove("GIT_DIR")
+                .env_remove("GIT_WORK_TREE")
+                .env_remove("GIT_INDEX_FILE")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}: {output:?}");
+            String::from_utf8_lossy(&output.stdout).trim().to_owned()
+        };
+        (root, git)
+    }
+
+    #[tokio::test]
+    async fn scope_against_base_covers_dirty_untracked_and_committed_paths() {
+        let (root, git) = scope_repo("scope-base");
+        fs::create_dir(root.join("src")).unwrap();
+        fs::write(root.join("src/existing.rs"), "baseline\n").unwrap();
+        fs::write(root.join("README.md"), "baseline\n").unwrap();
+        git(&["init", "-q"]);
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "baseline"]);
+        let base = git(&["rev-parse", "HEAD"]);
+        fs::write(root.join("src/existing.rs"), "allowed dirty edit\n").unwrap();
+        fs::write(root.join("src/new.rs"), "allowed untracked\n").unwrap();
+        let config = GateConfig {
+            test: Some("git --version".to_owned()),
+            scope: kit_core::ScopeConfig {
+                allow: vec!["src/**".to_owned()],
+                deny: vec!["src/denied/**".to_owned()],
+            },
+            ..GateConfig::default()
+        };
+        let gate = KitGate::new();
+        assert!(
+            gate.evaluate_against_base(&root, &config, &base)
+                .await
+                .passed
+        );
+
+        fs::create_dir_all(root.join("src/denied/nested")).unwrap();
+        fs::write(root.join("src/denied/nested/new.rs"), "denied untracked\n").unwrap();
+        fs::write(root.join("outside.txt"), "denied staged\n").unwrap();
+        git(&["add", "outside.txt"]);
+        git(&["mv", "README.md", "src/README.md"]);
+        git(&["commit", "-q", "-m", "agent change"]);
+        let outcome = gate.evaluate_against_base(&root, &config, &base).await;
+        assert!(!outcome.passed);
+        assert_eq!(
+            outcome.scope_violations,
+            ["README.md", "outside.txt", "src/denied/nested/new.rs"]
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn staged_rename_source_is_in_scope() {
+        let (root, git) = scope_repo("scope-rename");
+        fs::create_dir(root.join("locked")).unwrap();
+        fs::write(root.join("locked/a.txt"), "baseline\n").unwrap();
+        git(&["init", "-q"]);
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "baseline"]);
+        fs::create_dir(root.join("src")).unwrap();
+        git(&["mv", "locked/a.txt", "src/a.txt"]);
+        let allow = ["src/**".to_owned()];
+        assert_eq!(
+            scope_violations(&root, &allow, &[], None).unwrap(),
+            ["locked/a.txt"]
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn scope_check_that_cannot_run_fails_closed() {
+        let (root, git) = scope_repo("scope-error");
+        fs::write(root.join("README.md"), "baseline\n").unwrap();
+        git(&["init", "-q"]);
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "baseline"]);
+        let config = GateConfig {
+            test: Some("git --version".to_owned()),
+            scope: kit_core::ScopeConfig {
+                allow: vec!["src/**".to_owned()],
+                deny: Vec::new(),
+            },
+            ..GateConfig::default()
+        };
+        let gate = KitGate::new();
+        let missing = gate
+            .evaluate_against_base(&root, &config, "missing-base")
+            .await;
+        assert!(!missing.passed);
+        assert!(
+            missing.scope_violations[0].starts_with("scope check could not run: git diff failed"),
+            "{:?}",
+            missing.scope_violations
+        );
+
+        fs::remove_dir_all(root.join(".git")).unwrap();
+        let outcome = gate.evaluate(&root, &config).await;
+        assert!(!outcome.passed);
+        assert!(
+            outcome.scope_violations[0].starts_with("scope check could not run"),
+            "{:?}",
+            outcome.scope_violations
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn literal_backslash_filename_cannot_match_an_allowed_directory() {
+        let (root, git) = scope_repo("scope-backslash");
+        fs::write(root.join("README.md"), "baseline\n").unwrap();
+        git(&["init", "-q"]);
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "baseline"]);
+        let base = git(&["rev-parse", "HEAD"]);
+        let path = r"src\outside.txt";
+        fs::write(root.join(path), "outside the src directory\n").unwrap();
+        let allow = ["src/**".to_owned()];
+        assert_eq!(scope_violations(&root, &allow, &[], None).unwrap(), [path]);
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "agent change"]);
+        assert_eq!(git(&["status", "--porcelain"]), "");
+        assert_eq!(
+            scope_violations(&root, &allow, &[], Some(&base)).unwrap(),
+            [path]
+        );
         let _ = fs::remove_dir_all(root);
     }
 }
