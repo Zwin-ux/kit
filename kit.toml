@@ -9,5 +9,6 @@ test      = "cargo test --workspace"
 timeout   = "15m"
 
 [gate.scope]
-allow = ["crates/**", "docs/**", "tasks/**", "wiki/**", "*.md", "kit.toml"]
+# Cargo.toml / Cargo.lock: a dependency bump touches the root manifest and lockfile.
+allow = ["crates/**", "docs/**", "tasks/**", "wiki/**", "*.md", "kit.toml", "Cargo.toml", "Cargo.lock"]
 deny  = [".github/**", "packages/**", "catalog/**"]
