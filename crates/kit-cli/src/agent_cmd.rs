@@ -325,3 +325,22 @@ pub async fn cmd_prompt(task: &str, opts: &AgentOpts, json: bool) -> Result<()> 
         _ => std::process::exit(1),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shipped_prices_parse_and_cover_the_default_model() {
+        let prices = Prices::from_toml(PRICES).unwrap();
+        assert!(
+            !prices.as_of.is_empty(),
+            "prices carry the date they were read"
+        );
+        let p = prices
+            .models
+            .get(DEFAULT_ANTHROPIC_MODEL)
+            .expect("the default model has a price");
+        assert!(p.cached_input.unwrap() < p.input && p.input < p.output);
+    }
+}
