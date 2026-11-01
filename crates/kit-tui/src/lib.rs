@@ -16,6 +16,7 @@
 //! - [`event_loop`] — single `tokio::select!` merging terminal, tick, runs
 //! - [`fox`] — the mascot sprite and its tail wag
 //! - [`ui`] — Control Room, Run Detail, Dispatch, Board, Attached frames
+//! - [`session`] — the `kit chat` session view (inline, scrollback-native)
 //!
 //! Agent skills: `.agents/skills` (addyosmani/agent-skills). See root `AGENTS.md`.
 
@@ -28,6 +29,7 @@ pub mod event_loop;
 pub mod fox;
 pub mod past;
 pub mod persona;
+pub mod session;
 pub mod theme;
 pub mod ui;
 

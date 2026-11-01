@@ -1322,10 +1322,13 @@ dependencies = [
  "kitctl-agents",
  "kitctl-core",
  "kitctl-gate",
+ "kitctl-loop",
+ "kitctl-providers",
  "libc",
  "ratatui",
  "serde_json",
  "tokio",
+ "unicode-width",
 ]
 
 [[package]]

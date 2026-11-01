@@ -1,0 +1,12 @@
+---
+source: crates/kit-tui/src/session/view.rs
+expression: "frame(&mut s, width, now)"
+---
+  you › ship it
+────────────────────────────────────────────────────────────────────────────────
+  ? Bash git push origin main
+    y once  a always  n deny   network and a remote write
+┌──────────────────────────────────────────────────────────────────────────────┐
+│› Answer above: y, a or n                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+  claude-sonnet-5-5 · 18.2k ctx · ≈$0.041 · workspace unsandboxed · main

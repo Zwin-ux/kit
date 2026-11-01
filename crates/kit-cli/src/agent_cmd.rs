@@ -178,8 +178,17 @@ fn first_line(s: &str) -> &str {
     s.lines().find(|l| !l.trim().is_empty()).unwrap_or("")
 }
 
-/// Run the agent once and exit 0 only when it finished its turn.
-pub async fn cmd_prompt(task: &str, opts: &AgentOpts, json: bool) -> Result<()> {
+/// Kit's agent for this repo, set up from flags, `[agent]` and the
+/// environment, logging to a new session file. Shared by `kit -p` and `kit chat`.
+pub struct Built {
+    pub agent: Agent,
+    pub model: String,
+    pub provider_id: &'static str,
+    pub profile: Profile,
+    pub session: std::path::PathBuf,
+}
+
+pub fn build(opts: &AgentOpts) -> Result<Built> {
     let file = Config::load()?.unwrap_or_default();
     let sect = file.agent.clone().unwrap_or_default();
     let (provider, model) = provider(opts, &sect)?;
@@ -212,13 +221,31 @@ pub async fn cmd_prompt(task: &str, opts: &AgentOpts, json: bool) -> Result<()> 
         .context("cannot create the session file")?;
     let session = log.path().to_path_buf();
     let provider_id = provider.id();
-    let mut agent = Agent::new(
+    let agent = Agent::new(
         provider,
         ws,
         permissions(profile, file.permissions.as_ref())?,
         cfg,
     )
     .with_log(log);
+    Ok(Built {
+        agent,
+        model,
+        provider_id,
+        profile,
+        session,
+    })
+}
+
+/// Run the agent once and exit 0 only when it finished its turn.
+pub async fn cmd_prompt(task: &str, opts: &AgentOpts, json: bool) -> Result<()> {
+    let Built {
+        mut agent,
+        model,
+        provider_id,
+        profile,
+        session,
+    } = build(opts)?;
 
     let cancel = Cancel::default();
     let on_ctrl_c = cancel.clone();

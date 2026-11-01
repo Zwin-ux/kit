@@ -117,6 +117,9 @@ pub enum Command {
         kit: Option<String>,
     },
 
+    /// Talk to Kit's own agent in this repo: a session in your terminal's scrollback
+    Chat(ChatArgs),
+
     /// Set your coding agents up for a job: pick agents, focus and scope
     #[command(
         after_help = "Bare `kit` runs this the first time. Every question is also a flag.\n\nExample:\n  kit setup\n  kit setup --agent claude --kit frontend-design --global --yes"
@@ -624,6 +627,53 @@ pub enum HookCommand {
 pub enum HookScope {
     Global,
     Repo,
+}
+
+/// `kit chat`: the same options as `kit -p`, for a session instead of one task.
+#[derive(Debug, Default, Args)]
+pub struct ChatArgs {
+    /// Model id [default: claude-sonnet-5-5 for anthropic; required for openai-compatible]
+    #[arg(long, value_name = "ID")]
+    pub model: Option<String>,
+
+    /// anthropic or openai-compatible [default: anthropic when ANTHROPIC_API_KEY is set]
+    #[arg(long, value_name = "NAME")]
+    pub provider: Option<String>,
+
+    /// Server for openai-compatible, ending in /v1 [default: http://localhost:11434/v1, Ollama]
+    #[arg(long, value_name = "URL")]
+    pub base_url: Option<String>,
+
+    /// read, workspace or full [default: workspace]
+    #[arg(long, value_name = "PROFILE")]
+    pub profile: Option<String>,
+
+    /// Stop a turn when the session costs this many dollars, e.g. --budget 2.00
+    #[arg(long, value_name = "USD")]
+    pub budget: Option<f64>,
+
+    /// Stop a turn after this many model replies [default: 50]
+    #[arg(long, value_name = "N")]
+    pub max_turns: Option<u32>,
+
+    /// Use fenced shell blocks instead of tool calls, for models that cannot call tools
+    #[arg(long)]
+    pub text: bool,
+}
+
+impl From<ChatArgs> for AgentOpts {
+    fn from(a: ChatArgs) -> Self {
+        Self {
+            model: a.model,
+            provider: a.provider,
+            base_url: a.base_url,
+            profile: a.profile,
+            budget: a.budget,
+            max_turns: a.max_turns,
+            text: a.text,
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Debug, Default, Args)]

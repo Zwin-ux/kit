@@ -1,0 +1,14 @@
+---
+source: crates/kit-tui/src/session/view.rs
+expression: "frame(&mut s, 80, now)"
+---
+  kit › The build fails because a variable is misspelled in src/lib.rs and
+  ! interrupted
+
+────────────────────────────────────────────────────────────────────────────────
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│› Ask Kit to do something · ? for help                                        │
+└──────────────────────────────────────────────────────────────────────────────┘
+  claude-sonnet-5-5 · 18.2k ctx · ≈$0.041 · workspace unsandboxed · main
