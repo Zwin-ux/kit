@@ -6,6 +6,7 @@ members = [
     "crates/kit-gate",
     "crates/kit-tui",
     "crates/kit-cli",
+    "crates/kit-providers",
 ]
 
 [workspace.package]
@@ -21,6 +22,7 @@ kit-core = { path = "crates/kit-core", package = "kitctl-core", version = "=2.0.
 kit-agents = { path = "crates/kit-agents", package = "kitctl-agents", version = "=2.0.1" }
 kit-gate = { path = "crates/kit-gate", package = "kitctl-gate", version = "=2.0.1" }
 kit-tui = { path = "crates/kit-tui", package = "kitctl-tui", version = "=2.0.1" }
+kit-providers = { path = "crates/kit-providers", package = "kitctl-providers", version = "=2.0.1" }
 
 anyhow = "1"
 clap = { version = "4.5", features = ["derive"] }

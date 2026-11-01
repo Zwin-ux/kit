@@ -1,0 +1,27 @@
+[package]
+name = "kitctl-providers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Model API adapters (Anthropic, OpenAI-compatible) for Kit's own coding agent"
+
+[lib]
+name = "kit_providers"
+
+[dependencies]
+async-trait.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+# rustls on ring, not reqwest's default aws-lc-rs: ring builds cleanly under
+# cargo-zigbuild for the glibc 2.17 Linux release targets. The platform
+# verifier uses the OS certificate store, so corporate roots work.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "stream", "json", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
