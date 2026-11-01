@@ -1,0 +1,5 @@
+category = "refactor"
+expect = "pass"
+prompt = """
+readJson(path, cb) in src/json.mjs uses a callback. Change it to an async function that returns the parsed value (no callback). check.mjs shows the new use.
+"""

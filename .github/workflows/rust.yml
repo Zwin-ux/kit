@@ -3,9 +3,9 @@ name: Rust
 on:
   push:
     branches: [main]
-    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', 'deny.toml', 'npm/**', 'scripts/npm-*.mjs', 'scripts/version.mjs', 'scripts/loc-budget*.mjs', '.github/workflows/rust.yml']
+    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', 'deny.toml', 'npm/**', 'scripts/npm-*.mjs', 'scripts/version.mjs', 'scripts/loc-budget*.mjs', 'evals/**', '.github/workflows/rust.yml']
   pull_request:
-    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', 'deny.toml', 'npm/**', 'scripts/npm-*.mjs', 'scripts/version.mjs', 'scripts/loc-budget*.mjs', '.github/workflows/rust.yml']
+    paths: ['crates/**', 'Cargo.toml', 'Cargo.lock', 'deny.toml', 'npm/**', 'scripts/npm-*.mjs', 'scripts/version.mjs', 'scripts/loc-budget*.mjs', 'evals/**', '.github/workflows/rust.yml']
 
 env:
   CARGO_TERM_COLOR: always
@@ -73,6 +73,40 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check advisories licenses bans sources
+
+  # Kit's eval suite checks itself on every PR: each task's gate fails on its
+  # fixture (--baseline) and passes with its reference solution (--scripted),
+  # through the real `kit run --agent kit`. No model, no network.
+  evals:
+    name: eval suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - name: Build
+        run: cargo build -p kitctl
+      - name: Every gate fails before the change
+        shell: bash
+        run: ./target/debug/kit eval --baseline
+        env:
+          KIT_HOME: ${{ runner.temp }}/kit-home
+      - name: Every reference solution passes
+        shell: bash
+        run: ./target/debug/kit eval --scripted
+        env:
+          KIT_HOME: ${{ runner.temp }}/kit-home
 
   # "Simple" as a number: the agent core's line budgets (docs/PRD.md §2).
   budgets:

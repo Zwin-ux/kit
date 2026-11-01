@@ -1,0 +1,5 @@
+category = "feature"
+expect = "pass"
+prompt = """
+Implement parse_kv(line) in src/lib.rs: "key = value" returns Some(("key", "value")) with spaces trimmed; a line without '=' returns None. tests/kv.rs has the tests.
+"""

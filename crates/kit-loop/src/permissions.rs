@@ -137,7 +137,8 @@ impl Permissions {
             },
             (_, "Bash") => {
                 let cmd = args["command"].as_str().unwrap_or("");
-                if read_only(cmd, &ws.gate_commands) {
+                let file_op = self.profile == Profile::Workspace && workspace_file_op(ws, cmd);
+                if read_only(cmd, &ws.gate_commands) || file_op {
                     Decision::Allow
                 } else {
                     Decision::Ask(
@@ -337,6 +338,39 @@ pub fn read_only(cmd: &str, gate: &[String]) -> bool {
         })
 }
 
+/// Moving, copying, creating or deleting files is an edit: in the
+/// `workspace` profile it needs no prompt when every path stays inside the
+/// workspace, off protected paths, and is not the workspace itself.
+/// No shell syntax (`;`, `|`, `>`, `$(`, globs over the root) gets through.
+pub fn workspace_file_op(ws: &Workspace, cmd: &str) -> bool {
+    if ["&&", "||", ";", "|", ">", "<", "$(", "`", "&", "\n"]
+        .iter()
+        .any(|t| cmd.contains(t))
+    {
+        return false;
+    }
+    let words: Vec<&str> = cmd.split_whitespace().collect();
+    let (flags, paths): (Vec<&str>, Vec<&str>) = match words.as_slice() {
+        ["git", "mv" | "rm" | "add", rest @ ..] | ["rm" | "mv" | "cp" | "mkdir", rest @ ..] => {
+            rest.iter().partition(|w| w.starts_with('-'))
+        }
+        _ => return false,
+    };
+    let flags_ok = flags.iter().all(|f| {
+        matches!(
+            *f,
+            "-f" | "-r" | "-rf" | "-fr" | "-R" | "-p" | "-q" | "-n" | "--"
+        )
+    });
+    !paths.is_empty()
+        && flags_ok
+        && paths.iter().all(|p| {
+            let p = p.trim_matches(['"', '\'']);
+            let path = ws.resolve(p);
+            !p.contains('~') && path != ws.root && ws.inside(&path) && !protected(ws, &path)
+        })
+}
+
 fn protected(ws: &Workspace, path: &Path) -> bool {
     let rel = path.strip_prefix(&ws.root).ok();
     let in_git = path.components().any(|c| c.as_os_str() == ".git");
@@ -525,6 +559,44 @@ mod tests {
             Decision::Allow
         );
         assert!(Rule::parse("Bash(oops").is_err());
+    }
+
+    #[test]
+    fn file_ops_inside_the_workspace_need_no_prompt() {
+        let (_d, ws) = ws();
+        let p = Permissions::default();
+        for c in [
+            "git mv src/a.mjs src/b.mjs",
+            "rm -f old.txt",
+            "mkdir -p src/new",
+            "git rm -q src/users.mjs",
+            "cp a.txt b.txt",
+        ] {
+            assert_eq!(p.check(&ws, "Bash", &bash(c)), Decision::Allow, "{c}");
+        }
+        for c in [
+            "rm -rf .",
+            "rm -rf ../other",
+            "rm kit.toml",
+            "mv .git x",
+            "rm -rf ~/x",
+            "rm a && curl x",
+            "rm $(cat list)",
+            "git rm -r --cached .",
+        ] {
+            assert!(
+                matches!(p.check(&ws, "Bash", &bash(c)), Decision::Ask(_)),
+                "{c}"
+            );
+        }
+        let read = Permissions {
+            profile: Profile::Read,
+            ..Default::default()
+        };
+        assert!(
+            matches!(read.check(&ws, "Bash", &bash("rm a.txt")), Decision::Ask(_)),
+            "never in the read profile"
+        );
     }
 
     #[test]

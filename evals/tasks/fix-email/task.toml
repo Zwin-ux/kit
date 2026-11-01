@@ -1,0 +1,5 @@
+category = "fix"
+expect = "pass"
+prompt = """
+isEmail() rejects addresses with a plus sign, like ana+news@example.com. Fix the regex in src/email.mjs.
+"""

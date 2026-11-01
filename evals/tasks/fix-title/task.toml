@@ -1,0 +1,5 @@
+category = "fix"
+expect = "pass"
+prompt = """
+titleCase('hello WORLD') should be 'Hello World'. It currently keeps the rest of each word as typed. Fix src/title.mjs.
+"""

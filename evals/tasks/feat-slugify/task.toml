@@ -1,0 +1,5 @@
+category = "feature"
+expect = "pass"
+prompt = """
+Implement slugify(s) in src/slug.mjs: lowercase, words joined by '-', anything not a-z or 0-9 removed. 'Hello, World!' -> 'hello-world'.
+"""

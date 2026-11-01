@@ -1,0 +1,5 @@
+[gate]
+test = "cargo test --quiet"
+
+[gate.scope]
+deny = ["kit.toml", "tests/**"]

@@ -1,0 +1,5 @@
+category = "feature"
+expect = "pass"
+prompt = """
+Implement chunk(xs, n) in src/chunk.mjs: split an array into arrays of length n (the last may be shorter).
+"""

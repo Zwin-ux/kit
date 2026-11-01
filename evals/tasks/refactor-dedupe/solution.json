@@ -1,0 +1,27 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Write",
+   "args": {
+    "file_path": "src/users.mjs",
+    "content": "function validEmail(email) {\n  return email.includes('@') && !email.endsWith('@');\n}\n\nexport function canInvite(email) {\n  return validEmail(email);\n}\n\nexport function canRegister(email, age) {\n  return validEmail(email) && age >= 13;\n}\n"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

@@ -1,0 +1,28 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/lib.rs",
+    "old_string": "    Some(xs.iter().sum::<f64>() / (xs.len() - 1) as f64)",
+    "new_string": "    if xs.is_empty() {\n        return None;\n    }\n    Some(xs.iter().sum::<f64>() / xs.len() as f64)"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

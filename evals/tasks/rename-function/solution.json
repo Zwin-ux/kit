@@ -1,0 +1,92 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/calc.mjs",
+    "old_string": "function calc(",
+    "new_string": "function calculateTotal("
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "tool_call",
+   "id": "t1",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/a.mjs",
+    "old_string": "import { calc }",
+    "new_string": "import { calculateTotal }"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "tool_call",
+   "id": "t2",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/a.mjs",
+    "old_string": "calc([1, 2])",
+    "new_string": "calculateTotal([1, 2])"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "tool_call",
+   "id": "t3",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/b.mjs",
+    "old_string": "import { calc }",
+    "new_string": "import { calculateTotal }"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "tool_call",
+   "id": "t4",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/b.mjs",
+    "old_string": "calc([3])",
+    "new_string": "calculateTotal([3])"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

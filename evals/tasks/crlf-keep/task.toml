@@ -1,0 +1,5 @@
+category = "crlf"
+expect = "pass"
+prompt = """
+Change the default timeout in src/settings.mjs from 30 to 60. The file uses Windows (CRLF) line endings; keep them.
+"""

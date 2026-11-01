@@ -1223,6 +1223,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "crossterm",
+ "futures",
  "include_dir",
  "kitctl-agents",
  "kitctl-core",

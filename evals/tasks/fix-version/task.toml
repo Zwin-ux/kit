@@ -1,0 +1,5 @@
+category = "fix"
+expect = "pass"
+prompt = """
+compareVersions('1.10.0', '1.9.0') says 1.10.0 is older. It must compare numerically, part by part. Fix src/version.mjs.
+"""

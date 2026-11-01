@@ -1,0 +1,26 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Bash",
+   "args": {
+    "command": "git push origin main"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

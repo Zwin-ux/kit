@@ -1,0 +1,45 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/orders.mjs",
+    "old_string": "qty:",
+    "new_string": "quantity:",
+    "replace_all": true
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "tool_call",
+   "id": "t1",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/total.mjs",
+    "old_string": "o.qty",
+    "new_string": "o.quantity"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

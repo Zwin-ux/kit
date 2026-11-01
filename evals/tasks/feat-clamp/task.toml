@@ -1,0 +1,5 @@
+category = "feature"
+expect = "pass"
+prompt = """
+Add and export clamp(x, lo, hi) to src/num.mjs. It returns x limited to the range lo..hi.
+"""

@@ -6,6 +6,7 @@
 mod agent_cmd;
 mod cli;
 mod engine;
+mod eval;
 mod init;
 mod kits;
 mod land;
@@ -105,6 +106,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Some(Command::Run(args)) => cmd_run(args, json).await,
         Some(Command::Init(args)) => init::cmd_init(args, json).await,
         Some(Command::Land(args)) => land::cmd_land(args, json),
+        Some(Command::Eval(args)) => eval::cmd_eval(args, json).await,
         Some(Command::Doctor(args)) => {
             print_doctor(env!("CARGO_PKG_VERSION"), args.start_mcp, json);
             Ok(())

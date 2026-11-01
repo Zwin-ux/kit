@@ -1,0 +1,5 @@
+category = "refactor"
+expect = "pass"
+prompt = """
+src/cart.mjs and src/invoice.mjs both format prices the same way. Move that into one exported formatPrice(cents) in src/money.mjs and use it from both. Behaviour must not change.
+"""

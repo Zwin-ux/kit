@@ -1,0 +1,5 @@
+[gate]
+test = "node check.mjs"
+
+[gate.scope]
+deny = ["check.mjs", "kit.toml"]

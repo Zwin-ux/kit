@@ -1,0 +1,5 @@
+category = "fix"
+expect = "pass"
+prompt = """
+sortNumbers() sorts [10, 9, 1] as [1, 10, 9]. It must sort numerically. Fix src/sort.mjs.
+"""

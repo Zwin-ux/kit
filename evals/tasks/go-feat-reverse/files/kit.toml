@@ -1,0 +1,5 @@
+[gate]
+test = "go test ./..."
+
+[gate.scope]
+deny = ["kit.toml", "*_test.go"]

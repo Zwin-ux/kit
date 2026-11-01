@@ -1,0 +1,57 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Write",
+   "args": {
+    "file_path": "src/money.mjs",
+    "content": "export function formatPrice(cents) {\n  return `$${(cents / 100).toFixed(2)}`;\n}\n"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "tool_call",
+   "id": "t1",
+   "name": "Write",
+   "args": {
+    "file_path": "src/cart.mjs",
+    "content": "import { formatPrice } from './money.mjs';\n\nexport function cartLine(name, cents) {\n  return `${name}: ${formatPrice(cents)}`;\n}\n"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "tool_call",
+   "id": "t2",
+   "name": "Write",
+   "args": {
+    "file_path": "src/invoice.mjs",
+    "content": "import { formatPrice } from './money.mjs';\n\nexport function invoiceTotal(cents) {\n  return `Total: ${formatPrice(cents)}`;\n}\n"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

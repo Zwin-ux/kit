@@ -1,0 +1,5 @@
+category = "question"
+expect = "pass"
+prompt = """
+How many functions does src/lib.mjs export? Write only the number to ANSWER.txt. Do not change anything else.
+"""

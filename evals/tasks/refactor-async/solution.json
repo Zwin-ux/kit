@@ -1,0 +1,27 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Write",
+   "args": {
+    "file_path": "src/json.mjs",
+    "content": "import { readFile } from 'node:fs/promises';\n\nexport async function readJson(path) {\n  return JSON.parse(await readFile(path, 'utf8'));\n}\n"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]
