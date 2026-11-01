@@ -1,6 +1,6 @@
 # AGENTS.md — Living Context for Coding Agents
 
-You are working on **Kit 1.0** (Rust control room).
+You are working on **Kit 2.x** (the Rust `kit` binary: kits, then proven runs in the Control Room).
 
 > Supersedes the 0.1 “skill platform / Ink TUI” brief.  
 > Product truth: `PRD-1.0.md`. Ownership: `BUILD-ASSIGNMENT.md`.  
@@ -24,21 +24,17 @@ All agents on this repo should use **addyosmani/agent-skills** under `.agents/sk
 | Implementation | `incremental-implementation` + `test-driven-development` |
 | After implement | `completeness-qa` (`skills/completeness-qa`) — stubs / untested public fns are not done |
 | TUI screens | `frontend-ui-engineering` (interaction language, a11y) |
-| Contracts / seams | `api-and-interface-design` + Claude-only contract rule |
+| Contracts / seams | `api-and-interface-design` + CHANGELOG entry and pinning test |
 | Before PR | `code-review-and-quality` + `code-simplification` |
 | Perf / idle CPU | `performance-optimization` (M0 kill criteria) |
 
 Surface work queue: `tasks/plan.md`, `tasks/todo.md`.
 
-## Ownership
+## Who may edit what
 
-| Agent | Owns |
-|-------|------|
-| Grok | `crates/kit-tui` (F1–F6), later B2-pty |
-| Codex | engine crates, CI, ports |
-| Claude | five contract files, merge review |
+Any agent may edit any crate (kickoff spec K15). A public contract change (`kit-core` public types, `--json`, `KIT.toml` / `kit.toml`, `kit.lock`, receipts) needs a CHANGELOG entry and a pinning test. The root `/AGENTS.md` and `docs/QUALITY.md` are the rules.
 
-**Never:** timers outside the event loop; edit frozen contracts as Grok/Codex.
+**Never:** timers outside the event loop.
 
 ## Commands
 

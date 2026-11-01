@@ -30,7 +30,7 @@ Workflow sketch: `.grok/workflows/kit-luna-storm.rhai` (local; `.grok` may be gi
 **Craft ladder (design | product first):** workflow `kit-craft-cycle` before TUI/motion slices. Git copy: `docs/dev/workflows/kit-craft-cycle.rhai`.  
 CEO brief template: `docs/dev/tasks/CEO-BRIEF-next.md`.
 
-Claude-grade coding practice (always): Karpathy surgical diffs and tests-as-success; addyosmani spec → plan → TDD → five-axis review; frozen contracts stay Claude-only; motion is live work (RUNNING/GATING spinner) plus the resting fox's tail wag in the empty Control Room (`kit-tui/src/fox.rs`), all on the one clock.
+Claude-grade coding practice (always): Karpathy surgical diffs and tests-as-success; addyosmani spec → plan → TDD → five-axis review; public contracts change only with a CHANGELOG entry and a test; motion is live work (RUNNING/GATING spinner) plus the resting fox's tail wag in the empty Control Room (`kit-tui/src/fox.rs`), all on the one clock.
 
 ## Engineering skills (always)
 
@@ -45,7 +45,7 @@ This repo installs **[addyosmani/agent-skills](https://github.com/addyosmani/age
 | Build | `incremental-implementation` | Thin slices; test after each; commit |
 | Build | `test-driven-development` | Reducer + insta snapshots for TUI |
 | Build | `frontend-ui-engineering` | TUI interaction language, a11y, fixed geometry |
-| Build | `api-and-interface-design` | Frozen contracts only; never edit contracts as Grok |
+| Build | `api-and-interface-design` | Public contracts: CHANGELOG entry and a pinning test |
 | Build | `doubt-driven-development` | PTY, gate semantics, cross-crate seams |
 | Verify | `completeness-qa` | After implement, before claiming done. Run `node skills/completeness-qa/scripts/inventory.mjs --root .` — stubs mean not done |
 | Verify | `debugging-and-error-recovery` | Repro → localize → fix → guard |
@@ -67,16 +67,12 @@ This repo installs **[addyosmani/agent-skills](https://github.com/addyosmani/age
 
 ---
 
-## Ownership (do not cross)
+## Who may edit what
 
-| Agent | Owns | Must not edit |
-|-------|------|----------------|
-| **Grok** | Entire `kit-tui` surface (F1–F6), B2-pty later | `kit-core` contracts, `kit-gate`, `kit-cli`, `event.rs` |
-| **Codex** | Engine: core port, agents, gate, CLI, CI | `kit-tui` |
-| **Claude** | Five contract files, merges, integration | Does not own screen code |
+Any agent may edit any crate (kickoff spec K15, `docs/superpowers/specs/2026-10-26-kit-kickoff.md`). Two rules guard the public surface:
 
-**Contract files (Claude-only):**  
-`kit-core` run/config/gate, `kit-agents` trait, `kit-tui/src/event.rs`
+- A change to a `kit-core` public type, a `--json` shape, `KIT.toml` / `kit.toml`, `kit.lock` or the receipt format needs a `CHANGELOG.md` entry and a test that pins the new shape.
+- The bar for every change is [`docs/QUALITY.md`](docs/QUALITY.md): tests at the right layer, a snapshot for every screen change, CI green on all three operating systems.
 
 **TUI non-negotiables:**
 
@@ -84,8 +80,6 @@ This repo installs **[addyosmani/agent-skills](https://github.com/addyosmani/age
 - Hit-testing from the same ratatui rects the renderer drew (F6)
 - Navigation mutates `Screen` in the reducer; engine work is `Action`
 - Reduced motion: `NO_COLOR`, `KIT_MOTION=off`
-
-Reference architecture: `C:/Users/mzwin/Documents/fennec/crates/fennec-tui`
 
 ---
 

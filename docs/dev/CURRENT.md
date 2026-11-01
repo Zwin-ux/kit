@@ -1,14 +1,15 @@
 # Kit — current state
 
-**Date:** 2026-10-26
-**Released:** `2.0.0` (2026-09-27) on npm (`@mzwin/kit`, `latest`) and as a GitHub Release with installers. crates.io never got it: the release's `crates.io` job failed on the account's unverified email, so `cargo install kitctl` does not work yet.
-**Trunk:** the 2.0.x line. What changed since 2.0.0 is under `## Unreleased` in [`CHANGELOG.md`](../../CHANGELOG.md).
+**Date:** 2026-10-31
+**Released:** `2.0.0` (2026-09-27) on npm (`@mzwin/kit`, `latest`), on crates.io (`kitctl` and its four libraries; the `crates.io` job was re-run on 2026-10-26 after the account email was verified) and as a GitHub Release with installers.
+**Trunk:** the 2.0.x line. What changed since 2.0.0 is under `## Unreleased` in [`CHANGELOG.md`](../../CHANGELOG.md). M0-2…M0-6 are merged (PRs #39, #40); M0-7 (`v2.0.1`) waits on the owner's go.
 
 ## Current plan
 
 The kickoff spec of 2026-10-26 sets the M0 milestone (foundation fixes, then `v2.0.1`) and the owner decisions K1–K15:
-[`docs/superpowers/specs/2026-10-26-kit-kickoff.md`](https://github.com/Zwin-ux/kit/blob/docs/kit-kickoff-20261026/docs/superpowers/specs/2026-10-26-kit-kickoff.md) (branch `docs/kit-kickoff-20261026`).
+[`docs/superpowers/specs/2026-10-26-kit-kickoff.md`](../superpowers/specs/2026-10-26-kit-kickoff.md).
 The umbrella design is [`docs/superpowers/specs/2026-09-24-kit-v2-design.md`](../superpowers/specs/2026-09-24-kit-v2-design.md).
+The bar every change is held to: [`docs/QUALITY.md`](../QUALITY.md).
 
 ## Workspace
 
@@ -27,5 +28,7 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
+
+On Windows, a checkout in a deep folder can hit the 260-character path limit in `link.exe` (`LNK1104: cannot open file … build_script_build-….exe`). Build with a short target folder: `CARGO_TARGET_DIR=C:/kit-target cargo test --workspace`. `kit-gate`'s `gate_child_does_not_write_parent_cargo_target_dir` sets that variable itself, so run it without the override or trust CI for it.
 
 Releasing: [`RELEASING.md`](RELEASING.md).
