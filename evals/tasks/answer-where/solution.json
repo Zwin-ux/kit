@@ -1,0 +1,41 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Grep",
+   "args": {
+    "pattern": "function parseHeader"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "tool_call",
+   "id": "t1",
+   "name": "Write",
+   "args": {
+    "file_path": "ANSWER.txt",
+    "content": "src/net/headers.mjs\n"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

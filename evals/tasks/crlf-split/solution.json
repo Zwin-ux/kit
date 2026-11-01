@@ -1,0 +1,28 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/lines.mjs",
+    "old_string": "text.split('\\n')",
+    "new_string": "text.split(/\\r?\\n/)"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

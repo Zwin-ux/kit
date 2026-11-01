@@ -1,0 +1,27 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Write",
+   "args": {
+    "file_path": "src/tax.mjs",
+    "content": "export const TAX_RATE = 0.2;\n\nexport function withTax(x) {\n  return x * (1 + TAX_RATE);\n}\n\nexport function taxOf(x) {\n  return x * TAX_RATE;\n}\n"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

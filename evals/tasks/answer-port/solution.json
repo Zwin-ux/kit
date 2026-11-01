@@ -1,0 +1,41 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Read",
+   "args": {
+    "file_path": "src/server.mjs"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "tool_call",
+   "id": "t1",
+   "name": "Write",
+   "args": {
+    "file_path": "ANSWER.txt",
+    "content": "8080\n"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

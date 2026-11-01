@@ -1,0 +1,5 @@
+category = "crlf"
+expect = "pass"
+prompt = """
+countWords() in src/words.mjs counts extra words for text with Windows line endings. Fix it so 'a b\r\nc' is 3 words.
+"""

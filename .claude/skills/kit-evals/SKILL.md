@@ -5,8 +5,7 @@ description: Run, add to or report Kit's agent evals — the in-repo Kit suite (
 
 # Kit evals
 
-The plan is [`docs/PRD.md`](../../../docs/PRD.md) §13.3. Until `kit eval` lands (milestone A0.1), this skill
-describes the target; say so rather than pretending a suite exists.
+The plan is [`docs/PRD.md`](../../../docs/PRD.md) §13.3; the suite is [`evals/README.md`](../../../evals/README.md).
 
 ## The rule for numbers
 No number goes in the README, a PR description or a post without a committed result file in
@@ -14,15 +13,18 @@ No number goes in the README, a PR description or a post without a committed res
 run. Comparisons name the same model, date and task subset for both sides.
 
 ## Kit suite (`kit eval`)
-- 30 tasks in fixture repos under `evals/tasks/<id>/`, each with a `kit.toml` gate as the grader and a
-  `task.md` prompt. The gate decides pass/fail; no model grades a model.
-- Categories: failing test, feature plus test, refactor, Windows/CRLF bug, multi-file rename, read-only
-  question (exact-answer check), refusal (must end in a denied prompt).
-- `kit eval --model <id> --budget 5` runs them in worktrees, in parallel, and writes
-  `docs/evals/<date>-<model>.json`. In CI, `kit eval --scripted` uses the scripted provider and checks only
-  the harness.
-- Adding a task: it must fail on the fixture's base commit, pass with a reference patch, and run in under
-  2 minutes. Commit the reference patch under `evals/tasks/<id>/solution.patch`.
+- 33 tasks in `evals/tasks/<id>/`: `files/` (the fixture repo, with a `kit.toml` gate that is the grader
+  and a `[gate.scope]` that denies the check files), `task.toml` (`category`, `expect`, `prompt`) and
+  `solution.json` (the reference solution as scripted tool calls).
+- `kit eval --baseline` (no agent: every gate must fail) and `kit eval --scripted` (every reference
+  solution must pass through `kit run --agent kit`) run in CI on three OSes. Run both after adding or
+  changing a task.
+- A model run: `kit eval --model <id> --budget 0.50 --out docs/evals/<date>-<model>.json`. It costs money:
+  the owner's call. Set `KIT_HOME` to a scratch folder when testing locally so runs stay out of `~/.kit`.
+- Adding a task: write the fixture, prompt and solution; the gate must fail on the fixture, pass with the
+  solution, and finish in under 2 minutes. A reference solution that only works with a blanket
+  replace (`replace_all` over a common word) is a bug: real agents make that mistake, and the gate should
+  catch it.
 
 ## External benchmarks (manual or weekly, always budget-capped)
 - **Terminal-Bench:** Harbor (Apache-2.0). `uv tool install 'harbor[modal]'`, run the oracle agent first,

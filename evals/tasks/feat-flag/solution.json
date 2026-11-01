@@ -1,0 +1,28 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/cli.mjs",
+    "old_string": "  return args.filter((a) => !a.startsWith('--')).join(' ');",
+    "new_string": "  const text = args.filter((a) => !a.startsWith('--')).join(' ');\n  return args.includes('--upper') ? text.toUpperCase() : text;"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

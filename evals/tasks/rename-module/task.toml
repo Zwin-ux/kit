@@ -1,0 +1,5 @@
+category = "rename"
+expect = "pass"
+prompt = """
+Rename src/users.mjs to src/accounts.mjs and update every import. Nothing should import users.mjs afterwards.
+"""

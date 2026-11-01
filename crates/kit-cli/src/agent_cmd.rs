@@ -29,6 +29,7 @@ pub fn provider(opts: &AgentOpts, sect: &AgentSection) -> Result<(Arc<dyn Provid
         .provider
         .clone()
         .or_else(|| sect.provider.clone())
+        .or_else(|| env("KIT_PROVIDER"))
         .unwrap_or_else(|| {
             if env("ANTHROPIC_API_KEY").is_some() {
                 "anthropic".into()
@@ -76,7 +77,18 @@ pub fn provider(opts: &AgentOpts, sect: &AgentSection) -> Result<(Arc<dyn Provid
                 model,
             ))
         }
-        other => bail!("unknown provider `{other}` (anthropic or openai-compatible)"),
+        // Replays a script of replies: `kit eval --scripted` and tests, no model.
+        "scripted" => {
+            let Some(path) = env("KIT_SCRIPT") else {
+                bail!("the scripted provider replays KIT_SCRIPT=<file>; set it");
+            };
+            let json =
+                std::fs::read_to_string(&path).with_context(|| format!("cannot read {path}"))?;
+            let script = kit_providers::ScriptedProvider::from_json(&json)
+                .with_context(|| format!("{path} is not a valid script"))?;
+            Ok((Arc::new(script), model.unwrap_or_else(|| "scripted".into())))
+        }
+        other => bail!("unknown provider `{other}` (anthropic, openai-compatible or scripted)"),
     }
 }
 
@@ -187,7 +199,10 @@ pub async fn cmd_prompt(task: &str, opts: &AgentOpts, json: bool) -> Result<()> 
     let cfg = kit_loop::Config {
         model: model.clone(),
         max_turns: opts.max_turns.or(sect.max_turns).unwrap_or(50),
-        budget_usd: opts.budget.or(sect.budget_usd),
+        budget_usd: opts
+            .budget
+            .or(sect.budget_usd)
+            .or_else(|| std::env::var("KIT_BUDGET_USD").ok()?.parse().ok()),
         prices: prices()?,
         text_protocol: opts.text,
         ..kit_loop::Config::default()

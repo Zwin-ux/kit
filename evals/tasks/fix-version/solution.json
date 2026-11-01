@@ -1,0 +1,28 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/version.mjs",
+    "old_string": "  return a < b ? -1 : a > b ? 1 : 0;",
+    "new_string": "  const x = a.split('.').map(Number);\n  const y = b.split('.').map(Number);\n  for (let i = 0; i < Math.max(x.length, y.length); i++) {\n    const d = (x[i] ?? 0) - (y[i] ?? 0);\n    if (d) return Math.sign(d);\n  }\n  return 0;"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

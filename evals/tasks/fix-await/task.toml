@@ -1,0 +1,5 @@
+category = "fix"
+expect = "pass"
+prompt = """
+loadAll() returns promises instead of values. Fix src/load.mjs so it resolves to the loaded values.
+"""

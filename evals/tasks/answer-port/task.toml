@@ -1,0 +1,5 @@
+category = "question"
+expect = "pass"
+prompt = """
+What port does src/server.mjs listen on when PORT is not set? Write only the number to ANSWER.txt.
+"""

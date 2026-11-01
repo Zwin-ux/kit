@@ -1,0 +1,28 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/email.mjs",
+    "old_string": "/^[a-z0-9.]+@",
+    "new_string": "/^[a-z0-9.+]+@"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

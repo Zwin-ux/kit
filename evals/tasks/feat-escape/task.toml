@@ -1,0 +1,5 @@
+category = "feature"
+expect = "pass"
+prompt = """
+Implement escapeHtml(s) in src/html.mjs: replace & < > " and ' with their HTML entities.
+"""

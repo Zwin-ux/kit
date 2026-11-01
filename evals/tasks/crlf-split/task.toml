@@ -1,0 +1,5 @@
+category = "crlf"
+expect = "pass"
+prompt = """
+parseLines() in src/lines.mjs leaves a trailing \r on each line when the input uses Windows line endings. Fix it so CRLF and LF input give the same lines.
+"""

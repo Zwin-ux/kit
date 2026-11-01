@@ -1,0 +1,3 @@
+# Eval fixtures are stored byte for byte: the CRLF tasks need their CRLF files
+# on every OS, whatever core.autocrlf says.
+evals/tasks/**/files/** -text

@@ -21,6 +21,7 @@ kit-gate.workspace = true
 kit-tui.workspace = true
 kit-loop.workspace = true
 kit-providers.workspace = true
+futures.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 clap_complete.workspace = true

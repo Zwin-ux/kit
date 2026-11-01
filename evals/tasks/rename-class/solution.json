@@ -1,0 +1,60 @@
+[
+ [
+  {
+   "type": "tool_call",
+   "id": "t0",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/cart.mjs",
+    "old_string": "export class Cart {",
+    "new_string": "export class Basket {"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "tool_call",
+   "id": "t1",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/shop.mjs",
+    "old_string": "import { Cart }",
+    "new_string": "import { Basket }"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "tool_call",
+   "id": "t2",
+   "name": "Edit",
+   "args": {
+    "file_path": "src/shop.mjs",
+    "old_string": "new Cart()",
+    "new_string": "new Basket()"
+   }
+  },
+  {
+   "type": "stop",
+   "reason": "tool_use"
+  }
+ ],
+ [
+  {
+   "type": "text_delta",
+   "text": "Done."
+  },
+  {
+   "type": "stop",
+   "reason": "end_turn"
+  }
+ ]
+]

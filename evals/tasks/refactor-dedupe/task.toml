@@ -1,0 +1,5 @@
+category = "refactor"
+expect = "pass"
+prompt = """
+src/users.mjs repeats the same email check in two functions. Pull it into one validEmail(s) function used by both. Behaviour must not change.
+"""

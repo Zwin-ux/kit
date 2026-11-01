@@ -1,0 +1,5 @@
+category = "fix"
+expect = "pass"
+prompt = """
+The tests in check.mjs fail: add() returns the wrong result. Fix src/math.mjs.
+"""

@@ -1,0 +1,5 @@
+category = "fix"
+expect = "pass"
+prompt = """
+The integration test in tests/mean.rs fails: mean() divides by the wrong count and panics on an empty slice (it should return None). Fix src/lib.rs.
+"""

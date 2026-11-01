@@ -1,0 +1,5 @@
+category = "question"
+expect = "pass"
+prompt = """
+Which file defines the function parseHeader? Write only its path, relative to the repo root with forward slashes, to ANSWER.txt.
+"""

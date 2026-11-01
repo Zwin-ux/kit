@@ -1,0 +1,5 @@
+category = "feature"
+expect = "pass"
+prompt = """
+Implement Reverse(s string) string in reverse.go so it reverses by runes (Unicode-safe). reverse_test.go has the test.
+"""

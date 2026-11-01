@@ -1,0 +1,5 @@
+category = "refactor"
+expect = "pass"
+prompt = """
+The tax rate 0.2 appears as a magic number in src/tax.mjs. Export it as TAX_RATE and use the constant. Behaviour must not change.
+"""

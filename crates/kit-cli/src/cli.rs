@@ -180,6 +180,14 @@ pub enum Command {
     /// List runs, or show one run's proof
     Receipt(ReceiptArgs),
 
+    /// Run Kit's eval suite: each task is a real `kit run --agent kit`, graded by its own gate
+    #[command(after_help = "Run from the Kit repo (tasks live in evals/tasks).
+
+Example:
+  kit eval --scripted                         check every task with its reference solution, no model
+  kit eval --model claude-sonnet-5-5 --budget 0.50 --out docs/evals/$(date +%F)-sonnet.json")]
+    Eval(EvalArgs),
+
     /// Check which agents are ready and whether this repo has a gate
     #[command(
         after_help = "Checks every kit installed for all your projects and in this repo, so it has no --global.\n\nExample:\n  kit doctor\n  kit doctor --start-mcp"
@@ -252,6 +260,49 @@ impl RunArgs {
             .or(self.task_flag.as_deref())
             .unwrap_or_default()
     }
+}
+
+#[derive(Debug, Args)]
+pub struct EvalArgs {
+    /// Folder of tasks
+    #[arg(long, value_name = "DIR", default_value = "evals/tasks")]
+    pub tasks: PathBuf,
+
+    /// Only tasks whose id contains this
+    #[arg(long, value_name = "TEXT")]
+    pub filter: Option<String>,
+
+    /// Replay each task's reference solution instead of calling a model
+    #[arg(long, conflicts_with_all = ["model", "provider", "base_url"])]
+    pub scripted: bool,
+
+    /// No agent: check that each task's gate fails on its untouched fixture
+    #[arg(long, conflicts_with_all = ["scripted", "model", "provider", "base_url"])]
+    pub baseline: bool,
+
+    /// Model id (else [agent] model in ~/.kit/config.toml)
+    #[arg(long, value_name = "ID")]
+    pub model: Option<String>,
+
+    /// anthropic or openai-compatible
+    #[arg(long, value_name = "NAME")]
+    pub provider: Option<String>,
+
+    /// Server for openai-compatible, ending in /v1
+    #[arg(long, value_name = "URL")]
+    pub base_url: Option<String>,
+
+    /// Budget per task, in dollars
+    #[arg(long, value_name = "USD")]
+    pub budget: Option<f64>,
+
+    /// Tasks run at the same time
+    #[arg(long, value_name = "N", default_value_t = 4)]
+    pub jobs: usize,
+
+    /// Also write the report here (e.g. docs/evals/<date>-<model>.json)
+    #[arg(long, value_name = "FILE")]
+    pub out: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
