@@ -1,0 +1,15 @@
+---
+source: crates/kit-tui/src/session/view.rs
+expression: working(60)
+---
+  you › the login test fails on Windows
+  kit › Reading the test first.
+    ▸ Read   tests/login.rs                      3 lines  #1
+    ▸ Edit   crates/auth/src/token.rs             edited  #2
+────────────────────────────────────────────────────────────
+
+  ⠋ running Bash cargo test -p auth login · 4s
+┌──────────────────────────────────────────────────────────┐
+│› Esc to interrupt                                        │
+└──────────────────────────────────────────────────────────┘
+  claude-sonnet-5-5 · 18.2k ctx · ≈$0.041

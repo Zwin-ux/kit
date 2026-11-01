@@ -1,0 +1,11 @@
+---
+source: crates/kit-tui/src/session/view.rs
+expression: "frame(&mut Session::new(status()), 80, now)"
+---
+────────────────────────────────────────────────────────────────────────────────
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│› Ask Kit to do something · ? for help                                        │
+└──────────────────────────────────────────────────────────────────────────────┘
+  claude-sonnet-5-5 · 18.2k ctx · ≈$0.041 · workspace unsandboxed · main

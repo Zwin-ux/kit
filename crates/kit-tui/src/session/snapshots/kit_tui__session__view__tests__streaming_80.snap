@@ -1,0 +1,14 @@
+---
+source: crates/kit-tui/src/session/view.rs
+expression: "frame(&mut s, 80, now)"
+---
+  you › why is CI red
+    ✗ Bash                              error[E0425]: cannot find value `to…  #1
+  ! rate limited, retrying in 8s
+────────────────────────────────────────────────────────────────────────────────
+  kit › The build fails because a variable is misspelled in src/lib.rs and
+  ⠋ thinking · 0s
+┌──────────────────────────────────────────────────────────────────────────────┐
+│› Esc to interrupt                                                            │
+└──────────────────────────────────────────────────────────────────────────────┘
+  claude-sonnet-5-5 · 18.2k ctx · ≈$0.041 · workspace unsandboxed · main

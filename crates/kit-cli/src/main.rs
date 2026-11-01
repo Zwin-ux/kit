@@ -4,6 +4,7 @@
 //! headless path: worktree → dry-run stream → gate → receipt.
 
 mod agent_cmd;
+mod chat_cmd;
 mod cli;
 mod engine;
 mod eval;
@@ -92,6 +93,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
             kits::setup::cmd_setup(cli::SetupArgs::default(), json).await
         }
         None => launch_tui(cli.demo).await,
+        Some(Command::Chat(args)) => chat_cmd::cmd_chat(&args.into()).await,
         Some(Command::Setup(args)) => kits::setup::cmd_setup(args, json).await,
         Some(Command::Show { kit }) => kits::cmd_show(kit.as_deref(), json),
         Some(Command::Add(args)) => kits::install::cmd_add(args, json),

@@ -15,6 +15,7 @@ name = "kit"
 path = "src/main.rs"
 
 [dependencies]
+async-trait.workspace = true
 kit-core.workspace = true
 kit-agents.workspace = true
 kit-gate.workspace = true
@@ -37,5 +38,4 @@ crossterm.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
-async-trait.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
