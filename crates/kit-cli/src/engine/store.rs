@@ -346,6 +346,7 @@ mod tests {
             diff: String::new(),
             gate: None,
             output_truncated: false,
+            agent: None,
         };
         write_receipt(&receipt, "hello\n", None).unwrap();
 
@@ -415,6 +416,7 @@ mod tests {
             diff: diff.into(),
             gate: None,
             output_truncated: false,
+            agent: None,
         }
     }
 

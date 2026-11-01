@@ -2007,6 +2007,7 @@ fn state_rank(state: RunState) -> u8 {
         RunState::Gating => 1,
         RunState::Fail => 2,
         RunState::Error => 3,
+        RunState::Budget => 3,
         RunState::Queued => 4,
         RunState::Unconfigured => 5,
         RunState::Pass => 6,
@@ -2071,6 +2072,7 @@ pub fn format_state_label(run: &RunRow, clock: &Clock, motion: bool) -> String {
         RunState::Unconfigured => "DONE",
         RunState::Killed => "KILLED",
         RunState::Error => "ERROR",
+        RunState::Budget => "BUDGET",
     };
     let elapsed = run.elapsed_label(clock);
     let live = matches!(run.state, RunState::Running | RunState::Gating);

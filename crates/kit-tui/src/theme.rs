@@ -195,6 +195,7 @@ impl Theme {
             RunState::Unconfigured => self.warn,
             RunState::Killed => self.muted,
             RunState::Error => self.danger,
+            RunState::Budget => self.warn,
         };
         Style::default().fg(fg).add_modifier(Modifier::BOLD)
     }

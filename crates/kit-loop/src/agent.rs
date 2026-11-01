@@ -188,6 +188,8 @@ pub struct Agent {
     pub messages: Vec<Message>,
     /// Tokens and cost so far.
     pub meter: Meter,
+    /// Model replies so far, with or without usage reported.
+    pub replies: u32,
     log: Option<SessionLog>,
     warned: bool,
 }
@@ -207,6 +209,7 @@ impl Agent {
             cfg,
             messages: vec![],
             meter: Meter::default(),
+            replies: 0,
             log: None,
             warned: false,
         }
@@ -381,6 +384,7 @@ impl Agent {
         tx: &mpsc::Sender<AgentEvent>,
     ) -> Result<(String, Vec<Call>, StopReason), ProviderError> {
         let mut rx = self.provider.stream(req).await?;
+        self.replies += 1;
         let (mut text, mut calls, mut stop) = (String::new(), Vec::new(), StopReason::EndTurn);
         while let Some(ev) = rx.recv().await {
             match ev? {

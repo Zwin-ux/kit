@@ -228,7 +228,7 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
     let code = match result.state {
         RunState::Pass => 0,
         RunState::Unconfigured if allow_vacuous || dry => 0,
-        RunState::Fail | RunState::Unconfigured => 1,
+        RunState::Fail | RunState::Unconfigured | RunState::Budget => 1,
         _ => 2,
     };
     let exit_nonzero = code != 0;
@@ -242,6 +242,7 @@ async fn cmd_run(args: cli::RunArgs, json: bool) -> Result<()> {
             "worktreeRemoved": result.worktree_removed,
             "gatePassed": result.gate.as_ref().map(|g| g.passed),
             "gateVacuous": gate_vacuous,
+            "agent": engine::store::read_receipt(&result.id.0).ok().flatten().and_then(|r| r.agent),
         });
         let ok = !exit_nonzero;
         let envelope = json_envelope("run", ok, data, run_error);
@@ -401,6 +402,7 @@ impl RunSummary<'_> {
             RunState::Pass => "PASS",
             RunState::Fail => "FAIL",
             RunState::Killed => "KILLED",
+            RunState::Budget => "BUDGET",
             _ => "ERROR",
         }
     }
@@ -416,6 +418,9 @@ impl RunSummary<'_> {
             RunState::Pass if self.vacuous => "kit init, so the next run has checks to pass".into(),
             RunState::Pass if self.has_diff => format!("kit land {id}"),
             RunState::Pass => "nothing to land: the agent changed no files".into(),
+            RunState::Budget => format!(
+                "raise the budget (--budget or [agent] budget_usd), or see kit receipt show {id}"
+            ),
             _ => format!("kit receipt show {id} --output"),
         }
     }
@@ -647,6 +652,27 @@ fn cmd_receipt_show(id: &str, show_output: bool, json: bool) -> Result<()> {
             println!("  took      {took}");
         }
         println!("  agent     {}", receipt.spec.agent.label());
+        if let Some(a) = &receipt.agent {
+            let t = &a.tokens;
+            let cost = match a.cost_usd {
+                Some(c) => format!("{}${c:.3}", if a.cost_estimated { "≈" } else { "" }),
+                None => "$?".into(),
+            };
+            println!(
+                "  model     {} ({}, {}) · {} replies · {} in ({} cached) / {} out · {cost} · {}",
+                a.model,
+                a.provider,
+                a.profile,
+                a.replies,
+                t.input,
+                t.cached_input,
+                t.output,
+                a.outcome.replace('_', " ")
+            );
+            for d in &a.denials {
+                println!("  denied    {d}");
+            }
+        }
         println!("  repo      {}", kits::plan::tilde(&receipt.spec.repo));
         println!(
             "  task      {}",
