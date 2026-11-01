@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-31
 **Released:** `2.0.0` (2026-09-27) on npm (`@mzwin/kit`, `latest`), on crates.io (`kitctl` and its four libraries; the `crates.io` job was re-run on 2026-10-26 after the account email was verified) and as a GitHub Release with installers.
-**Trunk:** the 2.0.x line. What changed since 2.0.0 is under `## Unreleased` in [`CHANGELOG.md`](../../CHANGELOG.md). M0-2…M0-6 are merged (PRs #39, #40); M0-7 (`v2.0.1`) waits on the owner's go.
+**Trunk:** the 2.0.x line. What `v2.0.1` carries is its section in [`CHANGELOG.md`](../../CHANGELOG.md). M0-2…M0-6 are merged (PRs #39, #40); M0-7: the `v2.0.1` bump PR is open; the owner pushes the tag.
 
 ## Current plan
 
@@ -16,7 +16,7 @@ Next: [`docs/PRD.md`](../PRD.md) (approved 2026-10-31): Kit's own agent loop, th
 
 - Five crates in `crates/`, all one version: `kitctl` (`kit-cli`, the `kit` binary), `kitctl-core`, `kitctl-agents`, `kitctl-gate`, `kitctl-tui`.
 - `kit.toml` at the root is Kit's own gate: fmt, clippy `-D warnings`, workspace tests, plus `[gate.scope]`.
-- The legacy TypeScript 0.1 tree (`packages/`, `apps/`, `catalog/`, the Node `CI` workflow) is still on trunk; its removal waits on owner decision K10.
+- The legacy TypeScript 0.1 tree (`packages/`, `apps/`, `catalog/`, the Node `CI` and keep-alive workflows, the root pnpm files) was removed in A0.0 (K10, PRD D8). It is kept at tag `legacy-0.1-final`.
 
 ## How to run and test
 

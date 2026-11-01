@@ -101,7 +101,7 @@ cargo test --workspace
 Living status: `docs/dev/CURRENT.md`
 
 Rust workspace: `crates/kit-{core,agents,gate,tui,cli}`  
-Legacy Node packages still exist under `packages/` (0.1.x); Kit 2.x is the Rust binary.
+The Kit 0.1 TypeScript tree was removed from trunk in A0.0; it is kept at tag `legacy-0.1-final`.
 
 ---
 

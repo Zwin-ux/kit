@@ -315,7 +315,7 @@ Architecture: [`docs/dev/CURRENT.md`](docs/dev/CURRENT.md).
 <summary>Legacy: Kit 0.1.x npm workbench</summary>
 
 The earlier `npm i -g @mzwin/kit` (0.1.x) was a Node skill workbench. It is
-kept in `packages/` for history; Kit is now the Rust binary above. See
+kept at the git tag [`legacy-0.1-final`](https://github.com/Zwin-ux/kit/tree/legacy-0.1-final) for history; Kit is now the Rust binary above. See
 [Workbench architecture](docs/dev/WORKBENCH_ARCHITECTURE.md).
 
 </details>

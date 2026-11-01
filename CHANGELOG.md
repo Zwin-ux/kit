@@ -4,6 +4,14 @@ All notable changes to Kit. Versions follow [Semantic Versioning](https://semver
 
 ## Unreleased
 
+### Removed
+- The Kit 0.1 TypeScript workbench (`packages/`, `apps/`, `catalog/`, its Node CI and keep-alive workflows, and the root pnpm files) is gone from the repository. It never shipped in 2.x; the last commit with it is the tag `legacy-0.1-final`. The `kit` binary, npm launcher and installers are unchanged
+
+### Changed
+- Every dependency is now checked for licence, RustSec advisories and source (`cargo deny`), and the cold-start budget is measured on macOS as well as Linux and Windows
+
+## 2.0.1 — Proof holds
+
 ### Fixed
 - In `[gate.scope]` patterns, a `**/` that starts a folder name now matches zero or more folders, so `deny = ["**/.env"]` also catches a `.env` at the repo root, and `src/**/*.rs` matches `src/a.rs`. Before, root files passed a deny rule and `kit land` accepted them
 - The `[gate.scope]` check now covers everything the run changed since its base commit, including commits the agent made, and both sides of a rename. Before, a denied path the agent committed passed the gate and `kit land` accepted it
