@@ -776,7 +776,8 @@ pub fn parse_agent(s: &str) -> Result<AgentKind> {
         "claude" => Ok(AgentKind::Claude),
         "grok" => Ok(AgentKind::Grok),
         "ollama" => Ok(AgentKind::Ollama),
-        other => anyhow::bail!("unknown agent '{other}' (codex|claude|grok|ollama)"),
+        "kit" => Ok(AgentKind::Kit),
+        other => anyhow::bail!("unknown agent '{other}' (codex|claude|grok|ollama|kit)"),
     }
 }
 

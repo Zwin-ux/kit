@@ -109,12 +109,29 @@ const OLLAMA: Brand = Brand {
 };
 
 /// The brand for an agent.
+/// Kit's own agent: an ASCII mark, so it is two cells in every locale.
+const KIT: Brand = Brand {
+    name: "Kit",
+    mark: "k ",
+    rgb: (0xff, 0x5a, 0x1f),
+    ansi: Color::LightRed,
+    tile: Tile {
+        text: " k ",
+        fg: (0xff, 0xf6, 0xf0),
+        bg: [(0xff, 0x5a, 0x1f); 3],
+        ansi: (Color::White, Color::LightRed),
+        on_light: Some(((0xff, 0xf6, 0xf0), (0xe0, 0x48, 0x14))),
+    },
+    logo: None,
+};
+
 pub fn of(kind: AgentKind) -> &'static Brand {
     match kind {
         AgentKind::Claude => &CLAUDE,
         AgentKind::Codex => &CODEX,
         AgentKind::Grok => &GROK,
         AgentKind::Ollama => &OLLAMA,
+        AgentKind::Kit => &KIT,
     }
 }
 
@@ -125,6 +142,7 @@ pub fn by_id(id: &str) -> Option<&'static Brand> {
         AgentKind::Codex,
         AgentKind::Grok,
         AgentKind::Ollama,
+        AgentKind::Kit,
     ]
     .into_iter()
     .find(|k| k.label() == id)
@@ -304,6 +322,7 @@ mod tests {
             AgentKind::Codex,
             AgentKind::Grok,
             AgentKind::Ollama,
+            AgentKind::Kit,
         ] {
             assert_eq!(of(kind).mark.chars().count(), 2, "{kind:?}");
             assert_eq!(of(kind).tile.text.chars().count(), 3, "{kind:?}");

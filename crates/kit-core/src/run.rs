@@ -39,6 +39,8 @@ pub enum AgentKind {
     Claude,
     Grok,
     Ollama,
+    /// Kit's own agent (`kit -p`), run as a child process.
+    Kit,
 }
 
 impl AgentKind {
@@ -49,6 +51,7 @@ impl AgentKind {
             Self::Claude => "claude",
             Self::Grok => "grok",
             Self::Ollama => "ollama",
+            Self::Kit => "kit",
         }
     }
 
@@ -59,6 +62,7 @@ impl AgentKind {
             Self::Claude => "claude",
             Self::Grok => "grok",
             Self::Ollama => "ollama",
+            Self::Kit => "kit",
         }
     }
 }

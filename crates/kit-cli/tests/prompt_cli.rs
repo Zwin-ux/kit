@@ -220,3 +220,76 @@ fn setup_errors_say_how_to_fix_them() {
     let (code, _, err) = kit(dir.path(), home.path(), &["--model", "m"]);
     assert_eq!(code, 2, "agent flags need -p: {err}");
 }
+
+fn git(dir: &Path, args: &[&str]) {
+    let ok = Command::new("git")
+        .args([
+            "-c",
+            "user.name=kit",
+            "-c",
+            "user.email=kit@test",
+            "-c",
+            "commit.gpgsign=false",
+        ])
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .status()
+        .unwrap();
+    assert!(ok.success(), "git {args:?}");
+}
+
+#[test]
+fn kit_run_with_the_kit_agent_is_gated_and_receipted() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    std::fs::write(repo.join("README.md"), "app\n").unwrap();
+    std::fs::write(repo.join("kit.toml"), "[gate]\ntest = 'git --version'\n").unwrap();
+    git(repo, &["init", "-q", "-b", "main"]);
+    git(repo, &["config", "core.autocrlf", "false"]);
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "init"]);
+    let home = tempfile::tempdir().unwrap();
+    let (url, server) = serve(vec![
+        tool_call(
+            "Write",
+            json!({ "file_path": "a.txt", "content": "from kit\n" }),
+        ),
+        say("Done."),
+    ]);
+    // The run's child `kit -p` finds its model through the environment.
+    let out = Command::new(env!("CARGO_BIN_EXE_kit"))
+        .args(["run", "--agent", "kit", "--json", "--task", "make a.txt"])
+        .current_dir(repo)
+        .env("KIT_HOME", home.path())
+        .env("KIT_BASE_URL", &url)
+        .env("KIT_MODEL", "m")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .unwrap();
+    let env: Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+        panic!(
+            "{e}: {}\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    });
+    assert_eq!(
+        env["data"]["state"],
+        "pass",
+        "{env}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let receipt = Path::new(env["data"]["receiptDir"].as_str().unwrap());
+    let diff = std::fs::read_to_string(receipt.join("diff.patch")).unwrap();
+    assert!(
+        diff.contains("diff --git a/a.txt b/a.txt") && diff.contains("+from kit"),
+        "{diff}"
+    );
+    assert!(
+        !repo.join("a.txt").exists(),
+        "the run worked in its own worktree"
+    );
+    let bodies = server.join().unwrap();
+    assert_eq!(bodies.len(), 2);
+}
