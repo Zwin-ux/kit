@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Agents Kit sets up: claude, codex, grok.
@@ -19,6 +19,48 @@ pub struct Config {
     /// "global" or "repo".
     #[serde(default)]
     pub scope: Option<String>,
+    /// Kit's own agent: provider, model, profile, budget (written by hand).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentSection>,
+    /// Permission rules for Kit's own agent, in Claude Code's syntax.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<PermissionsSection>,
+}
+
+/// `[agent]` in `~/.kit/config.toml`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentSection {
+    /// `anthropic` or `openai-compatible`.
+    pub provider: Option<String>,
+    /// Model id.
+    pub model: Option<String>,
+    /// Base URL for `openai-compatible` (ends in `/v1`).
+    pub base_url: Option<String>,
+    /// `read`, `workspace` or `full`.
+    pub profile: Option<String>,
+    /// Stop a session at this many dollars.
+    pub budget_usd: Option<f64>,
+    /// Replies per run.
+    pub max_turns: Option<u32>,
+    /// Extra environment variables tools may see, by name.
+    #[serde(default)]
+    pub env: Vec<String>,
+}
+
+/// `[permissions]` in `~/.kit/config.toml`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PermissionsSection {
+    /// Rules that allow without asking.
+    #[serde(default)]
+    pub allow: Vec<String>,
+    /// Rules that always ask.
+    #[serde(default)]
+    pub ask: Vec<String>,
+    /// Rules that refuse.
+    #[serde(default)]
+    pub deny: Vec<String>,
 }
 
 pub fn path() -> PathBuf {

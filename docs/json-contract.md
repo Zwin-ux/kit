@@ -83,6 +83,26 @@ Exit code: `0` landed or already landed. `2` refused (run not `pass`, gate UNCON
 
 The run dir also holds `base.txt`: the commit the run's worktree started at (one line). `diff.patch` is binary-safe (`git diff --binary`) and holds all changes since that commit, new files and agent commits included.
 
+## `kit -p "<task>" --json` → `data`
+
+Kit's own agent, once, in the current repo (`command`: `prompt`).
+
+| Field | Type |
+|-------|------|
+| `outcome` | `done`, `budget`, `max_turns`, `interrupted`, `looping`, `refused`, or `{"error": "<message>"}` |
+| `text` | string: everything the model wrote, concatenated |
+| `provider` | `anthropic` or `openai-compatible` |
+| `model` | string |
+| `profile` | `read`, `workspace` or `full` |
+| `replies` | number: model replies in the session |
+| `tokens` | object: `input` (uncached), `cached_input`, `cache_write`, `output`, `reasoning`, `cost_usd` |
+| `costUsd` | number \| null: null when any reply's model has no price (Kit never guesses one) |
+| `costEstimated` | bool: some cost was computed from a price table rather than reported by the provider |
+| `session` | path: the session's JSONL file under `~/.kit/sessions/` |
+
+`ok` is true only for `done`; `error` then holds the outcome in words.  
+Exit code: `0` done. `1` budget, turn cap, interrupt, loop or refusal. `2` provider error or a setup error (no key, no model).
+
 ## Errors
 
 When any `--json` command fails before it has a result (not a git repo, agent not installed, invalid `kit.toml`, unknown command), stdout still holds exactly one envelope: `ok: false`, `data: null`, `error` set. Exit code `2`.
