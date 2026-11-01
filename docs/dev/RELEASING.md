@@ -90,7 +90,7 @@ The job publishes the platform packages first, then the launcher.
 
 **Registry delay.** A new package name can return 404 from `registry.npmjs.org` for about 5 minutes after `npm publish` succeeds. During the 1.0.0-alpha.1 publish, users in that window got the launcher without a platform binary, and the workflow was green. The job now waits until every platform package document returns 200 and `npm view <pkg>@<version> version --prefer-online` prints the version. Then it publishes the launcher and waits for it the same way. Each wait stops after 15 minutes and fails the run.
 
-Job `npm-check` runs after `publish` (not in a dry run). On Ubuntu, macOS 14 and Windows it installs `@mzwin/kit@<version>` from the registry with an empty npm cache, then checks that `kit --version` prints `kit <version>` and that `kit doctor --json` has `ok: true` and `data.install == "npm"`. On Windows it also runs `kit.cmd`. If this job fails, the packages are live but broken: deprecate the version (`npm deprecate`) and publish a fix.
+Job `npm-check` runs after `publish` (not in a dry run). On Ubuntu, macOS 15 and Windows it installs `@mzwin/kit@<version>` from the registry with an empty npm cache, then checks that `kit --version` prints `kit <version>` and that `kit doctor --json` has `ok: true` and `data.install == "npm"`. On Windows it also runs `kit.cmd`. If this job fails, the packages are live but broken: deprecate the version (`npm deprecate`) and publish a fix.
 
 Dist-tags: `1.0.0-alpha.N` goes to `alpha`, `-beta.N` to `beta`, `-rc.N` to `rc`. Only a plain version (`1.0.0`) moves `latest`. Until then, `npm i -g @mzwin/kit` installs 0.1.x.
 
