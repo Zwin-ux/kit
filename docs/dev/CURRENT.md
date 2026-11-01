@@ -1,8 +1,8 @@
 # Kit — current state
 
-**Date:** 2026-10-31
+**Date:** 2026-11-01
 **Released:** `2.0.0` (2026-09-27) on npm (`@mzwin/kit`, `latest`), on crates.io (`kitctl` and its four libraries; the `crates.io` job was re-run on 2026-10-26 after the account email was verified) and as a GitHub Release with installers.
-**Trunk:** the 2.0.x line. What `v2.0.1` carries is its section in [`CHANGELOG.md`](../../CHANGELOG.md). M0-2…M0-6 are merged (PRs #39, #40); M0-7: the `v2.0.1` bump PR is open; the owner pushes the tag.
+**Trunk:** `2.1.0`, Kit's own agent (A0.1 and the first A0.2 slice). `2.0.1` was never tagged; its fixes ship in 2.1.0. What `v2.1.0` carries is its section in [`CHANGELOG.md`](../../CHANGELOG.md). It adds two crates to crates.io, `kitctl-providers` and `kitctl-loop`.
 
 ## Current plan
 

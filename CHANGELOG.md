@@ -4,6 +4,8 @@ All notable changes to Kit. Versions follow [Semantic Versioning](https://semver
 
 ## Unreleased
 
+## 2.1.0 — Kit's own agent
+
 ### Added
 - `kit -p "<task>"` runs Kit's own coding agent once in the current repo, with your own key or a local model: Anthropic (`ANTHROPIC_API_KEY`) or any OpenAI-compatible server (`--base-url`, default Ollama at `http://localhost:11434/v1`). It reads, edits, searches and runs commands in the repo; edits inside the repo need no approval, and anything that crosses a boundary (an edit outside the repo, a shell command that is not read-only, `git push`, a protected or secret path) is denied because nobody is there to ask. Flags: `--model`, `--provider`, `--base-url`, `--profile read|workspace|full`, `--budget <usd>`, `--max-turns`, `--text`. Model text goes to stdout, tool lines to stderr; `--json` returns the `prompt` envelope (`docs/json-contract.md`). Every session is logged to `~/.kit/sessions/`
 - `kit chat` opens a session with Kit's own agent in your terminal's scrollback. Finished output (your prompt, the model's text, one numbered card per tool call with its outcome) is printed once and never redrawn; only a six-row live region repaints: a spinner with what the agent is doing, inline approvals (`y` once, `a` always for this session, `n` deny) where `kit -p` would deny, the composer (`Enter` send, `Ctrl-J` newline, `Up` recalls), and a status bar with model, context, cost, profile and branch that drops fields from the right on narrow terminals. `Esc` interrupts a turn, `Ctrl-C` twice quits, `?` or `/help` lists keys. Same flags as `kit -p`
@@ -14,14 +16,6 @@ All notable changes to Kit. Versions follow [Semantic Versioning](https://semver
 - `~/.kit/config.toml` takes `[agent]` (provider, model, base_url, profile, budget_usd, max_turns, env) and `[permissions]` (allow, ask, deny rules in Claude Code's syntax). `kit setup` keeps both when it rewrites the file
 - Kit ships prices for Claude Fable 5.1, Opus 5.5 and Sonnet 5.5 (from Anthropic's pricing page, 2026-11-01), so their sessions show cost marked `≈`. Other models show `$?` until `~/.kit/prices.toml` names their price (USD per million tokens); Kit never guesses one
 
-### Removed
-- The Kit 0.1 TypeScript workbench (`packages/`, `apps/`, `catalog/`, its Node CI and keep-alive workflows, and the root pnpm files) is gone from the repository. It never shipped in 2.x; the last commit with it is the tag `legacy-0.1-final`. The `kit` binary, npm launcher and installers are unchanged
-
-### Changed
-- Every dependency is now checked for licence, RustSec advisories and source (`cargo deny`), and the cold-start budget is measured on macOS as well as Linux and Windows
-
-## 2.0.1 — Proof holds
-
 ### Fixed
 - In `[gate.scope]` patterns, a `**/` that starts a folder name now matches zero or more folders, so `deny = ["**/.env"]` also catches a `.env` at the repo root, and `src/**/*.rs` matches `src/a.rs`. Before, root files passed a deny rule and `kit land` accepted them
 - The `[gate.scope]` check now covers everything the run changed since its base commit, including commits the agent made, and both sides of a rename. Before, a denied path the agent committed passed the gate and `kit land` accepted it
@@ -31,8 +25,12 @@ All notable changes to Kit. Versions follow [Semantic Versioning](https://semver
 - Agent output no longer stops at the first line of invalid UTF-8. Invalid bytes show as `�`, a line longer than 64 KiB keeps its start and ends with `…[line truncated]`, and the agent keeps running. Before, the rest of the output was lost and the agent's next write hit a closed pipe
 
 ### Changed
+- Every dependency is now checked for licence, RustSec advisories and source (`cargo deny`), and the cold-start budget is measured on macOS as well as Linux and Windows
 - Kit is credited to its maker: `kit --help` ends with `Kit by Westside Web Studio (westsidewebstudio.com). © 2026 Westside Web Studio. MIT licence.`, the help panel (`?`) carries `Kit by Westside Web Studio` on its border, and `LICENSE` reads `Copyright (c) 2026 Westside Web Studio`. `kit --version` is unchanged (`kit X.Y.Z`)
 - Dependencies: `async-trait` 0.1.92 (Clippy on Rust 1.99), `lru` 0.18.5 (RUSTSEC-2026-0253) and `tokio` 1.54.1 (RUSTSEC-2026-0386). `cargo audit` is clean
+
+### Removed
+- The Kit 0.1 TypeScript workbench (`packages/`, `apps/`, `catalog/`, its Node CI and keep-alive workflows, and the root pnpm files) is gone from the repository. It never shipped in 2.x; the last commit with it is the tag `legacy-0.1-final`. The `kit` binary, npm launcher and installers are unchanged
 
 ## 2.0.0 — Kits
 
