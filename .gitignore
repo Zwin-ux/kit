@@ -41,6 +41,11 @@ pnpm-debug.log*
 /target/
 
 # Kit link output in the project (runtime, not source)
-/.claude/
+/.claude/*
+# Kit's own repo skills are source; anything kit add writes stays ignored.
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/kit-release/
+!/.claude/skills/kit-ci-triage/
 /.codex/
 /.grok/
