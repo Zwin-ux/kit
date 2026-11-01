@@ -29,6 +29,6 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-On Windows, a checkout in a deep folder can hit the 260-character path limit in `link.exe` (`LNK1104: cannot open file … build_script_build-….exe`). Build with a short target folder: `CARGO_TARGET_DIR=C:/kit-target cargo test --workspace`. Machines that set `NoDefaultCurrentDirectoryInExePath=1` (a Windows hardening) make `cmd` refuse a bare script name from the current folder: a `kit.toml` check that runs one needs `.\name.cmd`.
+On Windows, a checkout in a deep folder can hit the 260-character path limit in `link.exe` (`LNK1104: cannot open file … build_script_build-….exe`). Build with a short target folder: `CARGO_TARGET_DIR=C:/kit-target cargo test --workspace` in Git Bash, or `$env:CARGO_TARGET_DIR = 'C:\kit-target'; cargo test --workspace` in PowerShell. Machines that set `NoDefaultCurrentDirectoryInExePath=1` (a Windows hardening) make `cmd` refuse a bare script name from the current folder: a `kit.toml` check that runs one needs `.\name.cmd`.
 
 Releasing: [`RELEASING.md`](RELEASING.md).
