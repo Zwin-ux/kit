@@ -240,13 +240,17 @@ jobs:
       version: ${{ steps.publish.outputs.version }}
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # npm trusted publishing (OIDC) and provenance
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or newer; Node 22 ships npm 10.
+      - name: npm 11
+        run: npm install -g npm@11.6.2 && npm --version
 
       - uses: actions/download-artifact@v4
         with:
@@ -267,6 +271,9 @@ jobs:
       - name: Publish
         id: publish
         env:
+          # npm tries trusted publishing (OIDC, set per package on npmjs.com)
+          # first and falls back to this token. Remove the secret once every
+          # package has published through its trusted publisher.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && !inputs.publish }}
         run: |
