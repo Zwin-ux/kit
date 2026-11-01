@@ -1,0 +1,6 @@
+data: {"id":"o1","model":"llama3.1:8b","choices":[{"index":0,"delta":{"role":"assistant","content":"Fixed: "}}]}
+
+data: {"id":"o1","model":"llama3.1:8b","choices":[{"index":0,"delta":{"content":"the parser split on \n only."}}]}
+
+data: {"id":"o1","model":"llama3.1:8b","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
