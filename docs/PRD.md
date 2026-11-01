@@ -2,12 +2,12 @@
 
 - **Owner:** Mazen Zwin (Zwin-ux), Westside Web Studio
 - **Status:** **Approved by the owner, 2026-10-31, as written, including D1–D12 in §14.** Milestones start with A0.0.
-- **Base:** Kit `2.0.x` on `main`: kits, `kit run`, the gate, receipts, `kit land` and the Control Room. `v2.0.1` is in PR #42.
+- **Base:** Kit `2.0.x` on `main`: kits, `kit run`, the gate, receipts, `kit land` and the Control Room. `main` carries version `2.0.1`, not yet tagged.
 - **Builds on:**
   - [`docs/superpowers/specs/2026-09-24-kit-v2-design.md`](superpowers/specs/2026-09-24-kit-v2-design.md): the umbrella design (drivers, policy, event model).
   - [`docs/superpowers/specs/2026-10-26-kit-kickoff.md`](superpowers/specs/2026-10-26-kit-kickoff.md): M0 and decisions K1–K15.
-  - `docs/dev/DESIGN-HARNESS.md`: the ACP harness design, unmerged in PR #38.
-  - PR #37: the Claude Code mod draft.
+  - [`docs/dev/DESIGN-HARNESS.md`](dev/DESIGN-HARNESS.md): the ACP harness design (merged in #38, per D10).
+  - PR #37: the Claude Code mod draft, closed per D4.
   - [`docs/dev/DESIGN-tui.md`](dev/DESIGN-tui.md) and [`docs/QUALITY.md`](QUALITY.md).
 - **Research:** done 2026-10-31 from each tool's own docs, repos and issue trackers, then checked by an independent review.
   - Every external fact has a link.
