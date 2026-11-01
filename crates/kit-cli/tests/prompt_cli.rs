@@ -292,4 +292,77 @@ fn kit_run_with_the_kit_agent_is_gated_and_receipted() {
     );
     let bodies = server.join().unwrap();
     assert_eq!(bodies.len(), 2);
+    // Receipt v2: the agent's own account.
+    let agent = &env["data"]["agent"];
+    assert_eq!(
+        (agent["model"].as_str(), agent["provider"].as_str()),
+        (Some("m"), Some("openai-compatible")),
+        "{env}"
+    );
+    assert_eq!(
+        (agent["outcome"].as_str(), agent["replies"].as_u64()),
+        (Some("done"), Some(2))
+    );
+    let receipt: Value =
+        serde_json::from_str(&std::fs::read_to_string(receipt.join("receipt.json")).unwrap())
+            .unwrap();
+    assert_eq!(receipt["version"], 2);
+    assert_eq!(receipt["agent"]["profile"], "workspace");
+}
+
+#[test]
+fn a_session_that_runs_out_of_budget_is_a_budget_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    std::fs::write(repo.join("kit.toml"), "[gate]\ntest = 'git --version'\n").unwrap();
+    git(repo, &["init", "-q", "-b", "main"]);
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "init"]);
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(
+        home.path().join("config.toml"),
+        "[agent]\nbudget_usd = 0.5\n",
+    )
+    .unwrap();
+    std::fs::write(
+        home.path().join("prices.toml"),
+        "[models.m]\ninput = 1000.0\noutput = 1.0\n",
+    )
+    .unwrap();
+    // One reply that costs $1.00 (1,000 input tokens at $1,000 per million), then a tool call.
+    let reply = chunk(
+        json!({ "tool_calls": [{ "index": 0, "id": "c1", "type": "function",
+            "function": { "name": "Glob", "arguments": "{\"pattern\":\"*\"}" } }] }),
+        None,
+    ) + &chunk(json!({}), Some("tool_calls"))
+        + &format!(
+            "data: {}\n\n",
+            json!({ "choices": [], "usage": { "prompt_tokens": 1000, "completion_tokens": 0 } })
+        )
+        + "data: [DONE]\n\n";
+    let (url, server) = serve(vec![reply]);
+    let out = Command::new(env!("CARGO_BIN_EXE_kit"))
+        .args(["run", "--agent", "kit", "--json", "--task", "look around"])
+        .current_dir(repo)
+        .env("KIT_HOME", home.path())
+        .env("KIT_BASE_URL", &url)
+        .env("KIT_MODEL", "m")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .unwrap();
+    let env: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        env["data"]["state"],
+        "budget",
+        "{env}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(env["data"]["agent"]["outcome"], "budget");
+    assert_eq!(env["data"]["agent"]["cost_estimated"], true);
+    assert_eq!(
+        server.join().unwrap().len(),
+        1,
+        "no second reply after the budget ran out"
+    );
 }

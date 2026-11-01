@@ -89,6 +89,12 @@ pub trait Agent: Send + Sync {
         worktree: &Path,
         tx: mpsc::Sender<RunDelta>,
     ) -> Result<Box<dyn AgentHandle>, SpawnError>;
+
+    /// After the process exits: the agent's own account of the run (model,
+    /// tokens, cost), for the receipt. Agents that report nothing return None.
+    fn take_result(&self) -> Option<kit_core::AgentResult> {
+        None
+    }
 }
 
 /// Result of probing one agent, shown in Doctor.
@@ -125,7 +131,7 @@ pub fn adapter(kind: AgentKind) -> Box<dyn Agent> {
         AgentKind::Claude => Box::new(ClaudeAgent),
         AgentKind::Grok => Box::new(GrokAgent),
         AgentKind::Ollama => Box::new(OllamaAgent),
-        AgentKind::Kit => Box::new(KitAgent),
+        AgentKind::Kit => Box::new(KitAgent::default()),
     }
 }
 

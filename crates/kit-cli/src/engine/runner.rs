@@ -10,7 +10,9 @@ use super::store::{ensure_layout, load_kit_config, write_receipt};
 use super::worktree::{self, branch_name, create_worktree, remove_if_clean, resolve_repo};
 use anyhow::{Context, Result};
 use kit_agents::{Agent, adapter};
-use kit_core::{AgentKind, Bounds, GateOutcome, Receipt, RunDelta, RunId, RunSpec, RunState};
+use kit_core::{
+    AgentKind, AgentResult, Bounds, GateOutcome, Receipt, RunDelta, RunId, RunSpec, RunState,
+};
 use kit_gate::KitGate;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -203,13 +205,24 @@ async fn execute_reporting(
     )
     .await;
     let mut run_error = None;
+    // The agent's own account (Kit's agent writes one); a session that ran
+    // out of budget is a `budget` run, not an error.
+    let agent_result = agent_impl.take_result();
     let (state, gate, note, agent_diff) = match ending {
         Ok(Ending::Killed(note)) => (RunState::Killed, None, Some(note), None),
         Ok(Ending::Gated {
             state,
             gate,
             agent_diff,
-        }) => (state, Some(gate), None, agent_diff),
+        }) => {
+            let budget = agent_result.as_ref().is_some_and(|r| r.outcome == "budget");
+            let state = if state == RunState::Error && budget {
+                RunState::Budget
+            } else {
+                state
+            };
+            (state, Some(gate), None, agent_diff)
+        }
         Err(err) => {
             run_error = Some(format!("{err:#}"));
             (
@@ -241,6 +254,7 @@ async fn execute_reporting(
         truncated,
         gate,
         agent_diff,
+        agent_result,
         &tx,
     )
     .await?;
@@ -478,7 +492,7 @@ async fn finalize_outside_run(
     );
     send(tx, &id, RunDelta::Output(note.into())).await;
     write_terminal(
-        opts, id, repo, branch, wt_path, None, state, output, truncated, None, None, tx,
+        opts, id, repo, branch, wt_path, None, state, output, truncated, None, None, None, tx,
     )
     .await
 }
@@ -499,6 +513,7 @@ async fn write_terminal(
     truncated: bool,
     gate: Option<GateOutcome>,
     agent_diff: Option<String>,
+    agent: Option<AgentResult>,
     tx: &Option<mpsc::Sender<(RunId, RunDelta)>>,
 ) -> Result<RunResult> {
     let ended_at = SystemTime::now();
@@ -547,6 +562,7 @@ async fn write_terminal(
         diff,
         gate: gate.clone(),
         output_truncated: truncated,
+        agent,
     };
 
     let written = write_receipt(&receipt, &output, base.as_deref());
@@ -871,7 +887,7 @@ mod tests {
 
         let raw = std::fs::read_to_string(result.receipt_dir.join("receipt.json")).unwrap();
         assert!(raw.contains("m1 skeleton smoke"));
-        assert!(raw.contains("\"version\": 1"));
+        assert!(raw.contains("\"version\": 2"));
         // kit_home may have been cleared after with_kit_home — assert receipt under home.
         assert!(result.receipt_dir.starts_with(&home));
 

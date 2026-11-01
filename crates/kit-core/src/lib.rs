@@ -15,4 +15,6 @@ pub mod run;
 
 pub use config::{FirewallConfig, FirewallMode, GateConfig, KitConfig, ScopeConfig};
 pub use gate::{CheckStatus, FirewallVerdict, Gate, GateCheck, GateOutcome};
-pub use run::{AgentKind, Bounds, Receipt, Run, RunDelta, RunId, RunSpec, RunState};
+pub use run::{
+    AgentKind, AgentResult, Bounds, Receipt, Run, RunDelta, RunId, RunSpec, RunState, TokenCounts,
+};

@@ -32,15 +32,20 @@ Every `kit … --json` payload:
 | Field | Type |
 |-------|------|
 | `id` | string (ULID) |
-| `state` | string (`pass`, `fail`, `unconfigured`, `killed`, `error`) |
+| `state` | string (`pass`, `fail`, `unconfigured`, `killed`, `error`, `budget`) |
 | `receiptDir` | path string |
 | `worktreeRemoved` | bool |
 | `gatePassed` | bool \| null |
 | `gateVacuous` | bool |
+| `agent` | object \| null: the agent's own account, as in the receipt (below); null for agents that report nothing |
 
 `unconfigured`: the gate had no checks to run, so nothing proved the work (`gatePassed` is false, `gateVacuous` true). Receipts use the same state; ones written before 2.0.0 recorded it as `pass` and read back as `unconfigured`.
 
-Exit code: `0` pass, `1` fail or unconfigured (unless `--allow-vacuous` / `--dry-run`), `2` other.
+`budget`: Kit's own agent stopped at its budget (`[agent] budget_usd`); the gate still ran on what it left.
+
+Receipts (`receipt.json`) are version 2 from Kit 2.0.2: they add `agent` (omitted when unknown) with `provider`, `model`, `profile`, `outcome`, `replies`, `tokens` (`input`, `cached_input`, `cache_write`, `output`, `reasoning`), `cost_usd` (null when a model has no price), `cost_estimated` and `denials`. Version 1 receipts read unchanged.
+
+Exit code: `0` pass, `1` fail, unconfigured (unless `--allow-vacuous` / `--dry-run`) or budget, `2` other.
 
 ## `kit init --json` → `data`
 

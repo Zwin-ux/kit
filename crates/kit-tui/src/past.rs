@@ -223,6 +223,7 @@ pub(crate) mod tests {
             diff: diff.into(),
             gate,
             output_truncated: false,
+            agent: None,
         };
         std::fs::write(
             dir.join("receipt.json"),

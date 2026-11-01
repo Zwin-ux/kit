@@ -88,6 +88,10 @@ pub struct AgentOpts {
     /// Use fenced shell blocks instead of tool calls, for models that cannot call tools
     #[arg(long, requires = "prompt")]
     pub text: bool,
+
+    /// Where `kit run --agent kit` collects the session's result for its receipt
+    #[arg(long, value_name = "PATH", requires = "prompt", hide = true)]
+    pub result_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]

@@ -216,7 +216,17 @@ pub async fn cmd_prompt(task: &str, opts: &AgentOpts, json: bool) -> Result<()> 
     let printer = tokio::spawn(async move {
         // Model text goes to stdout; tool cards and notices to stderr.
         let mut text = String::new();
+        let mut denials = Vec::new();
         while let Some(e) = rx.recv().await {
+            if let AgentEvent::ToolEnd {
+                name,
+                content,
+                denied: true,
+                ..
+            } = &e
+            {
+                denials.push(format!("{name}: {}", first_line(content)));
+            }
             match e {
                 AgentEvent::Text { text: t } => {
                     text.push_str(&t);
@@ -245,25 +255,50 @@ pub async fn cmd_prompt(task: &str, opts: &AgentOpts, json: bool) -> Result<()> 
                 _ => {}
             }
         }
-        text
+        (text, denials)
     });
     let outcome = agent.run(task, &tx, &DenyAll, &cancel).await;
     drop(tx);
-    let text = printer.await.unwrap_or_default();
+    let (text, denials) = printer.await.unwrap_or_default();
     let m = &agent.meter;
-    let label = match &outcome {
-        Outcome::Error(e) => format!("error: {e}"),
+    let outcome_id = match &outcome {
+        Outcome::Error(_) => "error".to_owned(),
         other => serde_json::to_value(other)
             .ok()
             .and_then(|v| v.as_str().map(str::to_owned))
-            .unwrap_or_default()
-            .replace('_', " "),
+            .unwrap_or_default(),
+    };
+    if let Some(path) = &opts.result_file {
+        let t = &m.tokens;
+        let result = kit_core::AgentResult {
+            provider: provider_id.into(),
+            model: model.clone(),
+            profile: format!("{profile:?}").to_ascii_lowercase(),
+            outcome: outcome_id.clone(),
+            replies: agent.replies,
+            tokens: kit_core::TokenCounts {
+                input: t.input,
+                cached_input: t.cached_input,
+                cache_write: t.cache_write,
+                output: t.output,
+                reasoning: t.reasoning,
+            },
+            cost_usd: m.cost_usd,
+            cost_estimated: m.estimated,
+            denials: denials.clone(),
+        };
+        std::fs::write(path, serde_json::to_vec(&result)?)
+            .with_context(|| format!("cannot write {}", path.display()))?;
+    }
+    let label = match &outcome {
+        Outcome::Error(e) => format!("error: {e}"),
+        _ => outcome_id.replace('_', " "),
     };
     if json {
         let data = serde_json::json!({
             "outcome": outcome, "text": text, "provider": provider_id, "model": model,
-            "profile": format!("{profile:?}").to_ascii_lowercase(), "replies": m.replies,
-            "tokens": m.tokens, "costUsd": m.cost_usd, "costEstimated": m.estimated,
+            "profile": format!("{profile:?}").to_ascii_lowercase(), "replies": agent.replies,
+            "tokens": m.tokens, "costUsd": m.cost_usd, "costEstimated": m.estimated, "denials": denials,
             "session": session.display().to_string(),
         });
         let ok = outcome == Outcome::Done;
@@ -276,7 +311,7 @@ pub async fn cmd_prompt(task: &str, opts: &AgentOpts, json: bool) -> Result<()> 
         let t = &m.tokens;
         eprintln!(
             "\n\nkit: {label} · {model} · {} replies · {} in ({} cached) / {} out · {} · session {}",
-            m.replies,
+            agent.replies,
             t.input,
             t.cached_input,
             t.output,

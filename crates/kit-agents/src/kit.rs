@@ -10,7 +10,11 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
-pub struct KitAgent;
+/// Holds the result file of the run it spawned, read back by [`Agent::take_result`].
+#[derive(Default)]
+pub struct KitAgent {
+    result: std::sync::Mutex<Option<PathBuf>>,
+}
 
 /// The `kit` binary to run: `KIT_AGENT_BIN` (tests), else this executable.
 fn kit_binary() -> Option<PathBuf> {
@@ -64,13 +68,20 @@ impl Agent for KitAgent {
             kind: AgentKind::Kit,
             source: std::io::Error::other("cannot find the kit executable"),
         })?;
-        spawn_streaming_with_stdin(
-            AgentKind::Kit,
-            kit_command(&bin, worktree),
-            spec.task.clone(),
-            tx,
-        )
-        .await
+        // Outside the worktree, so the result never shows in the run's diff.
+        let result =
+            std::env::temp_dir().join(format!("kit-result-{}.json", kit_core::RunId::new().0));
+        *self.result.lock().unwrap() = Some(result.clone());
+        let mut cmd = kit_command(&bin, worktree);
+        cmd.arg("--result-file").arg(&result);
+        spawn_streaming_with_stdin(AgentKind::Kit, cmd, spec.task.clone(), tx).await
+    }
+
+    fn take_result(&self) -> Option<kit_core::AgentResult> {
+        let path = self.result.lock().unwrap().take()?;
+        let text = std::fs::read_to_string(&path).ok();
+        let _ = std::fs::remove_file(&path);
+        serde_json::from_str(&text?).ok()
     }
 }
 

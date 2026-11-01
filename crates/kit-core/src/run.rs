@@ -90,6 +90,9 @@ pub enum RunState {
     Unconfigured,
     Killed,
     Error,
+    /// The agent stopped because the session reached its budget. The gate
+    /// still ran on what it left; the receipt says how far it got.
+    Budget,
 }
 
 impl RunState {
@@ -97,7 +100,12 @@ impl RunState {
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
-            Self::Pass | Self::Fail | Self::Unconfigured | Self::Killed | Self::Error
+            Self::Pass
+                | Self::Fail
+                | Self::Unconfigured
+                | Self::Killed
+                | Self::Error
+                | Self::Budget
         )
     }
 
@@ -197,7 +205,7 @@ pub enum RunDelta {
 ///
 /// Principle 2: proof or it didn't happen. A third-party tool must be able to
 /// read this directory — the shape is part of Kit's public contract.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Receipt {
     /// Receipt format version. Bump on any breaking shape change.
     pub version: u32,
@@ -211,8 +219,132 @@ pub struct Receipt {
     pub gate: Option<crate::GateOutcome>,
     /// Whether output hit `Bounds::output_cap_bytes`.
     pub output_truncated: bool,
+    /// What the agent reported about itself: model, tokens, cost (version 2).
+    /// Absent for agents that report nothing and in version 1 receipts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentResult>,
 }
 
 impl Receipt {
-    pub const VERSION: u32 = 1;
+    /// 2 adds `agent` and the `budget` state. Version 1 receipts still read.
+    pub const VERSION: u32 = 2;
+}
+
+/// An agent's own account of a run (receipt version 2).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AgentResult {
+    /// `anthropic`, `openai-compatible`, …
+    pub provider: String,
+    /// Model id.
+    pub model: String,
+    /// Permission profile: `read`, `workspace` or `full`.
+    pub profile: String,
+    /// How the agent's session ended: `done`, `budget`, `max_turns`, `looping`, …
+    pub outcome: String,
+    /// Model replies.
+    pub replies: u32,
+    /// Token counts summed over the session.
+    pub tokens: TokenCounts,
+    /// Dollars, when every reply had a known cost.
+    pub cost_usd: Option<f64>,
+    /// True when any cost came from a price table, not the provider.
+    #[serde(default)]
+    pub cost_estimated: bool,
+    /// Tool calls refused, as `Tool: reason`.
+    #[serde(default)]
+    pub denials: Vec<String>,
+}
+
+/// Token counts. `input` excludes cached tokens.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenCounts {
+    pub input: u64,
+    pub cached_input: u64,
+    pub cache_write: u64,
+    pub output: u64,
+    pub reasoning: u64,
+}
+
+#[cfg(test)]
+mod receipt_contract {
+    use super::*;
+
+    fn receipt(agent: Option<AgentResult>) -> Receipt {
+        Receipt {
+            version: Receipt::VERSION,
+            id: RunId("01TEST".into()),
+            spec: RunSpec {
+                repo: "/r".into(),
+                agent: AgentKind::Kit,
+                task: "t".into(),
+                branch: None,
+                bounds: Bounds::default(),
+                gate_checks: vec![],
+            },
+            state: RunState::Budget,
+            started_at: None,
+            ended_at: None,
+            diff: String::new(),
+            gate: None,
+            output_truncated: false,
+            agent,
+        }
+    }
+
+    /// Receipt v2 shape, pinned: `agent` is snake_case and absent when unknown;
+    /// version 1 receipts (no `agent`) still read.
+    #[test]
+    fn v2_shape_and_v1_compat() {
+        let r = receipt(Some(AgentResult {
+            provider: "anthropic".into(),
+            model: "m".into(),
+            profile: "workspace".into(),
+            outcome: "budget".into(),
+            replies: 3,
+            tokens: TokenCounts {
+                input: 10,
+                cached_input: 5,
+                cache_write: 1,
+                output: 2,
+                reasoning: 0,
+            },
+            cost_usd: Some(0.5),
+            cost_estimated: true,
+            denials: vec!["Bash: not on the read-only list".into()],
+        }));
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(v["version"], 2);
+        assert_eq!(v["state"], "budget");
+        // Sorted: serde_json's key order depends on features other crates enable.
+        let mut keys: Vec<&str> = v["agent"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "cost_estimated",
+                "cost_usd",
+                "denials",
+                "model",
+                "outcome",
+                "profile",
+                "provider",
+                "replies",
+                "tokens"
+            ]
+        );
+        assert_eq!(v["agent"]["tokens"]["cached_input"], 5);
+
+        let none = serde_json::to_value(receipt(None)).unwrap();
+        assert!(none.get("agent").is_none(), "omitted, not null");
+        let mut v1 = none.clone();
+        v1["version"] = 1.into();
+        v1["state"] = "pass".into();
+        let back: Receipt = serde_json::from_value(v1).unwrap();
+        assert_eq!((back.version, back.agent), (1, None));
+    }
 }
