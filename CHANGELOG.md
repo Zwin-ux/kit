@@ -9,7 +9,7 @@ All notable changes to Kit. Versions follow [Semantic Versioning](https://semver
 - `kit run --agent kit` runs Kit's own agent like any other: in its own worktree, then the gate, then a receipt. It is never picked by default; name it. `kit doctor` lists it as ready once a provider is set (`ANTHROPIC_API_KEY`, `KIT_MODEL`, or `[agent]` in `~/.kit/config.toml`). `kit -p -` reads the task from stdin
 - Receipts are version 2: Kit's own agent records its provider, model, profile, outcome, replies, tokens, cost and denied calls (`kit receipt show` prints them; `kit run --json` adds `agent`). A run whose session hit its budget ends in the new `budget` state (exit 1) after the gate. Version 1 receipts read unchanged
 - `~/.kit/config.toml` takes `[agent]` (provider, model, base_url, profile, budget_usd, max_turns, env) and `[permissions]` (allow, ask, deny rules in Claude Code's syntax). `kit setup` keeps both when it rewrites the file
-- `~/.kit/prices.toml` adds model prices (USD per million tokens). Kit ships none yet, so cost shows as `$?` until a price is set; it never guesses
+- Kit ships prices for Claude Fable 5.1, Opus 5.5 and Sonnet 5.5 (from Anthropic's pricing page, 2026-11-01), so their sessions show cost marked `≈`. Other models show `$?` until `~/.kit/prices.toml` names their price (USD per million tokens); Kit never guesses one
 
 ### Removed
 - The Kit 0.1 TypeScript workbench (`packages/`, `apps/`, `catalog/`, its Node CI and keep-alive workflows, and the root pnpm files) is gone from the repository. It never shipped in 2.x; the last commit with it is the tag `legacy-0.1-final`. The `kit` binary, npm launcher and installers are unchanged
