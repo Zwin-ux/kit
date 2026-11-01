@@ -1344,26 +1344,44 @@ fn porcelain_paths(raw: &[u8]) -> Vec<String> {
 }
 
 /// A deliberately small, path-only glob matcher for scope policy. `*` stays
-/// in one path component, while `**` may cross components; malformed patterns
-/// merely fail to match and therefore cannot panic the gate.
+/// in one path component, while `**` may cross components. A `**/` that
+/// starts a component matches zero or more folders, so `**/.env` also denies
+/// a root `.env`. Malformed patterns merely fail to match and therefore cannot
+/// panic the gate.
 fn glob_matches(pattern: &str, path: &str) -> bool {
-    fn matches_at(pattern: &[char], path: &[char]) -> bool {
+    // `component_start`: the pattern is at its start or just after a `/`.
+    fn matches_at(pattern: &[char], path: &[char], component_start: bool) -> bool {
         match pattern {
             [] => path.is_empty(),
-            ['*', '*', rest @ ..] => (0..=path.len()).any(|index| matches_at(rest, &path[index..])),
-            ['*', rest @ ..] => {
-                matches_at(rest, path)
-                    || (!path.is_empty() && path[0] != '/' && matches_at(pattern, &path[1..]))
+            ['*', '*', '/', rest @ ..] if component_start => {
+                matches_at(rest, path, true)
+                    || (0..path.len()).any(|index| {
+                        path[index] == '/' && matches_at(rest, &path[index + 1..], true)
+                    })
             }
-            ['?', rest @ ..] => !path.is_empty() && path[0] != '/' && matches_at(rest, &path[1..]),
+            ['*', '*', rest @ ..] => {
+                (0..=path.len()).any(|index| matches_at(rest, &path[index..], false))
+            }
+            ['*', rest @ ..] => {
+                matches_at(rest, path, false)
+                    || (!path.is_empty()
+                        && path[0] != '/'
+                        && matches_at(pattern, &path[1..], false))
+            }
+            ['?', rest @ ..] => {
+                !path.is_empty() && path[0] != '/' && matches_at(rest, &path[1..], false)
+            }
             [expected, rest @ ..] => {
-                !path.is_empty() && *expected == path[0] && matches_at(rest, &path[1..])
+                !path.is_empty()
+                    && *expected == path[0]
+                    && matches_at(rest, &path[1..], *expected == '/')
             }
         }
     }
     matches_at(
         &pattern.replace('\\', "/").chars().collect::<Vec<_>>(),
         &path.chars().collect::<Vec<_>>(),
+        true,
     )
 }
 
@@ -1887,6 +1905,58 @@ mod tests {
             .unwrap();
         let violations = scope_violations(&root, &["src/**".to_owned()], &[], None).unwrap();
         assert_eq!(violations, vec!["outside.txt"]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn glob_matches_star_doublestar_and_question() {
+        let cases = [
+            // `**/` matches zero or more folders, so a deny rule covers the root too.
+            ("**/.env", ".env", true),
+            ("**/.env", "app/.env", true),
+            ("**/.env", "a/b/.env", true),
+            ("**/.env", "x.env", false),
+            ("**/.env", "app/x.env", false),
+            ("src/**/*.rs", "src/a.rs", true),
+            ("src/**/*.rs", "src/x/y/a.rs", true),
+            ("src/**/*.rs", "srcx/a.rs", false),
+            ("src/**/*.rs", "lib/a.rs", false),
+            // A trailing `/**` is everything inside the folder.
+            ("src/**", "src/a.rs", true),
+            ("src/**", "src/x/a.rs", true),
+            ("src/**", "srcx/a.rs", false),
+            // `*` and `?` stay inside one component.
+            ("*.lock", "Cargo.lock", true),
+            ("*.lock", "sub/Cargo.lock", false),
+            ("src/*.rs", "src/x/a.rs", false),
+            ("?.md", "a.md", true),
+            ("?.md", "/.md", false),
+            ("?.md", "ab.md", false),
+            // `**` that doesn't start a component still crosses folders.
+            ("docs**", "docs/a/b.md", true),
+            // Windows-style separators in the pattern are normalised.
+            ("src\\**", "src/a.rs", true),
+        ];
+        for (pattern, path, want) in cases {
+            assert_eq!(glob_matches(pattern, path), want, "{pattern} vs {path}");
+        }
+    }
+
+    #[test]
+    fn deny_doublestar_catches_a_root_file() {
+        let root = env::temp_dir().join(format!("kit-gate-scope-root-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("app")).unwrap();
+        fs::write(root.join(".env"), "SECRET=1").unwrap();
+        fs::write(root.join("app/.env"), "SECRET=1").unwrap();
+        fs::write(root.join("app/main.rs"), "changed").unwrap();
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&root)
+            .status()
+            .unwrap();
+        let violations = scope_violations(&root, &[], &["**/.env".to_owned()], None).unwrap();
+        assert_eq!(violations, vec![".env", "app/.env"]);
         let _ = fs::remove_dir_all(root);
     }
 
