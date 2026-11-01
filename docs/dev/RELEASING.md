@@ -49,7 +49,7 @@ To try the pipeline without publishing: run **Release npm** from the Actions tab
 In this order. Steps marked **owner** need Mazen; nothing is tagged, bumped or published without his go-ahead.
 
 1. **owner** Merge the release stack to `main` in order. `main` must be green on Linux, macOS and Windows.
-2. **owner** Repo secrets exist: `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` (see [Requirements](#requirements-owner)).
+2. **owner** npm's trusted publishers are set (or `NPM_TOKEN` is valid), and `CARGO_REGISTRY_TOKEN` is valid (see [Requirements](#requirements-owner)).
 3. **owner** Create the empty public repo `Zwin-ux/kits` (no README, licence or .gitignore).
 4. Build the kit index from the merged `main` and push it to `Zwin-ux/kits`:
 
@@ -174,7 +174,8 @@ Effect on users: `curl`, PowerShell's `irm`, npm and Cargo do not mark downloads
 
 ## Requirements (owner)
 
-- Repo secret `NPM_TOKEN`: an npm automation token with publish rights on the `@mzwin` scope.
+- npm: trusted publishing, so no token expires. On npmjs.com, for each of the six packages (`@mzwin/kit` and the five in `npm/platforms.json`): Settings → Trusted Publisher → GitHub Actions, user `Zwin-ux`, repository `kit`, workflow `release-npm.yml`, no environment. A new trusted publisher expires unless it publishes within 2 days, so add them on release day, before the tag.
+- Until every package has published through its trusted publisher, the repo secret `NPM_TOKEN` is the fallback: a granular token with read and write on `@mzwin` and "Bypass two-factor authentication". Without the bypass, publish fails with `EOTP`; with an expired token it fails with `E404` on `PUT`. After the first trusted publish, delete the secret and set each package's Publishing access to "Require two-factor authentication and disallow tokens".
 - Provenance needs a public repo and the `id-token: write` permission (set in the workflow).
 - Repo secret `CARGO_REGISTRY_TOKEN`: a crates.io API token with the `publish-new` and `publish-update` scopes. Without it job `crates-io` fails and says so.
 - The GitHub Release and attestations use the built-in `GITHUB_TOKEN`. No secret is needed.
