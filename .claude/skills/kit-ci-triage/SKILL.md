@@ -23,8 +23,8 @@ Say which rows ran and on which OS before calling anything verified.
 ## Known traps
 - **Windows path length:** a checkout in a deep folder makes `link.exe` fail with
   `LNK1104: cannot open file … build_script_build-….exe`. Set `CARGO_TARGET_DIR` to a short folder.
-  With that override, `kit-gate`'s `gate_child_does_not_write_parent_cargo_target_dir` can fail locally,
-  because it sets the same variable; check it in CI instead.
+- **`NoDefaultCurrentDirectoryInExePath=1`** (set on the owner's hardened machine): `cmd /C name.cmd`
+  no longer finds `name.cmd` in the current folder. Tests and checks must write `.\name.cmd`.
 - **CRLF:** `core.autocrlf=true` checks files out with `\r\n`. Strip `\r` before grepping, and assert the
   count of any scripted replacement. Insta snapshots compare with line endings normalised.
 - **Insta:** a changed screen writes `.snap.new` and fails. Run `INSTA_UPDATE=always cargo test -p kitctl-tui`
