@@ -29,7 +29,7 @@ pub use claude::ClaudeAgent;
 pub use codex::CodexAgent;
 pub use grok::GrokAgent;
 pub use ollama::OllamaAgent;
-pub use process::full_auto;
+pub use process::{ProcessTree, configure_tree_kill, full_auto};
 
 /// Why an adapter could not start.
 #[derive(Debug, thiserror::Error)]

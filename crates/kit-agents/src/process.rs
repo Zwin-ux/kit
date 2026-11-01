@@ -73,7 +73,7 @@ fn isolate_cargo_target_dir(cmd: &mut Command) {
 }
 
 /// Prepare OS-level process grouping before spawn (tree kill support).
-fn configure_tree_kill(cmd: &mut Command) {
+pub fn configure_tree_kill(cmd: &mut Command) {
     #[cfg(unix)]
     {
         // New process group: child's pid becomes the group leader.
@@ -230,7 +230,7 @@ async fn next_line(reader: &mut (impl AsyncBufRead + Unpin), buf: &mut Vec<u8>) 
 }
 
 /// OS handle that can terminate the whole process tree.
-struct ProcessTree {
+pub struct ProcessTree {
     #[cfg(windows)]
     job: Option<win_job::Job>,
     #[cfg(unix)]
@@ -240,7 +240,8 @@ struct ProcessTree {
 }
 
 impl ProcessTree {
-    fn attach(child: &Child) -> Self {
+    /// Track `child` (spawned after [`configure_tree_kill`]) and its descendants.
+    pub fn attach(child: &Child) -> Self {
         #[cfg(windows)]
         {
             let pid = child.id();
@@ -266,7 +267,7 @@ impl ProcessTree {
     }
 
     /// Kill every process in the tree. Best-effort; never panics.
-    fn kill_tree(&mut self) {
+    pub fn kill_tree(&mut self) {
         #[cfg(windows)]
         {
             if let Some(job) = self.job.take() {
