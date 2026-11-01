@@ -2,6 +2,14 @@
 
 All notable changes to Kit. Versions follow [Semantic Versioning](https://semver.org/): the public API is the `kit` command, `KIT.toml` / `kit.toml`, `kit.lock`, `--json` output and receipts. The Rust library crates carry no semver promise of their own.
 
+## Unreleased
+
+### Removed
+- The Kit 0.1 TypeScript workbench (`packages/`, `apps/`, `catalog/`, its Node CI and keep-alive workflows, and the root pnpm files) is gone from the repository. It never shipped in 2.x; the last commit with it is the tag `legacy-0.1-final`. The `kit` binary, npm launcher and installers are unchanged
+
+### Changed
+- Every dependency is now checked for licence, RustSec advisories and source (`cargo deny`), and the cold-start budget is measured on macOS as well as Linux and Windows
+
 ## 2.0.1 — Proof holds
 
 ### Fixed
