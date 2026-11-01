@@ -738,6 +738,44 @@ A thin plugin, not a repaint: Claude Code's UI stays theirs. This resolves K7 an
     - Every published number links to its eval run (§13.3).
   - **Credit:** "Kit by Westside Web Studio" (QUALITY.md).
 
+### 11.1 Maintainer programs (the goal)
+
+Kit's goal is to qualify its maintainers for the free plans that AI companies give open-source maintainers. Checked 2026-11-01 against each program's official page.
+
+| Program | What you get | The bar | Kit today |
+|---|---|---|---|
+| [Claude for Open Source](https://www.anthropic.com/claude-for-oss-terms) | 6 months of Claude Ultra | One of: 500 dependent repos or 100 dependent packages · 200,000 monthly downloads · listed foundation or language-project maintainer · **100 merged PRs to repos you don't own in 12 months** · **20 external contributors with merged PRs in 12 months** · OpenSSF criticality ≥ 0.4. Also: GitHub account ≥ 2 years old, public activity in the last 90 days, an OSI licence. Stars don't count. | General bar met. No track met: 0 external contributors, `kitctl` has 10 downloads |
+| [Codex for Open Source](https://developers.openai.com/codex/community/codex-for-oss) | 6 months of ChatGPT Pro with Codex, API credits, Codex Security case by case | "Core maintainers" of "widely used" public projects. No numbers; projects that don't fit can explain their role | Not yet: no users to point at |
+| xAI (Grok) | No maintainer program found | — | — |
+| GitHub Copilot | Free for maintainers of popular repos | GitHub decides | Not yet |
+
+Kit works toward two Claude tracks. Both also make the Codex case.
+
+**Track A: 20 external contributors to `Zwin-ux/kit` in 12 months**
+
+- Kit 3.0 (A1.0) is public and installs in one command on Windows, macOS and Linux.
+- `CONTRIBUTING.md` setup is three commands, checked on all three systems each release.
+- Ten scoped `good first issue`s are open at all times. Each one names the files and the test that proves it's done.
+- Every outside PR gets a review within 48 hours: merge, or say what's missing.
+- A release every two weeks. The CHANGELOG credits each contributor by GitHub handle.
+- The T3 Code app (D13) goes public under Kit after `docs/dev/PUBLIC-STRIP.md` in that repo is done.
+- `scripts/oss-stats.sh` reports external contributors with merged PRs in the last 12 months, dependents and downloads.
+
+**Track B: 100 merged PRs to repos the owner doesn't own, in 12 months**
+
+- About two a week. Each is a real fix the owner understands and can defend in review. Anthropic discounts trivial, duplicate and automated activity, and maintainers notice it.
+- Repos that take outside PRs:
+  - `pingdotgg/t3code`: focused bug, reliability and performance fixes. Features need a maintainer-approved discussion first, linked in the PR.
+  - `ratatui/ratatui` and `crossterm-rs/crossterm`: small, focused PRs. Kit uses both, so bugs Kit hits are the natural source. ratatui asks for no large AI-generated PRs.
+  - `sst/opencode`: issues labelled `help wanted`, `good first issue`, `bug` or `perf`. Comment first to be assigned.
+  - Any Kit dependency: fix the bug upstream instead of working around it.
+- Repos that don't take outside PRs: `openai/codex`, `xai-org/grok-build`.
+
+**When to apply**
+
+- Claude: once one track is met. The application asks for 500 words on why you qualify, so link the contributor list or the PR list.
+- Codex: once Kit 3.0 has real users, since there's no number to hit.
+
 ---
 
 ## 12. Non-goals (for Kit 3.0)
@@ -835,6 +873,8 @@ How acceptance is checked:
 | D10 | PR #38 (ACP harness design) | **Merge** as the reference for §6.5's ACP driver (K8), with a note that Grok now has ACP |
 | D11 | When `kit run` defaults to Kit's own agent | **Only after an explicit `kit auth add` or `[agent] default = "kit"`**; revisit at 3.0. Never because an env var is set |
 | D12 | This PRD supersedes K1's "2.1 = proof integrity" | **Yes**: receipt v2 lands in A0.1 and the sandbox in A0.3, and the firewall-wiring item becomes the precedence rules in §5.5 |
+| D13 | Kit's app is the `Zwin-ux/t3` fork of T3 Code (MIT, notice kept), with Claude Code as its main provider and Kit's Rust agent as another provider | **Yes**. The fork is synced with upstream and made public after its strip list (§11.1) |
+| D14 | The owner commits to Track B in §11.1: about two real upstream PRs a week | **Yes**. Agents may help find and draft fixes; the owner reviews and stands behind every PR |
 
 ---
 
