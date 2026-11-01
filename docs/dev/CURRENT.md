@@ -29,6 +29,6 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-On Windows, a checkout in a deep folder can hit the 260-character path limit in `link.exe` (`LNK1104: cannot open file … build_script_build-….exe`). Build with a short target folder: `CARGO_TARGET_DIR=C:/kit-target cargo test --workspace`. `kit-gate`'s `gate_child_does_not_write_parent_cargo_target_dir` sets that variable itself, so run it without the override or trust CI for it.
+On Windows, a checkout in a deep folder can hit the 260-character path limit in `link.exe` (`LNK1104: cannot open file … build_script_build-….exe`). Build with a short target folder: `CARGO_TARGET_DIR=C:/kit-target cargo test --workspace`. Machines that set `NoDefaultCurrentDirectoryInExePath=1` (a Windows hardening) make `cmd` refuse a bare script name from the current folder: a `kit.toml` check that runs one needs `.\name.cmd`.
 
 Releasing: [`RELEASING.md`](RELEASING.md).
