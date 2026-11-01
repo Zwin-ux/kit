@@ -117,8 +117,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Budget script tests
-        run: node --test scripts/loc-budget.test.mjs
+      - name: Script tests
+        run: node --test scripts/loc-budget.test.mjs scripts/oss-stats.test.mjs
       - name: Line budgets
         run: node scripts/loc-budget.mjs
 

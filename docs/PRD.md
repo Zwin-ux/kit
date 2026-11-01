@@ -759,7 +759,7 @@ Kit works toward two Claude tracks. Both also make the Codex case.
 - Every outside PR gets a review within 48 hours: merge, or say what's missing.
 - A release every two weeks. The CHANGELOG credits each contributor by GitHub handle.
 - The T3 Code app (D13) goes public under Kit after `docs/dev/PUBLIC-STRIP.md` in that repo is done.
-- `scripts/oss-stats.sh` reports external contributors with merged PRs in the last 12 months, dependents and downloads.
+- `node scripts/oss-stats.mjs` reports external contributors with merged PRs in the last 12 months, merged upstream PRs and monthly downloads. Dependents aren't in GitHub's API, so check them by hand on the repo's Insights page.
 
 **Track B: 100 merged PRs to repos the owner doesn't own, in 12 months**
 
