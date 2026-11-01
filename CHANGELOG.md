@@ -12,6 +12,7 @@ All notable changes to Kit. Versions follow [Semantic Versioning](https://semver
 - Agent output no longer stops at the first line of invalid UTF-8. Invalid bytes show as `�`, a line longer than 64 KiB keeps its start and ends with `…[line truncated]`, and the agent keeps running. Before, the rest of the output was lost and the agent's next write hit a closed pipe
 
 ### Changed
+- Kit is credited to its maker: `kit --help` ends with `Kit by Westside Web Studio (westsidewebstudio.com). © 2026 Westside Web Studio. MIT licence.`, the help panel (`?`) carries `Kit by Westside Web Studio` on its border, and `LICENSE` reads `Copyright (c) 2026 Westside Web Studio`. `kit --version` is unchanged (`kit X.Y.Z`)
 - Dependencies: `async-trait` 0.1.92 (Clippy on Rust 1.99), `lru` 0.18.5 (RUSTSEC-2026-0253) and `tokio` 1.54.1 (RUSTSEC-2026-0386). `cargo audit` is clean
 
 ## 2.0.0 — Kits

@@ -268,6 +268,8 @@ pub fn draw_help_overlay(frame: &mut Frame, area: Rect, theme: &Theme, lines: Ve
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" help ")
+        // The credit sits on the border so it never takes a key's row.
+        .title_bottom(Line::styled(" Kit by Westside Web Studio ", theme.dim()).right_aligned())
         .border_style(theme.border(true))
         .title_style(theme.title());
     let inner = block.inner(area);
