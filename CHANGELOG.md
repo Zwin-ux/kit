@@ -5,6 +5,7 @@ All notable changes to Kit. Versions follow [Semantic Versioning](https://semver
 ## Unreleased
 
 ### Fixed
+- In `[gate.scope]` patterns, a `**/` that starts a folder name now matches zero or more folders, so `deny = ["**/.env"]` also catches a `.env` at the repo root, and `src/**/*.rs` matches `src/a.rs`. Before, root files passed a deny rule and `kit land` accepted them
 - The `[gate.scope]` check now covers everything the run changed since its base commit, including commits the agent made, and both sides of a rename. Before, a denied path the agent committed passed the gate and `kit land` accepted it
 - A scope check that cannot run (git fails in the worktree, the base commit is missing) fails the gate with `scope check could not run: …`. It used to read as no violations
 - Scope is checked before the gate's commands run, so a check that resets the worktree cannot hide a denied change that is in the receipt
