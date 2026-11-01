@@ -6,7 +6,9 @@ description: Prepare and ship a Kit release (vX.Y.Z) to the GitHub Release, npm 
 # Kit release
 
 The full procedure is [`docs/dev/RELEASING.md`](../../../docs/dev/RELEASING.md). This is the short path
-and the rules that keep it safe.
+and the rules that keep it safe. Its "Ship day" list was written for 2.0.0: for any later release, skip
+its steps 3 and 4 (the `Zwin-ux/kits` index repo already exists; rebuild the index only when a kit in
+`crates/kit-cli/kits/` changed) and read every `2.0.0` there as the new version.
 
 ## Rules
 - **The owner (Mazen) pushes the tag.** A tag push publishes to npm, crates.io and the GitHub Release,

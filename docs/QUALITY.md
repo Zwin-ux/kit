@@ -56,6 +56,7 @@ agent logins. A test that needs a real agent is a dogfood step, not a test.
 
 ## Credit
 
-Kit is made by Westside Web Studio (westsidewebstudio.com). `kit --help`, the TUI help panel, the README
-footer and `LICENSE` carry the credit and `© 2026 Westside Web Studio`. `kit --version` stays one bare
+Kit is made by Westside Web Studio (westsidewebstudio.com). `kit --help` and the README footer carry
+`Kit by Westside Web Studio` and `© 2026 Westside Web Studio`; `LICENSE` reads
+`Copyright (c) 2026 Westside Web Studio`; the TUI help panel shows `Kit by Westside Web Studio` on its border. `kit --version` stays one bare
 line (`kit X.Y.Z`): the installers and the npm smoke test compare it exactly.

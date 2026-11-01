@@ -22,13 +22,14 @@ Say which rows ran and on which OS before calling anything verified.
 
 ## Known traps
 - **Windows path length:** a checkout in a deep folder makes `link.exe` fail with
-  `LNK1104: cannot open file … build_script_build-….exe`. Set `CARGO_TARGET_DIR` to a short folder.
+  `LNK1104: cannot open file … build_script_build-….exe`. Set `CARGO_TARGET_DIR` to a short folder
+  (Git Bash: `export CARGO_TARGET_DIR=C:/kit-target`; PowerShell: `$env:CARGO_TARGET_DIR = 'C:\kit-target'`).
 - **`NoDefaultCurrentDirectoryInExePath=1`** (set on the owner's hardened machine): `cmd /C name.cmd`
   no longer finds `name.cmd` in the current folder. Tests and checks must write `.\name.cmd`.
 - **CRLF:** `core.autocrlf=true` checks files out with `\r\n`. Strip `\r` before grepping, and assert the
   count of any scripted replacement. Insta snapshots compare with line endings normalised.
 - **Insta:** a changed screen writes `.snap.new` and fails. Run `INSTA_UPDATE=always cargo test -p kitctl-tui`
-  only after reading the diff, then commit the `.snap` and read `git diff` of it line by line.
+  (PowerShell: `$env:INSTA_UPDATE = 'always'; cargo test -p kitctl-tui`) only after reading the diff, then commit the `.snap` and read `git diff` of it line by line.
 - **Clippy on newer stable:** CI uses `dtolnay/rust-toolchain@stable`, which can be newer than your
   local toolchain. A lint that only CI reports is real; fix it, don't pin the toolchain down.
 - **Encoding:** read and write text as UTF-8 explicitly (`encoding="utf-8"` in Python). `©`, `·`, `→`

@@ -29,8 +29,5 @@ fn help_credits_the_studio() {
 fn version_is_one_bare_line() {
     let (ok, stdout) = kit(&["--version"]);
     assert!(ok, "{stdout}");
-    assert_eq!(
-        stdout.trim_end(),
-        format!("kit {}", env!("CARGO_PKG_VERSION"))
-    );
+    assert_eq!(stdout, format!("kit {}\n", env!("CARGO_PKG_VERSION")));
 }
