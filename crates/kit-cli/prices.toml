@@ -1,0 +1,13 @@
+# Prices Kit ships, in USD per million tokens, checked against each
+# provider's pricing page on the date below. A model with no entry shows
+# tokens only: Kit never guesses a price. Add your own in ~/.kit/prices.toml:
+#
+#   [models."model-id"]
+#   input = 3.0
+#   cached_input = 0.3
+#   cache_write = 3.75
+#   output = 15.0
+
+as_of = ""
+
+[models]

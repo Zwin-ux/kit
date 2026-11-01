@@ -3,6 +3,7 @@
 //! Default surface is the ratatui Control Room (PRD §4.2). `kit run` is the M1
 //! headless path: worktree → dry-run stream → gate → receipt.
 
+mod agent_cmd;
 mod cli;
 mod engine;
 mod init;
@@ -69,6 +70,12 @@ async fn dispatch(cli: Cli) -> Result<()> {
     }
     if cli.demo && cli.command.is_some() {
         anyhow::bail!("--demo opens the Control Room. Use `kit --demo` on its own");
+    }
+    if let Some(task) = &cli.prompt {
+        if cli.command.is_some() {
+            anyhow::bail!("-p runs Kit's own agent on its own; drop the subcommand");
+        }
+        return agent_cmd::cmd_prompt(task, &cli.agent, json).await;
     }
     match cli.command {
         None if !cli.demo && kits::setup::first_run() => {

@@ -38,11 +38,56 @@ pub struct Cli {
     #[arg(long)]
     pub demo: bool,
 
+    /// Run Kit's own agent once on TASK in this repo, then exit
+    #[arg(
+        short = 'p',
+        long = "prompt",
+        value_name = "TASK",
+        conflicts_with = "demo"
+    )]
+    pub prompt: Option<String>,
+
+    #[command(flatten)]
+    pub agent: AgentOpts,
+
     #[command(flatten)]
     pub global: GlobalArgs,
 
     #[command(subcommand)]
     pub command: Option<Command>,
+}
+
+/// Options for Kit's own agent (`kit -p`). Each falls back to `[agent]` in
+/// `~/.kit/config.toml`, then the environment.
+#[derive(Debug, Default, Args)]
+pub struct AgentOpts {
+    /// Model id [default: claude-sonnet-5-5 for anthropic; required for openai-compatible]
+    #[arg(long, value_name = "ID", requires = "prompt")]
+    pub model: Option<String>,
+
+    /// anthropic or openai-compatible [default: anthropic when ANTHROPIC_API_KEY is set]
+    #[arg(long, value_name = "NAME", requires = "prompt")]
+    pub provider: Option<String>,
+
+    /// Server for openai-compatible, ending in /v1 [default: http://localhost:11434/v1, Ollama]
+    #[arg(long, value_name = "URL", requires = "prompt")]
+    pub base_url: Option<String>,
+
+    /// read, workspace or full [default: workspace]
+    #[arg(long, value_name = "PROFILE", requires = "prompt")]
+    pub profile: Option<String>,
+
+    /// Stop when the session costs this many dollars, e.g. --budget 2.00
+    #[arg(long, value_name = "USD", requires = "prompt")]
+    pub budget: Option<f64>,
+
+    /// Stop after this many model replies [default: 50]
+    #[arg(long, value_name = "N", requires = "prompt")]
+    pub max_turns: Option<u32>,
+
+    /// Use fenced shell blocks instead of tool calls, for models that cannot call tools
+    #[arg(long, requires = "prompt")]
+    pub text: bool,
 }
 
 #[derive(Debug, Args)]

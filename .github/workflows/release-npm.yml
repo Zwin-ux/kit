@@ -431,7 +431,7 @@ jobs:
             echo "::error::CARGO_REGISTRY_TOKEN is not set; kitctl $version was not published to crates.io"
             exit 1
           fi
-          for crate in kitctl-core kitctl-gate kitctl-agents kitctl-tui kitctl; do
+          for crate in kitctl-providers kitctl-core kitctl-gate kitctl-agents kitctl-loop kitctl-tui kitctl; do
             code=$(curl -s -o /dev/null -w '%{http_code}' -A "kit-release (github.com/$GITHUB_REPOSITORY)" \
               "https://crates.io/api/v1/crates/$crate/$version")
             if [ "$code" = 200 ]; then

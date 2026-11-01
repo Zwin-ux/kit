@@ -1,0 +1,222 @@
+//! `kit -p` end to end: the real binary against a local stand-in for an
+//! OpenAI-compatible server. No network, no keys.
+
+use serde_json::{Value, json};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpListener;
+use std::path::Path;
+use std::process::Command;
+
+/// Serve one SSE body per request, in order; return the request bodies.
+fn serve(replies: Vec<String>) -> (String, std::thread::JoinHandle<Vec<Value>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!(
+        "http://127.0.0.1:{}/v1",
+        listener.local_addr().unwrap().port()
+    );
+    let handle = std::thread::spawn(move || {
+        let mut bodies = Vec::new();
+        for reply in replies {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut len = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" || line.is_empty() {
+                    break;
+                }
+                if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    len = v.trim().parse().unwrap();
+                }
+            }
+            let mut body = vec![0; len];
+            reader.read_exact(&mut body).unwrap();
+            bodies.push(serde_json::from_slice(&body).unwrap());
+            let mut out = stream;
+            write!(out, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{reply}").unwrap();
+        }
+        bodies
+    });
+    (url, handle)
+}
+
+fn chunk(delta: Value, finish: Option<&str>) -> String {
+    format!(
+        "data: {}\n\n",
+        json!({ "choices": [{ "index": 0, "delta": delta, "finish_reason": finish }] })
+    )
+}
+
+fn tool_call(name: &str, args: Value) -> String {
+    chunk(
+        json!({ "tool_calls": [{ "index": 0, "id": "c1", "type": "function",
+        "function": { "name": name, "arguments": args.to_string() } }] }),
+        None,
+    ) + &chunk(json!({}), Some("tool_calls"))
+        + "data: [DONE]\n\n"
+}
+
+fn say(text: &str) -> String {
+    chunk(json!({ "content": text }), None) + &chunk(json!({}), Some("stop")) + "data: [DONE]\n\n"
+}
+
+fn repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let ok = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(dir.path())
+        .status()
+        .unwrap();
+    assert!(ok.success());
+    dir
+}
+
+fn kit(dir: &Path, home: &Path, args: &[&str]) -> (i32, Value, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_kit"))
+        .args(args)
+        .current_dir(dir)
+        .env("KIT_HOME", home)
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("KIT_MODEL")
+        .env_remove("KIT_BASE_URL")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let json = serde_json::from_str(&stdout).unwrap_or(Value::Null);
+    (
+        out.status.code().unwrap_or(-1),
+        json,
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn the_agent_writes_a_file_and_reports_the_session() {
+    let dir = repo();
+    let home = tempfile::tempdir().unwrap();
+    let (url, server) = serve(vec![
+        tool_call(
+            "Write",
+            json!({ "file_path": "a.txt", "content": "from kit" }),
+        ),
+        say("Done."),
+    ]);
+    let (code, out, err) = kit(
+        dir.path(),
+        home.path(),
+        &[
+            "-p",
+            "make a.txt",
+            "--base-url",
+            &url,
+            "--model",
+            "m",
+            "--json",
+        ],
+    );
+    assert_eq!(code, 0, "{out} {err}");
+    assert_eq!(out["ok"], true);
+    assert_eq!(out["data"]["outcome"], "done");
+    assert_eq!(out["data"]["text"], "Done.");
+    assert_eq!(out["data"]["provider"], "openai-compatible");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "from kit"
+    );
+    let session = out["data"]["session"].as_str().unwrap();
+    assert!(Path::new(session).starts_with(home.path()) && Path::new(session).exists());
+    let bodies = server.join().unwrap();
+    assert_eq!(bodies[0]["model"], "m");
+    assert!(
+        bodies[0]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["function"]["name"] == "Write")
+    );
+    let last = bodies[1]["messages"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()
+        .clone();
+    assert_eq!(last["role"], "tool");
+}
+
+#[test]
+fn a_boundary_prompt_is_denied_without_a_terminal() {
+    let dir = repo();
+    let home = tempfile::tempdir().unwrap();
+    let (url, server) = serve(vec![
+        tool_call("Bash", json!({ "command": "cargo build" })),
+        say("Could not build."),
+    ]);
+    let (code, out, err) = kit(
+        dir.path(),
+        home.path(),
+        &[
+            "-p",
+            "build it",
+            "--base-url",
+            &url,
+            "--model",
+            "m",
+            "--json",
+        ],
+    );
+    assert_eq!(code, 0, "{out} {err}");
+    let bodies = server.join().unwrap();
+    let result = bodies[1]["messages"].as_array().unwrap().last().unwrap()["content"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(result.contains("denied"), "{result}");
+}
+
+#[test]
+fn plain_output_streams_text_to_stdout_and_cards_to_stderr() {
+    let dir = repo();
+    let home = tempfile::tempdir().unwrap();
+    let (url, _server) = serve(vec![
+        tool_call("Glob", json!({ "pattern": "*" })),
+        say("Nothing here."),
+    ]);
+    let out = Command::new(env!("CARGO_BIN_EXE_kit"))
+        .args(["-p", "look", "--base-url", &url, "--model", "m"])
+        .current_dir(dir.path())
+        .env("KIT_HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "Nothing here.");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("▸ Glob  *") && err.contains("kit: done"),
+        "{err}"
+    );
+}
+
+#[test]
+fn setup_errors_say_how_to_fix_them() {
+    let dir = repo();
+    let home = tempfile::tempdir().unwrap();
+    let (code, out, _) = kit(
+        dir.path(),
+        home.path(),
+        &["-p", "x", "--provider", "anthropic", "--json"],
+    );
+    assert_eq!(code, 2);
+    assert!(
+        out["error"].as_str().unwrap().contains("ANTHROPIC_API_KEY"),
+        "{out}"
+    );
+    let (code, out, _) = kit(dir.path(), home.path(), &["-p", "x", "--json"]);
+    assert_eq!(code, 2);
+    assert!(
+        out["error"].as_str().unwrap().contains("name a model"),
+        "{out}"
+    );
+    let (code, _, err) = kit(dir.path(), home.path(), &["--model", "m"]);
+    assert_eq!(code, 2, "agent flags need -p: {err}");
+}

@@ -226,7 +226,11 @@ pub async fn cmd_setup(args: SetupArgs, json: bool) -> Result<()> {
     if matches!(outcome, Outcome::Cancelled | Outcome::Printed) {
         return Ok(());
     }
+    // Keep what the user wrote by hand: [agent] and [permissions].
+    let prior = Config::load()?.unwrap_or_default();
     let config = Config {
+        agent: prior.agent,
+        permissions: prior.permissions,
         agents: agents.iter().map(|a| a.id().to_string()).collect(),
         kits: kits.clone(),
         scope: Some(match scope {

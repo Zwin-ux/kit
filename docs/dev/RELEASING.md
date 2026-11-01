@@ -37,7 +37,7 @@ npm package versions are generated from the Cargo version at publish time; nothi
 1. `build`: all five targets. `verify`: runs the release binaries on each OS.
 2. `github-release`: archives, `SHA256SUMS`, build attestations, the GitHub Release with the notes.
 3. `publish`: npm packages. Then `npm-check` installs them from the registry on Linux, macOS and Windows.
-4. `crates-io`: `kitctl-core`, `kitctl-gate`, `kitctl-agents`, `kitctl-tui`, `kitctl`.
+4. `crates-io`: `kitctl-providers`, `kitctl-core`, `kitctl-gate`, `kitctl-agents`, `kitctl-loop`, `kitctl-tui`, `kitctl`.
 5. `install-check` (after `github-release`): `install.sh` / `install.ps1` from the real release on Linux x64 and arm64, macOS arm64 and x64, and Windows, then `kit --version`, `kit doctor`, `kit show`.
 
 Every publishing job stops if the tag does not match the Cargo version. A rerun skips what is already published.

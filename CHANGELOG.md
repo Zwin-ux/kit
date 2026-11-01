@@ -4,6 +4,11 @@ All notable changes to Kit. Versions follow [Semantic Versioning](https://semver
 
 ## Unreleased
 
+### Added
+- `kit -p "<task>"` runs Kit's own coding agent once in the current repo, with your own key or a local model: Anthropic (`ANTHROPIC_API_KEY`) or any OpenAI-compatible server (`--base-url`, default Ollama at `http://localhost:11434/v1`). It reads, edits, searches and runs commands in the repo; edits inside the repo need no approval, and anything that crosses a boundary (an edit outside the repo, a shell command that is not read-only, `git push`, a protected or secret path) is denied because nobody is there to ask. Flags: `--model`, `--provider`, `--base-url`, `--profile read|workspace|full`, `--budget <usd>`, `--max-turns`, `--text`. Model text goes to stdout, tool lines to stderr; `--json` returns the `prompt` envelope (`docs/json-contract.md`). Every session is logged to `~/.kit/sessions/`
+- `~/.kit/config.toml` takes `[agent]` (provider, model, base_url, profile, budget_usd, max_turns, env) and `[permissions]` (allow, ask, deny rules in Claude Code's syntax). `kit setup` keeps both when it rewrites the file
+- `~/.kit/prices.toml` adds model prices (USD per million tokens). Kit ships none yet, so cost shows as `$?` until a price is set; it never guesses
+
 ### Removed
 - The Kit 0.1 TypeScript workbench (`packages/`, `apps/`, `catalog/`, its Node CI and keep-alive workflows, and the root pnpm files) is gone from the repository. It never shipped in 2.x; the last commit with it is the tag `legacy-0.1-final`. The `kit` binary, npm launcher and installers are unchanged
 
