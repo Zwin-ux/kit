@@ -10,7 +10,7 @@ The kickoff spec of 2026-10-26 sets the M0 milestone (foundation fixes, then `v2
 [`docs/superpowers/specs/2026-10-26-kit-kickoff.md`](../superpowers/specs/2026-10-26-kit-kickoff.md).
 The umbrella design is [`docs/superpowers/specs/2026-09-24-kit-v2-design.md`](../superpowers/specs/2026-09-24-kit-v2-design.md).
 The bar every change is held to: [`docs/QUALITY.md`](../QUALITY.md).
-Next: [`docs/PRD.md`](../PRD.md) (2026-10-31, draft for owner sign-off): Kit's own agent loop, the session TUI, harness v2 and Claude Code–compatible mods, milestones A0.0–A1.0 (= Kit 3.0).
+Next: [`docs/PRD.md`](../PRD.md) (approved 2026-10-31): Kit's own agent loop, the session TUI, harness v2 and Claude Code–compatible mods, milestones A0.0–A1.0 (= Kit 3.0).
 
 ## Workspace
 

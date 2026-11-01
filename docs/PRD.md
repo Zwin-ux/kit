@@ -1,7 +1,7 @@
 # Kit — PRD: the simple open-source coding agent that proves its work
 
 - **Owner:** Mazen Zwin (Zwin-ux), Westside Web Studio
-- **Status:** Draft for owner sign-off, 2026-10-31. Docs only: nothing in this file is built yet. Decisions that need the owner are collected in §14.
+- **Status:** **Approved by the owner, 2026-10-31, as written, including D1–D12 in §14.** Milestones start with A0.0.
 - **Base:** Kit `2.0.x` on `main`: kits, `kit run`, the gate, receipts, `kit land` and the Control Room. `v2.0.1` is in PR #42.
 - **Builds on:**
   - [`docs/superpowers/specs/2026-09-24-kit-v2-design.md`](superpowers/specs/2026-09-24-kit-v2-design.md): the umbrella design (drivers, policy, event model).
