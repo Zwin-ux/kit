@@ -83,7 +83,7 @@ docs page read the same day):
 | Cursor | `agent acp` | Native | Permissions and `session/load` yes; **no client fs, no client terminal**; modes agent/plan/ask. May require a `cursor_login` authenticate method and `cursor/*` extension handlers **(unverified)** |
 | Claude Code | `@agentclientprotocol/claude-agent-acp` 0.81.2 (Apache-2.0, Node ≥ 22) | Adapter | Embeds `@anthropic-ai/claude-agent-sdk` (exact pin, licence "SEE LICENSE IN README"), which ships **its own** Claude Code per platform. Not the user's `claude` binary |
 | Codex | `@agentclientprotocol/codex-acp` 1.13.1 (Apache-2.0, Node package) | Adapter | Embeds `@openai/codex` on a **caret** range (`^0.156.1`). Not the user's `codex` binary |
-| Grok | none | — | Stays on today's headless adapter; the YOLO switch (§4) replaces `KIT_FULL_AUTO=1` |
+| Grok | `grok agent stdio` | Native | Added after this doc was written (see [headless docs](https://docs.x.ai/build/cli/headless-scripting) and PRD §6.5). Until Kit's ACP driver lands, Grok stays on today's headless adapter; the YOLO switch (§4) replaces `KIT_FULL_AUTO=1` |
 | Ollama | — | Not in scope | Nobody owns checking whether ADR-0003's Codex bridge survives `codex-acp` |
 
 Both adapters were renamed once already (from `@zed-industries/*`, now
