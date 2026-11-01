@@ -372,6 +372,23 @@ mod tests {
         }
     }
 
+    /// The studio credit rides the help panel's border, so it shows at the
+    /// 80×14 contract without pushing a key out of the panel.
+    #[test]
+    fn help_overlay_credits_the_studio() {
+        let mut app = App::with_motion(false);
+        app.load_prd_fixture();
+        app.help_open = true;
+        for (w, h) in [(80, 14), (120, 30)] {
+            let frame = render_to_string(&app, w, h);
+            assert!(
+                frame.contains("Kit by Westside Web Studio"),
+                "{w}x{h}\n{frame}"
+            );
+            assert!(frame.contains("filter ALL"), "{w}x{h}\n{frame}");
+        }
+    }
+
     /// A retry task carries the gate failure on later lines. The table shows
     /// its first line only; newlines must never shift STATE and GATE.
     #[test]

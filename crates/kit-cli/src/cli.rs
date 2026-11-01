@@ -18,7 +18,9 @@ Then prove the work:
   kit run \"add a test for X\"   Run an agent in its own worktree, then the checks
   kit land <id>                Put a proven run's changes on a new branch
 
-Docs: https://github.com/Zwin-ux/kit#readme";
+Docs: https://github.com/Zwin-ux/kit#readme
+
+Kit by Westside Web Studio (westsidewebstudio.com). © 2026 Westside Web Studio. MIT licence.";
 
 /// Set your coding agents up for one job, then prove what they do.
 ///

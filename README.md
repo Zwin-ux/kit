@@ -355,5 +355,5 @@ SOFTWARE.
 </details>
 
 <p align="center">
-  <sub><a href="LICENSE">MIT</a> · <a href="THIRD-PARTY-NOTICES.md">third-party notices</a></sub>
+  <sub>Kit by <a href="https://westsidewebstudio.com">Westside Web Studio</a> · © 2026 Westside Web Studio · <a href="LICENSE">MIT</a> · <a href="THIRD-PARTY-NOTICES.md">third-party notices</a></sub>
 </p>

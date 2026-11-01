@@ -1814,7 +1814,8 @@ mod tests {
                 "@echo off\r\nif not exist \"%CARGO_TARGET_DIR%\" mkdir \"%CARGO_TARGET_DIR%\"\r\necho p1>\"%CARGO_TARGET_DIR%\\p1-marker\"\r\n",
             )
             .unwrap();
-            "cmd /C p1-probe.cmd"
+            // `.\` so it runs under NoDefaultCurrentDirectoryInExePath too.
+            r"cmd /C .\p1-probe.cmd"
         };
         #[cfg(not(windows))]
         let probe = {

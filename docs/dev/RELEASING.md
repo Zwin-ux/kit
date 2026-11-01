@@ -12,7 +12,7 @@ Kit ships one Rust binary (`kit`, `kit.exe`) through five channels. One tag push
 
 The plain installer lines install the newest stable release. A prerelease needs `--prerelease` / `-Prerelease` or a version.
 
-**No 1.x or 2.x GitHub Release exists yet.** `v1.0.0-alpha.1` went to npm before `github-release` existed, so the installer lines fail until the first release after it. Do not backfill alpha.1 with a manual run: a manual run uses the workflow and the code of the branch it runs on, so its archives would not be the published alpha.1 binaries.
+`v2.0.0` (2026-09-27) is the first GitHub Release with installer archives, and the first on crates.io (its `crates-io` job was re-run on 2026-10-26). `v1.0.0-alpha.1` went to npm before `github-release` existed and has no archives. Do not backfill it with a manual run: a manual run uses the workflow and the code of the branch it runs on, so its archives would not be the published alpha.1 binaries.
 
 Targets: Windows x64 (static CRT), macOS arm64/x64, Linux x64/arm64 with glibc 2.17 or newer. There is no musl build. On musl (Alpine) use a cargo line.
 
