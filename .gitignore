@@ -47,5 +47,8 @@ pnpm-debug.log*
 /.claude/skills/*
 !/.claude/skills/kit-release/
 !/.claude/skills/kit-ci-triage/
+!/.claude/skills/kit-tui/
+!/.claude/skills/kit-provider-adapters/
+!/.claude/skills/kit-evals/
 /.codex/
 /.grok/
