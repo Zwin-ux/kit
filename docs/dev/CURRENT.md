@@ -16,7 +16,7 @@ Next: [`docs/PRD.md`](../PRD.md) (approved 2026-10-31): Kit's own agent loop, th
 
 - Five crates in `crates/`, all one version: `kitctl` (`kit-cli`, the `kit` binary), `kitctl-core`, `kitctl-agents`, `kitctl-gate`, `kitctl-tui`.
 - `kit.toml` at the root is Kit's own gate: fmt, clippy `-D warnings`, workspace tests, plus `[gate.scope]`.
-- The legacy TypeScript 0.1 tree (`packages/`, `apps/`, `catalog/`, the Node `CI` workflow) is still on trunk; its removal waits on owner decision K10.
+- The legacy TypeScript 0.1 tree (`packages/`, `apps/`, `catalog/`, the Node `CI` and keep-alive workflows, the root pnpm files) was removed in A0.0 (K10, PRD D8). It is kept at tag `legacy-0.1-final`.
 
 ## How to run and test
 

@@ -13,7 +13,6 @@ description: Get build and test proof for Kit and diagnose CI failures, especial
 | Cold start | `rust.yml` → `startup budget` | ubuntu, windows | `kit --version` mean under 100 ms (hyperfine) |
 | npm launcher | `rust.yml` → `npm package` (`scripts/npm-smoke.mjs`) | 3 OSes | the packed tarballs install and `kit` runs through the shim |
 | Installers | `installers.yml` | 3 OSes | `install.sh` / `install.ps1` against a local release |
-| Legacy 0.1 Node | `ci.yml` | ubuntu | only the TypeScript tree under `packages/` (path-filtered) |
 
 `rust.yml` is path-filtered: a docs-only PR runs no Rust checks. That is not a pass for code; it means
 there was no code. Read results with `gh pr checks <n> -R Zwin-ux/kit` and
