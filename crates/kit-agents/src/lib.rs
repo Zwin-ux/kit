@@ -17,6 +17,7 @@ mod auth;
 mod claude;
 mod codex;
 mod grok;
+mod kit;
 mod ollama;
 mod process;
 pub mod skills;
@@ -28,6 +29,7 @@ use tokio::sync::mpsc;
 pub use claude::ClaudeAgent;
 pub use codex::CodexAgent;
 pub use grok::GrokAgent;
+pub use kit::KitAgent;
 pub use ollama::OllamaAgent;
 pub use process::{ProcessTree, configure_tree_kill, full_auto};
 
@@ -123,17 +125,19 @@ pub fn adapter(kind: AgentKind) -> Box<dyn Agent> {
         AgentKind::Claude => Box::new(ClaudeAgent),
         AgentKind::Grok => Box::new(GrokAgent),
         AgentKind::Ollama => Box::new(OllamaAgent),
+        AgentKind::Kit => Box::new(KitAgent),
     }
 }
 
-/// Probe all four agents (for `kit doctor`).
+/// Probe every agent (for `kit doctor`), Kit's own last.
 pub async fn probe_all() -> Vec<AgentStatus> {
-    let mut out = Vec::with_capacity(4);
+    let mut out = Vec::with_capacity(5);
     for kind in [
         AgentKind::Codex,
         AgentKind::Claude,
         AgentKind::Grok,
         AgentKind::Ollama,
+        AgentKind::Kit,
     ] {
         out.push(adapter(kind).probe().await);
     }

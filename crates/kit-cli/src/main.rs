@@ -75,7 +75,16 @@ async fn dispatch(cli: Cli) -> Result<()> {
         if cli.command.is_some() {
             anyhow::bail!("-p runs Kit's own agent on its own; drop the subcommand");
         }
-        return agent_cmd::cmd_prompt(task, &cli.agent, json).await;
+        // `-p -` reads the task from stdin: no argv limits, no quoting.
+        let task = if task == "-" {
+            let mut buf = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
+                .context("cannot read the task from stdin")?;
+            buf
+        } else {
+            task.clone()
+        };
+        return agent_cmd::cmd_prompt(task.trim(), &cli.agent, json).await;
     }
     match cli.command {
         None if !cli.demo && kits::setup::first_run() => {
@@ -995,6 +1004,7 @@ fn print_doctor(version: &str, start_mcp: bool, json: bool) {
         AgentKind::Codex => 1,
         AgentKind::Grok => 2,
         AgentKind::Ollama => 3,
+        AgentKind::Kit => 4,
     };
     let mut statuses = statuses;
     statuses.sort_by_key(|st| rank(st.kind));

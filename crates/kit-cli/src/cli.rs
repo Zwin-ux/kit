@@ -38,7 +38,7 @@ pub struct Cli {
     #[arg(long)]
     pub demo: bool,
 
-    /// Run Kit's own agent once on TASK in this repo, then exit
+    /// Run Kit's own agent once on TASK in this repo, then exit (`-` reads TASK from stdin)
     #[arg(
         short = 'p',
         long = "prompt",
@@ -314,6 +314,8 @@ pub enum AgentArg {
     Codex,
     Grok,
     Ollama,
+    /// Kit's own agent (needs a provider: see `kit -p`)
+    Kit,
 }
 
 impl AgentArg {
@@ -333,6 +335,7 @@ impl From<AgentArg> for AgentKind {
             AgentArg::Codex => AgentKind::Codex,
             AgentArg::Grok => AgentKind::Grok,
             AgentArg::Ollama => AgentKind::Ollama,
+            AgentArg::Kit => AgentKind::Kit,
         }
     }
 }
@@ -480,11 +483,15 @@ mod tests {
 
     #[test]
     fn preference_order_matches_the_value_enum() {
+        // Kit's own agent is metered on the user's key, so it is never the
+        // default pick (PRD D11): only `--agent kit` runs it.
         let from_enum: Vec<AgentKind> = AgentArg::value_variants()
             .iter()
             .map(|a| (*a).into())
+            .filter(|k| *k != AgentKind::Kit)
             .collect();
         assert_eq!(from_enum, AgentArg::PREFERENCE);
+        assert!(!AgentArg::PREFERENCE.contains(&AgentKind::Kit));
     }
 }
 
