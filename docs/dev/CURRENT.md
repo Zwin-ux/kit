@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-31
 **Released:** `2.0.0` (2026-09-27) on npm (`@mzwin/kit`, `latest`), on crates.io (`kitctl` and its four libraries; the `crates.io` job was re-run on 2026-10-26 after the account email was verified) and as a GitHub Release with installers.
-**Trunk:** the 2.0.x line. What changed since 2.0.0 is under `## Unreleased` in [`CHANGELOG.md`](../../CHANGELOG.md). M0-2…M0-6 are merged (PRs #39, #40); M0-7 (`v2.0.1`) waits on the owner's go.
+**Trunk:** the 2.0.x line. What `v2.0.1` carries is its section in [`CHANGELOG.md`](../../CHANGELOG.md). M0-2…M0-6 are merged (PRs #39, #40); M0-7: the `v2.0.1` bump PR is open; the owner pushes the tag.
 
 ## Current plan
 

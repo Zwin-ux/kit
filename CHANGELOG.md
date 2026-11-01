@@ -2,7 +2,7 @@
 
 All notable changes to Kit. Versions follow [Semantic Versioning](https://semver.org/): the public API is the `kit` command, `KIT.toml` / `kit.toml`, `kit.lock`, `--json` output and receipts. The Rust library crates carry no semver promise of their own.
 
-## Unreleased
+## 2.0.1 — Proof holds
 
 ### Fixed
 - The `[gate.scope]` check now covers everything the run changed since its base commit, including commits the agent made, and both sides of a rename. Before, a denied path the agent committed passed the gate and `kit land` accepted it
