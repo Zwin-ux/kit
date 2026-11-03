@@ -14,8 +14,10 @@ use std::io::{BufRead, IsTerminal, Write as _};
 use std::path::{Path, PathBuf};
 
 pub fn home_dir() -> Result<PathBuf> {
+    // Empty HOME / USERPROFILE count as unset (#61), matching kit_home().
     std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
+        .filter(|v| !v.is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE").filter(|v| !v.is_empty()))
         .map(PathBuf::from)
         .context("cannot find your home directory (HOME is not set)")
 }

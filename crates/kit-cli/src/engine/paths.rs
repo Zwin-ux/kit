@@ -90,12 +90,20 @@ use std::path::PathBuf;
 /// Resolve Kit's home directory.
 ///
 /// Order: `KIT_HOME` → `HOME`/`USERPROFILE` + `/.kit` → `./.kit` fallback.
+/// Empty env values count as unset (e.g. a blank CI secret), so we do not
+/// treat `""` as a relative root under the current directory (#61).
 pub fn kit_home() -> PathBuf {
-    if let Ok(p) = std::env::var("KIT_HOME") {
+    if let Ok(p) = std::env::var("KIT_HOME")
+        && !p.is_empty()
+    {
         return PathBuf::from(p);
     }
-    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-        return PathBuf::from(home).join(".kit");
+    for key in ["HOME", "USERPROFILE"] {
+        if let Ok(home) = std::env::var(key)
+            && !home.is_empty()
+        {
+            return PathBuf::from(home).join(".kit");
+        }
     }
     PathBuf::from(".kit")
 }
@@ -132,5 +140,45 @@ mod tests {
             "fixture must be its own git checkout"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn empty_kit_home_is_ignored() {
+        let _lock = kit_home_test_lock();
+        let prev_kit = std::env::var_os("KIT_HOME");
+        let prev_home = std::env::var_os("HOME");
+        let prev_profile = std::env::var_os("USERPROFILE");
+        // SAFETY: kit_home_test_lock serializes env mutation for these tests.
+        unsafe {
+            std::env::set_var("KIT_HOME", "");
+            std::env::set_var("HOME", "/tmp/kit-home-fallback-test");
+            std::env::remove_var("USERPROFILE");
+        }
+        assert_eq!(
+            kit_home(),
+            PathBuf::from("/tmp/kit-home-fallback-test").join(".kit")
+        );
+        unsafe {
+            std::env::set_var("HOME", "");
+            std::env::set_var("USERPROFILE", "/tmp/kit-profile-fallback-test");
+        }
+        assert_eq!(
+            kit_home(),
+            PathBuf::from("/tmp/kit-profile-fallback-test").join(".kit")
+        );
+        unsafe {
+            match prev_kit {
+                Some(v) => std::env::set_var("KIT_HOME", v),
+                None => std::env::remove_var("KIT_HOME"),
+            }
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+            match prev_profile {
+                Some(v) => std::env::set_var("USERPROFILE", v),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+        }
     }
 }
