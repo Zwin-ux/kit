@@ -1,8 +1,8 @@
 <p align="center"><img src="docs/assets/kit-fox.svg" width="112" alt="Kit's fox" /></p>
 
 <p align="center">
-  <strong>Kit sets your coding agents up for one job, then proves what they do.</strong><br />
-  Kits for Claude Code, Codex and Grok: skills, rules, MCP servers and hooks, installed in one step and removed exactly.
+  <strong>Run coding agents side by side and check their work before you merge.</strong><br />
+  Each run starts from your last commit in its own Git worktree. Kit runs your project’s checks and saves a receipt you can inspect, even when a check fails.
 </p>
 
 <p align="center">
@@ -11,19 +11,22 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1a1a1a?style=for-the-badge" alt="MIT" /></a>
 </p>
 
-A **kit** is everything an agent needs for one kind of work. Frontend Design
-brings skills for UI, accessibility and Core Web Vitals, the Chrome DevTools
-MCP server so the agent can look at the page, and a hook that formats each
-file it edits. Kit writes each piece in the format your agent reads, shows you
-every file first, and can take it all out again.
-
-Then, when the agent works, Kit can hold it to your repo's own checks: each
-run gets its own worktree, and it passes only if your tests, lints and builds do.
+Suppose you ask an agent to fix a keyboard shortcut. It edits a separate checkout while you keep working. If a configured test fails, you can inspect the run with `kit receipt show <id>`. If the checks pass and the agent changed files, `kit land <id>` puts the change on a branch for review.
 
 ```bash
 npm install -g @mzwin/kit
-kit
+kit --demo                 # explore sample runs in the Control Room; press q to quit
 ```
+
+<p align="center"><img src="docs/media/run.gif" width="820" alt="kit run: the agent works in its own worktree, then Kit runs the repo's checks, prints PASS and the receipt, and kit land puts the change on a branch" /></p>
+
+<sub>Recorded with a scripted stand-in for Claude Code ([docs/media/fakeagent.sh](docs/media/fakeagent.sh)); the worktree, checks, receipt and branch are Kit's own.</sub>
+
+[Run a task in your own repo](#prove-what-agents-do) · [Other install options](#install)
+
+## Set up your agents
+
+Run `kit` for first-time setup. Pick Claude Code, Codex or Grok, then choose a kit for the job. For example, Frontend Design adds accessibility skills, Chrome DevTools and a formatting hook. Kit shows the files and commands before you confirm.
 
 <p align="center"><img src="docs/media/setup.gif" width="880" alt="kit setup: the fox banner, then one picker each for agents, focus and where to install, each folding into a single line; every file and skill with its pinned source and licence; yes; and the fox signing off" /></p>
 
@@ -247,10 +250,6 @@ them (a check that fails today stops it: `--no-check` keeps it, so a run passes 
 writes a receipt to `~/.kit/runs/<id>/` (`kit receipt list`, `kit receipt show <id>`).
 
 <p align="center"><img src="docs/media/control-room-empty.png" width="880" alt="Bare kit before the first run: the empty Control Room with the Kit fox and the keys to dispatch a run" /></p>
-
-<p align="center"><img src="docs/media/run.gif" width="820" alt="kit run: the agent works in its own worktree, then Kit runs the repo's checks, prints PASS and the receipt, and kit land puts the change on a branch" /></p>
-
-<sub>Recorded with a scripted stand-in for Claude Code ([docs/media/fakeagent.sh](docs/media/fakeagent.sh)); the worktree, checks, receipt and branch are Kit's own.</sub>
 
 <p align="center"><img src="docs/media/control-room.gif" width="880" alt="kit --demo: sample runs in one table, with running, gating, passed and failed rows and a failure's first error line" /></p>
 
